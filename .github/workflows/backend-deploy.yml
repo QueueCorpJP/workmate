@@ -3,9 +3,9 @@ name: Deploy Backend
 on:
   push:
     paths:
-      - 'Chatbot-backend-main/**'
+      - 'Chatbot-backend-master/**'
     branches:
-      - main
+      - master
 
 jobs:
   deploy-backend:
