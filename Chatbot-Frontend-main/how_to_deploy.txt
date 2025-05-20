@@ -1,0 +1,71 @@
+フロントエンド（Vite + Vercel）
+
+初期セットアップ:
+  - GitHub リポジトリを Vercel に接続します。
+  - ルートディレクトリをフロントエンドのフォルダに設定します。
+  - ビルドコマンドを以下に設定します：npm run build
+  - 出力ディレクトリ（output directory）を以下に設定します：dist
+
+設定:
+  - vite.config.ts にローカル開発用の適切なプロキシターゲット URL が含まれていることを確認してください：
+    proxy: {
+      "/chatbot/api": {
+        target: "http://localhost:8083", // ローカル開発用
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+  - 本番環境では、API リクエストは vercel.json に定義されたリライトルールによって処理されます。
+    プロジェクトのルートに vercel.json を作成または更新してください：
+    {
+      "rewrites": [
+        {
+          "source": "/chatbot/api/:path*",
+          "destination": "https://ec2-3-112-74-4.ap-northeast-1.compute.amazonaws.com/chatbot/api/:path*"
+        }
+      ]
+    }
+    補足：この設定により、フロントエンドからの /chatbot/api/* リクエストはすべて、AWS EC2 上にデプロイされた FastAPI バックエンドへリダイレクトされます。
+
+デプロイ:
+  - main ブランチにコードをプッシュすると、自動的にデプロイが開始されます。
+  - 必要に応じて、Vercel ダッシュボードから手動で再デプロイすることも可能です。
+
+
+
+=============================English==========================================================
+
+Frontend (Vite on Vercel)
+
+Initial Setup:
+  - Connect the GitHub repository to Vercel.
+  - Set the root directory to the frontend folder.
+  - Set the build command: npm run build
+  - Set the output directory: dist
+
+Configuration:
+  - Ensure vite.config.ts contains the correct proxy target URL for local development::
+    proxy: {
+      "/chatbot/api": {
+        target: "http://localhost:8083", // For local testing
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+  - In production, API requests are routed through Vercel's rewrites defined in vercel.json.
+    Create or update the vercel.json file in the root of the project:
+      {
+        "rewrites": [
+          {
+            "source": "/chatbot/api/:path*",
+            "destination": "https://ec2-3-112-74-4.ap-northeast-1.compute.amazonaws.com/chatbot/api/:path*"
+          }
+        ]
+      }
+    Note: This ensures that all /chatbot/api/* requests from the frontend will be redirected to the FastAPI backend deployed on AWS EC2.
+
+
+Deploy:
+  - Push changes to the main branch to trigger automatic deployment.
+  - You can also trigger a redeploy from the Vercel dashboard.
+

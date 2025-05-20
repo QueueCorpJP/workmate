@@ -1,0 +1,27 @@
+# Python bytecode files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+env/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# dotenv files
+.env
+
+*.db
+
+# IDE/editor directories
+.vscode/
+.idea/
+
+# Vercel directories
+.vercel/
+
+# Log files
+*.log

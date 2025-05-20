@@ -1,0 +1,39 @@
+# Node modules
+node_modules/
+
+# Build output
+/dist
+/build
+/static
+
+# Logs
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Environment files
+.env
+.env.production
+
+# IDE/Editor files
+.vscode/
+.idea/
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# TypeScript files
+*.tsbuildinfo
+
+# Optional: If you have any generated static files or cache
+/.next
+/.cache
+
+# Git files (ignore .git directory)
+.git/
+
+# If you use Docker, ignore the Dockerfile or docker-compose files if needed
+# Docker
+# Dockerfile
+# docker-compose.yml
