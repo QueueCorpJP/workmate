@@ -484,7 +484,7 @@ def init_db():
                         insert_data("users", {
                             "id": "admin",
                             "email": "queue@queuefood.co.jp",
-                            "password": "QueueMainPass0401",
+                            "password": "John.Queue2025",
                             "name": "管理者",
                             "role": "admin",
                             "company_id": "company_1",

@@ -77,7 +77,7 @@ INITIAL_DATA = {
 
     "admin_user": """
     INSERT OR IGNORE INTO users (id, email, password, name, role, company_id, created_at)
-    VALUES ('admin', 'queue@queuefood.co.jp', 'QueueMainPass0401', '管理者', 'admin', 'company_1', datetime('now'))
+    VALUES ('admin', 'queue@queuefood.co.jp', 'John.Queue2025', '管理者', 'admin', 'company_1', datetime('now'))
     """,
 
     "admin_unlimited": """

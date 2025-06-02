@@ -105,7 +105,6 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
                 <TableCell>ページ数</TableCell>
                 <TableCell>アップロード者</TableCell>
                 <TableCell>アップロード日時</TableCell>
-                <TableCell>使用回数</TableCell>
                 <TableCell>最終使用日時</TableCell>
                 <TableCell>状態</TableCell>
                 <TableCell>操作</TableCell>
@@ -152,13 +151,6 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
                         second: "2-digit",
                       })
                       : "情報なし"}
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={resource.usage_count || 0}
-                      size="small"
-                      color={resource.usage_count ? "primary" : "default"}
-                    />
                   </TableCell>
                   <TableCell>
                     {resource.last_used

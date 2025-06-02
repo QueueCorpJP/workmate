@@ -2,16 +2,23 @@
 管理画面モジュール
 管理画面で使用する機能を提供します
 """
+import os
 import logging
-import datetime
+import aiofiles
 from datetime import datetime
+from typing import List, Dict, Any, Optional
+from io import BytesIO
 from psycopg2.extensions import connection as Connection
 from psycopg2.extras import RealDictCursor
-from fastapi import HTTPException, Depends
+from fastapi import HTTPException, Depends, UploadFile
 from .database import get_db
 from .models import ChatHistoryItem, AnalysisResult, EmployeeUsageResult
 from .company import DEFAULT_COMPANY_NAME
 from .knowledge_base import knowledge_base
+from .knowledge.url import extract_text_from_url
+from .knowledge.excel import process_excel_file
+from .knowledge.pdf import process_pdf_file
+from .knowledge.text import process_txt_file
 from supabase_adapter import select_data, insert_data, update_data, delete_data
 
 logger = logging.getLogger(__name__)
@@ -23,15 +30,6 @@ def set_model(gemini_model):
     """Geminiモデルを設定する"""
     global model
     model = gemini_model
-
-import os
-import aiofiles
-from fastapi import UploadFile
-from io import BytesIO
-from .knowledge.url import extract_text_from_url
-from .knowledge.excel import process_excel_file
-from .knowledge.pdf import process_pdf_file
-from .knowledge.text import process_txt_file
 
 # 知識ベースをリフレッシュする関数
 async def refresh_knowledge_base():
@@ -187,6 +185,70 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
         if not company_id and not is_special_admin:
             raise HTTPException(status_code=400, detail="会社IDが見つかりません")
         
+        # 社員の使用状況を取得する共通関数
+        def get_employee_stats(employee_id):
+            """社員の使用状況を取得する"""
+            try:
+                # Supabaseの標準的な方法でメッセージ数を取得
+                chat_history_result = select_data("chat_history", columns="id, timestamp", filters={"employee_id": employee_id})
+                
+                message_count = 0
+                last_activity = None
+                
+                if chat_history_result and chat_history_result.data:
+                    messages = chat_history_result.data
+                    message_count = len(messages)
+                    
+                    # 最新のタイムスタンプを取得
+                    if messages:
+                        timestamps = [msg.get("timestamp") for msg in messages if msg.get("timestamp")]
+                        if timestamps:
+                            last_activity = max(timestamps)
+                
+                # 利用制限情報を取得
+                usage_limits_result = select_data("usage_limits", columns="*", filters={"user_id": employee_id})
+                usage_limits = None
+                
+                if usage_limits_result and usage_limits_result.data and len(usage_limits_result.data) > 0:
+                    limits_data = usage_limits_result.data[0]
+                    usage_limits = {
+                        "is_unlimited": bool(limits_data.get("is_unlimited", False)),
+                        "questions_used": int(limits_data.get("questions_used", 0)),
+                        "questions_limit": int(limits_data.get("questions_limit", 10)),
+                        "document_uploads_used": int(limits_data.get("document_uploads_used", 0)),
+                        "document_uploads_limit": int(limits_data.get("document_uploads_limit", 2))
+                    }
+                else:
+                    # デフォルトの利用制限情報
+                    usage_limits = {
+                        "is_unlimited": False,
+                        "questions_used": 0,
+                        "questions_limit": 10,
+                        "document_uploads_used": 0,
+                        "document_uploads_limit": 2
+                    }
+                
+                return {
+                    "message_count": message_count,
+                    "last_activity": last_activity,
+                    "usage_limits": usage_limits
+                }
+            except Exception as e:
+                print(f"社員ID {employee_id} の使用状況取得エラー: {e}")
+                return {
+                    "message_count": 0,
+                    "last_activity": None,
+                    "usage_limits": {
+                        "is_unlimited": False,
+                        "questions_used": 0,
+                        "questions_limit": 10,
+                        "document_uploads_used": 0,
+                        "document_uploads_limit": 2
+                    }
+                }
+        
+        employees = []
+        
         # 特別な管理者の場合は全社員を取得
         if is_special_admin:
             print("特別な管理者として全社員情報を取得します")
@@ -195,11 +257,16 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
             
             if result and result.data:
                 print(f"全社員情報取得結果: {len(result.data)}件")
-                # 直接配列を返す
-                return result.data
+                for employee in result.data:
+                    # 使用状況を取得
+                    stats = get_employee_stats(employee.get("id"))
+                    employee_with_stats = {
+                        **employee,
+                        **stats
+                    }
+                    employees.append(employee_with_stats)
             else:
                 print("全社員情報が取得できませんでした")
-                return []
                 
         elif company_id:
             # 会社の全社員を取得
@@ -209,11 +276,16 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
             
             if result and result.data:
                 print(f"会社の社員情報取得結果: {len(result.data)}件")
-                # 直接配列を返す
-                return result.data
+                for employee in result.data:
+                    # 使用状況を取得
+                    stats = get_employee_stats(employee.get("id"))
+                    employee_with_stats = {
+                        **employee,
+                        **stats
+                    }
+                    employees.append(employee_with_stats)
             else:
                 print(f"会社ID {company_id} の社員情報が取得できませんでした")
-                return []
         else:
             # 会社IDでフィルタリングして社員情報を取得
             result = execute_query("""
@@ -231,11 +303,18 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
             
             if result:
                 print(f"社員情報取得結果: {len(result)}件")
-                # 直接配列を返す
-                return result
+                for employee in result:
+                    # 使用状況を取得
+                    stats = get_employee_stats(employee.get("id"))
+                    employee_with_stats = {
+                        **employee,
+                        **stats
+                    }
+                    employees.append(employee_with_stats)
             else:
                 print("社員情報が取得できませんでした")
-                return []
+        
+        return employees
     except Exception as e:
         logger.error(f"社員情報の取得エラー: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -249,68 +328,83 @@ async def get_employee_usage(user_id: str = None, db: Connection = Depends(get_d
         # 社員の利用状況を取得するクエリを実行
         employee_usage = []
         
+        def format_usage_data(user_data, user_id_key="id", name_key="name"):
+            """使用状況データをフォーマットする共通関数"""
+            user_id = user_data.get(user_id_key)
+            if not user_id:
+                return None
+                
+            # Supabaseの標準的な方法でメッセージ数と最終アクティビティを取得
+            try:
+                chat_history_result = select_data("chat_history", columns="id, timestamp, category, user_message", filters={"employee_id": user_id})
+                
+                message_count = 0
+                last_activity = None
+                
+                if chat_history_result and chat_history_result.data:
+                    messages = chat_history_result.data
+                    message_count = len(messages)
+                    
+                    # 最新のタイムスタンプを取得
+                    timestamps = [msg.get("timestamp") for msg in messages if msg.get("timestamp")]
+                    if timestamps:
+                        last_activity = max(timestamps)
+                    
+                    # カテゴリ分布を取得
+                    category_counts = {}
+                    for msg in messages:
+                        category = msg.get("category")
+                        if category:
+                            category_counts[category] = category_counts.get(category, 0) + 1
+                    
+                    top_categories = [
+                        {"category": cat, "count": count}
+                        for cat, count in category_counts.items()
+                    ]
+                    
+                    # 最近の質問を取得（最新3件）
+                    recent_questions = []
+                    sorted_messages = sorted(messages, key=lambda x: x.get("timestamp", ""), reverse=True)
+                    for msg in sorted_messages[:3]:
+                        user_message = msg.get("user_message")
+                        if user_message:
+                            recent_questions.append(user_message)
+                else:
+                    top_categories = []
+                    recent_questions = []
+            except Exception as e:
+                print(f"ユーザーID {user_id} のチャット履歴取得エラー: {e}")
+                message_count = 0
+                last_activity = None
+                top_categories = []
+                recent_questions = []
+            
+            return {
+                "employee_id": user_id,
+                "employee_name": user_data.get(name_key) or "名前なし",
+                "message_count": message_count,
+                "last_activity": last_activity,
+                "top_categories": top_categories,
+                "recent_questions": recent_questions
+            }
+        
         if is_special_admin:
             print("特別な管理者として全ユーザーの利用状況を取得します")
             
-            # 全ユーザーのメッセージ数と最終アクティビティを取得
             try:
                 # まず全ユーザーを取得
                 all_users = select_data("users", columns="id, name, email, role, created_at")
                 print(f"全ユーザー取得結果: {all_users.data if all_users else 'なし'}")
                 
-                # 各ユーザーのチャット履歴を取得
-                for user in all_users.data:
-                    user_id = user.get("id")
-                    if not user_id:
-                        continue
-                    
-                    # ユーザーのメッセージ数と最終アクティビティを取得
-                    message_count_result = execute_query(
-                        f"SELECT COUNT(*) as message_count, MAX(timestamp) as last_activity FROM chat_history WHERE employee_id = '{user_id}'"
-                    )
-                    
-                    message_count = 0
-                    last_activity = None
-                    
-                    if message_count_result and len(message_count_result) > 0:
-                        message_count = int(message_count_result[0].get("message_count", 0))
-                        last_activity = message_count_result[0].get("last_activity")
-                    
-                    # カテゴリ分布を取得
-                    category_result = execute_query(
-                        f"SELECT category, COUNT(*) as count FROM chat_history WHERE employee_id = '{user_id}' GROUP BY category"
-                    )
-                    
-                    top_categories = []
-                    for cat in category_result:
-                        if cat.get("category"):
-                            top_categories.append({
-                                "category": cat.get("category"),
-                                "count": cat.get("count", 0)
-                            })
-                    
-                    # 最近の質問を取得
-                    recent_questions_result = execute_query(
-                        f"SELECT user_message FROM chat_history WHERE employee_id = '{user_id}' ORDER BY timestamp DESC LIMIT 3"
-                    )
-                    
-                    recent_questions = []
-                    for q in recent_questions_result:
-                        if q.get("user_message"):
-                            recent_questions.append(q.get("user_message"))
-                    
-                    employee_usage.append({
-                        "employee_id": user_id,
-                        "employee_name": user.get("name") or "名前なし",
-                        "message_count": message_count,
-                        "last_activity": last_activity,
-                        "top_categories": top_categories,
-                        "recent_questions": recent_questions
-                    })
+                if all_users and all_users.data:
+                    # 各ユーザーのチャット履歴を取得
+                    for user in all_users.data:
+                        formatted_data = format_usage_data(user)
+                        if formatted_data:
+                            employee_usage.append(formatted_data)
                 
                 print(f"全ユーザーの利用状況取得結果: {len(employee_usage)}件")
                 
-                # 既に全ユーザーを処理したので、ここでは何もしない
             except Exception as e:
                 print(f"全ユーザーの利用状況取得エラー: {e}")
                 # エラーが発生しても処理を続行
@@ -338,53 +432,9 @@ async def get_employee_usage(user_id: str = None, db: Connection = Depends(get_d
                         print(f"会社の社員取得結果: {users_result.data}")
                         
                         for user in users_result.data:
-                            user_id = user.get("id")
-                            if not user_id:
-                                continue
-                            
-                            # ユーザーのメッセージ数と最終アクティビティを取得
-                            usage_result = execute_query(
-                                f"SELECT COUNT(*) as message_count, MAX(timestamp) as last_activity FROM chat_history WHERE employee_id = '{user_id}'"
-                            )
-                            
-                            message_count = 0
-                            last_activity = None
-                            
-                            if usage_result and len(usage_result) > 0:
-                                message_count = int(usage_result[0].get("message_count", 0))
-                                last_activity = usage_result[0].get("last_activity")
-                            
-                            # カテゴリ分布を取得
-                            category_result = execute_query(
-                                f"SELECT category, COUNT(*) as count FROM chat_history WHERE employee_id = '{user_id}' GROUP BY category"
-                            )
-                            
-                            top_categories = []
-                            for cat in category_result:
-                                if cat.get("category"):
-                                    top_categories.append({
-                                        "category": cat.get("category"),
-                                        "count": cat.get("count", 0)
-                                    })
-                            
-                            # 最近の質問を取得
-                            recent_questions_result = execute_query(
-                                f"SELECT user_message FROM chat_history WHERE employee_id = '{user_id}' ORDER BY timestamp DESC LIMIT 3"
-                            )
-                            
-                            recent_questions = []
-                            for q in recent_questions_result:
-                                if q.get("user_message"):
-                                    recent_questions.append(q.get("user_message"))
-                            
-                            employee_usage.append({
-                                "employee_id": user_id,
-                                "employee_name": user.get("name") or "名前なし",
-                                "message_count": message_count,
-                                "last_activity": last_activity,
-                                "top_categories": top_categories,
-                                "recent_questions": recent_questions
-                            })
+                            formatted_data = format_usage_data(user)
+                            if formatted_data:
+                                employee_usage.append(formatted_data)
                 except Exception as e:
                     print(f"会社の社員利用状況取得エラー: {e}")
                     # エラーが発生しても処理を続行
@@ -397,58 +447,15 @@ async def get_employee_usage(user_id: str = None, db: Connection = Depends(get_d
                     
                     if user_result and user_result.data and len(user_result.data) > 0:
                         user = user_result.data[0]
-                        
-                        # ユーザーのメッセージ数と最終アクティビティを取得
-                        usage_result = execute_query(
-                            f"SELECT COUNT(*) as message_count, MAX(timestamp) as last_activity FROM chat_history WHERE employee_id = '{user_id}'"
-                        )
-                        
-                        message_count = 0
-                        last_activity = None
-                        
-                        if usage_result and len(usage_result) > 0:
-                            message_count = int(usage_result[0].get("message_count", 0))
-                            last_activity = usage_result[0].get("last_activity")
-                        
-                        # カテゴリ分布を取得
-                        category_result = execute_query(
-                            f"SELECT category, COUNT(*) as count FROM chat_history WHERE employee_id = '{user_id}' GROUP BY category"
-                        )
-                        
-                        top_categories = []
-                        for cat in category_result:
-                            if cat.get("category"):
-                                top_categories.append({
-                                    "category": cat.get("category"),
-                                    "count": cat.get("count", 0)
-                                })
-                        
-                        # 最近の質問を取得
-                        recent_questions_result = execute_query(
-                            f"SELECT user_message FROM chat_history WHERE employee_id = '{user_id}' ORDER BY timestamp DESC LIMIT 3"
-                        )
-                        
-                        recent_questions = []
-                        for q in recent_questions_result:
-                            if q.get("user_message"):
-                                recent_questions.append(q.get("user_message"))
-                        
-                        employee_usage.append({
-                            "employee_id": user_id,
-                            "employee_name": user.get("name") or "名前なし",
-                            "message_count": message_count,
-                            "last_activity": last_activity,
-                            "top_categories": top_categories,
-                            "recent_questions": recent_questions
-                        })
+                        formatted_data = format_usage_data(user)
+                        if formatted_data:
+                            employee_usage.append(formatted_data)
                 except Exception as e:
                     print(f"ユーザー利用状況取得エラー: {e}")
                     # エラーが発生しても処理を続行
         
         # Convert the dictionaries to proper EmployeeUsageItem objects
         try:
-            from .models import EmployeeUsageItem
-            
             # Create a list to store properly formatted items
             formatted_items = []
             
@@ -459,7 +466,6 @@ async def get_employee_usage(user_id: str = None, db: Connection = Depends(get_d
                     try:
                         # Try to parse the timestamp string to datetime
                         if isinstance(item["last_activity"], str):
-                            from datetime import datetime
                             last_activity_dt = datetime.fromisoformat(item["last_activity"].replace('Z', '+00:00'))
                         else:
                             # If it's already a datetime object, use it directly
