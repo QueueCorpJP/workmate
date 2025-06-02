@@ -92,9 +92,14 @@ def register_new_user(email: str, password: str, name: str, role: str = "user", 
 
 def check_usage_limits(user_id: str, limit_type: str, db: Connection = Depends(get_db)):
     """利用制限をチェックします"""
+    print(f"=== 利用制限チェック開始 ===")
+    print(f"ユーザーID: {user_id}, 制限タイプ: {limit_type}")
+    
     limits = get_usage_limits(user_id, db)
+    print(f"取得した利用制限: {limits}")
     
     if not limits:
+        print("利用制限情報が見つかりません")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="ユーザーの利用制限情報が見つかりません",
@@ -102,6 +107,7 @@ def check_usage_limits(user_id: str, limit_type: str, db: Connection = Depends(g
     
     # 無制限アカウントの場合は制限をチェックしない
     if limits["is_unlimited"]:
+        print("無制限アカウントです")
         return {
             "allowed": True,
             "remaining": None,
@@ -113,18 +119,23 @@ def check_usage_limits(user_id: str, limit_type: str, db: Connection = Depends(g
         limit = limits["document_uploads_limit"]
         remaining = limit - used
         allowed = remaining > 0
+        print(f"ドキュメントアップロード制限: 使用済み={used}, 制限={limit}, 残り={remaining}, 許可={allowed}")
     elif limit_type == "question":
         used = limits["questions_used"]
         limit = limits["questions_limit"]
         remaining = limit - used
         allowed = remaining > 0
+        print(f"質問制限: 使用済み={used}, 制限={limit}, 残り={remaining}, 許可={allowed}")
     else:
+        print(f"不明な制限タイプ: {limit_type}")
         raise ValueError(f"不明な制限タイプ: {limit_type}")
     
-    return {
+    result = {
         "allowed": allowed,
         "remaining": remaining,
         "is_unlimited": False,
         "used": used,
         "limit": limit
     }
+    print(f"利用制限チェック結果: {result}")
+    return result

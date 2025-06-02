@@ -137,7 +137,7 @@ function LoginPage() {
                 },
               }}
               onClick={() =>
-                window.open("https://queue-lp.vercel.app/", "_blank")
+                window.open("https://workmate-ai.com/", "_blank")
               }
             >
               ホームページ

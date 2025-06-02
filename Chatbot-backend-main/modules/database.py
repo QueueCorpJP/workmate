@@ -600,18 +600,28 @@ def get_usage_limits(user_id: str, db: SupabaseConnection) -> dict:
 
 def update_usage_count(user_id: str, field: str, db: SupabaseConnection) -> dict:
     """利用カウントを更新します"""
+    print(f"update_usage_count開始 - user_id: {user_id}, field: {field}")
+    
     # 現在の値を取得
     current_limits = get_usage_limits(user_id, db)
+    print(f"現在の利用制限: {current_limits}")
     
     if not current_limits:
+        print("利用制限が見つかりません")
         return None
         
     # 値を更新
-    new_value = current_limits.get(field, 0) + 1
+    old_value = current_limits.get(field, 0)
+    new_value = old_value + 1
+    print(f"{field}を{old_value}から{new_value}に更新")
+    
     update_data("usage_limits", {field: new_value}, "user_id", user_id)
     
     # 更新後の値を取得
-    return get_usage_limits(user_id, db)
+    updated_limits = get_usage_limits(user_id, db)
+    print(f"更新後の利用制限: {updated_limits}")
+    
+    return updated_limits
 
 def get_all_users(db: SupabaseConnection) -> list:
     """すべてのユーザーを取得します"""

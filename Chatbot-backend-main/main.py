@@ -24,7 +24,8 @@ from modules.models import (
     EmployeeUsageItem, EmployeeUsageResult, UrlSubmission,
     CompanyNameResponse, CompanyNameRequest, ResourcesResult,
     ResourceToggleResponse, UserLogin, UserRegister, UserResponse,
-    UserWithLimits, DemoUsageStats, AdminUserCreate
+    UserWithLimits, DemoUsageStats, AdminUserCreate, UpgradePlanRequest,
+    UpgradePlanResponse, SubscriptionInfo
 )
 from modules.knowledge import process_url, process_file, get_knowledge_base_info
 from modules.chat import process_chat, set_model as set_chat_model
@@ -397,6 +398,15 @@ async def get_knowledge_base(current_user = Depends(get_current_user)):
 @app.post("/chatbot/api/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
     """チャットメッセージを処理してGeminiからの応答を返す"""
+    # デバッグ：現在のユーザー情報と利用制限を出力
+    print(f"=== チャット処理開始 ===")
+    print(f"ユーザー情報: {current_user}")
+    
+    # 現在の利用制限を取得して表示
+    from modules.database import get_usage_limits
+    current_limits = get_usage_limits(current_user["id"], db)
+    print(f"現在の利用制限: {current_limits}")
+    
     # ユーザーIDを設定
     message.user_id = current_user["id"]
     message.employee_name = current_user["name"]
@@ -527,7 +537,7 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
         for line in lines:
             matched = False
             for keyword, section_key in sections:
-                if keyword in line and (line.startswith("#") or line.startswith("**") or line.endswith("**") or line.endswith(":")):
+                if keyword in line and (line.startswith("#") or line.startswith("**") or line.startswith(":")):
                     if current_section:
                         detailed_analysis[current_section] = "\n".join(section_content).strip()
                     current_section = section_key
@@ -652,6 +662,106 @@ async def api_get_company_name(current_user = Depends(get_current_user), db: Sup
 async def api_set_company_name(request: CompanyNameRequest, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
     """会社名を設定する"""
     return await set_company_name(request, current_user, db)
+
+# プラン変更エンドポイント
+@app.post("/chatbot/api/upgrade-plan", response_model=UpgradePlanResponse)
+async def upgrade_plan(request: UpgradePlanRequest, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """デモ版から有料プランにアップグレードする"""
+    try:
+        # プラン情報を定義
+        plans = {
+            "starter": {"name": "スタータープラン", "price": 2980, "questions_limit": -1, "uploads_limit": 10},
+            "business": {"name": "ビジネスプラン", "price": 9800, "questions_limit": -1, "uploads_limit": 100},
+            "enterprise": {"name": "エンタープライズプラン", "price": 29800, "questions_limit": -1, "uploads_limit": -1},
+        }
+        
+        if request.plan_id not in plans:
+            raise HTTPException(status_code=400, detail="無効なプランIDです")
+        
+        plan = plans[request.plan_id]
+        user_id = current_user["id"]
+        
+        # 実際の決済処理（今回はモック）
+        # 本番環境では Stripe や PayPal などの決済サービスと連携
+        payment_success = True  # モックとして成功とする
+        
+        if payment_success:
+            # ユーザーのプランを更新
+            from supabase_adapter import update_data, select_data
+            
+            # usage_limitsテーブルを更新
+            update_data("usage_limits", {
+                "is_unlimited": True,
+                "questions_limit": plan["questions_limit"] if plan["questions_limit"] != -1 else 999999,
+                "document_uploads_limit": plan["uploads_limit"] if plan["uploads_limit"] != -1 else 999999,
+            }, "user_id", user_id)
+            
+            # ユーザーテーブルにプラン情報を追加（roleを更新）
+            update_data("users", {
+                "role": "user"  # デモ版からuserプランに変更
+            }, "id", user_id)
+            
+            return UpgradePlanResponse(
+                success=True,
+                message=f"{plan['name']}へのアップグレードが完了しました",
+                plan_id=request.plan_id,
+                user_id=user_id,
+                payment_url=None
+            )
+        else:
+            raise HTTPException(status_code=400, detail="決済処理に失敗しました")
+            
+    except Exception as e:
+        logger.error(f"プランアップグレードエラー: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"アップグレード処理中にエラーが発生しました: {str(e)}")
+
+@app.get("/chatbot/api/subscription-info", response_model=SubscriptionInfo)
+async def get_subscription_info(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """現在のユーザーのサブスクリプション情報を取得する"""
+    try:
+        from supabase_adapter import select_data
+        
+        # ユーザーの利用制限情報を取得
+        limits_result = select_data("usage_limits", filters={"user_id": current_user["id"]})
+        
+        if not limits_result.data:
+            raise HTTPException(status_code=404, detail="サブスクリプション情報が見つかりません")
+        
+        limits = limits_result.data[0]
+        is_unlimited = limits.get("is_unlimited", False)
+        
+        if is_unlimited:
+            # プランを判定（questions_limitやuploads_limitから推測）
+            uploads_limit = limits.get("document_uploads_limit", 2)
+            if uploads_limit >= 999999:
+                plan_id = "enterprise"
+                plan_name = "エンタープライズプラン"
+            elif uploads_limit >= 100:
+                plan_id = "business"
+                plan_name = "ビジネスプラン"
+            else:
+                plan_id = "starter"
+                plan_name = "スタータープラン"
+            
+            return SubscriptionInfo(
+                plan_id=plan_id,
+                plan_name=plan_name,
+                status="active",
+                start_date=current_user.get("created_at", ""),
+                price=2980 if plan_id == "starter" else 9800 if plan_id == "business" else 29800
+            )
+        else:
+            return SubscriptionInfo(
+                plan_id="demo",
+                plan_name="デモ版",
+                status="trial",
+                start_date=current_user.get("created_at", ""),
+                price=0
+            )
+            
+    except Exception as e:
+        logger.error(f"サブスクリプション情報取得エラー: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"サブスクリプション情報の取得中にエラーが発生しました: {str(e)}")
 
 # 静的ファイルのマウント
 # フロントエンドのビルドディレクトリを指定

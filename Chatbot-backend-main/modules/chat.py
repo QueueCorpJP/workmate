@@ -91,6 +91,23 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
             )
             db.commit()
             
+            # ユーザーIDがある場合は質問カウントを更新（アクティブなリソースがなくても利用制限は更新する）
+            if message.user_id and not limits_check.get("is_unlimited", False):
+                print(f"利用制限更新開始（アクティブリソースなし） - ユーザーID: {message.user_id}")
+                print(f"更新前の制限情報: {limits_check}")
+                
+                updated_limits = update_usage_count(message.user_id, "questions_used", db)
+                print(f"更新後の制限情報: {updated_limits}")
+                
+                if updated_limits:
+                    remaining_questions = updated_limits["questions_limit"] - updated_limits["questions_used"]
+                    limit_reached = remaining_questions <= 0
+                    print(f"計算された残り質問数: {remaining_questions}, 制限到達: {limit_reached}")
+                else:
+                    print("利用制限の更新に失敗しました")
+            
+            print(f"返り値（アクティブリソースなし）: remaining_questions={remaining_questions}, limit_reached={limit_reached}")
+            
             return {
                 "response": response_text,
                 "remaining_questions": remaining_questions,
@@ -128,6 +145,23 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
                 (chat_id, message_text, response_text, datetime.now().isoformat(), "設定エラー", "neutral", message.employee_id, message.employee_name)
             )
             db.commit()
+            
+            # ユーザーIDがある場合は質問カウントを更新（知識ベースが空でも利用制限は更新する）
+            if message.user_id and not limits_check.get("is_unlimited", False):
+                print(f"利用制限更新開始（知識ベース空） - ユーザーID: {message.user_id}")
+                print(f"更新前の制限情報: {limits_check}")
+                
+                updated_limits = update_usage_count(message.user_id, "questions_used", db)
+                print(f"更新後の制限情報: {updated_limits}")
+                
+                if updated_limits:
+                    remaining_questions = updated_limits["questions_limit"] - updated_limits["questions_used"]
+                    limit_reached = remaining_questions <= 0
+                    print(f"計算された残り質問数: {remaining_questions}, 制限到達: {limit_reached}")
+                else:
+                    print("利用制限の更新に失敗しました")
+            
+            print(f"返り値（知識ベース空）: remaining_questions={remaining_questions}, limit_reached={limit_reached}")
             
             return {
                 "response": response_text,
@@ -299,9 +333,20 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
         
         # ユーザーIDがある場合は質問カウントを更新
         if message.user_id and not limits_check.get("is_unlimited", False):
+            print(f"利用制限更新開始 - ユーザーID: {message.user_id}")
+            print(f"更新前の制限情報: {limits_check}")
+            
             updated_limits = update_usage_count(message.user_id, "questions_used", db)
-            remaining_questions = updated_limits["questions_limit"] - updated_limits["questions_used"]
-            limit_reached = remaining_questions <= 0
+            print(f"更新後の制限情報: {updated_limits}")
+            
+            if updated_limits:
+                remaining_questions = updated_limits["questions_limit"] - updated_limits["questions_used"]
+                limit_reached = remaining_questions <= 0
+                print(f"計算された残り質問数: {remaining_questions}, 制限到達: {limit_reached}")
+            else:
+                print("利用制限の更新に失敗しました")
+        
+        print(f"返り値: remaining_questions={remaining_questions}, limit_reached={limit_reached}")
         
         return {
             "response": response_text,

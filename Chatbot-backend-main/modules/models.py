@@ -115,6 +115,7 @@ class DemoUsageStats(BaseModel):
     total_documents: int
     total_questions: int
     limit_reached_users: int
+    total_companies: Optional[int] = None
 
 # 管理者関連モデル
 class AdminUserCreate(BaseModel):
@@ -122,3 +123,23 @@ class AdminUserCreate(BaseModel):
     password: str
     name: str
     role: Optional[str] = "employee"  # "user" または "employee"
+
+# プラン変更関連のモデル
+class UpgradePlanRequest(BaseModel):
+    plan_id: str
+    payment_method: Optional[str] = None
+
+class UpgradePlanResponse(BaseModel):
+    success: bool
+    message: str
+    plan_id: str
+    user_id: str
+    payment_url: Optional[str] = None
+
+class SubscriptionInfo(BaseModel):
+    plan_id: str
+    plan_name: str
+    status: str
+    start_date: str
+    next_billing_date: Optional[str] = None
+    price: float

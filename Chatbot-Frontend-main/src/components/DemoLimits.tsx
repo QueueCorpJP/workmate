@@ -23,7 +23,10 @@ import UploadFileIcon from "@mui/icons-material/UploadFile";
 import InfoIcon from "@mui/icons-material/Info";
 import CloseIcon from "@mui/icons-material/Close";
 import BarChartIcon from "@mui/icons-material/BarChart";
+import UpgradeIcon from "@mui/icons-material/Upgrade";
 import { useAuth } from "../contexts/AuthContext";
+import PricingCard from "./PricingCard";
+import api from "../api";
 
 interface DemoLimitsProps {
   showTitle?: boolean;
@@ -42,6 +45,7 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
     remainingQuestions: authRemainingQuestions,
     remainingUploads,
     isUnlimited,
+    refreshUserData,
   } = useAuth();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -49,6 +53,8 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
   const isDesktop = useMediaQuery(theme.breakpoints.up("md"));
   const [animate, setAnimate] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [pricingOpen, setPricingOpen] = useState(false);
+  const [upgradeSuccess, setUpgradeSuccess] = useState(false);
 
   useEffect(() => {
     // マウント時にアニメーションを開始
@@ -130,6 +136,40 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
 
   const handleCloseDrawer = () => {
     setDrawerOpen(false);
+  };
+
+  const handleOpenPricing = () => {
+    setPricingOpen(true);
+  };
+
+  const handleClosePricing = () => {
+    setPricingOpen(false);
+  };
+
+  const handleUpgrade = async (planId: string) => {
+    try {
+      const response = await api.post("/chatbot/api/upgrade-plan", {
+        plan_id: planId,
+      });
+
+      if (response.data.success) {
+        setUpgradeSuccess(true);
+        setPricingOpen(false);
+        
+        // ユーザーデータを更新
+        if (refreshUserData) {
+          await refreshUserData();
+        }
+        
+        // 成功メッセージを表示
+        setTimeout(() => {
+          setUpgradeSuccess(false);
+        }, 5000);
+      }
+    } catch (error: any) {
+      console.error("アップグレードエラー:", error);
+      // エラーハンドリング（必要に応じてアラート表示）
+    }
   };
 
   // 統合されたボタン表示 (PC, タブレット, モバイル共通)
@@ -525,6 +565,30 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
       >
         より多くの機能を利用するには、正式版へのアップグレードをご検討ください。
       </Typography>
+
+      {/* 制限に達した場合はアップグレードボタンを表示 */}
+      {(remainingQuestions === 0 || remainingUploads === 0) && (
+        <Button
+          variant="contained"
+          fullWidth
+          size="large"
+          startIcon={<UpgradeIcon />}
+          onClick={handleOpenPricing}
+          sx={{
+            mt: 2,
+            py: 1.5,
+            borderRadius: 2,
+            fontWeight: 600,
+            textTransform: "none",
+            background: "linear-gradient(135deg, #f59e0b, #eab308)",
+            "&:hover": {
+              background: "linear-gradient(135deg, #d97706, #ca8a04)",
+            },
+          }}
+        >
+          今すぐアップグレード
+        </Button>
+      )}
     </Box>
   );
 
@@ -585,6 +649,36 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
             </Alert>
           </Snackbar>
         )}
+
+        {/* アップグレード成功メッセージ */}
+        {upgradeSuccess && (
+          <Snackbar
+            open={upgradeSuccess}
+            autoHideDuration={5000}
+            onClose={() => setUpgradeSuccess(false)}
+            anchorOrigin={{ vertical: "top", horizontal: "center" }}
+          >
+            <Alert
+              onClose={() => setUpgradeSuccess(false)}
+              severity="success"
+              variant="filled"
+              sx={{
+                width: "100%",
+                boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)",
+                borderRadius: 2,
+              }}
+            >
+              🎉 アップグレードが完了しました！無制限にご利用いただけます。
+            </Alert>
+          </Snackbar>
+        )}
+
+        {/* プライシングカードダイアログ */}
+        <PricingCard
+          open={pricingOpen}
+          onClose={handleClosePricing}
+          onUpgrade={handleUpgrade}
+        />
       </div>
     </Fade>
   );

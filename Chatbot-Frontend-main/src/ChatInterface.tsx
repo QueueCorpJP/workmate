@@ -55,6 +55,7 @@ import MoreVertIcon from "@mui/icons-material/MoreVert";
 import api from "./api";
 import DemoLimits from "./components/DemoLimits";
 import SourceCitation from "./components/SourceCitation";
+import PricingCard from "./components/PricingCard";
 import { useTheme } from "@mui/material/styles";
 import { useMediaQuery } from "@mui/material";
 import { isValidURL } from './components/admin/utils'
@@ -80,7 +81,6 @@ interface KnowledgeBaseData {
 }
 
 function ChatInterface() {
-  const { companyName } = useCompany();
   const {
     user,
     logout,
@@ -90,7 +90,9 @@ function ChatInterface() {
     isUnlimited,
     updateRemainingQuestions,
     updateRemainingUploads,
+    refreshUserData,
   } = useAuth();
+  const { companyName, setCompanyName } = useCompany();
   const [messages, setMessages] = useState<Message[]>(() => {
     // ユーザー固有のキーでローカルストレージからチャット履歴を読み込む
     const userId = user?.id || "";
@@ -107,6 +109,7 @@ function ChatInterface() {
   const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBaseData | null>(
     null
   );
+  const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [showLimitReachedAlert, setShowLimitReachedAlert] =
     useState<boolean>(false);
   // 従来の社員情報関連の状態（後方互換性のため）
@@ -119,14 +122,15 @@ function ChatInterface() {
   const [showEmployeeModal, setShowEmployeeModal] = useState<boolean>(false);
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
   const navigate = useNavigate();
-
-  // ビューポートサイズを検出するためのフックを追加
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const isTablet = useMediaQuery(theme.breakpoints.between("sm", "md"));
-
   const [confirmClearOpen, setConfirmClearOpen] = useState<boolean>(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [selectedTab, setSelectedTab] = useState(0);
+  const [url, setUrl] = useState("");
+  const [pricingOpen, setPricingOpen] = useState(false);
+  const [upgradeSuccess, setUpgradeSuccess] = useState(false);
 
   // メッセージエリアのスタイルを改善 - モバイル対応を強化
   const messageContainerStyles = {
@@ -597,13 +601,26 @@ function ChatInterface() {
 
       // 利用制限の表示を更新（無制限アカウントでない場合）
       if (!isUnlimited && response.data.remaining_questions !== undefined) {
+        console.log("バックエンドからの応答:", {
+          remaining_questions: response.data.remaining_questions,
+          limit_reached: response.data.limit_reached,
+          response_data: response.data
+        });
+        
         // AuthContextの状態を更新
         updateRemainingQuestions(response.data.remaining_questions);
 
         // 制限に達した場合はアラートを表示
         if (response.data.limit_reached) {
+          console.log("質問制限に達しました");
           setShowLimitReachedAlert(true);
         }
+      } else {
+        console.log("利用制限の更新をスキップ:", {
+          isUnlimited,
+          remaining_questions: response.data.remaining_questions,
+          response_data: response.data
+        });
       }
     } catch (error: any) {
       console.error("チャットエラー:", error.response || error);
@@ -667,6 +684,45 @@ function ChatInterface() {
 
   const cancelClearChat = () => {
     setConfirmClearOpen(false);
+  };
+
+  const handleCloseAlert = () => {
+    setShowLimitReachedAlert(false);
+  };
+
+  const handleOpenPricing = () => {
+    setPricingOpen(true);
+  };
+
+  const handleClosePricing = () => {
+    setPricingOpen(false);
+  };
+
+  const handleUpgrade = async (planId: string) => {
+    try {
+      const response = await api.post("/chatbot/api/upgrade-plan", {
+        plan_id: planId,
+      });
+
+      if (response.data.success) {
+        setUpgradeSuccess(true);
+        setPricingOpen(false);
+        setShowLimitReachedAlert(false);
+        
+        // ユーザーデータを更新
+        if (refreshUserData) {
+          await refreshUserData();
+        }
+        
+        // 成功メッセージを表示
+        setTimeout(() => {
+          setUpgradeSuccess(false);
+        }, 5000);
+      }
+    } catch (error: any) {
+      console.error("アップグレードエラー:", error);
+      // エラーハンドリング（必要に応じてアラート表示）
+    }
   };
 
   // AppBarコンポーネントのスタイル修正 - メニューボタン追加
@@ -1362,7 +1418,7 @@ function ChatInterface() {
             <DemoLimits
               remainingQuestions={remainingQuestions}
               showAlert={showLimitReachedAlert}
-              onCloseAlert={() => setShowLimitReachedAlert(false)}
+              onCloseAlert={handleCloseAlert}
             />
           )}
           {renderChatMessages()}
@@ -1434,6 +1490,72 @@ function ChatInterface() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* 制限に達した際のアラート */}
+      {showLimitReachedAlert && (
+        <Snackbar
+          open={showLimitReachedAlert}
+          autoHideDuration={null}
+          onClose={handleCloseAlert}
+          anchorOrigin={{ vertical: "top", horizontal: "center" }}
+        >
+          <Alert
+            onClose={handleCloseAlert}
+            severity="warning"
+            variant="filled"
+            sx={{
+              width: "100%",
+              boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)",
+              borderRadius: 2,
+            }}
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                onClick={handleOpenPricing}
+                sx={{
+                  fontWeight: 600,
+                  textTransform: "none",
+                }}
+              >
+                アップグレード
+              </Button>
+            }
+          >
+            デモ版の質問回数制限に達しました。続けるには有料プランにアップグレードしてください。
+          </Alert>
+        </Snackbar>
+      )}
+
+      {/* アップグレード成功メッセージ */}
+      {upgradeSuccess && (
+        <Snackbar
+          open={upgradeSuccess}
+          autoHideDuration={5000}
+          onClose={() => setUpgradeSuccess(false)}
+          anchorOrigin={{ vertical: "top", horizontal: "center" }}
+        >
+          <Alert
+            onClose={() => setUpgradeSuccess(false)}
+            severity="success"
+            variant="filled"
+            sx={{
+              width: "100%",
+              boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)",
+              borderRadius: 2,
+            }}
+          >
+            🎉 アップグレードが完了しました！無制限にご利用いただけます。
+          </Alert>
+        </Snackbar>
+      )}
+
+      {/* プライシングカードダイアログ */}
+      <PricingCard
+        open={pricingOpen}
+        onClose={handleClosePricing}
+        onUpgrade={handleUpgrade}
+      />
     </Box>
   );
 }

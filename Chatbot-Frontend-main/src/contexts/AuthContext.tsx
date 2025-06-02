@@ -37,6 +37,7 @@ interface AuthContextType {
   isUnlimited: boolean;
   updateRemainingQuestions: (remaining: number | null) => void;
   updateRemainingUploads: (remaining: number | null) => void;
+  refreshUserData: () => Promise<void>;
   loading: boolean;
 }
 
@@ -165,7 +166,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // 質問利用後に残り回数を更新
   const updateRemainingQuestions = (remaining: number | null) => {
+    console.log(`updateRemainingQuestions呼び出し - 残り質問数: ${remaining}`);
+    console.log(`現在の状態 - isUnlimited: ${isUnlimited}, user:`, user);
+    
     if (user && !isUnlimited && remaining !== null) {
+      console.log(`質問回数を${remainingQuestions}から${remaining}に更新`);
       setRemainingQuestions(remaining);
 
       // ユーザー情報も更新
@@ -176,8 +181,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           questions_used: user.usage_limits.questions_limit - remaining,
         },
       };
+      console.log("更新されたユーザー情報:", updatedUser);
       setUser(updatedUser);
       localStorage.setItem("user", JSON.stringify(updatedUser));
+    } else {
+      console.log("質問回数の更新をスキップ:", { 
+        hasUser: !!user, 
+        isUnlimited, 
+        remaining 
+      });
     }
   };
 
@@ -200,6 +212,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // ユーザー情報を更新
+  const refreshUserData = async () => {
+    try {
+      const response = await api.get(`/auth/user`);
+      const userData = response.data;
+      setUser(userData);
+      setIsAuthenticated(true);
+      setIsAdmin(userData.role === "admin");
+      setIsEmployee(userData.role === "employee");
+
+      // 利用制限情報を設定
+      if (userData.usage_limits) {
+        const {
+          document_uploads_used,
+          document_uploads_limit,
+          questions_used,
+          questions_limit,
+          is_unlimited,
+        } = userData.usage_limits;
+        setRemainingQuestions(
+          is_unlimited ? null : questions_limit - questions_used
+        );
+        setRemainingUploads(
+          is_unlimited ? null : document_uploads_limit - document_uploads_used
+        );
+        setIsUnlimited(is_unlimited);
+      }
+
+      // ローカルストレージに保存
+      localStorage.setItem("user", JSON.stringify(userData));
+    } catch (error) {
+      console.error("Failed to refresh user data:", error);
+      throw error;
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -215,6 +263,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         isUnlimited,
         updateRemainingQuestions,
         updateRemainingUploads,
+        refreshUserData,
         loading,
       }}
     >
