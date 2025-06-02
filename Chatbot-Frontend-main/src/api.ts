@@ -13,7 +13,7 @@ const api = axios.create({
   transformRequest: [
     (data, headers) => {
       console.log("Request:", { url: API_URL, data, headers });
-      // CORSヘッダーを追加
+      // CORSヘッダーを追
       headers = headers || {};
       headers['Access-Control-Allow-Origin'] = '*';
       
