@@ -1,7 +1,7 @@
 import React from 'react';
 import { AdminPanel } from './components/admin';
 
-// Register Chart.js components
+// Register Chart.js 
 import {
   Chart as ChartJS,
   CategoryScale,
