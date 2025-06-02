@@ -103,9 +103,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
                 <TableCell>名前</TableCell>
                 <TableCell>タイプ</TableCell>
                 <TableCell>ページ数</TableCell>
-                <TableCell>アップロード者</TableCell>
                 <TableCell>アップロード日時</TableCell>
-                <TableCell>最終使用日時</TableCell>
                 <TableCell>状態</TableCell>
                 <TableCell>操作</TableCell>
               </TableRow>
@@ -139,7 +137,6 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
                     />
                   </TableCell>
                   <TableCell>{resource.page_count || "-"}</TableCell>
-                  <TableCell>{resource.uploader_name || "不明"}</TableCell>
                   <TableCell>
                     {resource.timestamp
                       ? new Date(resource.timestamp).toLocaleString("ja-JP", {
@@ -151,17 +148,6 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
                         second: "2-digit",
                       })
                       : "情報なし"}
-                  </TableCell>
-                  <TableCell>
-                    {resource.last_used
-                      ? new Date(resource.last_used).toLocaleString("ja-JP", {
-                        year: "numeric",
-                        month: "2-digit",
-                        day: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
-                      : "未使用"}
                   </TableCell>
                   <TableCell>
                     <Chip

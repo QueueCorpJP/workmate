@@ -14,7 +14,10 @@ env/
 # dotenv files
 .env
 
+# Database files
 *.db
+*.sqlite
+*.sqlite3
 
 # IDE/editor directories
 .vscode/
@@ -25,3 +28,41 @@ env/
 
 # Log files
 *.log
+logs/
+backend.log
+nohup.out
+
+# Process ID files
+*.pid
+backend.pid
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Archive files (avoid accidentally including large archives)
+*.tar.gz
+*.zip
+*.rar
+*.7z
+
+# Large model files or data
+models/
+data/
+*.model
+*.pkl
+*.pickle
+
+# Node.js (if any frontend mixing)
+node_modules/
+npm-debug.log*
