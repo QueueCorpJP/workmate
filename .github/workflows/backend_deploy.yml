@@ -17,21 +17,63 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
+    - name: Debug connection info
+      run: |
+        echo "🔍 デバッグ情報:"
+        echo "EC2_HOST: ${{ secrets.EC2_HOST }}"
+        echo "EC2_USER: ${{ secrets.EC2_USER }}"
+        echo "EC2_PATH: ${{ secrets.EC2_PATH }}"
+        echo ""
+        echo "🌐 ホスト接続性テスト:"
+        ping -c 3 ${{ secrets.EC2_HOST }} || echo "❌ ホストにpingが届きません"
+
     - name: Setup SSH
       run: |
         mkdir -p ~/.ssh
         echo "${{ secrets.EC2_KEY }}" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
+        
+        echo "🔑 SSH鍵の確認:"
+        ls -la ~/.ssh/id_rsa
+        echo ""
+        
+        echo "🔗 SSH接続テスト:"
+        ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo 'SSH接続成功'" || {
+          echo "❌ SSH接続に失敗しました"
+          echo "🔍 ネットワーク診断:"
+          nmap -p 22 ${{ secrets.EC2_HOST }} || echo "nmapが利用できません"
+          exit 1
+        }
+        
+        echo "✅ SSH接続が成功しました"
         ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
     - name: Deploy backend
       run: |
+        echo "📤 ファイル転送開始..."
         scp -r Chatbot-backend-main ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_PATH }}/
+        
+        echo "🚀 バックエンドデプロイ開始..."
         ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
           cd ${{ secrets.EC2_PATH }}/Chatbot-backend-main
+          echo "📂 現在のディレクトリ: $(pwd)"
+          
+          echo "🐍 Python仮想環境セットアップ..."
           python3 -m venv venv
           source venv/bin/activate
+          
+          echo "📦 依存関係インストール..."
           pip install -r requirements.txt
+          
+          echo "⏹️ 既存プロセス停止..."
           pkill -f main.py || true
+          sleep 2
+          
+          echo "▶️ バックエンド起動..."
           nohup python3 main.py > backend.log 2>&1 &
+          echo $! > backend.pid
+          
+          echo "✅ バックエンドデプロイ完了"
+          echo "📊 プロセス確認:"
+          ps aux | grep main.py | grep -v grep || echo "プロセスが見つかりません"
         EOF

@@ -17,25 +17,61 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
+    - name: Debug connection info
+      run: |
+        echo "🔍 デバッグ情報:"
+        echo "EC2_HOST: ${{ secrets.EC2_HOST }}"
+        echo "EC2_USER: ${{ secrets.EC2_USER }}"
+        echo "EC2_PATH: ${{ secrets.EC2_PATH }}"
+        echo ""
+        echo "🌐 ホスト接続性テスト:"
+        ping -c 3 ${{ secrets.EC2_HOST }} || echo "❌ ホストにpingが届きません"
+
     - name: Setup SSH
       run: |
         mkdir -p ~/.ssh
         echo "${{ secrets.EC2_KEY }}" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
+        
+        echo "🔑 SSH鍵の確認:"
+        ls -la ~/.ssh/id_rsa
+        echo ""
+        
+        echo "🔗 SSH接続テスト:"
+        ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo 'SSH接続成功'" || {
+          echo "❌ SSH接続に失敗しました"
+          exit 1
+        }
+        
+        echo "✅ SSH接続が成功しました"
         ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
     - name: Build frontend
       run: |
+        echo "🏗️ フロントエンドビルド開始..."
         cd Chatbot-Frontend-main
         npm install
         npm run build
         tar -czf frontend.tar.gz dist
+        echo "✅ ビルド完了"
 
     - name: Deploy frontend
       run: |
+        echo "📤 ファイル転送開始..."
         scp Chatbot-Frontend-main/frontend.tar.gz ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_PATH }}/
+        
+        echo "🚀 フロントエンドデプロイ開始..."
         ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
           cd ${{ secrets.EC2_PATH }}
+          echo "📂 現在のディレクトリ: $(pwd)"
+          
+          echo "🗂️ フロントエンドディレクトリ準備..."
           rm -rf frontend && mkdir frontend
+          
+          echo "📦 ファイル展開..."
           tar -xzf frontend.tar.gz -C frontend
+          
+          echo "✅ フロントエンドデプロイ完了"
+          echo "📊 デプロイ確認:"
+          ls -la frontend/ || echo "フロントエンドディレクトリが見つかりません"
         EOF
