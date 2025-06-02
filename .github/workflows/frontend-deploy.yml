@@ -1,0 +1,194 @@
+name: Deploy Frontend to AWS EC2
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'Chatbot-Frontend-main/**'
+      - '.github/workflows/frontend-deploy.yml'
+
+jobs:
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'Chatbot-Frontend-main/package-lock.json'
+
+      - name: Install Dependencies
+        run: |
+          cd Chatbot-Frontend-main
+          npm ci
+
+      - name: Create Environment File
+        run: |
+          cd Chatbot-Frontend-main
+          echo "VITE_API_URL=${{ secrets.VITE_API_URL }}" > .env
+
+      - name: Build Frontend
+        run: |
+          cd Chatbot-Frontend-main
+          npm run build
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H -p ${{ secrets.EC2_PORT }} ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Frontend to AWS EC2
+        run: |
+          # Create deployment archive
+          cd Chatbot-Frontend-main
+          tar -czf frontend-build.tar.gz dist/
+          
+          # Transfer build files to EC2
+          scp -i ~/.ssh/id_rsa -P ${{ secrets.EC2_PORT }} frontend-build.tar.gz ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }}:/tmp/
+          
+          # Deploy on EC2 server
+          ssh -i ~/.ssh/id_rsa -p ${{ secrets.EC2_PORT }} ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
+            set -e
+            
+            echo "🚀 Starting frontend deployment..."
+            
+            # Navigate to application directory
+            cd ${{ secrets.APP_DIRECTORY }}
+            
+            # Pull latest changes from master branch
+            echo "📥 Pulling latest changes..."
+            git fetch origin
+            git reset --hard origin/master
+            
+            # Navigate to frontend directory
+            echo "🔧 Setting up frontend..."
+            cd Chatbot-Frontend-main
+            
+            # Extract new build files
+            echo "📦 Extracting build files..."
+            if [ -f "/tmp/frontend-build.tar.gz" ]; then
+              tar -xzf /tmp/frontend-build.tar.gz
+              rm /tmp/frontend-build.tar.gz
+              echo "✅ Build files extracted"
+            else
+              echo "⚠️ Build archive not found, building on server..."
+              
+              # Create .env file
+              echo "VITE_API_URL=${{ secrets.VITE_API_URL }}" > .env
+              
+              # Install Node.js if not present
+              if ! command -v node &> /dev/null; then
+                echo "📥 Installing Node.js..."
+                curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+                sudo apt-get install -y nodejs
+              fi
+              
+              # Install dependencies and build
+              npm ci
+              npm run build
+            fi
+            
+            # Deploy to web server directory
+            if [ -d "/var/www/html" ]; then
+              echo "🌐 Deploying to web server..."
+              
+              # Create workmate directory if it doesn't exist
+              sudo mkdir -p /var/www/html/workmate
+              
+              # Backup existing files
+              if [ -d "/var/www/html/workmate/assets" ]; then
+                sudo mv /var/www/html/workmate /var/www/html/workmate.backup.$(date +%Y%m%d_%H%M%S)
+                sudo mkdir -p /var/www/html/workmate
+              fi
+              
+              # Copy new files
+              sudo cp -r dist/* /var/www/html/workmate/
+              sudo chown -R www-data:www-data /var/www/html/workmate
+              sudo chmod -R 755 /var/www/html/workmate
+              
+              echo "✅ Frontend deployed to /var/www/html/workmate"
+            else
+              echo "⚠️ Web server directory not found, files available in dist/"
+            fi
+            
+            # Configure Nginx if available
+            if command -v nginx &> /dev/null; then
+              echo "🔄 Configuring Nginx..."
+              
+              # Create Nginx configuration if it doesn't exist
+              if [ ! -f "/etc/nginx/sites-available/workmate" ]; then
+                sudo tee /etc/nginx/sites-available/workmate > /dev/null << 'NGINX_EOF'
+          server {
+              listen 80;
+              server_name ${{ secrets.EC2_HOST }} localhost;
+              root /var/www/html/workmate;
+              index index.html;
+              
+              location / {
+                  try_files $uri $uri/ /index.html;
+              }
+              
+              location /api/ {
+                  proxy_pass http://localhost:${{ secrets.PORT }}/;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+              
+              # Cache static assets
+              location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+                  expires 1y;
+                  add_header Cache-Control "public, immutable";
+              }
+          }
+          NGINX_EOF
+                
+                # Enable site
+                sudo ln -sf /etc/nginx/sites-available/workmate /etc/nginx/sites-enabled/
+                sudo rm -f /etc/nginx/sites-enabled/default
+              fi
+              
+              # Test and reload Nginx
+              sudo nginx -t && sudo systemctl reload nginx
+              echo "✅ Nginx configured and reloaded"
+            else
+              echo "⚠️ Nginx not found, manual web server configuration required"
+            fi
+            
+            echo "🎉 Frontend deployment completed successfully!"
+          EOF
+
+      - name: Verify Frontend Deployment
+        run: |
+          echo "🔍 Verifying frontend deployment..."
+          
+          # Wait for service to stabilize
+          sleep 10
+          
+          # Check if frontend is accessible
+          if curl -f -s "http://${{ secrets.EC2_HOST }}" > /dev/null 2>&1; then
+            echo "✅ Frontend is accessible"
+          else
+            echo "⚠️ Frontend accessibility check failed (may be behind firewall)"
+          fi
+
+      - name: Deployment Notification
+        if: always()
+        run: |
+          if [ ${{ job.status }} == 'success' ]; then
+            echo "✅ Frontend deployment to AWS EC2 completed successfully!"
+            echo "🌐 Frontend should be accessible at: http://${{ secrets.EC2_HOST }}"
+            echo "🔗 API endpoint: http://${{ secrets.EC2_HOST }}:${{ secrets.PORT }}"
+          else
+            echo "❌ Frontend deployment to AWS EC2 failed!"
+            exit 1
+          fi

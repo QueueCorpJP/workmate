@@ -13,7 +13,7 @@ import {
   ArcElement
 } from 'chart.js';
 
-// Chart.jsの登録
+// Chart.js
 ChartJS.register(
   CategoryScale,
   LinearScale,
