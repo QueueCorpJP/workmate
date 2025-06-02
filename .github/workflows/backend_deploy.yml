@@ -1,4 +1,4 @@
-name: Deploy BackendMore actions
+name: Deploy Backend
 
 on:
   push:
@@ -30,7 +30,7 @@ jobs:
         ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
           cd ${{ secrets.EC2_PATH }}/Chatbot-backend-main
           python3 -m venv venv
-          source venv/bin/activateMore actions
+          source venv/bin/activate
           pip install -r requirements.txt
           pkill -f main.py || true
           nohup python3 main.py > backend.log 2>&1 &
