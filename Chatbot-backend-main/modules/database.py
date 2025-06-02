@@ -651,25 +651,66 @@ def get_demo_usage_stats(db: SupabaseConnection, company_id: str = None) -> dict
     companies_result = select_data("companies")
     companies = companies_result.data
     
+    # 一週間前の日時を計算
+    one_week_ago = (datetime.datetime.now() - datetime.timedelta(days=7)).isoformat()
+    
     # 会社IDでフィルタリング
     if company_id:
         filtered_users = [user for user in users if user.get("company_id") == company_id]
         filtered_user_ids = [user.get("id") for user in filtered_users]
         filtered_usage_limits = [limit for limit in usage_limits if limit.get("user_id") in filtered_user_ids]
         filtered_documents = [doc for doc in document_sources if doc.get("company_id") == company_id]
+        
+        # 会社に属するユーザーの一週間以内のチャット履歴を取得
+        try:
+            # 複雑なクエリの場合はSupabase RPCを使用
+            query = f"""
+                SELECT DISTINCT employee_id 
+                FROM chat_history 
+                WHERE timestamp >= '{one_week_ago}' 
+                AND employee_id IN ({','.join([f"'{uid}'" for uid in filtered_user_ids if uid])})
+            """ if filtered_user_ids else "SELECT DISTINCT employee_id FROM chat_history WHERE timestamp >= '{}' AND 1=0".format(one_week_ago)
+            
+            from supabase_adapter import execute_query
+            recent_chat_users = execute_query(query)
+            active_user_ids = [row.get("employee_id") for row in recent_chat_users if row.get("employee_id")]
+        except Exception as e:
+            print(f"一週間以内のチャット履歴取得エラー: {e}")
+            # エラーの場合は従来のロジックにフォールバック
+            active_user_ids = [
+                limit.get("user_id") for limit in filtered_usage_limits
+                if limit.get("questions_used", 0) > 0 and not limit.get("is_unlimited", False)
+            ]
     else:
         filtered_users = users
         filtered_usage_limits = usage_limits
         filtered_documents = document_sources
+        
+        # 全ユーザーの一週間以内のチャット履歴を取得
+        try:
+            query = f"""
+                SELECT DISTINCT employee_id 
+                FROM chat_history 
+                WHERE timestamp >= '{one_week_ago}'
+            """
+            
+            from supabase_adapter import execute_query
+            recent_chat_users = execute_query(query)
+            active_user_ids = [row.get("employee_id") for row in recent_chat_users if row.get("employee_id")]
+        except Exception as e:
+            print(f"一週間以内のチャット履歴取得エラー: {e}")
+            # エラーの場合は従来のロジックにフォールバック
+            active_user_ids = [
+                limit.get("user_id") for limit in filtered_usage_limits
+                if limit.get("questions_used", 0) > 0 and not limit.get("is_unlimited", False)
+            ]
     
     # 総ユーザー数（管理者以外）
     total_users = len([user for user in filtered_users if user.get("role") != "admin"])
     
-    # アクティブユーザー数（質問を1回以上したユーザー）
-    active_users = len([
-        limit for limit in filtered_usage_limits
-        if limit.get("questions_used", 0) > 0 and not limit.get("is_unlimited", False)
-    ])
+    # アクティブユーザー数（一週間以内にチャットを使用したユーザー）
+    # 管理者ユーザーも含める（実際に使用していればアクティブとみなす）
+    active_users = len(set(active_user_ids))  # 重複を除去
     
     # ドキュメントアップロード数
     total_documents = len(filtered_documents)

@@ -41,7 +41,6 @@ with open('{temp_file}', 'w') as f:
 "
         """
         
-        # Execute the command
         subprocess.run(command, shell=True, check=True)
         
         # Read the result from the temporary file

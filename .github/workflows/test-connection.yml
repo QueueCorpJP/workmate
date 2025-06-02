@@ -1,0 +1,58 @@
+name: Test SSH Connection
+
+on:
+  workflow_dispatch:  # 手動実行可能
+
+jobs:
+  test-connection:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Test Secrets
+      run: |
+        echo "🔍 Secrets確認 (値は表示されません):"
+        echo "EC2_HOST が設定されているか: ${{ secrets.EC2_HOST != '' }}"
+        echo "EC2_USER が設定されているか: ${{ secrets.EC2_USER != '' }}"
+        echo "EC2_PATH が設定されているか: ${{ secrets.EC2_PATH != '' }}"
+        echo "EC2_KEY が設定されているか: ${{ secrets.EC2_KEY != '' }}"
+
+    - name: Test Host Resolution and Network
+      run: |
+        echo "🌐 ネットワーク診断:"
+        if [ -n "${{ secrets.EC2_HOST }}" ]; then
+          echo "ホスト: ${{ secrets.EC2_HOST }}"
+          
+          echo "📡 Pingテスト:"
+          ping -c 3 ${{ secrets.EC2_HOST }} || echo "❌ Pingに失敗"
+          
+          echo "🔌 ポート22のテスト:"
+          timeout 10 bash -c "</dev/tcp/${{ secrets.EC2_HOST }}/22" && echo "✅ ポート22は開いています" || echo "❌ ポート22に接続できません"
+          
+          echo "🕵️ netcatによるポートテスト:"
+          nc -zv ${{ secrets.EC2_HOST }} 22 || echo "❌ netcatでもポート22に接続できません"
+          
+        else
+          echo "❌ EC2_HOST が設定されていません"
+        fi
+
+    - name: Test SSH Connection with Verbose Output
+      run: |
+        if [ -n "${{ secrets.EC2_HOST }}" ] && [ -n "${{ secrets.EC2_USER }}" ] && [ -n "${{ secrets.EC2_KEY }}" ]; then
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          echo "🔗 SSH接続テスト (詳細モード):"
+          ssh -vvv -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo 'SSH接続成功!'" 2>&1 || echo "❌ SSH接続失敗"
+        else
+          echo "❌ 必要なSecretsが設定されていません"
+        fi
+
+    - name: Show System Information
+      run: |
+        echo "🖥️ GitHub Actions環境情報:"
+        echo "OS: $(uname -a)"
+        echo "IP情報:"
+        ip addr show || ifconfig
+        echo "DNS設定:"
+        cat /etc/resolv.conf 

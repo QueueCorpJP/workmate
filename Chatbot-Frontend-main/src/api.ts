@@ -1,6 +1,6 @@
 import axios from "axios";
 
-// 環境変数からAPIのURLを取得
+// 環境変数からAPIのURL取得
 // Use local backend server by default
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8083/chatbot/api";
 

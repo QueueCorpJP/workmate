@@ -287,19 +287,44 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
             else:
                 print(f"会社ID {company_id} の社員情報が取得できませんでした")
         else:
-            # 会社IDでフィルタリングして社員情報を取得
-            result = execute_query("""
-            SELECT
-                id,
-                email,
-                name,
-                role,
-                created_at,
-                company_id
-            FROM users
-            WHERE role != 'admin'
-            ORDER BY role, name
-            """)
+            # 現在のユーザーの役割を確認
+            current_user_role = None
+            if user_id:
+                user_result = select_data("users", columns="role", filters={"id": user_id})
+                if user_result and user_result.data and len(user_result.data) > 0:
+                    current_user_role = user_result.data[0].get("role")
+                    print(f"現在のユーザーの役割: {current_user_role}")
+            
+            # admin役割のユーザーは全ユーザーを表示、それ以外はadmin役割を除外
+            if current_user_role == "admin":
+                # admin役割のユーザーは全ユーザーを取得
+                result = execute_query("""
+                SELECT
+                    id,
+                    email,
+                    name,
+                    role,
+                    created_at,
+                    company_id
+                FROM users
+                ORDER BY role, name
+                """)
+                print("admin役割のユーザーとして全ユーザー情報を取得します")
+            else:
+                # admin以外の役割のユーザーはadmin役割を除外
+                result = execute_query("""
+                SELECT
+                    id,
+                    email,
+                    name,
+                    role,
+                    created_at,
+                    company_id
+                FROM users
+                WHERE role != 'admin'
+                ORDER BY role, name
+                """)
+                print("admin以外の役割のユーザーとして、admin役割を除外してユーザー情報を取得します")
             
             if result:
                 print(f"社員情報取得結果: {len(result)}件")
