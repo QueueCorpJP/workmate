@@ -1,0 +1,41 @@
+name: Deploy FrontendMore actions
+
+on:
+  push:
+    paths:
+      - 'Chatbot-Frontend-main/**'
+      - 'Chatbot-Frontend-master/**'
+    branches:
+      - main
+      - master
+
+jobs:
+  deploy-frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+    - name: Build frontend
+      run: |
+        cd Chatbot-Frontend-main
+        npm install
+        npm run build
+        tar -czf frontend.tar.gz dist
+
+    - name: Deploy frontend
+      run: |
+        scp Chatbot-Frontend-main/frontend.tar.gz ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_PATH }}/
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+          cd ${{ secrets.EC2_PATH }}
+          rm -rf frontend && mkdir frontend
+          tar -xzf frontend.tar.gz -C frontend
+        EOF

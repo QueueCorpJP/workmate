@@ -1,0 +1,37 @@
+name: Deploy BackendMore actions
+
+on:
+  push:
+    paths:
+      - 'Chatbot-backend-main/**'
+      - 'Chatbot-backend-master/**'
+    branches:
+      - main
+      - master
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+    - name: Deploy backend
+      run: |
+        scp -r Chatbot-backend-main ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_PATH }}/
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+          cd ${{ secrets.EC2_PATH }}/Chatbot-backend-main
+          python3 -m venv venv
+          source venv/bin/activateMore actions
+          pip install -r requirements.txt
+          pkill -f main.py || true
+          nohup python3 main.py > backend.log 2>&1 &
+        EOF
