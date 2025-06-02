@@ -23,7 +23,7 @@ yarn-error.log
 .DS_Store
 Thumbs.db
 
-# TypeScript files
+# TypeScript file
 *.tsbuildinfo
 
 # Optional: If you have any generated static files or cache
