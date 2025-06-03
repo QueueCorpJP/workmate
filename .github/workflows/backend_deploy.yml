@@ -119,26 +119,138 @@ jobs:
         ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "ls -la ${{ secrets.EC2_PATH }}/Chatbot-backend-main/"
         
         echo "🚀 バックエンドデプロイ開始..."
-        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-          cd ${{ secrets.EC2_PATH }}/Chatbot-backend-main
-          echo "📂 現在のディレクトリ: $(pwd)"
+        ssh -o ConnectTimeout=30 -o ServerAliveInterval=10 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
+          set -e
+          
+          # パス設定
+          DEPLOY_PATH="${{ secrets.EC2_PATH }}/Chatbot-backend-main"
+          
+          echo "📂 現在のディレクトリ: $DEPLOY_PATH"
+          cd "$DEPLOY_PATH"
           
           echo "🐍 Python仮想環境セットアップ..."
           python3 -m venv venv
           source venv/bin/activate
           
+          echo "🔧 pip更新..."
+          pip install --upgrade pip
+          
           echo "📦 依存関係インストール..."
-          pip install -r requirements.txt
+          # psycopg2-binaryを使用してコンパイルエラーを回避
+          sed -i 's/psycopg2==2.9.10/psycopg2-binary==2.9.10/g' requirements.txt
+          
+          # PostgreSQL開発ツールがない場合のフォールバック
+          if ! pip install -r requirements.txt; then
+            echo "⚠️ requirements.txtでのインストールに失敗。個別インストールを試行..."
+            pip install fastapi==0.109.2
+            pip install uvicorn==0.27.1
+            pip install python-multipart==0.0.9
+            pip install google-generativeai==0.3.2
+            pip install pandas==2.2.0
+            pip install openpyxl==3.1.2
+            pip install python-dotenv==1.0.1
+            pip install PyPDF2==3.0.1
+            pip install pymupdf==1.23.7
+            pip install pillow==10.2.0
+            pip install pdf2image==1.16.3
+            pip install requests==2.31.0
+            pip install beautifulsoup4==4.12.2
+            pip install aiofiles==24.1.0
+            pip install asyncpg==0.30.0
+            pip install psycopg2-binary==2.9.10
+          fi
+          
+          echo "🔧 PM2のインストール確認..."
+          if ! command -v pm2 >/dev/null 2>&1; then
+            echo "PM2をインストール中..."
+            npm install -g pm2
+          else
+            echo "PM2は既にインストール済みです"
+          fi
           
           echo "⏹️ 既存プロセス停止..."
-          pkill -f main.py || true
+          # 従来のプロセスを停止
+          pkill -f "main.py" || echo "mainプロセス停止対象なし"
+          pkill -f "uvicorn" || echo "uvicornプロセス停止対象なし"
+          
+          # PM2プロセスを停止
+          pm2 stop chatbot-backend || echo "PM2プロセス停止対象なし"
+          pm2 delete chatbot-backend || echo "PM2プロセス削除対象なし"
+          
           sleep 2
           
-          echo "▶️ バックエンド起動..."
-          nohup python3 main.py > backend.log 2>&1 &
-          echo $! > backend.pid
+          echo "🔗 静的ファイル連携確認..."
+          if [ -L "static" ]; then
+            echo "シンボリックリンク確認: static -> $(readlink static)"
+            if [ -d "$(readlink static)" ]; then
+              echo "✅ 静的ファイルディレクトリが存在します"
+              ls -la "$(readlink static)" | head -5
+            else
+              echo "⚠️ 静的ファイルディレクトリが見つかりません"
+            fi
+          else
+            echo "⚠️ 静的ファイルのシンボリックリンクがありません"
+            echo "🔍 /var/www/html の確認:"
+            ls -la /var/www/html/ || echo "フロントエンドファイルが見つかりません"
+            
+            if [ -d "/var/www/html" ] && [ "$(ls -A /var/www/html)" ]; then
+              echo "🔗 シンボリックリンクを作成..."
+              ln -sf /var/www/html static
+              echo "シンボリックリンクを作成しました: static -> /var/www/html"
+            fi
+          fi
+          
+          echo "🔧 PM2設定ファイル作成..."
+          cat > ecosystem.config.js << 'EOF'
+module.exports = {
+  apps: [{
+    name: 'chatbot-backend',
+    script: 'main.py',
+    interpreter: './venv/bin/python3',
+    cwd: '${DEPLOY_PATH}',
+    instances: 1,
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '1G',
+    env: {
+      NODE_ENV: 'production'
+    },
+    log_file: './logs/app.log',
+    out_file: './logs/out.log',
+    error_file: './logs/error.log',
+    time: true
+  }]
+}
+EOF
+
+          echo "📁 ログディレクトリ作成..."
+          mkdir -p logs
+          
+          echo "▶️ PM2でバックエンド起動..."
+          pm2 start ecosystem.config.js
+          
+          echo "⏰ 起動待機..."
+          sleep 5
           
           echo "✅ バックエンドデプロイ完了"
-          echo "📊 プロセス確認:"
-          ps aux | grep main.py | grep -v grep || echo "プロセスが見つかりません"
-        EOF
+          echo "📊 PM2プロセス確認:"
+          pm2 list
+          
+          echo "🔍 ログ確認:"
+          if [ -f logs/out.log ]; then
+            echo "最新ログ（最後の10行）:"
+            tail -10 logs/out.log
+          else
+            echo "ログファイルが見つかりません"
+          fi
+          
+          echo "🌐 ポート確認:"
+          netstat -tlnp | grep :8083 || echo "ポート8083でリスニングしているプロセスなし"
+          
+          echo "💾 PM2設定保存..."
+          pm2 save
+          pm2 startup || echo "PM2スタートアップ設定済み"
+          
+        ENDSSH
+        
+        echo "✅ デプロイプロセス完了"
