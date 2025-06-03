@@ -72,6 +72,44 @@ jobs:
         
         echo "✅ SSH接続テスト完了"
 
+    - name: Server Environment Check
+      run: |
+        echo "🔍 サーバー環境詳細確認:"
+        ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
+          echo '🌐 サーバー情報:'
+          echo 'ホスト名:' \$(hostname)
+          echo 'パブリックIP:' \$(curl -s ifconfig.me || echo '取得失敗')
+          echo 'プライベートIP:' \$(hostname -I)
+          echo 'OS情報:' \$(cat /etc/os-release | head -2)
+          echo ''
+          echo '🔍 ネットワーク設定:'
+          ip route | grep default || echo 'デフォルトルート取得失敗'
+          echo ''
+          echo '🚀 実行中のWebサーバー:'
+          netstat -tlnp | grep -E ':(80|443|8083|3000|8000)' || echo 'Webサーバーが見つかりません'
+          echo ''
+          echo '📁 デプロイディレクトリ確認:'
+          ls -la ${{ secrets.EC2_PATH }}/ || echo 'デプロイディレクトリが見つかりません'
+          echo ''
+          echo '🔧 Nginx設定確認:'
+          if command -v nginx >/dev/null 2>&1; then
+            echo 'Nginxが見つかりました'
+            nginx -t 2>&1 || echo 'Nginx設定にエラーがあります'
+            if [ -f /etc/nginx/sites-enabled/default ]; then
+              echo 'Nginx default設定の内容:'
+              cat /etc/nginx/sites-enabled/default | head -20
+            fi
+          else
+            echo 'Nginxが見つかりません'
+          fi
+          echo ''
+          echo '🔍 プロセス確認:'
+          ps aux | grep -E '(python|node|nginx|pm2)' | grep -v grep || echo '関連プロセスが見つかりません'
+        " || {
+          echo "❌ サーバー環境確認に失敗しました"
+          exit 1
+        }
+
     - name: Simple SSH Command Test
       run: |
         echo "🧪 簡単なSSHコマンドテスト:"
