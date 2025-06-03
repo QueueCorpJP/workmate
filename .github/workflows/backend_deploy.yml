@@ -39,24 +39,55 @@ jobs:
         echo "🌐 ホスト接続性テスト:"
         ping -c 3 ${{ secrets.EC2_HOST }} || echo "❌ ホストにpingが届きません"
 
-    - name: Setup SSH
+    - name: SSH Connection Test
       run: |
+        echo "🔑 SSH設定開始..."
         mkdir -p ~/.ssh
         echo "${{ secrets.EC2_KEY }}" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         
-        echo "🔑 SSH鍵の確認:"
+        echo "🔍 SSH鍵ファイル確認:"
         ls -la ~/.ssh/id_rsa
         echo ""
         
-        echo "🔗 SSH接続テスト:"
-        ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo 'SSH接続成功'" || {
-          echo "❌ SSH接続に失敗しました"
+        echo "🔍 SSH鍵の内容確認（最初の行のみ）:"
+        head -1 ~/.ssh/id_rsa
+        echo ""
+        
+        echo "🔑 known_hosts設定:"
+        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts || echo "❌ ssh-keyscanに失敗"
+        
+        echo "🔗 SSH接続テスト（詳細モード）:"
+        ssh -v -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo 'SSH接続成功：リモートホストに接続できました'" || {
+          echo "❌ SSH接続に失敗しました（エラーコード: $?）"
+          echo "🔍 接続情報再確認:"
+          echo "ホスト: ${{ secrets.EC2_HOST }}"
+          echo "ユーザー: ${{ secrets.EC2_USER }}"
+          echo "鍵ファイル: ~/.ssh/id_rsa"
+          echo ""
+          echo "🔍 ネットワーク確認:"
+          nc -zv ${{ secrets.EC2_HOST }} 22 || echo "ポート22への接続に失敗"
           exit 1
         }
         
-        echo "✅ SSH接続が成功しました"
-        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+        echo "✅ SSH接続テスト完了"
+
+    - name: Simple SSH Command Test
+      run: |
+        echo "🧪 簡単なSSHコマンドテスト:"
+        ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
+          echo '🎯 リモートコマンド実行成功'
+          echo '📂 現在のディレクトリ:' \$(pwd)
+          echo '👤 現在のユーザー:' \$(whoami)
+          echo '🕐 現在の時刻:' \$(date)
+          echo '💾 ディスク使用量:'
+          df -h | head -5
+        " || {
+          echo "❌ SSHコマンド実行に失敗しました（エラーコード: $?）"
+          exit 1
+        }
+        
+        echo "✅ SSHコマンドテスト完了"
 
     - name: Deploy backend
       run: |
