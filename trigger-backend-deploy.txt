@@ -11,4 +11,7 @@ GitHub Actions Backend Deploy Test
 - パブリックIP確認
 - ネットワーク設定確認  
 - Webサーバー状態確認
-- Nginx設定確認 
+- Nginx設定確認
+
+🚨 EC2_HOST更新: workmatechat.com に変更後のテスト
+💡 確認点: SSH鍵が正しいサーバー用か？ 
