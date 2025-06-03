@@ -184,8 +184,9 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
                         """,
                         (message.user_id,)
                     )
-                    recent_messages = cursor.fetchall()
-                    # 古い順に並べ替え
+                    cursor_result = cursor.fetchall()
+                    # PostgreSQLの結果をリストに変換してから古い順に並べ替え
+                    recent_messages = list(cursor_result)
                     recent_messages.reverse()
         except Exception as e:
             print(f"会話履歴取得エラー: {str(e)}")

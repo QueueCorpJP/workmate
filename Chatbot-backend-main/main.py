@@ -913,6 +913,25 @@ async def admin_update_user_status(user_id: str, request: dict, current_user = D
             detail=f"ステータス変更中にエラーが発生しました: {str(e)}"
         )
 
+# YouTube接続テスト用エンドポイント
+@app.get("/chatbot/api/test-youtube")
+async def test_youtube_connection():
+    """YouTube接続をテストする"""
+    try:
+        from modules.utils import test_youtube_connection
+        success, message = test_youtube_connection()
+        return {
+            "success": success,
+            "message": message,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"テスト実行エラー: {str(e)}",
+            "timestamp": datetime.now().isoformat()
+        }
+
 # アプリケーションの実行
 if __name__ == "__main__":
     import uvicorn

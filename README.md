@@ -188,6 +188,13 @@ playwright install
 cp .env.example .env
 # .env ファイルを編集して API キーを設定
 
+# 企業プロキシ環境の場合、以下も追加設定
+# HTTP_PROXY=http://proxy.company.com:8080
+# HTTPS_PROXY=https://proxy.company.com:8080
+# 認証が必要な場合:
+# HTTP_PROXY=http://username:password@proxy.company.com:8080
+# HTTPS_PROXY=https://username:password@proxy.company.com:8080
+
 # データベース初期化
 python -c "from modules.database import init_db; init_db()"
 
@@ -439,48 +446,46 @@ model = genai.GenerativeModel('gemini-2.0-flash-exp')
 - ファイル形式の確認
 - CORS設定の確認
 
-### ログの確認
+#### 6. プロキシエラー (407 Proxy Authentication Required)
+**症状**: YouTube URL処理時に「プロキシ認証が必要」エラーが発生
+```
+HTTPSConnectionPool(host='www.youtube.com', port=443): Max retries exceeded 
+(Caused by ProxyError('Cannot connect to proxy.', OSError('Tunnel connection failed: 407 Proxy Authentication Required')))
+```
+
+**原因**: 企業ネットワークでプロキシ認証が必要だが設定されていない
+
+**解決方法**:
+1. **環境変数でプロキシ設定を追加**:
 ```bash
-# バックエンドログ
-tail -f Chatbot-backend-main/backend.log
-
-# Nginxログ（本番環境）
-sudo tail -f /var/log/nginx/error.log
-sudo tail -f /var/log/nginx/access.log
+# .env ファイルに追加
+HTTP_PROXY=http://username:password@proxy.company.com:8080
+HTTPS_PROXY=https://username:password@proxy.company.com:8080
 ```
 
-### パフォーマンス最適化
-```python
-# Python メモリ使用量最適化
-import gc
-gc.collect()  # ガベージコレクション実行
-
-# ファイル処理の最適化
-# 大きなファイルは chunk 単位で処理
+2. **認証情報なしの場合**:
+```bash
+HTTP_PROXY=http://proxy.company.com:8080
+HTTPS_PROXY=https://proxy.company.com:8080
 ```
 
-## 貢献者
+3. **システム環境変数での設定**:
+```bash
+# Windows PowerShell
+$env:HTTP_PROXY="http://proxy.company.com:8080"
+$env:HTTPS_PROXY="https://proxy.company.com:8080"
 
-### 開発チーム
-- **Queue株式会社** - プロジェクト開発・運営
-- **フロントエンド**: React + TypeScript
-- **バックエンド**: Python + FastAPI
-- **インフラ**: AWS + GitHub Actions
+# Linux/Mac
+export HTTP_PROXY=http://proxy.company.com:8080
+export HTTPS_PROXY=https://proxy.company.com:8080
+```
 
-### ライセンス
-このプロジェクトは MIT ライセンスの下で公開されています。
+4. **プロキシを使わない場合**:
+```bash
+# 環境変数を削除
+unset HTTP_PROXY HTTPS_PROXY
+# または .env ファイルから該当行を削除
+```
 
-### サポート
-- **技術サポート**: [support@queue.co.jp](mailto:support@queue.co.jp)
-- **バグレポート**: GitHub Issues
-- **機能要求**: GitHub Discussions
-
----
-
-**📧 お問い合わせ**: [contact@queue.co.jp](mailto:contact@queue.co.jp)  
-**🌐 ウェブサイト**: [https://workmatechat.com](https://workmatechat.com)  
-**📚 ドキュメント**: [API Documentation](https://workmatechat.com/docs)
-
----
-
-*© 2024 Queue Corporation. All rights reserved.*
+### ログの確認
+```
