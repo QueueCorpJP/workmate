@@ -40,8 +40,6 @@ jobs:
         echo "🔗 SSH接続テスト:"
         ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo 'SSH接続成功'" || {
           echo "❌ SSH接続に失敗しました"
-          echo "🔍 ネットワーク診断:"
-          nmap -p 22 ${{ secrets.EC2_HOST }} || echo "nmapが利用できません"
           exit 1
         }
         
@@ -56,68 +54,61 @@ jobs:
         echo "宛先: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_PATH }}/"
         
         echo "🔗 最終SSH接続確認:"
-        ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo 'SSH接続OK'" || {
-          echo "❌ SSH接続に失敗しました"
-          exit 1
-        }
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo 'SSH接続OK'"
         
         echo "📂 転送対象ファイル確認:"
-        ls -la Chatbot-backend-main/ | head -10
+        ls -la Chatbot-backend-main/ | head -20
+        
         echo "📊 ファイルサイズ統計:"
         du -sh Chatbot-backend-main/
-        find Chatbot-backend-main/ -type f -size +1M | head -5
+        find Chatbot-backend-main/ -type f -size +5M | head -5 || echo "5MB以上のファイルはありません"
         
         echo "🧹 大きなファイル・不要ファイルの除去:"
-        # 大きなファイル（5MB以上）をチェック
         echo "5MB以上のファイル:"
-        find Chatbot-backend-main/ -type f -size +5M || echo "大きなファイルなし"
-        
-        # ログファイル、一時ファイル、キャッシュを削除
-        find Chatbot-backend-main/ -name "*.log" -delete || true
-        find Chatbot-backend-main/ -name "*.pid" -delete || true
-        find Chatbot-backend-main/ -name "__pycache__" -type d -exec rm -rf {} + || true
-        find Chatbot-backend-main/ -name "*.pyc" -delete || true
-        find Chatbot-backend-main/ -name ".DS_Store" -delete || true
-        find Chatbot-backend-main/ -name "nohup.out" -delete || true
+        find Chatbot-backend-main/ -type f -size +5M || echo "なし"
         
         echo "🧹 クリーンアップ後のサイズ:"
         du -sh Chatbot-backend-main/
         
         echo "🚀 最初にtar.gz方式で転送を試行:"
-        {
-          echo "📦 ファイルをtar圧縮:"
-          tar -czf backend.tar.gz Chatbot-backend-main/
-          ls -lh backend.tar.gz
-          
-          echo "🚀 SSH経由でtar転送 + 展開（タイムアウト: 600秒）:"
-          timeout 600 bash -c "cat backend.tar.gz | ssh -o ConnectTimeout=30 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} 'cd ${{ secrets.EC2_PATH }} && rm -rf Chatbot-backend-main.bak && mv Chatbot-backend-main Chatbot-backend-main.bak 2>/dev/null || true && tar -xzf - && echo \"✅ ファイル展開完了\"'"
-          
-          echo "✅ tar.gz方式での転送完了"
-          
-        } || {
-          echo "❌ tar.gz転送に失敗、rsyncにフォールバック:"
-          
-          echo "🔄 rsync転送を試行（タイムアウト: 600秒）:"
-          timeout 600 rsync -avz -e "ssh -o ConnectTimeout=30 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa" --progress --partial --inplace Chatbot-backend-main/ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_PATH }}/Chatbot-backend-main/ || {
-            echo "❌ rsync転送も失敗、SCP方式を最後に試行:"
-            
-            echo "🔄 SCP分割転送（小さなファイルから）:"
-            # 設定ファイルなど重要な小さなファイルを先に転送
-            scp -o ConnectTimeout=30 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa Chatbot-backend-main/*.py Chatbot-backend-main/requirements.txt ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_PATH }}/Chatbot-backend-main/ || echo "小ファイル転送失敗"
-            
-            # ディレクトリ構造を作成
-            ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "cd ${{ secrets.EC2_PATH }}/Chatbot-backend-main && mkdir -p modules static"
-            
-            # modulesディレクトリを転送
-            timeout 300 scp -o ConnectTimeout=30 -o StrictHostKeyChecking=no -r -i ~/.ssh/id_rsa Chatbot-backend-main/modules/ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_PATH }}/Chatbot-backend-main/ || echo "modules転送失敗"
-            
-            echo "⚠️ 分割転送完了（一部失敗の可能性）"
-          }
+        echo "📦 ファイルをtar圧縮:"
+        tar --exclude='node_modules' --exclude='__pycache__' --exclude='*.pyc' --exclude='.git' -czf backend.tar.gz -C Chatbot-backend-main .
+        ls -lh backend.tar.gz
+        
+        echo "🚀 SSH経由でtar転送 + 展開（タイムアウト: 600秒）:"
+        timeout 600 ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
+          cd ${{ secrets.EC2_PATH }} && 
+          rm -rf Chatbot-backend-main.old &&
+          if [ -d Chatbot-backend-main ]; then mv Chatbot-backend-main Chatbot-backend-main.old; fi &&
+          mkdir -p Chatbot-backend-main
+        " || {
+          echo "❌ リモートディレクトリ準備でタイムアウトまたはエラー"
+          exit 1
         }
         
-        echo "🔍 転送後確認:"
-        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "ls -la ${{ secrets.EC2_PATH }}/Chatbot-backend-main/"
+        timeout 600 scp -o ConnectTimeout=60 -o ServerAliveInterval=30 backend.tar.gz ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_PATH }}/backend.tar.gz || {
+          echo "❌ ファイル転送でタイムアウトまたはエラー"
+          exit 1
+        }
         
+        timeout 600 ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
+          cd ${{ secrets.EC2_PATH }} && 
+          tar -xzf backend.tar.gz -C Chatbot-backend-main && 
+          rm backend.tar.gz &&
+          echo 'ファイル展開完了'
+        " || {
+          echo "❌ ファイル展開でタイムアウトまたはエラー"
+          exit 1
+        }
+        
+        echo "✅ ファイル展開完了"
+        echo "✅ tar.gz方式での転送完了"
+        
+        echo "🔍 転送後確認:"
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "ls -la ${{ secrets.EC2_PATH }}/Chatbot-backend-main/ | head -20"
+
+    - name: Setup and run backend
+      run: |
         echo "🚀 バックエンドデプロイ開始..."
         ssh -o ConnectTimeout=30 -o ServerAliveInterval=10 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
           set -e
@@ -136,10 +127,8 @@ jobs:
           pip install --upgrade pip
           
           echo "📦 依存関係インストール..."
-          # psycopg2-binaryを使用してコンパイルエラーを回避
           sed -i 's/psycopg2==2.9.10/psycopg2-binary==2.9.10/g' requirements.txt
           
-          # PostgreSQL開発ツールがない場合のフォールバック
           if ! pip install -r requirements.txt; then
             echo "⚠️ requirements.txtでのインストールに失敗。個別インストールを試行..."
             pip install fastapi==0.109.2
@@ -169,14 +158,10 @@ jobs:
           fi
           
           echo "⏹️ 既存プロセス停止..."
-          # 従来のプロセスを停止
           pkill -f "main.py" || echo "mainプロセス停止対象なし"
           pkill -f "uvicorn" || echo "uvicornプロセス停止対象なし"
-          
-          # PM2プロセスを停止
           pm2 stop chatbot-backend || echo "PM2プロセス停止対象なし"
           pm2 delete chatbot-backend || echo "PM2プロセス削除対象なし"
-          
           sleep 2
           
           echo "🔗 静的ファイル連携確認..."
@@ -201,7 +186,7 @@ jobs:
           fi
           
           echo "🔧 PM2設定ファイル作成..."
-          cat > ecosystem.config.js << 'EOF'
+          cat > ecosystem.config.js << 'EOFJS'
 module.exports = {
   apps: [{
     name: 'chatbot-backend',
@@ -221,7 +206,7 @@ module.exports = {
     time: true
   }]
 }
-EOF
+EOFJS
 
           echo "📁 ログディレクトリ作成..."
           mkdir -p logs
