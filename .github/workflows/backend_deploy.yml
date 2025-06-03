@@ -76,12 +76,7 @@ jobs:
         ls -lh backend.tar.gz
         
         echo "🚀 SSH経由でtar転送 + 展開（タイムアウト: 600秒）:"
-        timeout 600 ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
-          cd ${{ secrets.EC2_PATH }} && 
-          rm -rf Chatbot-backend-main.old &&
-          if [ -d Chatbot-backend-main ]; then mv Chatbot-backend-main Chatbot-backend-main.old; fi &&
-          mkdir -p Chatbot-backend-main
-        " || {
+        timeout 600 ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "cd ${{ secrets.EC2_PATH }} && rm -rf Chatbot-backend-main.old && if [ -d Chatbot-backend-main ]; then mv Chatbot-backend-main Chatbot-backend-main.old; fi && mkdir -p Chatbot-backend-main" || {
           echo "❌ リモートディレクトリ準備でタイムアウトまたはエラー"
           exit 1
         }
@@ -91,12 +86,7 @@ jobs:
           exit 1
         }
         
-        timeout 600 ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
-          cd ${{ secrets.EC2_PATH }} && 
-          tar -xzf backend.tar.gz -C Chatbot-backend-main && 
-          rm backend.tar.gz &&
-          echo 'ファイル展開完了'
-        " || {
+        timeout 600 ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "cd ${{ secrets.EC2_PATH }} && tar -xzf backend.tar.gz -C Chatbot-backend-main && rm backend.tar.gz && echo 'ファイル展開完了'" || {
           echo "❌ ファイル展開でタイムアウトまたはエラー"
           exit 1
         }
@@ -107,135 +97,68 @@ jobs:
         echo "🔍 転送後確認:"
         ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "ls -la ${{ secrets.EC2_PATH }}/Chatbot-backend-main/ | head -20"
 
-    - name: Setup and run backend
+    - name: Setup backend environment
       run: |
-        echo "🚀 バックエンドデプロイ開始..."
-        DEPLOY_PATH="${{ secrets.EC2_PATH }}/Chatbot-backend-main"
-        ssh -o ConnectTimeout=30 -o ServerAliveInterval=10 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
-          set -e
-          
-          # パス設定
-          DEPLOY_PATH=\"$DEPLOY_PATH\"
-          
-          echo \"📂 現在のディレクトリ: \$DEPLOY_PATH\"
-          cd \"\$DEPLOY_PATH\"
-          
-          echo \"🐍 Python仮想環境セットアップ...\"
-          python3 -m venv venv
-          source venv/bin/activate
-          
-          echo \"🔧 pip更新...\"
-          pip install --upgrade pip
-          
-          echo \"📦 依存関係インストール...\"
-          sed -i 's/psycopg2==2.9.10/psycopg2-binary==2.9.10/g' requirements.txt
-          
-          if ! pip install -r requirements.txt; then
-            echo \"⚠️ requirements.txtでのインストールに失敗。個別インストールを試行...\"
-            pip install fastapi==0.109.2
-            pip install uvicorn==0.27.1
-            pip install python-multipart==0.0.9
-            pip install google-generativeai==0.3.2
-            pip install pandas==2.2.0
-            pip install openpyxl==3.1.2
-            pip install python-dotenv==1.0.1
-            pip install PyPDF2==3.0.1
-            pip install pymupdf==1.23.7
-            pip install pillow==10.2.0
-            pip install pdf2image==1.16.3
-            pip install requests==2.31.0
-            pip install beautifulsoup4==4.12.2
-            pip install aiofiles==24.1.0
-            pip install asyncpg==0.30.0
-            pip install psycopg2-binary==2.9.10
-          fi
-          
-          echo \"🔧 PM2のインストール確認...\"
-          if ! command -v pm2 >/dev/null 2>&1; then
-            echo \"PM2をインストール中...\"
-            npm install -g pm2
-          else
-            echo \"PM2は既にインストール済みです\"
-          fi
-          
-          echo \"⏹️ 既存プロセス停止...\"
-          pkill -f \"main.py\" || echo \"mainプロセス停止対象なし\"
-          pkill -f \"uvicorn\" || echo \"uvicornプロセス停止対象なし\"
-          pm2 stop chatbot-backend || echo \"PM2プロセス停止対象なし\"
-          pm2 delete chatbot-backend || echo \"PM2プロセス削除対象なし\"
-          sleep 2
-          
-          echo \"🔗 静的ファイル連携確認...\"
-          if [ -L \"static\" ]; then
-            echo \"シンボリックリンク確認: static -> \$(readlink static)\"
-            if [ -d \"\$(readlink static)\" ]; then
-              echo \"✅ 静的ファイルディレクトリが存在します\"
-              ls -la \"\$(readlink static)\" | head -5
-            else
-              echo \"⚠️ 静的ファイルディレクトリが見つかりません\"
-            fi
-          else
-            echo \"⚠️ 静的ファイルのシンボリックリンクがありません\"
-            echo \"🔍 /var/www/html の確認:\"
-            ls -la /var/www/html/ || echo \"フロントエンドファイルが見つかりません\"
-            
-            if [ -d \"/var/www/html\" ] && [ \"\$(ls -A /var/www/html)\" ]; then
-              echo \"🔗 シンボリックリンクを作成...\"
-              ln -sf /var/www/html static
-              echo \"シンボリックリンクを作成しました: static -> /var/www/html\"
-            fi
-          fi
-          
-          echo \"🔧 PM2設定ファイル作成...\"
-          cat > ecosystem.config.js << 'EOFPM2'
-module.exports = {
-  apps: [{
-    name: 'chatbot-backend',
-    script: 'main.py',
-    interpreter: './venv/bin/python3',
-    cwd: process.cwd(),
-    instances: 1,
-    autorestart: true,
-    watch: false,
-    max_memory_restart: '1G',
-    env: {
-      NODE_ENV: 'production'
-    },
-    log_file: './logs/app.log',
-    out_file: './logs/out.log',
-    error_file: './logs/error.log',
-    time: true
-  }]
-}
-EOFPM2
+        echo "🚀 バックエンド環境セットアップ開始..."
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "cd ${{ secrets.EC2_PATH }}/Chatbot-backend-main && python3 -m venv venv && source venv/bin/activate && pip install --upgrade pip"
+        
+    - name: Install backend dependencies  
+      run: |
+        echo "📦 バックエンド依存関係インストール..."
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "cd ${{ secrets.EC2_PATH }}/Chatbot-backend-main && source venv/bin/activate && sed -i 's/psycopg2==2.9.10/psycopg2-binary==2.9.10/g' requirements.txt && pip install -r requirements.txt"
 
-          echo \"📁 ログディレクトリ作成...\"
-          mkdir -p logs
-          
-          echo \"▶️ PM2でバックエンド起動...\"
-          pm2 start ecosystem.config.js
-          
-          echo \"⏰ 起動待機...\"
-          sleep 5
-          
-          echo \"✅ バックエンドデプロイ完了\"
-          echo \"📊 PM2プロセス確認:\"
-          pm2 list
-          
-          echo \"🔍 ログ確認:\"
-          if [ -f logs/out.log ]; then
-            echo \"最新ログ（最後の10行）:\"
-            tail -10 logs/out.log
-          else
-            echo \"ログファイルが見つかりません\"
-          fi
-          
-          echo \"🌐 ポート確認:\"
-          netstat -tlnp | grep :8083 || echo \"ポート8083でリスニングしているプロセスなし\"
-          
-          echo \"💾 PM2設定保存...\"
-          pm2 save
-          pm2 startup || echo \"PM2スタートアップ設定済み\"
-        "
+    - name: Setup PM2 and static files
+      run: |
+        echo "🔧 PM2とファイル設定..."
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "command -v pm2 >/dev/null 2>&1 || npm install -g pm2"
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "cd ${{ secrets.EC2_PATH }}/Chatbot-backend-main && if [ -d /var/www/html ] && [ \"\$(ls -A /var/www/html)\" ]; then ln -sf /var/www/html static; fi"
+
+    - name: Stop existing processes
+      run: |
+        echo "⏹️ 既存プロセス停止..."
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "pkill -f main.py || true; pkill -f uvicorn || true; pm2 stop chatbot-backend || true; pm2 delete chatbot-backend || true; sleep 2"
+
+    - name: Create PM2 configuration
+      run: |
+        echo "🔧 PM2設定ファイル作成..."
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "cd ${{ secrets.EC2_PATH }}/Chatbot-backend-main && mkdir -p logs"
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "cd ${{ secrets.EC2_PATH }}/Chatbot-backend-main && cat > ecosystem.config.js << 'EOF'
+        module.exports = {
+          apps: [{
+            name: 'chatbot-backend',
+            script: 'main.py',
+            interpreter: './venv/bin/python3',
+            cwd: process.cwd(),
+            instances: 1,
+            autorestart: true,
+            watch: false,
+            max_memory_restart: '1G',
+            env: {
+              NODE_ENV: 'production'
+            },
+            log_file: './logs/app.log',
+            out_file: './logs/out.log',
+            error_file: './logs/error.log',
+            time: true
+          }]
+        }
+        EOF"
+
+    - name: Start backend with PM2
+      run: |
+        echo "▶️ PM2でバックエンド起動..."
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "cd ${{ secrets.EC2_PATH }}/Chatbot-backend-main && pm2 start ecosystem.config.js && sleep 5"
+        
+        echo "📊 プロセス確認:"
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "pm2 list"
+        
+        echo "🔍 ログ確認:"
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "cd ${{ secrets.EC2_PATH }}/Chatbot-backend-main && if [ -f logs/out.log ]; then tail -10 logs/out.log; else echo 'ログファイルが見つかりません'; fi"
+        
+        echo "🌐 ポート確認:"
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "netstat -tlnp | grep :8083 || echo 'ポート8083でリスニングしているプロセスなし'"
+        
+        echo "💾 PM2設定保存..."
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "pm2 save && pm2 startup || true"
         
         echo "✅ デプロイプロセス完了"
