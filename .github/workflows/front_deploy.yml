@@ -2,12 +2,10 @@ name: Deploy Frontend
 
 on:
   push:
-    paths:
-      - 'Chatbot-Frontend-main/**'
-      - 'Chatbot-Frontend-master/**'
     branches:
       - main
       - master
+  workflow_dispatch:
 
 jobs:
   deploy-frontend:
@@ -16,6 +14,20 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
+
+    - name: Test workflow
+      run: |
+        echo "🚀 フロントエンドGitHub Actionsワークフローが動作しています"
+        echo "📂 ワークスペース内容:"
+        ls -la
+        echo ""
+        echo "📁 Chatbot-Frontend-mainディレクトリ確認:"
+        if [ -d "Chatbot-Frontend-main" ]; then
+          echo "✅ Chatbot-Frontend-mainディレクトリが存在します"
+          ls -la Chatbot-Frontend-main/ | head -10
+        else
+          echo "❌ Chatbot-Frontend-mainディレクトリが見つかりません"
+        fi
 
     - name: Debug connection info
       run: |
