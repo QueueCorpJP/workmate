@@ -262,7 +262,7 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                     detail="会社IDが設定されていません。管理者にお問い合わせください。"
                 )
             
-            # create_user関数を直接呼び出して会社IDを設定し、作成者のステータスを継承
+            # create_user関数を直接呼び出して会社IDを設定し作成者のステータスを継承
             user_id = create_user(
                 email=user_data.email,
                 password=user_data.password,
