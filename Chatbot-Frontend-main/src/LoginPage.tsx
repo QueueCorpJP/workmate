@@ -15,6 +15,7 @@ import {
   Link,
   AppBar,
   Toolbar,
+  FormHelperText,
 } from "@mui/material";
 import { useAuth } from "./contexts/AuthContext";
 import { useCompany } from "./contexts/CompanyContext";
@@ -22,12 +23,17 @@ import ChatIcon from "@mui/icons-material/Chat";
 import HomeIcon from "@mui/icons-material/Home";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import { validateEmail, validatePassword } from "./utils/validation";
 
 function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string>("");
+  const [passwordError, setPasswordError] = useState<string>("");
+  const [showValidation, setShowValidation] = useState(false);
+  
   const { login } = useAuth();
   const { companyName, setCompanyName } = useCompany();
   const navigate = useNavigate();
@@ -35,10 +41,47 @@ function LoginPage() {
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const isTablet = useMediaQuery(theme.breakpoints.between("sm", "md"));
 
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setEmail(value);
+    
+    if (showValidation) {
+      const validation = validateEmail(value);
+      setEmailError(validation.isValid ? "" : validation.message);
+    }
+  };
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setPassword(value);
+    
+    if (showValidation) {
+      const validation = validatePassword(value);
+      setPasswordError(validation.isValid ? "" : validation.message);
+    }
+  };
+
+  const validateForm = () => {
+    const emailValidation = validateEmail(email);
+    const passwordValidation = validatePassword(password);
+    
+    setEmailError(emailValidation.isValid ? "" : emailValidation.message);
+    setPasswordError(passwordValidation.isValid ? "" : passwordValidation.message);
+    
+    return emailValidation.isValid && passwordValidation.isValid;
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setShowValidation(true);
     setIsLoading(true);
     setError(null);
+
+    // フォームバリデーション
+    if (!validateForm()) {
+      setIsLoading(false);
+      return;
+    }
 
     try {
       await login(email, password);
@@ -337,7 +380,7 @@ function LoginPage() {
                 autoComplete="email"
                 autoFocus={!isMobile}
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={handleEmailChange}
                 InputProps={{
                   sx: {
                     borderRadius: 2,
@@ -353,6 +396,9 @@ function LoginPage() {
                   },
                 }}
               />
+              {emailError && (
+                <FormHelperText error>{emailError}</FormHelperText>
+              )}
               <TextField
                 required
                 fullWidth
@@ -362,7 +408,7 @@ function LoginPage() {
                 id="password"
                 autoComplete="current-password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={handlePasswordChange}
                 InputProps={{
                   sx: {
                     borderRadius: 2,
@@ -378,6 +424,9 @@ function LoginPage() {
                   },
                 }}
               />
+              {passwordError && (
+                <FormHelperText error>{passwordError}</FormHelperText>
+              )}
               <Button
                 type="submit"
                 fullWidth

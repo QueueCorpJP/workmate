@@ -20,8 +20,10 @@ SCHEMA = {
         name TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'user',
         company_id TEXT,
+        created_by TEXT,
         created_at TEXT NOT NULL,
-        FOREIGN KEY (company_id) REFERENCES companies (id)
+        FOREIGN KEY (company_id) REFERENCES companies (id),
+        FOREIGN KEY (created_by) REFERENCES users (id)
     )
     """,
 

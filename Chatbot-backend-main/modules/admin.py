@@ -165,24 +165,31 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
     try:
         from supabase_adapter import select_data, execute_query
         
-        # 特別な管理者かどうかを確認
+        # 特別な管理者またはadminロールかどうかを確認
         is_special_admin = False
+        is_admin = False
         if user_id:
-            user_result = select_data("users", columns="email", filters={"id": user_id})
+            user_result = select_data("users", columns="email, role", filters={"id": user_id})
             if user_result and user_result.data and len(user_result.data) > 0:
-                user_email = user_result.data[0].get("email")
+                user_data = user_result.data[0]
+                user_email = user_data.get("email")
+                user_role = user_data.get("role")
+                
                 if user_email == "queue@queuefood.co.jp":
                     is_special_admin = True
                     print("特別な管理者として全社員情報を取得します")
+                elif user_role == "admin":
+                    is_admin = True
+                    print("adminロールとして全社員情報を取得します")
         
         # 会社IDが直接指定されていない場合は、ユーザーの会社IDを取得
-        if not company_id and user_id and not is_special_admin:
+        if not company_id and user_id and not is_special_admin and not is_admin:
             company_result = select_data("users", columns="company_id", filters={"id": user_id})
             if company_result and company_result.data and len(company_result.data) > 0:
                 company_id = company_result.data[0].get("company_id")
                 print(f"ユーザーID {user_id} の会社ID {company_id} を取得しました")
         
-        if not company_id and not is_special_admin:
+        if not company_id and not is_special_admin and not is_admin:
             raise HTTPException(status_code=400, detail="会社IDが見つかりません")
         
         # 社員の使用状況を取得する共通関数
@@ -208,11 +215,16 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
                 # 利用制限情報を取得
                 usage_limits_result = select_data("usage_limits", columns="*", filters={"user_id": employee_id})
                 usage_limits = None
+                is_demo = True  # デフォルトはデモ版
                 
                 if usage_limits_result and usage_limits_result.data and len(usage_limits_result.data) > 0:
                     limits_data = usage_limits_result.data[0]
+                    is_unlimited = bool(limits_data.get("is_unlimited", False))
+                    is_demo = not is_unlimited  # is_unlimitedがfalseならデモ版
+                    
                     usage_limits = {
-                        "is_unlimited": bool(limits_data.get("is_unlimited", False)),
+                        "is_unlimited": is_unlimited,
+                        "is_demo": is_demo,
                         "questions_used": int(limits_data.get("questions_used", 0)),
                         "questions_limit": int(limits_data.get("questions_limit", 10)),
                         "document_uploads_used": int(limits_data.get("document_uploads_used", 0)),
@@ -222,6 +234,7 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
                     # デフォルトの利用制限情報
                     usage_limits = {
                         "is_unlimited": False,
+                        "is_demo": True,  # デフォルトはデモ版
                         "questions_used": 0,
                         "questions_limit": 10,
                         "document_uploads_used": 0,
@@ -231,7 +244,8 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
                 return {
                     "message_count": message_count,
                     "last_activity": last_activity,
-                    "usage_limits": usage_limits
+                    "usage_limits": usage_limits,
+                    "is_demo": is_demo  # デモ版かどうかを直接返す
                 }
             except Exception as e:
                 print(f"社員ID {employee_id} の使用状況取得エラー: {e}")
@@ -240,18 +254,23 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
                     "last_activity": None,
                     "usage_limits": {
                         "is_unlimited": False,
+                        "is_demo": True,
                         "questions_used": 0,
                         "questions_limit": 10,
                         "document_uploads_used": 0,
                         "document_uploads_limit": 2
-                    }
+                    },
+                    "is_demo": True  # エラー時はデモ版扱い
                 }
         
         employees = []
         
-        # 特別な管理者の場合は全社員を取得
-        if is_special_admin:
-            print("特別な管理者として全社員情報を取得します")
+        # 特別な管理者またはadminロールの場合は全社員を取得
+        if is_special_admin or is_admin:
+            if is_special_admin:
+                print("特別な管理者として全社員情報を取得します")
+            else:
+                print("adminロールとして全社員情報を取得します")
             # Supabaseから全ユーザーを取得
             result = select_data("users", columns="id, name, email, role, created_at, company_id")
             
@@ -287,57 +306,8 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
             else:
                 print(f"会社ID {company_id} の社員情報が取得できませんでした")
         else:
-            # 現在のユーザーの役割を確認
-            current_user_role = None
-            if user_id:
-                user_result = select_data("users", columns="role", filters={"id": user_id})
-                if user_result and user_result.data and len(user_result.data) > 0:
-                    current_user_role = user_result.data[0].get("role")
-                    print(f"現在のユーザーの役割: {current_user_role}")
-            
-            # admin役割のユーザーは全ユーザーを表示、それ以外はadmin役割を除外
-            if current_user_role == "admin":
-                # admin役割のユーザーは全ユーザーを取得
-                result = execute_query("""
-                SELECT
-                    id,
-                    email,
-                    name,
-                    role,
-                    created_at,
-                    company_id
-                FROM users
-                ORDER BY role, name
-                """)
-                print("admin役割のユーザーとして全ユーザー情報を取得します")
-            else:
-                # admin以外の役割のユーザーはadmin役割を除外
-                result = execute_query("""
-                SELECT
-                    id,
-                    email,
-                    name,
-                    role,
-                    created_at,
-                    company_id
-                FROM users
-                WHERE role != 'admin'
-                ORDER BY role, name
-                """)
-                print("admin以外の役割のユーザーとして、admin役割を除外してユーザー情報を取得します")
-            
-            if result:
-                print(f"社員情報取得結果: {len(result)}件")
-                for employee in result:
-                    # 使用状況を取得
-                    stats = get_employee_stats(employee.get("id"))
-                    employee_with_stats = {
-                        **employee,
-                        **stats
-                    }
-                    employees.append(employee_with_stats)
-            else:
-                print("社員情報が取得できませんでした")
+            # 他の処理（基本的にはここに来ないはず）
+            print("適切な条件が見つかりません")
         
         return employees
     except Exception as e:
@@ -558,41 +528,52 @@ async def get_analysis(db: Connection = Depends(get_db)):
 async def get_employee_details(employee_id: str, db = None, current_user_id: str = None):
     """特定の社員の詳細なチャット履歴を取得する"""
     try:
-        cursor = db.cursor()
+        from supabase_adapter import select_data
         
-        # 特別な管理者かどうかを確認
+        # 特別な管理者またはadminロールかどうかを確認
         is_special_admin = False
+        is_admin = False
         if current_user_id:
-            cursor.execute("SELECT email FROM users WHERE id = %s", (current_user_id,))
-            user_email_row = cursor.fetchone()
-            if user_email_row and user_email_row.get("email") == "queue@queuefood.co.jp":
-                is_special_admin = True
-                print("特別な管理者として社員詳細情報を取得します")
+            user_result = select_data("users", columns="email, role", filters={"id": current_user_id})
+            if user_result and user_result.data and len(user_result.data) > 0:
+                user_data = user_result.data[0]
+                user_email = user_data.get("email")
+                user_role = user_data.get("role")
+                
+                if user_email == "queue@queuefood.co.jp":
+                    is_special_admin = True
+                    print("特別な管理者として社員詳細情報を取得します")
+                elif user_role == "admin":
+                    is_admin = True
+                    print("adminロールとして社員詳細情報を取得します")
         
-        # 権限チェック（特別な管理者でない場合は自分のデータのみ取得可能）
-        if not is_special_admin and employee_id != current_user_id:
+        # 権限チェック（特別な管理者またはadminロールでない場合は自分のデータのみ取得可能）
+        if not is_special_admin and not is_admin and employee_id != current_user_id:
             raise HTTPException(status_code=403, detail="他の社員の詳細情報を取得する権限がありません")
         
         # 社員のチャット履歴を取得
-        cursor.execute("SELECT * FROM chat_history WHERE employee_id = %s ORDER BY timestamp DESC", (employee_id,))
-        rows = cursor.fetchall()
+        chat_history_result = select_data("chat_history", columns="*", filters={"employee_id": employee_id})
         
         # 結果を変換
         chat_history = []
-        for row in rows:
-            item = {
-                "id": row.get("id", ""),
-                "user_message": row.get("user_message", ""),
-                "bot_response": row.get("bot_response", ""),
-                "timestamp": row.get("timestamp", ""),
-                "category": row.get("category", ""),
-                "sentiment": row.get("sentiment", ""),
-                "employee_id": row.get("employee_id", ""),
-                "employee_name": row.get("employee_name", ""),
-                "source_document": row.get("source_document", ""),
-                "source_page": row.get("source_page", "")
-            }
-            chat_history.append(item)
+        if chat_history_result and chat_history_result.data:
+            for row in chat_history_result.data:
+                item = {
+                    "id": row.get("id", ""),
+                    "user_message": row.get("user_message", ""),
+                    "bot_response": row.get("bot_response", ""),
+                    "timestamp": row.get("timestamp", ""),
+                    "category": row.get("category", ""),
+                    "sentiment": row.get("sentiment", ""),
+                    "employee_id": row.get("employee_id", ""),
+                    "employee_name": row.get("employee_name", ""),
+                    "source_document": row.get("source_document", ""),
+                    "source_page": row.get("source_page", "")
+                }
+                chat_history.append(item)
+            
+            # タイムスタンプでソート（降順）
+            chat_history.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         
         return chat_history
     except Exception as e:

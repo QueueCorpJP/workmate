@@ -38,6 +38,7 @@ from modules.company import get_company_name, set_company_name
 from modules.auth import get_current_user, get_current_admin, register_new_user, get_admin_or_user, get_company_admin
 from modules.resource import get_uploaded_resources_by_company_id, toggle_resource_active_by_id, remove_resource_by_id
 import json
+from modules.validation import validate_login_input, validate_user_input
 
 # ロギングの設定
 logger = setup_logging()
@@ -138,6 +139,14 @@ init_db()
 @app.post("/chatbot/api/auth/login", response_model=UserWithLimits)
 async def login(credentials: UserLogin, db: SupabaseConnection = Depends(get_db)):
     """ユーザーログイン"""
+    # 入力値バリデーション
+    is_valid, errors = validate_login_input(credentials.email, credentials.password)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="; ".join(errors)
+        )
+    
     # 直接データベースから認証
     from modules.database import authenticate_user, get_usage_limits
     user = authenticate_user(credentials.email, credentials.password, db)
@@ -171,6 +180,14 @@ async def login(credentials: UserLogin, db: SupabaseConnection = Depends(get_db)
 async def register(user_data: UserRegister, db: SupabaseConnection = Depends(get_db)):
     """新規ユーザー登録"""
     try:
+        # 入力値バリデーション
+        is_valid, errors = validate_user_input(user_data.email, user_data.password, user_data.name)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="; ".join(errors)
+            )
+        
         # 管理者権限チェックは不要（デモ版では誰でも登録可能）
         return register_new_user(user_data.email, user_data.password, user_data.name, db)
     except HTTPException:
@@ -185,6 +202,19 @@ async def register(user_data: UserRegister, db: SupabaseConnection = Depends(get
 async def admin_register_user(user_data: AdminUserCreate, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """管理者による新規ユーザー登録"""
     try:
+        # 入力値バリデーション
+        from modules.validation import validate_user_input
+        
+        # AdminUserCreateモデルから名前を取得（存在しない場合はメールアドレスから生成）
+        name = getattr(user_data, 'name', user_data.email.split('@')[0])
+        
+        is_valid, errors = validate_user_input(user_data.email, user_data.password, name)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="; ".join(errors)
+            )
+        
         # まず、メールアドレスが既に存在するかチェック
         cursor = db.cursor()
         cursor.execute("SELECT id FROM users WHERE email = %s", (user_data.email,))
@@ -201,20 +231,21 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
             # user_dataからロールを取得（デフォルトは"employee"）
             role = user_data.role if hasattr(user_data, "role") and user_data.role in ["user", "employee"] else "employee"
             
-            # create_user関数を直接呼び出す
+            # create_user関数を直接呼び出す（特別管理者が作成するアカウントは常に本番版）
             user_id = create_user(
                 email=user_data.email,
                 password=user_data.password,
-                name=user_data.name,
+                name=name,
                 role=role,
                 company_id=None,
-                db=db
+                db=db,
+                creator_user_id=current_user["id"]  # 作成者IDを渡す
             )
             
             return {
                 "id": user_id,
                 "email": user_data.email,
-                "name": user_data.name,
+                "name": name,
                 "role": role,
                 "company_name": "",
                 "created_at": datetime.datetime.now().isoformat()
@@ -231,20 +262,21 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                     detail="会社IDが設定されていません。管理者にお問い合わせください。"
                 )
             
-            # create_user関数を直接呼び出して会社IDを設定
+            # create_user関数を直接呼び出して会社IDを設定し、作成者のステータスを継承
             user_id = create_user(
                 email=user_data.email,
                 password=user_data.password,
-                name=user_data.name,
+                name=name,
                 role="employee",
                 company_id=company_id,
-                db=db
+                db=db,
+                creator_user_id=current_user["id"]  # 作成者IDを渡す
             )
             
             return {
                 "id": user_id,
                 "email": user_data.email,
-                "name": user_data.name,
+                "name": name,
                 "role": "employee",
                 "company_name": "",
                 "created_at": datetime.datetime.now().isoformat()
@@ -580,13 +612,13 @@ async def admin_get_employee_details(employee_id: str, current_user = Depends(ge
 @app.get("/chatbot/api/admin/company-employees", response_model=List[dict])
 async def admin_get_company_employees(current_user = Depends(get_company_admin), db: SupabaseConnection = Depends(get_db)):
     """会社の全社員情報を取得する"""
-    # 特別な管理者（queue@queuefood.co.jp）の場合は全ユーザーのデータを取得できるようにする
+    # adminロールのユーザーは全ユーザーのデータを取得できるようにする
+    is_admin = current_user["role"] == "admin"
     is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
     
     # 直接get_company_employees関数に処理を委譲
-    # 特別な管理者の場合はuser_idを渡すだけで関数内で判定
-    if is_special_admin:
-        # 特別な管理者の場合は全ユーザーのデータを取得
+    if is_admin or is_special_admin:
+        # adminロールまたは特別な管理者の場合は全ユーザーのデータを取得
         result = await get_company_employees(current_user["id"], db, None)
         return result
     else:
@@ -606,11 +638,12 @@ async def admin_get_company_employees(current_user = Depends(get_company_admin),
 @app.get("/chatbot/api/admin/employee-usage", response_model=EmployeeUsageResult)
 async def admin_get_employee_usage(current_user = Depends(get_company_admin), db: SupabaseConnection = Depends(get_db)):
     """社員ごとの利用状況を取得する"""
-    # 特別な管理者（queue@queuefood.co.jp）の場合は全ユーザーのデータを取得できるようにする
+    # adminロールのユーザーは全ユーザーのデータを取得できるようにする
+    is_admin = current_user["role"] == "admin"
     is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
     
-    if is_special_admin:
-        # 特別な管理者の場合は全ユーザーのデータを取得
+    if is_admin or is_special_admin:
+        # adminロールまたは特別な管理者の場合は全ユーザーのデータを取得
         return await get_employee_usage(None, db, is_special_admin=True)
     else:
         # 通常のユーザーの場合は自分の会社の社員のデータのみを取得
@@ -621,9 +654,11 @@ async def admin_get_employee_usage(current_user = Depends(get_company_admin), db
 @app.get("/chatbot/api/admin/resources", response_model=ResourcesResult)
 async def admin_get_resources(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """アップロードされたリソース（URL、PDF、Excel、TXT）の情報を取得する"""
-    # return await get_uploaded_resources()
+    # adminロールのユーザーは全リソースのデータを取得できるようにする
+    is_admin = current_user["role"] == "admin"
     is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
-    if is_special_admin:
+    
+    if is_admin or is_special_admin:
         return await get_uploaded_resources_by_company_id(None, db)
     else:
         company_id = current_user["company_id"]
@@ -688,6 +723,13 @@ async def upgrade_plan(request: UpgradePlanRequest, current_user = Depends(get_c
         if payment_success:
             # ユーザーのプランを更新
             from supabase_adapter import update_data, select_data
+            from modules.database import update_created_accounts_status
+            
+            # 現在の利用制限を取得（変更前の状態を確認）
+            current_limits_result = select_data("usage_limits", filters={"user_id": user_id})
+            was_unlimited = False
+            if current_limits_result and current_limits_result.data:
+                was_unlimited = bool(current_limits_result.data[0].get("is_unlimited", False))
             
             # usage_limitsテーブルを更新
             update_data("usage_limits", {
@@ -700,6 +742,11 @@ async def upgrade_plan(request: UpgradePlanRequest, current_user = Depends(get_c
             update_data("users", {
                 "role": "user"  # デモ版からuserプランに変更
             }, "id", user_id)
+            
+            # デモ版から本番版に切り替わった場合、作成したアカウントも同期
+            if not was_unlimited:
+                updated_count = update_created_accounts_status(user_id, True, db)
+                print(f"プラン変更により {updated_count} 個の子アカウントを本番版に更新しました")
             
             return UpgradePlanResponse(
                 success=True,
@@ -794,6 +841,77 @@ async def catch_all(full_path: str):
     if os.path.exists(index_path):
         return FileResponse(index_path)
     raise HTTPException(status_code=404, detail="Not Found")
+
+@app.post("/chatbot/api/admin/update-user-status/{user_id}", response_model=dict)
+async def admin_update_user_status(user_id: str, request: dict, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
+    """管理者によるユーザーステータス変更"""
+    # adminロールまたは特別な管理者のみが実行可能
+    is_admin = current_user["role"] == "admin"
+    is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
+    
+    if not (is_admin or is_special_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="この操作には管理者権限が必要です"
+        )
+    
+    try:
+        new_is_unlimited = bool(request.get("is_unlimited", False))
+        
+        # ユーザーの存在確認
+        user_result = select_data("users", filters={"id": user_id})
+        if not user_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="指定されたユーザーが見つかりません"
+            )
+        
+        user = user_result.data[0]
+        
+        # 現在の利用制限を取得
+        current_limits_result = select_data("usage_limits", filters={"user_id": user_id})
+        if not current_limits_result or not current_limits_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="ユーザーの利用制限情報が見つかりません"
+            )
+        
+        current_limits = current_limits_result.data[0]
+        was_unlimited = bool(current_limits.get("is_unlimited", False))
+        
+        # ステータスに変更がない場合は何もしない
+        if was_unlimited == new_is_unlimited:
+            return {
+                "message": f"ユーザー {user['email']} のステータスは既に{'本番版' if new_is_unlimited else 'デモ版'}です",
+                "user_id": user_id,
+                "updated_children": 0
+            }
+        
+        # 利用制限を更新
+        update_data("usage_limits", {
+            "is_unlimited": new_is_unlimited,
+            "questions_limit": 999999 if new_is_unlimited else 10,
+            "document_uploads_limit": 999999 if new_is_unlimited else 2
+        }, "user_id", user_id)
+        
+        # 作成したアカウントも同期
+        from modules.database import update_created_accounts_status
+        updated_count = update_created_accounts_status(user_id, new_is_unlimited, db)
+        
+        return {
+            "message": f"ユーザー {user['email']} のステータスを{'本番版' if new_is_unlimited else 'デモ版'}に変更しました",
+            "user_id": user_id,
+            "updated_children": updated_count
+        }
+        
+    except HTTPException as e:
+        raise
+    except Exception as e:
+        print(f"ユーザーステータス変更エラー: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"ステータス変更中にエラーが発生しました: {str(e)}"
+        )
 
 # アプリケーションの実行
 if __name__ == "__main__":

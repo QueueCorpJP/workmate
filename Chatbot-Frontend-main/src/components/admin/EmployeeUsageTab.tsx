@@ -18,13 +18,21 @@ import {
   Chip,
   TextField,
   Alert,
+  Checkbox,
+  IconButton,
+  Tooltip,
+  FormHelperText,
+  LinearProgress,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import EditIcon from "@mui/icons-material/Edit";
 import { EmployeeUsageItem, CompanyEmployee, categoryColors } from "./types";
 import LoadingIndicator from "./LoadingIndicator";
 import EmptyState from "./EmptyState";
 import { formatDate } from "./utils";
 import EmployeeDetailsDialog from "./EmployeeDetailsDialog";
+import api from "../../api";
+import { validateEmail, validatePassword, getPasswordStrength } from "../../utils/validation";
 
 interface EmployeeUsageTabProps {
   employeeUsage: EmployeeUsageItem[];
@@ -75,6 +83,63 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
   employeeCreateSuccess,
   onCreateEmployee,
 }) => {
+  const [emailError, setEmailError] = useState<string>("");
+  const [passwordError, setPasswordError] = useState<string>("");
+  const [showValidation, setShowValidation] = useState(false);
+
+  const handleEmailChange = (email: string) => {
+    onNewEmployeeEmailChange(email);
+    
+    if (showValidation) {
+      const validation = validateEmail(email);
+      setEmailError(validation.isValid ? "" : validation.message);
+    }
+  };
+
+  const handlePasswordChange = (password: string) => {
+    onNewEmployeePasswordChange(password);
+    
+    if (showValidation) {
+      const validation = validatePassword(password);
+      setPasswordError(validation.isValid ? "" : validation.message);
+    }
+  };
+
+  const validateForm = () => {
+    const emailValidation = validateEmail(newEmployeeEmail);
+    const passwordValidation = validatePassword(newEmployeePassword);
+    
+    setEmailError(emailValidation.isValid ? "" : emailValidation.message);
+    setPasswordError(passwordValidation.isValid ? "" : passwordValidation.message);
+    
+    return emailValidation.isValid && passwordValidation.isValid;
+  };
+
+  const handleCreateEmployee = (role: string) => {
+    setShowValidation(true);
+    
+    if (validateForm()) {
+      onCreateEmployee(role);
+    }
+  };
+
+  const passwordStrength = getPasswordStrength(newEmployeePassword);
+
+  const handleToggleDemo = async (employee: CompanyEmployee) => {
+    try {
+      const newIsUnlimited = !!employee.is_demo || !employee.usage_limits?.is_unlimited;
+      
+      await api.post(`/admin/update-user-status/${employee.id}`, {
+        is_unlimited: newIsUnlimited
+      });
+      
+      // 社員一覧を再読み込み
+      onRefreshCompanyEmployees();
+    } catch (error) {
+      console.error("ステータス変更エラー:", error);
+    }
+  };
+
   return (
     <>
       <Box
@@ -100,14 +165,27 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               ここで作成した社員アカウントは管理画面にアクセスできません
             </Typography>
+            <Box sx={{ mb: 2, p: 2, bgcolor: "rgba(25, 118, 210, 0.04)", borderRadius: 2, border: "1px solid rgba(25, 118, 210, 0.12)" }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, color: "primary.main" }}>
+                入力要件
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                <strong>メールアドレス:</strong> 正しい形式で5-100文字以内
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                <strong>パスワード:</strong> 8文字以上、大文字・小文字・数字を含む
+              </Typography>
+            </Box>
             <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <TextField
                 label="メールアドレス"
                 variant="outlined"
                 fullWidth
                 value={newEmployeeEmail}
-                onChange={(e) => onNewEmployeeEmailChange(e.target.value)}
+                onChange={(e) => handleEmailChange(e.target.value)}
                 placeholder="例: employee@example.com"
+                error={!!emailError}
+                helperText={emailError}
               />
               <TextField
                 label="パスワード"
@@ -115,12 +193,34 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                 fullWidth
                 type="password"
                 value={newEmployeePassword}
-                onChange={(e) => onNewEmployeePasswordChange(e.target.value)}
+                onChange={(e) => handlePasswordChange(e.target.value)}
+                error={!!passwordError}
+                helperText={passwordError}
               />
+              {newEmployeePassword && (
+                <Box sx={{ mt: 1 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    パスワード強度: {passwordStrength.label}
+                  </Typography>
+                  <LinearProgress
+                    variant="determinate"
+                    value={(passwordStrength.strength / 6) * 100}
+                    sx={{
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: 'rgba(0,0,0,0.1)',
+                      '& .MuiLinearProgress-bar': {
+                        backgroundColor: passwordStrength.color,
+                        borderRadius: 3,
+                      }
+                    }}
+                  />
+                </Box>
+              )}
               <Button
                 variant="contained"
                 color="primary"
-                onClick={() => onCreateEmployee("employee")}
+                onClick={() => handleCreateEmployee("employee")}
                 disabled={
                   isEmployeeCreating ||
                   !newEmployeeEmail ||
@@ -196,6 +296,11 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                     sx={{ fontWeight: "bold", color: "primary.contrastText" }}
                   >
                     役割
+                  </TableCell>
+                  <TableCell
+                    sx={{ fontWeight: "bold", color: "primary.contrastText" }}
+                  >
+                    デモ版
                   </TableCell>
                   <TableCell
                     sx={{ fontWeight: "bold", color: "primary.contrastText" }}
@@ -286,6 +391,33 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                         }
                         variant="outlined"
                       />
+                    </TableCell>
+                    <TableCell>
+                      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Tooltip title={`クリックで${employee.is_demo || !employee.usage_limits?.is_unlimited ? '本番版' : 'デモ版'}に切り替え`}>
+                          <Checkbox
+                            checked={!!employee.is_demo || !employee.usage_limits?.is_unlimited}
+                            onChange={() => handleToggleDemo(employee)}
+                            size="small"
+                            sx={{
+                              color: employee.is_demo || !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
+                              '&.Mui-checked': {
+                                color: employee.is_demo || !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
+                              }
+                            }}
+                          />
+                        </Tooltip>
+                        <Typography 
+                          variant="caption" 
+                          sx={{ 
+                            ml: 0.5, 
+                            color: employee.is_demo || !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
+                            fontWeight: 500
+                          }}
+                        >
+                          {employee.is_demo || !employee.usage_limits?.is_unlimited ? "デモ版" : "本番版"}
+                        </Typography>
+                      </Box>
                     </TableCell>
                     <TableCell>{formatDate(employee.created_at)}</TableCell>
                     <TableCell>{employee.message_count}</TableCell>

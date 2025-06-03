@@ -46,8 +46,10 @@ export interface CompanyEmployee {
   created_at: string;
   last_activity?: string;
   message_count?: number;
+  is_demo?: boolean;
   usage_limits?: {
     is_unlimited: boolean;
+    is_demo?: boolean;
     questions_used: number;
     questions_limit: number;
     document_uploads_used: number;

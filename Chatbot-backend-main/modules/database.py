@@ -541,7 +541,7 @@ def get_all_companies(db: SupabaseConnection) -> list:
     result = select_data("companies")
     return result.data
 
-def create_user(email: str, password: str, name: str, role: str = "user", company_id: str = None, db: SupabaseConnection = None) -> str:
+def create_user(email: str, password: str, name: str, role: str = "user", company_id: str = None, db: SupabaseConnection = None, creator_user_id: str = None) -> str:
     """新しいユーザーを作成します"""
     user_id = str(uuid.uuid4())
     created_at = datetime.datetime.now().isoformat()
@@ -553,12 +553,41 @@ def create_user(email: str, password: str, name: str, role: str = "user", compan
         "name": name,
         "role": role,
         "company_id": company_id,
+        "created_by": creator_user_id,  # 作成者IDを記録
         "created_at": created_at
     }
     
     insert_data("users", user_data)
 
-    is_unlimited = True if role == "admin" else False
+    # 利用制限の設定：作成者のステータスに基づく
+    is_unlimited = False
+    
+    if role == "admin" or email == "queue@queuefood.co.jp":
+        # adminロールまたは特別管理者は常に無制限
+        is_unlimited = True
+    elif creator_user_id:
+        # 作成者がいる場合、作成者の利用制限を確認
+        try:
+            creator_limits_result = select_data("usage_limits", filters={"user_id": creator_user_id})
+            if creator_limits_result and creator_limits_result.data and len(creator_limits_result.data) > 0:
+                creator_limits = creator_limits_result.data[0]
+                creator_is_unlimited = bool(creator_limits.get("is_unlimited", False))
+                
+                # 作成者が本番版（無制限）なら新しいアカウントも本番版
+                # 作成者がデモ版（制限あり）なら新しいアカウントもデモ版
+                is_unlimited = creator_is_unlimited
+                print(f"作成者（{creator_user_id}）のステータス: {'本番版' if creator_is_unlimited else 'デモ版'}")
+                print(f"新規アカウント（{user_id}）のステータス: {'本番版' if is_unlimited else 'デモ版'}")
+            else:
+                print(f"作成者（{creator_user_id}）の利用制限情報が見つかりません。デフォルト（デモ版）を適用します。")
+                is_unlimited = False
+        except Exception as e:
+            print(f"作成者の利用制限確認エラー: {e}")
+            is_unlimited = False
+    else:
+        # 作成者が指定されていない場合はデフォルト（デモ版）
+        is_unlimited = False
+    
     usage_limits_data = {
         "user_id": user_id,
         "is_unlimited": is_unlimited
@@ -763,3 +792,40 @@ def update_company_id_by_email(company_id: str, user_email: str, db: SupabaseCon
     update_result = update_data("users", {"company_id": company_id}, "email", user_email)
     
     return len(update_result.data) > 0
+
+def update_created_accounts_status(creator_user_id: str, new_is_unlimited: bool, db: SupabaseConnection = None) -> int:
+    """作成者のステータス変更時に、その人が作成したアカウントも同期する"""
+    try:
+        print(f"作成者（{creator_user_id}）のステータス変更を子アカウントに反映開始: {'本番版' if new_is_unlimited else 'デモ版'}")
+        
+        # 作成者が作成したユーザーを取得
+        created_users_result = select_data("users", columns="id, email, name", filters={"created_by": creator_user_id})
+        
+        if not created_users_result or not created_users_result.data:
+            print("作成したアカウントが見つかりません")
+            return 0
+        
+        updated_count = 0
+        for user in created_users_result.data:
+            child_user_id = user.get("id")
+            child_email = user.get("email")
+            child_name = user.get("name")
+            
+            if child_user_id:
+                # 子アカウントの利用制限を更新
+                update_result = update_data("usage_limits", {
+                    "is_unlimited": new_is_unlimited
+                }, "user_id", child_user_id)
+                
+                if update_result:
+                    updated_count += 1
+                    print(f"子アカウント更新: {child_email} ({child_name}) -> {'本番版' if new_is_unlimited else 'デモ版'}")
+                else:
+                    print(f"子アカウント更新失敗: {child_email}")
+        
+        print(f"合計 {updated_count} 個の子アカウントを更新しました")
+        return updated_count
+        
+    except Exception as e:
+        print(f"子アカウントのステータス同期エラー: {e}")
+        return 0
