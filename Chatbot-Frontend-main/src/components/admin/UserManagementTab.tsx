@@ -25,6 +25,7 @@ import GroupIcon from "@mui/icons-material/Group";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import EmailIcon from "@mui/icons-material/Email";
+import BusinessIcon from "@mui/icons-material/Business";
 import LoadingIndicator from "./LoadingIndicator";
 
 interface UserManagementTabProps {
@@ -38,6 +39,11 @@ interface UserManagementTabProps {
   userCreateSuccess: string | null;
   onCreateUser: (role: string) => void;
   onOpenCompanyDetails?: () => void;
+  companies?: any[];
+  selectedCompanyId?: string;
+  onSelectedCompanyIdChange?: (companyId: string) => void;
+  isCompaniesLoading?: boolean;
+  user?: any;
 }
 
 const UserManagementTab: React.FC<UserManagementTabProps> = ({
@@ -51,6 +57,11 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
   userCreateSuccess,
   onCreateUser,
   onOpenCompanyDetails,
+  companies,
+  selectedCompanyId,
+  onSelectedCompanyIdChange,
+  isCompaniesLoading,
+  user,
 }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -203,7 +214,7 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
                       />
                     </svg>
                     {isSpecialAdmin
-                      ? "特別管理者として、管理者用アカウントまたは社員アカウントを作成できます"
+                      ? "管理者として、管理者用アカウントまたは社員アカウントを作成できます"
                       : "通常のユーザーは社員アカウント（管理画面アクセス不可）のみ作成できます"}
                   </Typography>
                 </Paper>
@@ -311,8 +322,48 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
                     }}
                   />
 
-                  {/* queue@queuefood.co.jpの場合はロール選択を表示 */}
+                  {/* 管理者の場合は会社選択を表示 */}
                   {isSpecialAdmin && (
+                    <TextField
+                      label="会社ID (任意)"
+                      variant="outlined"
+                      fullWidth
+                      size="small"
+                      value={selectedCompanyId || ""}
+                      onChange={(e) => onSelectedCompanyIdChange?.(e.target.value)}
+                      placeholder="例: company_1"
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <BusinessIcon
+                              sx={{
+                                color: "#9C27B0",
+                                fontSize: "1.2rem",
+                              }}
+                            />
+                          </InputAdornment>
+                        ),
+                      }}
+                      sx={{
+                        "& .MuiOutlinedInput-root": {
+                          borderRadius: 1.5,
+                          transition: "all 0.3s",
+                          "&:hover": {
+                            "& .MuiOutlinedInput-notchedOutline": {
+                              borderColor: "#9C27B0",
+                            },
+                          },
+                        },
+                        "& .MuiInputLabel-root": {
+                          fontSize: "0.9rem",
+                        },
+                      }}
+                      helperText="会社IDを入力してください（空白の場合は作成者の会社が使用されます）"
+                    />
+                  )}
+
+                  {/* 特別管理者(queue@queuefood.co.jp)の場合はロール選択を表示 */}
+                  {isSpecialAdmin && user?.email === "queue@queuefood.co.jp" && (
                     <Box sx={{ mb: 0.5, mt: 0.5 }}>
                       <Typography
                         variant="subtitle2"

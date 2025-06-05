@@ -161,38 +161,25 @@ async def get_chat_history(user_id: str = None, db: Connection = Depends(get_db)
         raise HTTPException(status_code=500, detail=str(e))
 
 async def get_company_employees(user_id: str = None, db: Connection = Depends(get_db), company_id: str = None):
-    """会社の全社員情報を取得する"""
+    """会社の社員情報を取得する"""
     try:
-        from supabase_adapter import select_data, execute_query
+        from supabase_adapter import select_data
         
-        # 特別な管理者またはadminロールかどうかを確認
-        is_special_admin = False
-        is_admin = False
-        if user_id:
-            user_result = select_data("users", columns="email, role", filters={"id": user_id})
-            if user_result and user_result.data and len(user_result.data) > 0:
-                user_data = user_result.data[0]
-                user_email = user_data.get("email")
-                user_role = user_data.get("role")
-                
-                if user_email == "queue@queuefood.co.jp":
-                    is_special_admin = True
-                    print("特別な管理者として全社員情報を取得します")
-                elif user_role == "admin":
-                    is_admin = True
-                    print("adminロールとして全社員情報を取得します")
+        # ユーザーロールとアクセス権限の確認
+        user_result = select_data("users", columns="email, role", filters={"id": user_id})
+        user_role = None
+        user_email = None
+        if user_result and user_result.data:
+            user_data = user_result.data[0]
+            user_role = user_data.get("role")
+            user_email = user_data.get("email")
         
-        # 会社IDが直接指定されていない場合は、ユーザーの会社IDを取得
-        if not company_id and user_id and not is_special_admin and not is_admin:
-            company_result = select_data("users", columns="company_id", filters={"id": user_id})
-            if company_result and company_result.data and len(company_result.data) > 0:
-                company_id = company_result.data[0].get("company_id")
-                print(f"ユーザーID {user_id} の会社ID {company_id} を取得しました")
+        is_special_admin = user_email == "queue@queuefood.co.jp"
+        is_admin = user_role == "admin"
+        is_user = user_role == "user"
         
-        if not company_id and not is_special_admin and not is_admin:
-            raise HTTPException(status_code=400, detail="会社IDが見つかりません")
+        print(f"社員情報取得: user_id={user_id}, role={user_role}, is_special_admin={is_special_admin}")
         
-        # 社員の使用状況を取得する共通関数
         def get_employee_stats(employee_id):
             """社員の使用状況を取得する"""
             try:
@@ -296,6 +283,11 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
             if result and result.data:
                 print(f"会社の社員情報取得結果: {len(result.data)}件")
                 for employee in result.data:
+                    # userロールの場合はadminロールを除外
+                    if is_user and employee.get("role") == "admin":
+                        print(f"userロールのため管理者 {employee.get('email')} を除外します")
+                        continue
+                    
                     # 使用状況を取得
                     stats = get_employee_stats(employee.get("id"))
                     employee_with_stats = {
@@ -533,12 +525,17 @@ async def get_employee_details(employee_id: str, db = None, current_user_id: str
         # 特別な管理者またはadminロールかどうかを確認
         is_special_admin = False
         is_admin = False
+        is_user = False
+        current_user_company_id = None
+        target_user_company_id = None
+        
         if current_user_id:
-            user_result = select_data("users", columns="email, role", filters={"id": current_user_id})
+            user_result = select_data("users", columns="email, role, company_id", filters={"id": current_user_id})
             if user_result and user_result.data and len(user_result.data) > 0:
                 user_data = user_result.data[0]
                 user_email = user_data.get("email")
                 user_role = user_data.get("role")
+                current_user_company_id = user_data.get("company_id")
                 
                 if user_email == "queue@queuefood.co.jp":
                     is_special_admin = True
@@ -546,10 +543,33 @@ async def get_employee_details(employee_id: str, db = None, current_user_id: str
                 elif user_role == "admin":
                     is_admin = True
                     print("adminロールとして社員詳細情報を取得します")
+                elif user_role == "user":
+                    is_user = True
+                    print("userロールとして社員詳細情報を取得します")
         
-        # 権限チェック（特別な管理者またはadminロールでない場合は自分のデータのみ取得可能）
+        # 対象ユーザーの会社IDを取得（同じ会社かチェックするため）
         if not is_special_admin and not is_admin and employee_id != current_user_id:
-            raise HTTPException(status_code=403, detail="他の社員の詳細情報を取得する権限がありません")
+            target_result = select_data("users", columns="company_id", filters={"id": employee_id})
+            if target_result and target_result.data and len(target_result.data) > 0:
+                target_user_company_id = target_result.data[0].get("company_id")
+        
+        # 権限チェック
+        # 1. 特別な管理者またはadminロールは全てアクセス可能
+        # 2. userロールは同じ会社のユーザーのみアクセス可能
+        # 3. その他は自分のデータのみアクセス可能
+        if not is_special_admin and not is_admin:
+            if is_user:
+                # userロールの場合、同じ会社のユーザーならアクセス可能
+                if current_user_company_id and target_user_company_id and current_user_company_id == target_user_company_id:
+                    print(f"userロールとして同じ会社（{current_user_company_id}）の社員詳細情報にアクセスします")
+                elif employee_id == current_user_id:
+                    print("userロールとして自分の詳細情報にアクセスします")
+                else:
+                    raise HTTPException(status_code=403, detail="他の会社の社員の詳細情報を取得する権限がありません")
+            else:
+                # employeeロールなどは自分のデータのみ
+                if employee_id != current_user_id:
+                    raise HTTPException(status_code=403, detail="他の社員の詳細情報を取得する権限がありません")
         
         # 社員のチャット履歴を取得
         chat_history_result = select_data("chat_history", columns="*", filters={"employee_id": employee_id})

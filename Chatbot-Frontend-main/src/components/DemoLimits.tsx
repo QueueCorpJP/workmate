@@ -156,6 +156,16 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
         setUpgradeSuccess(true);
         setPricingOpen(false);
         
+        // 同期情報をログに出力
+        if (response.data.message) {
+          console.log("アップグレード完了:", response.data.message);
+          
+          // employeeユーザーの同期情報も表示
+          if (response.data.updated_company_users > 0) {
+            console.log(`同じ会社の ${response.data.updated_company_users} 人のemployeeユーザーも本番版に同期されました`);
+          }
+        }
+        
         // ユーザーデータを更新
         if (refreshUserData) {
           await refreshUserData();

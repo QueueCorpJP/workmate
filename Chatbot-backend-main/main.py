@@ -135,6 +135,20 @@ async def log_requests(request: Request, call_next):
 # アプリケーション起動時にデータベースを初期化
 init_db()
 
+# データベース整合性をチェック
+try:
+    from modules.database import ensure_usage_limits_integrity, get_db
+    print("起動時データベース整合性チェックを実行中...")
+    db_connection = SupabaseConnection()
+    fixed_count = ensure_usage_limits_integrity(db_connection)
+    if fixed_count > 0:
+        print(f"起動時整合性チェック完了: {fixed_count}個のusage_limitsレコードを修正しました")
+    else:
+        print("起動時整合性チェック完了: 修正が必要なレコードはありませんでした")
+    db_connection.close()
+except Exception as e:
+    print(f"起動時整合性チェックでエラーが発生しましたが、アプリケーションは継続します: {str(e)}")
+
 # 認証関連エンドポイント
 @app.post("/chatbot/api/auth/login", response_model=UserWithLimits)
 async def login(credentials: UserLogin, db: SupabaseConnection = Depends(get_db)):
@@ -216,28 +230,50 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
             )
         
         # まず、メールアドレスが既に存在するかチェック
-        cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (user_data.email,))
-        existing_user = cursor.fetchone()
+        from supabase_adapter import select_data
+        existing_user_result = select_data("users", filters={"email": user_data.email})
         
-        if existing_user:
+        if existing_user_result.data:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="このメールアドレスは既に登録されています"
             )
         
-        # 特別な管理者（queue@queuefood.co.jp）の場合はロールを指定できる
-        if current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False):
+        # 特別な管理者（queue@queuefood.co.jp）またはadminロールの場合はロールと会社IDを指定できる
+        is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
+        is_admin = current_user["role"] == "admin"
+        
+        if is_special_admin or is_admin:
+            print(f"管理者権限でユーザー作成: 特別管理者={is_special_admin}, admin={is_admin}")
+            
             # user_dataからロールを取得（デフォルトは"employee"）
             role = user_data.role if hasattr(user_data, "role") and user_data.role in ["user", "employee"] else "employee"
             
-            # create_user関数を直接呼び出す（特別管理者が作成するアカウントは常に本番版）
+            # 会社IDの指定
+            company_id = None
+            if hasattr(user_data, "company_id") and user_data.company_id:
+                # 指定された会社IDが存在するかチェック
+                company_result = select_data("companies", filters={"id": user_data.company_id})
+                if not company_result.data:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="指定された会社IDが存在しません"
+                    )
+                company_id = user_data.company_id
+                print(f"管理者により会社ID {company_id} が指定されました")
+            else:
+                # 会社IDが指定されていない場合、作成者の会社IDを使用
+                company_id = current_user.get("company_id")
+                if company_id:
+                    print(f"作成者の会社ID {company_id} を使用します")
+            
+            # create_user関数を直接呼び出す（管理者が作成するアカウントは作成者のステータスを継承）
             user_id = create_user(
                 email=user_data.email,
                 password=user_data.password,
                 name=name,
                 role=role,
-                company_id=None,
+                company_id=company_id,
                 db=db,
                 creator_user_id=current_user["id"]  # 作成者IDを渡す
             )
@@ -251,7 +287,7 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                 "created_at": datetime.datetime.now().isoformat()
             }
         else:
-            # 通常のユーザーの場合は社員アカウントとして登録（管理画面にアクセスできない）
+            # 通常のユーザー（user/employeeロール）の場合は社員アカウントとして登録（管理画面にアクセスできない）
             # 現在のユーザーの会社IDを取得して新しいユーザーに設定
             company_id = current_user.get("company_id")
             
@@ -610,7 +646,7 @@ async def admin_get_employee_details(employee_id: str, current_user = Depends(ge
 
 # 会社の全社員情報を取得するエンドポイント
 @app.get("/chatbot/api/admin/company-employees", response_model=List[dict])
-async def admin_get_company_employees(current_user = Depends(get_company_admin), db: SupabaseConnection = Depends(get_db)):
+async def admin_get_company_employees(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """会社の全社員情報を取得する"""
     # adminロールのユーザーは全ユーザーのデータを取得できるようにする
     is_admin = current_user["role"] == "admin"
@@ -636,7 +672,7 @@ async def admin_get_company_employees(current_user = Depends(get_company_admin),
 
 # 社員利用状況を取得するエンドポイント
 @app.get("/chatbot/api/admin/employee-usage", response_model=EmployeeUsageResult)
-async def admin_get_employee_usage(current_user = Depends(get_company_admin), db: SupabaseConnection = Depends(get_db)):
+async def admin_get_employee_usage(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """社員ごとの利用状況を取得する"""
     # adminロールのユーザーは全ユーザーのデータを取得できるようにする
     is_admin = current_user["role"] == "admin"
@@ -701,8 +737,13 @@ async def api_set_company_name(request: CompanyNameRequest, current_user = Depen
 # プラン変更エンドポイント
 @app.post("/chatbot/api/upgrade-plan", response_model=UpgradePlanResponse)
 async def upgrade_plan(request: UpgradePlanRequest, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
-    """デモ版から有料プランにアップグレードする"""
+    """デモ版から有料プランにアップグレードする（強化版）"""
     try:
+        print(f"=== プランアップグレード開始 ===")
+        print(f"ユーザー: {current_user['email']} ({current_user['name']})")
+        print(f"ユーザーID: {current_user['id']}")
+        print(f"要求プラン: {request.plan_id}")
+        
         # プラン情報を定義
         plans = {
             "starter": {"name": "スタータープラン", "price": 2980, "questions_limit": -1, "uploads_limit": 10},
@@ -716,49 +757,108 @@ async def upgrade_plan(request: UpgradePlanRequest, current_user = Depends(get_c
         plan = plans[request.plan_id]
         user_id = current_user["id"]
         
+        print(f"選択されたプラン: {plan['name']} (価格: ¥{plan['price']})")
+        
+        # 現在の利用制限を取得（変更前の状態を確認）
+        from supabase_adapter import update_data, select_data
+        current_limits_result = select_data("usage_limits", filters={"user_id": user_id})
+        was_unlimited = False
+        current_questions_used = 0
+        current_uploads_used = 0
+        
+        if current_limits_result and current_limits_result.data:
+            current_limits = current_limits_result.data[0]
+            was_unlimited = bool(current_limits.get("is_unlimited", False))
+            current_questions_used = current_limits.get("questions_used", 0)
+            current_uploads_used = current_limits.get("document_uploads_used", 0)
+            
+            print(f"現在のステータス: {'本番版' if was_unlimited else 'デモ版'}")
+            print(f"現在の使用状況: 質問={current_questions_used}, アップロード={current_uploads_used}")
+        
+        if was_unlimited:
+            print("⚠ ユーザーは既に本番版です")
+            return UpgradePlanResponse(
+                success=True,
+                message=f"既に本番版です。{plan['name']}の機能をご利用いただけます。",
+                plan_id=request.plan_id,
+                user_id=user_id,
+                payment_url=None
+            )
+        
         # 実際の決済処理（今回はモック）
         # 本番環境では Stripe や PayPal などの決済サービスと連携
+        print("決済処理中...")
         payment_success = True  # モックとして成功とする
         
         if payment_success:
-            # ユーザーのプランを更新
-            from supabase_adapter import update_data, select_data
-            from modules.database import update_created_accounts_status
+            print("✓ 決済成功")
             
-            # 現在の利用制限を取得（変更前の状態を確認）
-            current_limits_result = select_data("usage_limits", filters={"user_id": user_id})
-            was_unlimited = False
-            if current_limits_result and current_limits_result.data:
-                was_unlimited = bool(current_limits_result.data[0].get("is_unlimited", False))
+            # 新しい制限値を計算
+            new_questions_limit = plan["questions_limit"] if plan["questions_limit"] != -1 else 999999
+            new_uploads_limit = plan["uploads_limit"] if plan["uploads_limit"] != -1 else 999999
+            
+            print(f"新しい制限: 質問={new_questions_limit}, アップロード={new_uploads_limit}")
             
             # usage_limitsテーブルを更新
-            update_data("usage_limits", {
+            update_result = update_data("usage_limits", {
                 "is_unlimited": True,
-                "questions_limit": plan["questions_limit"] if plan["questions_limit"] != -1 else 999999,
-                "document_uploads_limit": plan["uploads_limit"] if plan["uploads_limit"] != -1 else 999999,
+                "questions_limit": new_questions_limit,
+                "questions_used": current_questions_used,  # 現在の使用数を保持
+                "document_uploads_limit": new_uploads_limit,
+                "document_uploads_used": current_uploads_used  # 現在の使用数を保持
             }, "user_id", user_id)
             
+            if update_result:
+                print("✓ 利用制限更新完了")
+            else:
+                print("✗ 利用制限更新失敗")
+                raise HTTPException(status_code=500, detail="利用制限の更新に失敗しました")
+            
             # ユーザーテーブルにプラン情報を追加（roleを更新）
-            update_data("users", {
+            user_update_result = update_data("users", {
                 "role": "user"  # デモ版からuserプランに変更
             }, "id", user_id)
             
+            if user_update_result:
+                print("✓ ユーザーロール更新完了 (demo -> user)")
+            else:
+                print("✗ ユーザーロール更新失敗")
+            
             # デモ版から本番版に切り替わった場合、作成したアカウントも同期
-            if not was_unlimited:
-                updated_count = update_created_accounts_status(user_id, True, db)
-                print(f"プラン変更により {updated_count} 個の子アカウントを本番版に更新しました")
+            print("子アカウントの同期を開始...")
+            from modules.database import update_created_accounts_status
+            updated_children = update_created_accounts_status(user_id, True, db)
+            
+            # 同じ会社の全ユーザーも同期
+            print("同じ会社のユーザーの同期を開始...")
+            from modules.database import update_company_users_status
+            updated_company_users = update_company_users_status(user_id, True, db)
+            
+            success_message = f"{plan['name']}へのアップグレードが完了しました"
+            if updated_children > 0 or updated_company_users > 0:
+                success_message += f"（子アカウント {updated_children} 個、同じ会社のユーザー {updated_company_users} 個も同期）"
+            
+            print(f"=== プランアップグレード完了 ===")
+            print(f"結果: {success_message}")
             
             return UpgradePlanResponse(
                 success=True,
-                message=f"{plan['name']}へのアップグレードが完了しました",
+                message=success_message,
                 plan_id=request.plan_id,
                 user_id=user_id,
                 payment_url=None
             )
         else:
+            print("✗ 決済失敗")
             raise HTTPException(status_code=400, detail="決済処理に失敗しました")
             
+    except HTTPException as e:
+        print(f"✗ HTTPエラー: {e.detail}")
+        raise
     except Exception as e:
+        print(f"✗ プランアップグレードエラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         logger.error(f"プランアップグレードエラー: {str(e)}")
         raise HTTPException(status_code=500, detail=f"アップグレード処理中にエラーが発生しました: {str(e)}")
 
@@ -844,19 +944,50 @@ async def catch_all(full_path: str):
 
 @app.post("/chatbot/api/admin/update-user-status/{user_id}", response_model=dict)
 async def admin_update_user_status(user_id: str, request: dict, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """管理者によるユーザーステータス変更"""
-    # adminロールまたは特別な管理者のみが実行可能
+    """管理者によるユーザーステータス変更（強化版）"""
+    # adminロール、特別な管理者、またはuserロール（同じ会社のユーザーのみ）が実行可能
     is_admin = current_user["role"] == "admin"
     is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
+    is_user = current_user["role"] == "user"
     
-    if not (is_admin or is_special_admin):
+    print(f"=== ユーザーステータス変更権限チェック ===")
+    print(f"操作者: {current_user['email']} (管理者: {is_admin}, 特別管理者: {is_special_admin}, user: {is_user})")
+    
+    # 権限チェック
+    if not (is_admin or is_special_admin or is_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="この操作には管理者権限が必要です"
+            detail="この操作には管理者権限またはuser権限が必要です"
         )
     
+    # userロールの場合は、同じ会社のユーザーのみ操作可能
+    if is_user and not is_admin and not is_special_admin:
+        # 対象ユーザーの会社IDを確認
+        target_user_result = select_data("users", columns="company_id", filters={"id": user_id})
+        current_user_company_id = current_user.get("company_id")
+        
+        if not target_user_result or not target_user_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="指定されたユーザーが見つかりません"
+            )
+        
+        target_user_company_id = target_user_result.data[0].get("company_id")
+        
+        if not current_user_company_id or not target_user_company_id or current_user_company_id != target_user_company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="他の会社のユーザーのステータスを変更する権限がありません"
+            )
+        
+        print(f"userロールとして同じ会社（{current_user_company_id}）のユーザーステータス変更を実行します")
+    
     try:
+        print(f"=== ユーザーステータス変更開始 ===")
+        print(f"対象ユーザーID: {user_id}")
+        
         new_is_unlimited = bool(request.get("is_unlimited", False))
+        print(f"新しいステータス: {'本番版' if new_is_unlimited else 'デモ版'}")
         
         # ユーザーの存在確認
         user_result = select_data("users", filters={"id": user_id})
@@ -867,6 +998,11 @@ async def admin_update_user_status(user_id: str, request: dict, current_user = D
             )
         
         user = user_result.data[0]
+        print(f"対象ユーザー: {user['email']} ({user['name']}) - ロール: {user['role']}")
+        
+        # 管理者ロールの場合は警告
+        if user['role'] == 'admin':
+            print(f"警告: 管理者ロール ({user['email']}) のステータス変更")
         
         # 現在の利用制限を取得
         current_limits_result = select_data("usage_limits", filters={"user_id": user_id})
@@ -878,36 +1014,97 @@ async def admin_update_user_status(user_id: str, request: dict, current_user = D
         
         current_limits = current_limits_result.data[0]
         was_unlimited = bool(current_limits.get("is_unlimited", False))
+        current_questions_used = current_limits.get("questions_used", 0)
+        current_uploads_used = current_limits.get("document_uploads_used", 0)
+        
+        print(f"現在のステータス: {'本番版' if was_unlimited else 'デモ版'}")
+        print(f"現在の使用状況: 質問={current_questions_used}, アップロード={current_uploads_used}")
         
         # ステータスに変更がない場合は何もしない
         if was_unlimited == new_is_unlimited:
+            print("ステータスに変更がないため処理をスキップします")
             return {
                 "message": f"ユーザー {user['email']} のステータスは既に{'本番版' if new_is_unlimited else 'デモ版'}です",
                 "user_id": user_id,
-                "updated_children": 0
+                "updated_children": 0,
+                "updated_company_users": 0
             }
         
+        # 新しい制限値を計算
+        if new_is_unlimited:
+            new_questions_limit = 999999
+            new_uploads_limit = 999999
+        else:
+            new_questions_limit = 10
+            new_uploads_limit = 2
+            
+            # デモ版に変更する場合、使用済み数が新しい制限を超える場合は調整
+            if current_questions_used > new_questions_limit:
+                print(f"質問使用数を {current_questions_used} から {new_questions_limit} に調整")
+                current_questions_used = new_questions_limit
+            if current_uploads_used > new_uploads_limit:
+                print(f"アップロード使用数を {current_uploads_used} から {new_uploads_limit} に調整")
+                current_uploads_used = new_uploads_limit
+        
+        print(f"新しい制限: 質問={new_questions_limit} (使用済み: {current_questions_used}), アップロード={new_uploads_limit} (使用済み: {current_uploads_used})")
+        
         # 利用制限を更新
-        update_data("usage_limits", {
+        update_result = update_data("usage_limits", {
             "is_unlimited": new_is_unlimited,
-            "questions_limit": 999999 if new_is_unlimited else 10,
-            "document_uploads_limit": 999999 if new_is_unlimited else 2
+            "questions_limit": new_questions_limit,
+            "questions_used": current_questions_used,
+            "document_uploads_limit": new_uploads_limit,
+            "document_uploads_used": current_uploads_used
         }, "user_id", user_id)
         
+        if update_result:
+            print("✓ 本人のステータス更新完了")
+        else:
+            print("✗ 本人のステータス更新失敗")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="利用制限の更新に失敗しました"
+            )
+        
         # 作成したアカウントも同期
+        print("子アカウントの同期を開始します...")
         from modules.database import update_created_accounts_status
-        updated_count = update_created_accounts_status(user_id, new_is_unlimited, db)
+        updated_children = update_created_accounts_status(user_id, new_is_unlimited, db)
+        
+        # 同じ会社の全ユーザーも同期
+        print("同じ会社のユーザーの同期を開始...")
+        from modules.database import update_company_users_status
+        updated_company_users = update_company_users_status(user_id, new_is_unlimited, db)
+        
+        result_message = f"ユーザー {user['email']} のステータスを{'本番版' if new_is_unlimited else 'デモ版'}に変更しました"
+        if updated_children > 0 or updated_company_users > 0:
+            result_message += f"（子アカウント {updated_children} 個、同じ会社のユーザー {updated_company_users} 個も同期）"
+        
+        print(f"=== ユーザーステータス変更完了 ===")
+        print(f"結果: {result_message}")
         
         return {
-            "message": f"ユーザー {user['email']} のステータスを{'本番版' if new_is_unlimited else 'デモ版'}に変更しました",
+            "message": result_message,
             "user_id": user_id,
-            "updated_children": updated_count
+            "updated_children": updated_children,
+            "updated_company_users": updated_company_users,
+            "details": {
+                "user_email": user['email'],
+                "user_name": user['name'],
+                "old_status": "本番版" if was_unlimited else "デモ版",
+                "new_status": "本番版" if new_is_unlimited else "デモ版",
+                "new_questions_limit": new_questions_limit,
+                "new_uploads_limit": new_uploads_limit
+            }
         }
         
     except HTTPException as e:
+        print(f"✗ HTTPエラー: {e.detail}")
         raise
     except Exception as e:
-        print(f"ユーザーステータス変更エラー: {str(e)}")
+        print(f"✗ ユーザーステータス変更エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"ステータス変更中にエラーが発生しました: {str(e)}"
@@ -931,6 +1128,80 @@ async def test_youtube_connection():
             "message": f"テスト実行エラー: {str(e)}",
             "timestamp": datetime.now().isoformat()
         }
+
+@app.get("/chatbot/api/admin/companies", response_model=List[dict])
+async def admin_get_companies(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
+    """会社一覧を取得（adminのみ）"""
+    # 特別な管理者のみがアクセス可能
+    if current_user["email"] != "queue@queuefood.co.jp" or not current_user.get("is_special_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="この操作には特別な管理者権限が必要です"
+        )
+    
+    from modules.database import get_all_companies
+    companies = get_all_companies(db)
+    return companies
+
+@app.post("/chatbot/api/admin/fix-company-status/{company_id}", response_model=dict)
+async def admin_fix_company_status(company_id: str, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
+    """会社内のユーザーステータス不整合を修正する"""
+    # adminロールまたは特別な管理者のみが実行可能
+    is_admin = current_user["role"] == "admin"
+    is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
+    
+    if not (is_admin or is_special_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="この操作には管理者権限が必要です"
+        )
+    
+    try:
+        from modules.database import fix_company_status_inconsistency
+        fixed_count = fix_company_status_inconsistency(company_id, db)
+        
+        return {
+            "message": f"会社ID {company_id} のステータス不整合修正が完了しました",
+            "fixed_count": fixed_count,
+            "company_id": company_id
+        }
+        
+    except Exception as e:
+        print(f"会社ステータス修正エラー: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"ステータス修正中にエラーが発生しました: {str(e)}"
+        )
+
+@app.post("/chatbot/api/admin/ensure-database-integrity", response_model=dict)
+async def admin_ensure_database_integrity(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
+    """データベース整合性をチェックして修正する"""
+    # adminロールまたは特別な管理者のみが実行可能
+    is_admin = current_user["role"] == "admin"
+    is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
+    
+    if not (is_admin or is_special_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="この操作には管理者権限が必要です"
+        )
+    
+    try:
+        from modules.database import ensure_usage_limits_integrity
+        fixed_count = ensure_usage_limits_integrity(db)
+        
+        return {
+            "message": f"データベース整合性チェックが完了しました",
+            "fixed_count": fixed_count,
+            "details": f"{fixed_count}個のusage_limitsレコードを作成しました" if fixed_count > 0 else "修正が必要なレコードはありませんでした"
+        }
+        
+    except Exception as e:
+        print(f"データベース整合性チェックエラー: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"データベース整合性チェック中にエラーが発生しました: {str(e)}"
+        )
 
 # アプリケーションの実行
 if __name__ == "__main__":

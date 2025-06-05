@@ -127,11 +127,22 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
 
   const handleToggleDemo = async (employee: CompanyEmployee) => {
     try {
-      const newIsUnlimited = !!employee.is_demo || !employee.usage_limits?.is_unlimited;
+      // is_unlimitedの逆の値を設定（現在がfalse(デモ版)ならtrue(本番版)に、現在がtrue(本番版)ならfalse(デモ版)に）
+      const newIsUnlimited = !employee.usage_limits?.is_unlimited;
       
-      await api.post(`/admin/update-user-status/${employee.id}`, {
+      const response = await api.post(`/admin/update-user-status/${employee.id}`, {
         is_unlimited: newIsUnlimited
       });
+      
+      // 成功メッセージを表示（同期情報を含む）
+      if (response.data && response.data.message) {
+        console.log("ステータス変更完了:", response.data.message);
+        
+        // employeeユーザーの同期情報を表示
+        if (response.data.updated_company_users > 0) {
+          console.log(`同じ会社の ${response.data.updated_company_users} 人のemployeeユーザーも同期されました`);
+        }
+      }
       
       // 社員一覧を再読み込み
       onRefreshCompanyEmployees();
@@ -394,15 +405,15 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                     </TableCell>
                     <TableCell>
                       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <Tooltip title={`クリックで${employee.is_demo || !employee.usage_limits?.is_unlimited ? '本番版' : 'デモ版'}に切り替え`}>
+                        <Tooltip title={`クリックで${!employee.usage_limits?.is_unlimited ? '本番版' : 'デモ版'}に切り替え`}>
                           <Checkbox
-                            checked={!!employee.is_demo || !employee.usage_limits?.is_unlimited}
+                            checked={!employee.usage_limits?.is_unlimited}
                             onChange={() => handleToggleDemo(employee)}
                             size="small"
                             sx={{
-                              color: employee.is_demo || !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
+                              color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
                               '&.Mui-checked': {
-                                color: employee.is_demo || !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
+                                color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
                               }
                             }}
                           />
@@ -411,11 +422,11 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                           variant="caption" 
                           sx={{ 
                             ml: 0.5, 
-                            color: employee.is_demo || !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
+                            color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
                             fontWeight: 500
                           }}
                         >
-                          {employee.is_demo || !employee.usage_limits?.is_unlimited ? "デモ版" : "本番版"}
+                          {!employee.usage_limits?.is_unlimited ? "デモ版" : "本番版"}
                         </Typography>
                       </Box>
                     </TableCell>

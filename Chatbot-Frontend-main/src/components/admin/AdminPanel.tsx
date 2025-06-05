@@ -122,6 +122,11 @@ const AdminPanel: React.FC = () => {
   >(null);
   const [showEmployeeCreateForm, setShowEmployeeCreateForm] = useState(false);
 
+  // Company selection states (for admin user creation)
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
+  const [isCompaniesLoading, setIsCompaniesLoading] = useState(false);
+
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -131,11 +136,11 @@ const AdminPanel: React.FC = () => {
   useEffect(() => {
     fetchChatHistory();
 
-    // 特別な管理者かどうかを確認
+    // 特別な管理者またはadminロールかどうかを確認
     const storedUser = localStorage.getItem("user");
     if (storedUser) {
       const user = JSON.parse(storedUser);
-      if (user && user.email === "queue@queuefood.co.jp") {
+      if (user && (user.email === "queue@queuefood.co.jp" || user.role === "admin")) {
         setIsSpecialAdmin(true);
       }
     }
@@ -406,7 +411,7 @@ const AdminPanel: React.FC = () => {
   // 新規ユーザー作成
   const handleCreateUser = async (role: string = "employee") => {
     if (!newUserEmail || !newUserPassword) {
-      setUserCreateError("メールアドレスとパスワードを入力してください");
+      setUserCreateError("メールアドレスとパスワードは必須です");
       return;
     }
 
@@ -415,37 +420,61 @@ const AdminPanel: React.FC = () => {
     setUserCreateSuccess(null);
 
     try {
-      console.log(`新規ユーザーを作成中... (ロール: ${role})`);
-      const response = await api.post(`${import.meta.env.VITE_API_URL}/admin/register-user`, {
+      const requestData: any = {
         email: newUserEmail,
         password: newUserPassword,
-        name: newUserEmail.split("@")[0], // メールアドレスの@前をデフォルト名として使用
+        name: newUserEmail.split("@")[0],
         role: role,
-      });
-      console.log("ユーザー作成結果:", response.data);
+      };
 
-      // 成功メッセージをロールに応じて変更
-      if (role === "user") {
-        setUserCreateSuccess(
-          `会社の管理者用アカウント ${newUserEmail} を作成しました (管理画面アクセス可)`
-        );
-      } else {
-        setUserCreateSuccess(
-          `社員アカウント ${newUserEmail} を作成しました (管理画面アクセス不可)`
-        );
+      // 特別管理者の場合は会社IDを含める
+      if (isSpecialAdmin && selectedCompanyId) {
+        requestData.company_id = selectedCompanyId;
       }
 
+      const response = await api.post("/admin/register-user", requestData);
+
+      setUserCreateSuccess(
+        `${role === "user" ? "管理者用" : "社員"}アカウントが正常に作成されました`
+      );
       setNewUserEmail("");
       setNewUserPassword("");
+      setSelectedCompanyId("");
     } catch (error: any) {
-      console.error("ユーザー作成に失敗しました:", error);
-      setUserCreateError(
-        error.response?.data?.detail || "ユーザー作成に失敗しました"
-      );
+      console.error("アカウント作成エラー:", error);
+      if (error.response?.data?.detail) {
+        setUserCreateError(error.response.data.detail);
+      } else {
+        setUserCreateError("アカウント作成に失敗しました");
+      }
     } finally {
       setIsUserCreating(false);
     }
   };
+
+  // 会社一覧を取得する関数
+  const fetchCompanies = async () => {
+    if (!isSpecialAdmin) return;
+
+    setIsCompaniesLoading(true);
+    try {
+      const response = await api.get("/admin/companies");
+      setCompanies(response.data);
+      console.log("会社一覧取得成功:", response.data);
+    } catch (error) {
+      console.error("会社一覧取得エラー:", error);
+      setCompanies([]);
+    } finally {
+      setIsCompaniesLoading(false);
+    }
+  };
+
+  // 管理者の場合は会社一覧を取得
+  useEffect(() => {
+    if (isSpecialAdmin) {
+      fetchCompanies();
+    }
+  }, [isSpecialAdmin]);
 
   // 会社詳細情報の取得
   const fetchCompanyDetails = async () => {
@@ -1087,18 +1116,19 @@ const AdminPanel: React.FC = () => {
                 <UserManagementTab
                   isSpecialAdmin={isSpecialAdmin}
                   newUserEmail={newUserEmail}
-                  onNewUserEmailChange={(email: string) =>
-                    setNewUserEmail(email)
-                  }
+                  onNewUserEmailChange={setNewUserEmail}
                   newUserPassword={newUserPassword}
-                  onNewUserPasswordChange={(password: string) =>
-                    setNewUserPassword(password)
-                  }
+                  onNewUserPasswordChange={setNewUserPassword}
                   isUserCreating={isUserCreating}
                   userCreateError={userCreateError}
                   userCreateSuccess={userCreateSuccess}
                   onCreateUser={handleCreateUser}
-                  onOpenCompanyDetails={handleOpenCompanyDetails}
+                  onOpenCompanyDetails={() => setSelectedCompanyId("")}
+                  companies={companies}
+                  selectedCompanyId={selectedCompanyId}
+                  onSelectedCompanyIdChange={setSelectedCompanyId}
+                  isCompaniesLoading={isCompaniesLoading}
+                  user={user}
                 />
               )}
             </Box>

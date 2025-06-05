@@ -31,8 +31,8 @@ CREATE TABLE public.document_sources (
   uploaded_at timestamp without time zone NOT NULL,
   active boolean NOT NULL DEFAULT true,
   CONSTRAINT document_sources_pkey PRIMARY KEY (id),
-  CONSTRAINT document_sources_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES public.users(id),
-  CONSTRAINT document_sources_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id)
+  CONSTRAINT document_sources_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id),
+  CONSTRAINT document_sources_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES public.users(id)
 );
 CREATE TABLE public.usage_limits (
   user_id text NOT NULL,
@@ -52,6 +52,8 @@ CREATE TABLE public.users (
   company_id text,
   created_at timestamp without time zone NOT NULL,
   role text NOT NULL DEFAULT 'user'::text,
+  created_by text,
   CONSTRAINT users_pkey PRIMARY KEY (id),
+  CONSTRAINT users_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id),
   CONSTRAINT users_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id)
 );
