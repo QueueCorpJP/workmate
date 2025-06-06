@@ -71,7 +71,7 @@ const EmployeeDetailsDialog: React.FC<EmployeeDetailsDialogProps> = ({
                   <Card variant="outlined">
                     <CardContent sx={{ textAlign: 'center' }}>
                       <Typography variant="body2" color="text.secondary">
-                        利用回数
+                        利用数
                       </Typography>
                       <Typography variant="h4" sx={{ fontWeight: 500, color: 'primary.main' }}>
                         {selectedEmployee.message_count}
