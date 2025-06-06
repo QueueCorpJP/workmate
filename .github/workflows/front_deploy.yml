@@ -46,12 +46,17 @@ jobs:
         echo "$KEY" > id_rsa && chmod 600 id_rsa
         
         echo "📤 静的ファイルをEC2に同期..."
-        # dist/ フォルダを Nginx ディレクトリに同期
+        # 一時ディレクトリにアップロードしてからsudoで移動
         rsync -avz --delete -e "ssh -i id_rsa -o StrictHostKeyChecking=no" \
-          Chatbot-Frontend-main/dist/ $USER@$HOST:/var/www/html/
+          Chatbot-Frontend-main/dist/ $USER@$HOST:/tmp/webapp_dist/
         
         echo "🔄 ファイル権限設定とNginx再起動..."
         ssh -i id_rsa -o StrictHostKeyChecking=no $USER@$HOST << 'ENDSSH'
+          # 一時ディレクトリから本番ディレクトリに移動
+          sudo rm -rf /var/www/html/*
+          sudo cp -r /tmp/webapp_dist/* /var/www/html/
+          sudo rm -rf /tmp/webapp_dist
+          
           # ファイル権限設定
           sudo chown -R nginx:nginx /var/www/html/ || sudo chown -R www-data:www-data /var/www/html/
           sudo chmod -R 755 /var/www/html/
