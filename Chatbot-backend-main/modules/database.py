@@ -676,9 +676,9 @@ def create_user(email: str, password: str, name: str, role: str = "user", compan
                 except Exception as company_check_error:
                     print(f"会社ユーザーステータス確認エラー: {company_check_error}")
                     print("デフォルト（デモ版）を適用します。")
-                    is_unlimited = False
-                    questions_limit = 10
-                    uploads_limit = 2
+                is_unlimited = False
+                questions_limit = 10
+                uploads_limit = 2
         except Exception as e:
             print(f"✗ 作成者の利用制限確認エラー: {e}")
             print("デフォルト（デモ版）を適用します。")

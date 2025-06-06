@@ -489,13 +489,13 @@ async def admin_get_chat_history(current_user = Depends(get_admin_or_user), db: 
     """チャット履歴を取得する"""
     # 現在のユーザーIDを渡して、そのユーザーのデータのみを取得
     # 特別な管理者（queue@queuefood.co.jp）の場合は全ユーザーのデータを取得できるようにする
-    if current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False):
+    if current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False):
         # 特別な管理者の場合は全ユーザーのデータを取得
-        return await get_chat_history(None, db)
+        return get_chat_history(None, db)
     else:
         # 通常のユーザーの場合は自分のデータのみを取得
         user_id = current_user["id"]
-        return await get_chat_history(user_id, db)
+        return get_chat_history(user_id, db)
 
 # チャット分析エンドポイント
 @app.get("/chatbot/api/admin/analyze-chats")
@@ -503,7 +503,7 @@ async def admin_analyze_chats(current_user = Depends(get_admin_or_user), db: Sup
     """チャット履歴を分析する"""
     try:
         # 特別な管理者（queue@queuefood.co.jp）の場合は全ユーザーのデータを分析できるようにする
-        if current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False):
+        if current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False):
             # 特別な管理者の場合は全ユーザーのデータを分析
             result = await analyze_chats(None, db)
             print(f"分析結果: {result}")
@@ -532,7 +532,7 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
     """詳細なビジネス分析を行う"""
     try:
         # ユーザー情報の取得
-        is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
+        is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
         
         # プロンプトを取得
         prompt = request.get("prompt", "")
@@ -641,7 +641,7 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
 async def admin_get_employee_details(employee_id: str, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """特定の社員の詳細なチャット履歴を取得する"""
     # 特別な管理者（queue@queuefood.co.jp）の場合は全ユーザーのデータを取得できるようにする
-    is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
+    is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
     
     # ユーザーIDを渡して権限チェックを行う
     return await get_employee_details(employee_id, db, current_user["id"])
@@ -652,7 +652,7 @@ async def admin_get_company_employees(current_user = Depends(get_admin_or_user),
     """会社の全社員情報を取得する"""
     # adminロールのユーザーは全ユーザーのデータを取得できるようにする
     is_admin = current_user["role"] == "admin"
-    is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
+    is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
     
     # 直接get_company_employees関数に処理を委譲
     if is_admin or is_special_admin:
@@ -678,7 +678,7 @@ async def admin_get_employee_usage(current_user = Depends(get_admin_or_user), db
     """社員ごとの利用状況を取得する"""
     # adminロールのユーザーは全ユーザーのデータを取得できるようにする
     is_admin = current_user["role"] == "admin"
-    is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
+    is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
     
     if is_admin or is_special_admin:
         # adminロールまたは特別な管理者の場合は全ユーザーのデータを取得
@@ -694,7 +694,7 @@ async def admin_get_resources(current_user = Depends(get_admin_or_user), db: Sup
     """アップロードされたリソース（URL、PDF、Excel、TXT）の情報を取得する"""
     # adminロールのユーザーは全リソースのデータを取得できるようにする
     is_admin = current_user["role"] == "admin"
-    is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
+    is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
     
     if is_admin or is_special_admin:
         return await get_uploaded_resources_by_company_id(None, db)
@@ -912,6 +912,48 @@ async def get_subscription_info(current_user = Depends(get_current_user), db: Su
         logger.error(f"サブスクリプション情報取得エラー: {str(e)}")
         raise HTTPException(status_code=500, detail=f"サブスクリプション情報の取得中にエラーが発生しました: {str(e)}")
 
+# 申請フォーム送信エンドポイント
+@app.post("/chatbot/api/submit-application")
+async def submit_application(request: Request):
+    """本番版移行申請を受け付ける"""
+    try:
+        body = await request.json()
+        print(f"申請フォーム受信: {body}")
+        
+        # 申請データを処理（実際の実装ではデータベースに保存やメール送信を行う）
+        application_data = {
+            "company_name": body.get("companyName"),
+            "contact_name": body.get("contactName"),
+            "email": body.get("email"),
+            "phone": body.get("phone"),
+            "expected_users": body.get("expectedUsers"),
+            "current_usage": body.get("currentUsage"),
+            "message": body.get("message"),
+            "application_type": body.get("applicationType", "production-upgrade"),
+            "submitted_at": datetime.datetime.now().isoformat()
+        }
+        
+        # ログに記録（実際の実装ではデータベースに保存）
+        print(f"本番版移行申請受信:")
+        print(f"  会社名: {application_data['company_name']}")
+        print(f"  担当者: {application_data['contact_name']}")
+        print(f"  メール: {application_data['email']}")
+        print(f"  電話: {application_data['phone']}")
+        print(f"  予想利用者: {application_data['expected_users']}")
+        print(f"  現在の利用状況: {application_data['current_usage']}")
+        print(f"  メッセージ: {application_data['message']}")
+        
+        # TODO: 実際の実装では以下を行う
+        # 1. データベースに申請データを保存
+        # 2. 営業担当者にメール通知
+        # 3. 申請者に受付完了メールを送信
+        
+        return {"success": True, "message": "申請を受け付けました"}
+        
+    except Exception as e:
+        print(f"申請フォーム処理エラー: {str(e)}")
+        raise HTTPException(status_code=500, detail="申請の処理中にエラーが発生しました")
+
 # 静的ファイルのマウント
 # フロントエンドのビルドディレクトリを指定
 frontend_build_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -924,17 +966,110 @@ async def read_root():
         return FileResponse(index_path)
     return {"message": f"Welcome to {DEFAULT_COMPANY_NAME} Chatbot API"}
 
+
+
 # 静的ファイルをマウント
 if os.path.exists(os.path.join(frontend_build_dir, "assets")):
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_build_dir, "assets")), name="assets")
+
+# チャット履歴をCSV形式でダウンロードするエンドポイント（catch_allより前に配置）
+@app.get("/chatbot/api/admin/chat-history/csv")
+async def download_chat_history_csv(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
+    """チャット履歴をCSV形式でダウンロードする"""
+    try:
+        print(f"CSVダウンロード開始 - ユーザー: {current_user['email']}")
+        
+        # 管理者権限チェック
+        is_admin = current_user["role"] == "admin"
+        is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
+        
+        # チャット履歴を直接Supabaseから取得
+        try:
+            if is_special_admin or is_admin:
+                # 管理者の場合は全ユーザーのデータを取得
+                print("管理者として全ユーザーのチャット履歴を取得")
+                from supabase_adapter import select_data
+                result = select_data("chat_history", columns="*")
+                chat_history = result.data if result and result.data else []
+            else:
+                # 通常のユーザーの場合は自分のデータのみを取得
+                user_id = current_user["id"]
+                print(f"通常ユーザーとして個人のチャット履歴を取得: {user_id}")
+                from supabase_adapter import select_data
+                result = select_data("chat_history", columns="*", filters={"employee_id": user_id})
+                chat_history = result.data if result and result.data else []
+        except Exception as e:
+            print(f"チャット履歴取得エラー: {e}")
+            chat_history = []
+        
+        print(f"取得したチャット履歴数: {len(chat_history)}")
+        
+        # CSV形式に変換
+        csv_data = io.StringIO()
+        csv_writer = csv.writer(csv_data)
+        
+        # ヘッダー行を書き込み
+        csv_writer.writerow([
+            "ID",
+            "日時",
+            "ユーザーの質問",
+            "ボットの回答",
+            "カテゴリ",
+            "感情",
+            "社員ID",
+            "社員名",
+            "参照文書",
+            "ページ番号"
+        ])
+        
+        # データ行を書き込み
+        for chat in chat_history:
+            csv_writer.writerow([
+                chat.get("id", ""),
+                chat.get("timestamp", ""),
+                chat.get("user_message", ""),
+                chat.get("bot_response", ""),
+                chat.get("category", ""),
+                chat.get("sentiment", ""),
+                chat.get("employee_id", ""),
+                chat.get("employee_name", ""),
+                chat.get("source_document", ""),
+                chat.get("source_page", "")
+            ])
+        
+        # CSV文字列を取得
+        csv_content = csv_data.getvalue()
+        csv_data.close()
+        
+        # UTF-8 BOM付きでエンコード（Excelでの文字化け防止）
+        csv_bytes = '\ufeff' + csv_content
+        
+        # ファイル名に日時を含める
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"chat_history_{timestamp}.csv"
+        
+        print(f"CSVファイル生成完了: {filename}")
+        
+        # StreamingResponseでCSVファイルとして返す
+        return StreamingResponse(
+            io.BytesIO(csv_bytes.encode('utf-8')),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except Exception as e:
+        print(f"CSVダウンロードエラー: {e}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"CSVダウンロード中にエラーが発生しました: {str(e)}")
 
 # その他のルートパスをindex.htmlにリダイレクト（SPAのルーティング用）
 @app.get("/{full_path:path}", include_in_schema=False)
 async def catch_all(full_path: str):
     print(f"catch_all handler called with path: {full_path}")
     
-    # APIエンドポイントはスキップ（/apiで始まるパスはAPIエンドポイントとして処理）
-    if full_path.startswith("api/"):
+    # APIエンドポイントはスキップ（/api で始まるパスまたは chatbot/api で始まるパスはAPIエンドポイントとして処理）
+    if full_path.startswith("api/") or full_path.startswith("chatbot/api/"):
         # APIエンドポイントの場合は404を返す
         raise HTTPException(status_code=404, detail="API endpoint not found")
     
@@ -1135,7 +1270,7 @@ async def test_youtube_connection():
 async def admin_get_companies(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """会社一覧を取得（adminのみ）"""
     # 特別な管理者のみがアクセス可能
-    if current_user["email"] != "queue@queuefood.co.jp" or not current_user.get("is_special_admin", False):
+    if current_user["email"] not in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] or not current_user.get("is_special_admin", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="この操作には特別な管理者権限が必要です"
@@ -1150,7 +1285,7 @@ async def admin_fix_company_status(company_id: str, current_user = Depends(get_a
     """会社内のユーザーステータス不整合を修正する"""
     # adminロールまたは特別な管理者のみが実行可能
     is_admin = current_user["role"] == "admin"
-    is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
+    is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
     
     if not (is_admin or is_special_admin):
         raise HTTPException(
@@ -1180,7 +1315,7 @@ async def admin_ensure_database_integrity(current_user = Depends(get_admin_or_us
     """データベース整合性をチェックして修正する"""
     # adminロールまたは特別な管理者のみが実行可能
     is_admin = current_user["role"] == "admin"
-    is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
+    is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
     
     if not (is_admin or is_special_admin):
         raise HTTPException(
@@ -1205,75 +1340,7 @@ async def admin_ensure_database_integrity(current_user = Depends(get_admin_or_us
             detail=f"データベース整合性チェック中にエラーが発生しました: {str(e)}"
         )
 
-# チャット履歴をCSV形式でダウンロードするエンドポイント
-@app.get("/chatbot/api/admin/chat-history/csv")
-async def download_chat_history_csv(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """チャット履歴をCSV形式でダウンロードする"""
-    try:
-        # チャット履歴を取得
-        if current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False):
-            # 特別な管理者の場合は全ユーザーのデータを取得
-            chat_history = await get_chat_history(None, db)
-        else:
-            # 通常のユーザーの場合は自分のデータのみを取得
-            user_id = current_user["id"]
-            chat_history = await get_chat_history(user_id, db)
-        
-        # CSV形式に変換
-        csv_data = io.StringIO()
-        csv_writer = csv.writer(csv_data)
-        
-        # ヘッダー行を書き込み
-        csv_writer.writerow([
-            "ID",
-            "日時",
-            "ユーザーの質問",
-            "ボットの回答",
-            "カテゴリ",
-            "感情",
-            "社員ID",
-            "社員名",
-            "参照文書",
-            "ページ番号"
-        ])
-        
-        # データ行を書き込み
-        for chat in chat_history:
-            csv_writer.writerow([
-                chat.get("id", ""),
-                chat.get("timestamp", ""),
-                chat.get("user_message", ""),
-                chat.get("bot_response", ""),
-                chat.get("category", ""),
-                chat.get("sentiment", ""),
-                chat.get("employee_id", ""),
-                chat.get("employee_name", ""),
-                chat.get("source_document", ""),
-                chat.get("source_page", "")
-            ])
-        
-        # CSV文字列を取得
-        csv_content = csv_data.getvalue()
-        csv_data.close()
-        
-        # UTF-8 BOM付きでエンコード（Excelでの文字化け防止）
-        csv_bytes = '\ufeff' + csv_content
-        csv_stream = io.BytesIO(csv_bytes.encode('utf-8'))
-        
-        # ファイル名に日時を含める
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"chat_history_{timestamp}.csv"
-        
-        # StreamingResponseでCSVファイルとして返す
-        return StreamingResponse(
-            io.BytesIO(csv_bytes.encode('utf-8')),
-            media_type="text/csv; charset=utf-8",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
-        )
-        
-    except Exception as e:
-        print(f"CSVダウンロードエラー: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 # アプリケーションの実行
 if __name__ == "__main__":

@@ -1,0 +1,96 @@
+====================================
+管理者権限問題：原因と対処法まとめ
+====================================
+
+【問題の症状】
+- 本番環境でqueue@queue-tech.jpでログインするとデモ版機能になる
+- ローカル環境では正常に管理者権限が機能する
+- 管理者画面で「従業員詳細」「ユーザーステータス更新」などでHTTP 500/405エラー
+
+【根本原因】
+1. **デプロイ先の相違**
+   - GitHub Actions: /home/ec2-user にデプロイ
+   - 実際の動作場所: /home/ec2-user/workmate/Chatbot-backend-main
+   - 結果：最新のコード修正が反映されない
+
+2. **管理者権限の二重制御**
+   - コード側: 特別管理者メール ("queue@queuefood.co.jp" のみ)
+   - データベース側: usage_limits.is_unlimited = false (デモ版制限)
+
+【調査プロセス】
+1. ログ分析 → HTTP 500/405エラー確認
+2. コード確認 → 特別管理者メールの限定発見
+3. データベース確認 → usage_limits設定の問題発見
+4. サーバーファイル確認 → デプロイ先の相違発見
+5. GitHub Actions確認 → EC2_PATH設定の誤り発見
+
+【適用した解決策】
+1. **データベース修正**
+   ```sql
+   UPDATE usage_limits 
+   SET is_unlimited = true, 
+       questions_limit = 1000000, 
+       document_uploads_limit = 10000
+   WHERE user_id = 'admin';
+   ```
+
+2. **コード修正**
+   ```python
+   # modules/auth.py
+   if user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"]:
+   ```
+
+3. **手動デプロイ**
+   ```bash
+   cd /home/ec2-user/workmate
+   git reset --hard HEAD
+   git clean -fd
+   git pull origin master
+   kill [プロセスID]
+   nohup ./venv/bin/python3 main.py --host 0.0.0.0 --port 8083 > /tmp/fastapi.log 2>&1 &
+   ```
+
+【今後の自動化設定】
+GitHub Secrets設定変更が必要:
+- EC2_HOST: 18.183.34.30
+- EC2_USER: ec2-user  
+- EC2_KEY: [SSH秘密鍵の全内容]
+- EC2_PATH: /home/ec2-user/workmate/Chatbot-backend-main ← **重要：この修正**
+
+【システム構成の理解】
+```
+EC2サーバー構成:
+├── /var/www/html/                    # フロントエンド (nginx配信)
+├── /home/ec2-user/workmate/
+│   ├── Chatbot-Frontend-main/        # フロントエンドソース
+│   └── Chatbot-backend-main/         # バックエンド (FastAPI実行場所)
+└── /home/ec2-user/                   # 間違ったデプロイ先
+```
+
+【予防策】
+1. **デプロイ先の統一**
+   - GitHub ActionsのEC2_PATH設定を正しく設定
+   - デプロイ先と実行場所の一致確認
+
+2. **管理者権限の明確化**
+   - 特別管理者メールリストの文書化
+   - usage_limits設定の定期確認
+
+3. **監視の強化**
+   - デプロイ後の動作確認プロセス
+   - ログ監視による早期発見
+
+【学んだ教訓】
+- モノレポ構成では、デプロイパスの管理が重要
+- 管理者権限は複数箇所で制御される可能性がある
+- 本番環境とローカル環境の設定差異に注意
+- GitHub Actionsの成功 ≠ 正しい場所への反映
+
+【参考情報】
+- プロジェクト: workmate (モノレポ構成)
+- バックエンド: FastAPI (port 8083)
+- フロントエンド: Vite + TypeScript
+- インフラ: EC2 + nginx + SSL (workmatechat.com)
+- CI/CD: GitHub Actions (フロントエンド・バックエンド分離デプロイ)
+
+この問題は、インフラ構成とデプロイメントプロセスの理解不足に起因する典型的な事例でした。 

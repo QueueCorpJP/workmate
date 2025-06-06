@@ -25,7 +25,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import UpgradeIcon from "@mui/icons-material/Upgrade";
 import { useAuth } from "../contexts/AuthContext";
-import PricingCard from "./PricingCard";
+import ApplicationForm from "./ApplicationForm";
 import api from "../api";
 
 interface DemoLimitsProps {
@@ -53,7 +53,7 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
   const isDesktop = useMediaQuery(theme.breakpoints.up("md"));
   const [animate, setAnimate] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [pricingOpen, setPricingOpen] = useState(false);
+  const [applicationOpen, setApplicationOpen] = useState(false);
   const [upgradeSuccess, setUpgradeSuccess] = useState(false);
 
   useEffect(() => {
@@ -138,48 +138,12 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
     setDrawerOpen(false);
   };
 
-  const handleOpenPricing = () => {
-    setPricingOpen(true);
+  const handleOpenApplication = () => {
+    setApplicationOpen(true);
   };
 
-  const handleClosePricing = () => {
-    setPricingOpen(false);
-  };
-
-  const handleUpgrade = async (planId: string) => {
-    try {
-      const response = await api.post("/chatbot/api/upgrade-plan", {
-        plan_id: planId,
-      });
-
-      if (response.data.success) {
-        setUpgradeSuccess(true);
-        setPricingOpen(false);
-        
-        // 同期情報をログに出力
-        if (response.data.message) {
-          console.log("アップグレード完了:", response.data.message);
-          
-          // employeeユーザーの同期情報も表示
-          if (response.data.updated_company_users > 0) {
-            console.log(`同じ会社の ${response.data.updated_company_users} 人のemployeeユーザーも本番版に同期されました`);
-          }
-        }
-        
-        // ユーザーデータを更新
-        if (refreshUserData) {
-          await refreshUserData();
-        }
-        
-        // 成功メッセージを表示
-        setTimeout(() => {
-          setUpgradeSuccess(false);
-        }, 5000);
-      }
-    } catch (error: any) {
-      console.error("アップグレードエラー:", error);
-      // エラーハンドリング（必要に応じてアラート表示）
-    }
+  const handleCloseApplication = () => {
+    setApplicationOpen(false);
   };
 
   // 統合されたボタン表示 (PC, タブレット, モバイル共通)
@@ -573,7 +537,7 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
         color="text.secondary"
         sx={{ mt: 2, textAlign: "center", fontSize: "0.8rem" }}
       >
-        より多くの機能を利用するには、正式版へのアップグレードをご検討ください。
+        無制限で利用するには、本番版への移行をご検討ください。
       </Typography>
 
       {/* 制限に達した場合はアップグレードボタンを表示 */}
@@ -583,7 +547,7 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
           fullWidth
           size="large"
           startIcon={<UpgradeIcon />}
-          onClick={handleOpenPricing}
+          onClick={handleOpenApplication}
           sx={{
             mt: 2,
             py: 1.5,
@@ -596,7 +560,7 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
             },
           }}
         >
-          今すぐアップグレード
+          本番版にアップグレード
         </Button>
       )}
     </Box>
@@ -683,11 +647,10 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
           </Snackbar>
         )}
 
-        {/* プライシングカードダイアログ */}
-        <PricingCard
-          open={pricingOpen}
-          onClose={handleClosePricing}
-          onUpgrade={handleUpgrade}
+        {        /* 申請フォームダイアログ */}
+        <ApplicationForm
+          open={applicationOpen}
+          onClose={handleCloseApplication}
         />
       </div>
     </Fade>

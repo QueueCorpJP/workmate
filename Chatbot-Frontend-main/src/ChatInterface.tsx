@@ -55,7 +55,7 @@ import MoreVertIcon from "@mui/icons-material/MoreVert";
 import api from "./api";
 import DemoLimits from "./components/DemoLimits";
 import SourceCitation from "./components/SourceCitation";
-import PricingCard from "./components/PricingCard";
+import ApplicationForm from "./components/ApplicationForm";
 import { useTheme } from "@mui/material/styles";
 import { useMediaQuery } from "@mui/material";
 import { isValidURL } from './components/admin/utils'
@@ -129,7 +129,7 @@ function ChatInterface() {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [selectedTab, setSelectedTab] = useState(0);
   const [url, setUrl] = useState("");
-  const [pricingOpen, setPricingOpen] = useState(false);
+  const [applicationOpen, setApplicationOpen] = useState(false);
   const [upgradeSuccess, setUpgradeSuccess] = useState(false);
 
   // メッセージエリアのスタイルを改善 - モバイル対応を強化
@@ -690,39 +690,12 @@ function ChatInterface() {
     setShowLimitReachedAlert(false);
   };
 
-  const handleOpenPricing = () => {
-    setPricingOpen(true);
+  const handleOpenApplication = () => {
+    setApplicationOpen(true);
   };
 
-  const handleClosePricing = () => {
-    setPricingOpen(false);
-  };
-
-  const handleUpgrade = async (planId: string) => {
-    try {
-      const response = await api.post("/chatbot/api/upgrade-plan", {
-        plan_id: planId,
-      });
-
-      if (response.data.success) {
-        setUpgradeSuccess(true);
-        setPricingOpen(false);
-        setShowLimitReachedAlert(false);
-        
-        // ユーザーデータを更新
-        if (refreshUserData) {
-          await refreshUserData();
-        }
-        
-        // 成功メッセージを表示
-        setTimeout(() => {
-          setUpgradeSuccess(false);
-        }, 5000);
-      }
-    } catch (error: any) {
-      console.error("アップグレードエラー:", error);
-      // エラーハンドリング（必要に応じてアラート表示）
-    }
+  const handleCloseApplication = () => {
+    setApplicationOpen(false);
   };
 
   // AppBarコンポーネントのスタイル修正 - メニューボタン追加
@@ -1512,17 +1485,17 @@ function ChatInterface() {
               <Button
                 color="inherit"
                 size="small"
-                onClick={handleOpenPricing}
+                onClick={handleOpenApplication}
                 sx={{
                   fontWeight: 600,
                   textTransform: "none",
                 }}
               >
-                アップグレード
+                本番版に移行
               </Button>
             }
           >
-            デモ版の質問回数制限に達しました。続けるには有料プランにアップグレードしてください。
+            デモ版の質問回数制限に達しました。続けるには本番版に移行してください。
           </Alert>
         </Snackbar>
       )}
@@ -1545,16 +1518,15 @@ function ChatInterface() {
               borderRadius: 2,
             }}
           >
-            🎉 アップグレードが完了しました！無制限にご利用いただけます。
+            🎉 本番版への移行が完了しました！無制限にご利用いただけます。
           </Alert>
         </Snackbar>
       )}
 
-      {/* プライシングカードダイアログ */}
-      <PricingCard
-        open={pricingOpen}
-        onClose={handleClosePricing}
-        onUpgrade={handleUpgrade}
+      {/* 申請フォームダイアログ */}
+      <ApplicationForm
+        open={applicationOpen}
+        onClose={handleCloseApplication}
       />
     </Box>
   );

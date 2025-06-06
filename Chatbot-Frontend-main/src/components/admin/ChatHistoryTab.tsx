@@ -109,13 +109,13 @@ const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({
           チャット履歴
         </Typography>
         <Box sx={{ display: "flex", gap: 1 }}>
-          <Button
-            variant="outlined"
-            onClick={() => onRefresh()}
-            disabled={isLoading}
-          >
-            更新
-          </Button>
+        <Button
+          variant="outlined"
+          onClick={() => onRefresh()}
+          disabled={isLoading}
+        >
+          更新
+        </Button>
           <Button
             variant="contained"
             startIcon={<DownloadIcon />}
