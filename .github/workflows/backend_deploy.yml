@@ -151,25 +151,72 @@ jobs:
           echo "使用するpipコマンド: $PIP_CMD"
           
           if [ -f "requirements.txt" ]; then
-            # 仮想環境がある場合は利用
-            if [ -d "venv" ]; then
-              echo "仮想環境をアクティベートします..."
-              source venv/bin/activate
+            # 仮想環境のセットアップ
+            echo "🏠 仮想環境セットアップ..."
+            if [ ! -d "venv" ]; then
+              echo "新しい仮想環境を作成します..."
+              python3 -m venv venv
+            else
+              echo "既存の仮想環境を使用します"
             fi
             
-            echo "パッケージインストール実行..."
-            $PIP_CMD install --upgrade pip setuptools wheel
-            $PIP_CMD install --timeout 300 --retries 3 -r requirements.txt
+            # 仮想環境をアクティベート
+            source venv/bin/activate
+            echo "仮想環境をアクティベートしました: $(which python)"
             
-            # Playwrightブラウザインストール（存在する場合）
-            if $PIP_CMD show playwright >/dev/null 2>&1; then
-              echo "🌐 Playwrightブラウザインストール..."
-              python3 -m playwright install chromium || echo "Playwrightブラウザインストールに失敗しました"
+            # requirements.txtの変更チェック
+            REQUIREMENTS_CHANGED=false
+            if [ -f "requirements.txt.backup" ]; then
+              if ! cmp -s requirements.txt requirements.txt.backup; then
+                echo "📝 requirements.txtに変更が検出されました"
+                REQUIREMENTS_CHANGED=true
+              else
+                echo "📝 requirements.txtに変更はありません"
+              fi
+            else
+              echo "📝 初回デプロイまたはバックアップファイルが見つかりません"
+              REQUIREMENTS_CHANGED=true
             fi
             
-            echo "Pythonパッケージインストール完了"
+            # パッケージインストール（必要な場合のみ）
+            if [ "$REQUIREMENTS_CHANGED" = true ]; then
+              echo "📦 パッケージインストール実行..."
+              echo "⏱️ 初回または変更があるため、パッケージを再インストールします（数分かかる場合があります）"
+              
+              # pipキャッシュディレクトリの設定
+              export PIP_CACHE_DIR="$HOME/.cache/pip"
+              mkdir -p $PIP_CACHE_DIR
+              echo "💾 pipキャッシュディレクトリ: $PIP_CACHE_DIR"
+              
+              # インストール時間計測開始
+              INSTALL_START=$(date +%s)
+              
+              $PIP_CMD install --upgrade pip setuptools wheel
+              $PIP_CMD install --timeout 300 --retries 3 --cache-dir $PIP_CACHE_DIR -r requirements.txt
+              
+              # インストール時間計測終了
+              INSTALL_END=$(date +%s)
+              INSTALL_TIME=$((INSTALL_END - INSTALL_START))
+              echo "⏱️ パッケージインストール時間: ${INSTALL_TIME}秒"
+              
+              # requirements.txtのバックアップ作成
+              cp requirements.txt requirements.txt.backup
+              echo "✅ requirements.txtバックアップを作成しました"
+              
+              # Playwrightブラウザインストール（存在する場合）
+              if $PIP_CMD show playwright >/dev/null 2>&1; then
+                echo "🌐 Playwrightブラウザインストール..."
+                python3 -m playwright install chromium || echo "Playwrightブラウザインストールに失敗しました"
+              fi
+            else
+              echo "⚡ requirements.txtに変更がないため、パッケージインストールをスキップします"
+              # pipとsetuptoolsのみ更新
+              $PIP_CMD install --upgrade pip setuptools wheel --quiet
+            fi
+            
+            echo "✅ Pythonパッケージ準備完了"
           else
-            echo "requirements.txtが見つかりません"
+            echo "❌ requirements.txtが見つかりません"
           fi
           
           # PM2でアプリケーション再起動
