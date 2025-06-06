@@ -122,6 +122,19 @@ jobs:
             fi
           fi
           
+          # PostgreSQLおよび開発パッケージのインストール
+          echo "🐘 PostgreSQL開発パッケージインストール..."
+          if command -v dnf >/dev/null 2>&1; then
+            echo "Amazon Linux 2023で開発パッケージをインストール中..."
+            sudo dnf install -y postgresql15-devel gcc gcc-c++ libffi-devel openssl-devel || echo "開発パッケージインストールに失敗しました"
+          elif command -v yum >/dev/null 2>&1; then
+            echo "YUMで開発パッケージをインストール中..."
+            sudo yum install -y postgresql-devel gcc gcc-c++ libffi-devel openssl-devel || echo "開発パッケージインストールに失敗しました"
+          elif command -v apt >/dev/null 2>&1; then
+            echo "APTで開発パッケージをインストール中..."
+            sudo apt update && sudo apt install -y libpq-dev gcc g++ libffi-dev libssl-dev || echo "開発パッケージインストールに失敗しました"
+          fi
+          
           # pipコマンドの決定
           PIP_CMD=""
           if command -v pip3 >/dev/null 2>&1; then
@@ -145,7 +158,15 @@ jobs:
             fi
             
             echo "パッケージインストール実行..."
-            $PIP_CMD install -r requirements.txt
+            $PIP_CMD install --upgrade pip setuptools wheel
+            $PIP_CMD install --timeout 300 --retries 3 -r requirements.txt
+            
+            # Playwrightブラウザインストール（存在する場合）
+            if $PIP_CMD show playwright >/dev/null 2>&1; then
+              echo "🌐 Playwrightブラウザインストール..."
+              python3 -m playwright install chromium || echo "Playwrightブラウザインストールに失敗しました"
+            fi
+            
             echo "Pythonパッケージインストール完了"
           else
             echo "requirements.txtが見つかりません"
