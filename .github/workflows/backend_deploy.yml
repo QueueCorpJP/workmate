@@ -100,12 +100,52 @@ jobs:
           
           # Pythonパッケージインストール
           echo "📥 依存関係インストール..."
+          
+          # Python環境確認
+          echo "🐍 Python環境確認..."
+          python3 --version || echo "Python3が見つかりません"
+          
+          # pipの確認・インストール
+          echo "📦 pip確認・インストール..."
+          if ! command -v pip >/dev/null 2>&1 && ! command -v pip3 >/dev/null 2>&1 && ! python3 -m pip --version >/dev/null 2>&1; then
+            echo "pipが見つかりません。インストールを試行します..."
+            # Amazon Linux 2023の場合
+            if command -v dnf >/dev/null 2>&1; then
+              echo "Amazon Linux 2023でpipをインストール中..."
+              sudo dnf install -y python3-pip python3-devel || echo "pipインストールに失敗しました"
+            elif command -v yum >/dev/null 2>&1; then
+              echo "YUMでpipをインストール中..."
+              sudo yum install -y python3-pip python3-devel || echo "pipインストールに失敗しました"
+            elif command -v apt >/dev/null 2>&1; then
+              echo "APTでpipをインストール中..."
+              sudo apt update && sudo apt install -y python3-pip python3-dev || echo "pipインストールに失敗しました"
+            fi
+          fi
+          
+          # pipコマンドの決定
+          PIP_CMD=""
+          if command -v pip3 >/dev/null 2>&1; then
+            PIP_CMD="pip3"
+          elif command -v pip >/dev/null 2>&1; then
+            PIP_CMD="pip"
+          elif python3 -m pip --version >/dev/null 2>&1; then
+            PIP_CMD="python3 -m pip"
+          else
+            echo "⚠️ pipコマンドが見つかりません。手動でのセットアップが必要です。"
+            PIP_CMD="python3 -m pip"
+          fi
+          
+          echo "使用するpipコマンド: $PIP_CMD"
+          
           if [ -f "requirements.txt" ]; then
             # 仮想環境がある場合は利用
             if [ -d "venv" ]; then
+              echo "仮想環境をアクティベートします..."
               source venv/bin/activate
             fi
-            pip install -r requirements.txt
+            
+            echo "パッケージインストール実行..."
+            $PIP_CMD install -r requirements.txt
             echo "Pythonパッケージインストール完了"
           else
             echo "requirements.txtが見つかりません"

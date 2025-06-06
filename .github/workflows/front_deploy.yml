@@ -108,11 +108,15 @@ jobs:
           sudo chown $USER:$USER $NGINX_ROOT
           
           echo "🧹 既存ファイルクリーンアップ..."
-          rm -rf $NGINX_ROOT/*
+          sudo rm -rf $NGINX_ROOT/*
           
           echo "📦 ファイル展開..."
           cd $NGINX_ROOT
           tar -xzf /tmp/frontend.tar.gz
+          
+          # ファイル権限の適切な設定
+          sudo chown -R nginx:nginx $NGINX_ROOT 2>/dev/null || sudo chown -R $USER:$USER $NGINX_ROOT
+          sudo chmod -R 755 $NGINX_ROOT
           
           echo "📊 配置確認:"
           ls -la $NGINX_ROOT/ | head -20
