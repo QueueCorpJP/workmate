@@ -949,7 +949,7 @@ async def admin_update_user_status(user_id: str, request: dict, current_user = D
     """管理者によるユーザーステータス変更（強化版）"""
     # adminロール、特別な管理者、またはuserロール（同じ会社のユーザーのみ）が実行可能
     is_admin = current_user["role"] == "admin"
-    is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
+            is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
     is_user = current_user["role"] == "user"
     
     print(f"=== ユーザーステータス変更権限チェック ===")

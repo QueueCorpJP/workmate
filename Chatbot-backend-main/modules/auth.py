@@ -33,7 +33,7 @@ def get_current_admin(user = Depends(get_current_user)):
 def get_admin_or_user(user = Depends(get_current_user)):
     """現在のユーザーを取得します（管理者でなくても可）"""
     # 特定のメールアドレスを持つユーザーは特別な権限を持つ
-    if user["email"] == "queue@queuefood.co.jp":
+    if user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"]:
         user["is_special_admin"] = True
     else:
         user["is_special_admin"] = False
@@ -51,7 +51,7 @@ def get_admin_or_user(user = Depends(get_current_user)):
 def get_company_admin(user = Depends(get_current_user)):
     """会社の管理者ユーザーを取得します"""
     # 特定のメールアドレスを持つユーザーは特別な権限を持つ
-    if user["email"] == "queue@queuefood.co.jp":
+    if user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"]:
         user["is_special_admin"] = True
         return user
         
