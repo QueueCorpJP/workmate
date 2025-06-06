@@ -489,3 +489,44 @@ unset HTTP_PROXY HTTPS_PROXY
 
 ### ログの確認
 ```
+```
+
+## SSR用Nginx設定
+
+GitHub ActionsでSSR向けデプロイを実行した後、以下のNginx設定を適用してください：
+
+```nginx
+server {
+    listen 80;
+    server_name workmatechat.com;  # 実際のドメインに変更
+
+    # フロントエンド（Node.js + Express on ポート3000）
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # バックエンドAPI（FastAPI on ポート8083）
+    location /chatbot/api/ {
+        proxy_pass http://127.0.0.1:8083;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+**設定手順：**
+1. `sudo nano /etc/nginx/nginx.conf` または `/etc/nginx/sites-available/default`
+2. 上記設定を適用
+3. `sudo nginx -t` で設定確認
+4. `sudo systemctl reload nginx` で設定反映
+
+**メリット：**
+- PM2再起動で即座にフロントエンド更新が反映
+- Nginxキャッシュの影響を受けない
+- 開発・本番で同じNode.js環境

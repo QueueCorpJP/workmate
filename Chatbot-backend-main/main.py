@@ -11,7 +11,7 @@ from typing import List
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Request, Form, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.exceptions import RequestValidationError
 # モジュールのインポート
@@ -39,6 +39,8 @@ from modules.auth import get_current_user, get_current_admin, register_new_user,
 from modules.resource import get_uploaded_resources_by_company_id, toggle_resource_active_by_id, remove_resource_by_id
 import json
 from modules.validation import validate_login_input, validate_user_input
+import csv
+import io
 
 # ロギングの設定
 logger = setup_logging()
@@ -1202,6 +1204,76 @@ async def admin_ensure_database_integrity(current_user = Depends(get_admin_or_us
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"データベース整合性チェック中にエラーが発生しました: {str(e)}"
         )
+
+# チャット履歴をCSV形式でダウンロードするエンドポイント
+@app.get("/chatbot/api/admin/chat-history/csv")
+async def download_chat_history_csv(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
+    """チャット履歴をCSV形式でダウンロードする"""
+    try:
+        # チャット履歴を取得
+        if current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False):
+            # 特別な管理者の場合は全ユーザーのデータを取得
+            chat_history = await get_chat_history(None, db)
+        else:
+            # 通常のユーザーの場合は自分のデータのみを取得
+            user_id = current_user["id"]
+            chat_history = await get_chat_history(user_id, db)
+        
+        # CSV形式に変換
+        csv_data = io.StringIO()
+        csv_writer = csv.writer(csv_data)
+        
+        # ヘッダー行を書き込み
+        csv_writer.writerow([
+            "ID",
+            "日時",
+            "ユーザーの質問",
+            "ボットの回答",
+            "カテゴリ",
+            "感情",
+            "社員ID",
+            "社員名",
+            "参照文書",
+            "ページ番号"
+        ])
+        
+        # データ行を書き込み
+        for chat in chat_history:
+            csv_writer.writerow([
+                chat.get("id", ""),
+                chat.get("timestamp", ""),
+                chat.get("user_message", ""),
+                chat.get("bot_response", ""),
+                chat.get("category", ""),
+                chat.get("sentiment", ""),
+                chat.get("employee_id", ""),
+                chat.get("employee_name", ""),
+                chat.get("source_document", ""),
+                chat.get("source_page", "")
+            ])
+        
+        # CSV文字列を取得
+        csv_content = csv_data.getvalue()
+        csv_data.close()
+        
+        # UTF-8 BOM付きでエンコード（Excelでの文字化け防止）
+        csv_bytes = '\ufeff' + csv_content
+        csv_stream = io.BytesIO(csv_bytes.encode('utf-8'))
+        
+        # ファイル名に日時を含める
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"chat_history_{timestamp}.csv"
+        
+        # StreamingResponseでCSVファイルとして返す
+        return StreamingResponse(
+            io.BytesIO(csv_bytes.encode('utf-8')),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except Exception as e:
+        print(f"CSVダウンロードエラー: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # アプリケーションの実行
 if __name__ == "__main__":

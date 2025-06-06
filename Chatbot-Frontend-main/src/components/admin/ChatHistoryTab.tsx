@@ -19,6 +19,8 @@ import { useTheme } from "@mui/material/styles";
 import SentimentSatisfiedAltIcon from "@mui/icons-material/SentimentSatisfiedAlt";
 import SentimentVeryDissatisfiedIcon from "@mui/icons-material/SentimentVeryDissatisfied";
 import SentimentNeutralIcon from "@mui/icons-material/SentimentNeutral";
+import DownloadIcon from "@mui/icons-material/Download";
+import api from "../../api";
 
 interface ChatHistoryTabProps {
   chatHistory: ChatHistoryItem[];
@@ -61,6 +63,36 @@ const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({
     }
   };
 
+  // CSVダウンロード機能
+  const handleDownloadCSV = async () => {
+    try {
+      const response = await api.get('/admin/chat-history/csv', {
+        responseType: 'blob',
+      });
+      
+      // Blobからダウンロードリンクを作成
+      const blob = new Blob([response.data], { type: 'text/csv; charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // ファイル名を設定（現在の日時を含む）
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+      link.download = `chat_history_${timestamp}.csv`;
+      
+      // ダウンロードを実行
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      console.log('チャット履歴のCSVダウンロードが完了しました');
+    } catch (error) {
+      console.error('CSVダウンロードエラー:', error);
+      alert('CSVファイルのダウンロードに失敗しました。');
+    }
+  };
+
   return (
     <>
       <Box
@@ -69,18 +101,36 @@ const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
+          flexWrap: "wrap",
+          gap: 1,
         }}
       >
         <Typography variant="h5" sx={{ fontWeight: 600 }}>
           チャット履歴
         </Typography>
-        <Button
-          variant="outlined"
-          onClick={() => onRefresh()}
-          disabled={isLoading}
-        >
-          更新
-        </Button>
+        <Box sx={{ display: "flex", gap: 1 }}>
+          <Button
+            variant="outlined"
+            onClick={() => onRefresh()}
+            disabled={isLoading}
+          >
+            更新
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<DownloadIcon />}
+            onClick={handleDownloadCSV}
+            disabled={isLoading || chatHistory.length === 0}
+            sx={{
+              backgroundColor: theme.palette.success.main,
+              '&:hover': {
+                backgroundColor: theme.palette.success.dark,
+              },
+            }}
+          >
+            CSV出力
+          </Button>
+        </Box>
       </Box>
 
       {isLoading ? (
