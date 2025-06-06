@@ -61,7 +61,7 @@ jobs:
           echo "📂 フロントエンド配信用Express サーバー設定..."
           
           # Express サーバー用のpackage.jsonを作成
-          cat > $FRONTEND_PATH/package.json << 'EOF'
+          cat > $FRONTEND_PATH/package.json << 'PACKAGEJSON'
 {
   "name": "chatbot-frontend-server",
   "version": "1.0.0",
@@ -73,10 +73,10 @@ jobs:
     "express": "^4.18.2"
   }
 }
-EOF
+PACKAGEJSON
 
           # Express サーバーファイルを作成
-          cat > $FRONTEND_PATH/server.js << 'EOF'
+          cat > $FRONTEND_PATH/server.js << 'SERVERJS'
 const express = require('express');
 const path = require('path');
 const app = express();
@@ -91,9 +91,9 @@ app.get('*', (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`フロントエンドサーバーがポート ${port} で起動しました`);
+  console.log('フロントエンドサーバーがポート 3000 で起動しました');
 });
-EOF
+SERVERJS
 
           echo "📦 Node.js依存関係インストール..."
           cd $FRONTEND_PATH
