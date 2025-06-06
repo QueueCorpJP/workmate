@@ -491,42 +491,126 @@ unset HTTP_PROXY HTTPS_PROXY
 ```
 ```
 
-## SSR用Nginx設定
+## SPA用Nginx設定（現在の設定の修正版）
 
-GitHub ActionsでSSR向けデプロイを実行した後、以下のNginx設定を適用してください：
+現在のNginx設定を以下のようにSPA用に変更してください：
 
 ```nginx
+###############################################################################
+# 80番 : HTTP  → HTTPS へリダイレクト（ACME チャレンジのみ許可）
+###############################################################################
 server {
     listen 80;
-    server_name workmatechat.com;  # 実際のドメインに変更
+    server_name workmatechat.com www.workmatechat.com;
 
-    # フロントエンド（Node.js + Express on ポート3000）
+    # Let's Encrypt 用
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    # それ以外は HTTPS へ転送
     location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        return 301 https://$host$request_uri;
+    }
+}
+
+###############################################################################
+# 443番 : 本番サーバー（SPA + API）
+#   フロント  : 静的ファイル配信 (/var/www/html/)
+#   バックエンド API : FastAPI (127.0.0.1:8083/chatbot/api/)
+###############################################################################
+server {
+    listen 443 ssl;
+    server_name workmatechat.com www.workmatechat.com;
+
+    ssl_certificate     /etc/letsencrypt/live/workmatechat.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/workmatechat.com/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    ###########################################################################
+    # バックエンド API（変更なし）
+    ###########################################################################
+    location /chatbot/api/ {
+        proxy_pass http://127.0.0.1:8083/chatbot/api/;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # バックエンドAPI（FastAPI on ポート8083）
-    location /chatbot/api/ {
-        proxy_pass http://127.0.0.1:8083;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+    ###########################################################################
+    # 静的アセット（長期キャッシュ）
+    ###########################################################################
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        root /var/www/html;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        add_header Access-Control-Allow-Origin "*";
+    }
+
+    ###########################################################################
+    # フロントエンド（SPA - 静的ファイル配信）
+    ###########################################################################
+    location / {
+        root /var/www/html;
+        try_files $uri $uri/ /index.html;
+        
+        # HTMLファイルはキャッシュしない（常に最新版を取得）
+        location = /index.html {
+            expires -1;
+            add_header Cache-Control "no-cache, no-store, must-revalidate";
+            add_header Pragma "no-cache";
+        }
+    }
+
+    ###########################################################################
+    # エラーページ
+    ###########################################################################
+    error_page 404 /404.html;
+    location = /404.html { 
+        root /var/www/html;
+    }
+
+    error_page 500 502 503 504 /50x.html;
+    location = /50x.html { 
+        root /var/www/html;
     }
 }
 ```
 
-**設定手順：**
-1. `sudo nano /etc/nginx/nginx.conf` または `/etc/nginx/sites-available/default`
-2. 上記設定を適用
-3. `sudo nginx -t` で設定確認
-4. `sudo systemctl reload nginx` で設定反映
+## 🔧 **変更手順**
 
-**メリット：**
-- PM2再起動で即座にフロントエンド更新が反映
-- Nginxキャッシュの影響を受けない
-- 開発・本番で同じNode.js環境
+1. **Nginx設定ファイル編集**:
+   ```bash
+   sudo nano /etc/nginx/sites-available/default
+   # または
+   sudo nano /etc/nginx/nginx.conf
+   ```
+
+2. **上記設定に置き換え**
+
+3. **設定確認**:
+   ```bash
+   sudo nginx -t
+   ```
+
+4. **Nginx再起動**:
+   ```bash
+   sudo systemctl reload nginx
+   ```
+
+## 🎯 **主な変更点**
+
+| 項目 | 変更前（SSR） | 変更後（SPA） |
+|------|---------------|---------------|
+| **フロントエンド配信** | `proxy_pass http://18.183.34.30:3000` | `root /var/www/html; try_files $uri $uri/ /index.html` |
+| **Node.jsサーバー** | 必要（ポート3000） | 不要 |
+| **キャッシュ戦略** | なし | アセット長期キャッシュ + HTML無キャッシュ |
+| **SPA対応** | なし | `try_files` でフォールバック |
+
+## ⚡ **メリット**
+
+- **シンプル**: Node.jsプロセス不要
+- **高速**: Nginxが直接静的ファイル配信
+- **安定**: プロセス管理不要
+- **キャッシュ最適化**: 反映遅れを解消

@@ -1,4 +1,4 @@
-name: Deploy SSR Frontend
+name: Deploy Frontend (SPA)
 
 on:
   push:
@@ -15,9 +15,9 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Build SSR Frontend
+    - name: Build Frontend
       run: |
-        echo "🏗️ SSR用フロントエンドビルド開始..."
+        echo "🏗️ フロントエンドビルド開始..."
         cd Chatbot-Frontend-main
         
         # 本番用環境変数でビルド
@@ -29,106 +29,36 @@ jobs:
         
         echo "✅ ビルド完了"
 
-    - name: Deploy to EC2 via rsync
+    - name: Deploy to EC2
       env:
         HOST: ${{ secrets.EC2_HOST }}
         USER: ${{ secrets.EC2_USER }}
         KEY: ${{ secrets.EC2_KEY }}
-        DEPLOY_PATH: ${{ secrets.EC2_PATH }}
       run: |
         echo "🔑 SSH鍵設定..."
         echo "$KEY" > id_rsa && chmod 600 id_rsa
         
-        echo "📤 ビルド成果物をEC2に同期..."
-        # dist/ フォルダを /home/ec2-user/app/ に同期（差分転送）
+        echo "📤 静的ファイルをEC2に同期..."
+        # dist/ フォルダを Nginx ディレクトリに同期
         rsync -avz --delete -e "ssh -i id_rsa -o StrictHostKeyChecking=no" \
-          Chatbot-Frontend-main/dist/ $USER@$HOST:$DEPLOY_PATH/frontend/
-
-    - name: Setup and Restart PM2
-      env:
-        HOST: ${{ secrets.EC2_HOST }}
-        USER: ${{ secrets.EC2_USER }}
-        KEY: ${{ secrets.EC2_KEY }}
-        DEPLOY_PATH: ${{ secrets.EC2_PATH }}
-      run: |
-        echo "🔄 Node.js Express サーバー設定・再起動..."
+          Chatbot-Frontend-main/dist/ $USER@$HOST:/var/www/html/
+        
+        echo "🔄 ファイル権限設定とNginx再起動..."
         ssh -i id_rsa -o StrictHostKeyChecking=no $USER@$HOST << 'ENDSSH'
-          set -e
+          # ファイル権限設定
+          sudo chown -R nginx:nginx /var/www/html/ || sudo chown -R www-data:www-data /var/www/html/
+          sudo chmod -R 755 /var/www/html/
           
-          DEPLOY_PATH="${{ secrets.EC2_PATH }}"
-          FRONTEND_PATH="$DEPLOY_PATH/frontend"
+          # Let's Encrypt用ディレクトリの権限確保
+          sudo mkdir -p /var/www/html/.well-known/acme-challenge
+          sudo chown -R nginx:nginx /var/www/html/.well-known || sudo chown -R www-data:www-data /var/www/html/.well-known
           
-          echo "📂 フロントエンド配信用Express サーバー設定..."
+          # Nginx設定テストと再起動
+          sudo nginx -t && sudo systemctl reload nginx
           
-          # Express サーバー用のpackage.jsonを作成
-          cat > $FRONTEND_PATH/package.json << 'PACKAGEJSON'
-{
-  "name": "chatbot-frontend-server",
-  "version": "1.0.0",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2"
-  }
-}
-PACKAGEJSON
-
-          # Express サーバーファイルを作成
-          cat > $FRONTEND_PATH/server.js << 'SERVERJS'
-const express = require('express');
-const path = require('path');
-const app = express();
-const port = process.env.PORT || 3000;
-
-// 静的ファイルの配信
-app.use(express.static(path.join(__dirname)));
-
-// SPA用のフォールバック（全てのルートでindex.htmlを返す）
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-app.listen(port, () => {
-  console.log('フロントエンドサーバーがポート 3000 で起動しました');
-});
-SERVERJS
-
-          echo "📦 Node.js依存関係インストール..."
-          cd $FRONTEND_PATH
-          
-          # npmがない場合はインストール
-          if ! command -v npm >/dev/null 2>&1; then
-            echo "npmをインストール中..."
-            curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
-            sudo yum install -y nodejs npm
-          fi
-          
-          npm install express
-
-          echo "🔄 PM2でフロントエンドプロセス管理..."
-          
-          # PM2がない場合はインストール
-          if ! command -v pm2 >/dev/null 2>&1; then
-            echo "PM2をインストール中..."
-            sudo npm install -g pm2
-          fi
-
-          # 既存のフロントエンドプロセスを停止・削除
-          pm2 delete chatbot-frontend 2>/dev/null || echo "既存のプロセスが見つかりません"
-          
-          # 新しいプロセスを開始
-          pm2 start server.js --name chatbot-frontend --port 3000
-          pm2 save
-          
-          echo "📊 PM2プロセス状況:"
-          pm2 list
-          
-          echo "✅ フロントエンドデプロイ・再起動完了"
+          echo "✅ デプロイ完了"
         ENDSSH
         
-        echo "🧹 一時ファイル削除..."
         rm -f id_rsa
 
     - name: Verify deployment
@@ -141,15 +71,11 @@ SERVERJS
         echo "$KEY" > id_rsa && chmod 600 id_rsa
         
         ssh -i id_rsa -o StrictHostKeyChecking=no $USER@$HOST "
-          echo '🌐 PM2プロセス確認:'
-          pm2 describe chatbot-frontend || echo '⚠️ chatbot-frontendプロセスが見つかりません'
-          echo ''
-          echo '🔌 ポート3000確認:'
-          netstat -tlnp | grep ':3000' || echo '⚠️ ポート3000で待機中のプロセスが見つかりません'
-          echo ''
-          echo '📁 フロントエンドファイル確認:'
-          ls -la ${{ secrets.EC2_PATH }}/frontend/index.html 2>/dev/null || echo '⚠️ index.htmlが見つかりません'
-        " || echo "⚠️ 検証で問題が見つかりました"
+          echo '📁 静的ファイル確認:'
+          ls -la /var/www/html/index.html || echo '⚠️ index.htmlが見つかりません'
+          echo '🌐 Nginx状態確認:'
+          sudo nginx -t || echo '⚠️ Nginx設定エラー'
+        "
         
         rm -f id_rsa
-        echo "✅ デプロイ検証完了"
+        echo "✅ 検証完了"
