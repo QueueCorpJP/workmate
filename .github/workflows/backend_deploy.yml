@@ -256,7 +256,6 @@ jobs:
           
           echo "✅ バックエンドデプロイ完了"
         ENDSSH
-        ouhaenriphiuhoeuthneieyr9husent
         echo "✅ デプロイプロセス完了"
 
     - name: Verify deployment
