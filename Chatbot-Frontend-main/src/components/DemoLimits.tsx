@@ -871,7 +871,7 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
   return (
     <Fade in={animate} timeout={800}>
       <div>
-        {/* デバイスに応じた表示の切り替え */}
+        {/* デバイスに応じた表示\ */}
         <Box
           sx={{
             display: "flex",
