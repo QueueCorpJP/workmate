@@ -241,15 +241,15 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                 detail="このメールアドレスは既に登録されています"
             )
         
-        # 特別な管理者（queue@queuefood.co.jp）またはadminロールの場合はロールと会社IDを指定できる
+        # 特別な管理者（queue@queuefood.co.jp）またはadminロールの場合はuserロールのみ作成可能
         is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
         is_admin = current_user["role"] == "admin"
         
         if is_special_admin or is_admin:
             print(f"管理者権限でユーザー作成: 特別管理者={is_special_admin}, admin={is_admin}")
             
-            # user_dataからロールを取得（デフォルトは"employee"）
-            role = user_data.role if hasattr(user_data, "role") and user_data.role in ["user", "employee"] else "employee"
+            # adminロールは常にuserロールのアカウントのみ作成可能
+            role = "user"
             
             # 会社IDの指定
             company_id = None
@@ -289,7 +289,14 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                 "created_at": datetime.datetime.now().isoformat()
             }
         else:
-            # 通常のユーザー（user/employeeロール）の場合は社員アカウントとして登録（管理画面にアクセスできない）
+            # userロールの場合のみ社員アカウント作成可能、employeeロールは作成権限なし
+            if current_user["role"] == "employee":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="社員アカウントにはユーザー作成権限がありません"
+                )
+            
+            # userロールの場合は社員アカウントとして登録（管理画面にアクセスできない）
             # 現在のユーザーの会社IDを取得して新しいユーザーに設定
             company_id = current_user.get("company_id")
             
@@ -552,6 +559,10 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
         # Gemini APIで詳細な分析を実行
         from modules.admin import model
         
+        # Geminiモデルが初期化されていない場合のエラーハンドリング
+        if model is None:
+            raise HTTPException(status_code=500, detail="Geminiモデルが初期化されていません")
+        
         analysis_prompt = f"""
         {prompt}
         
@@ -568,14 +579,25 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
         
         ## 基本的な洞察:
         {analysis_result.get("insights", "")}
+        
+        上記のデータに基づいて、以下の6つのセクションに分けて詳細な分析を行ってください。
+        各セクションは明確に区別できるよう、【セクション名】の形式で記載してください：
+        
+        【1. 頻出トピック/質問とその傾向分析】
+        【2. 業務効率化の機会】
+        【3. 社員のフラストレーションポイント】
+        【4. 製品/サービス改善の示唆】
+        【5. コミュニケーションギャップ】
+        【6. 具体的な改善提案】
         """
         
         # Gemini APIによる詳細分析
         analysis_response = model.generate_content(analysis_prompt)
         detailed_analysis_text = analysis_response.text
         
+        print(f"Gemini分析結果: {detailed_analysis_text[:500]}...")  # デバッグ用
+        
         # 詳細分析の結果をセクションごとに分割して整形
-        # 実際のプロンプトに合わせてセクション分割のルールを調整する必要があります
         import re
         
         # 各セクションのデータ
@@ -588,33 +610,38 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
             "specific_recommendations": ""
         }
         
-        # テキスト全体から各セクションを抽出する簡易的な方法
-        # より高度な抽出が必要な場合は、正規表現やセクション名の検索方法を調整してください
+        # セクション分割の改善
         sections = [
-            ("頻出トピック", "detailed_topic_analysis"),
-            ("業務効率化", "efficiency_opportunities"),
-            ("フラストレーション", "frustration_points"),
-            ("改善", "improvement_suggestions"),
-            ("コミュニケーションギャップ", "communication_gaps"),
-            ("具体的な改善提案", "specific_recommendations")
+            (r"【1\..*?頻出トピック.*?】|1\..*?頻出トピック|頻出トピック", "detailed_topic_analysis"),
+            (r"【2\..*?業務効率化.*?】|2\..*?業務効率化|業務効率化", "efficiency_opportunities"),
+            (r"【3\..*?フラストレーション.*?】|3\..*?フラストレーション|フラストレーション", "frustration_points"),
+            (r"【4\..*?改善.*?示唆.*?】|4\..*?改善.*?示唆|製品.*?改善|サービス.*?改善", "improvement_suggestions"),
+            (r"【5\..*?コミュニケーション.*?】|5\..*?コミュニケーション|コミュニケーション", "communication_gaps"),
+            (r"【6\..*?具体的.*?改善提案.*?】|6\..*?具体的.*?改善|具体的.*?改善提案", "specific_recommendations")
         ]
         
-        # 正規表現を使ってセクションを検出
-        current_section = None
+        # テキストを行に分割
         lines = detailed_analysis_text.split("\n")
+        current_section = None
         section_content = []
         
         for line in lines:
             matched = False
-            for keyword, section_key in sections:
-                if keyword in line and (line.startswith("#") or line.startswith("**") or line.startswith(":")):
-                    if current_section:
+            
+            # 各セクションのパターンをチェック
+            for pattern, section_key in sections:
+                if re.search(pattern, line, re.IGNORECASE):
+                    # 前のセクションの内容を保存
+                    if current_section and section_content:
                         detailed_analysis[current_section] = "\n".join(section_content).strip()
+                    
+                    # 新しいセクションを開始
                     current_section = section_key
                     section_content = []
                     matched = True
                     break
             
+            # セクションヘッダー以外の行は現在のセクションに追加
             if not matched and current_section:
                 section_content.append(line)
         
@@ -622,9 +649,18 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
         if current_section and section_content:
             detailed_analysis[current_section] = "\n".join(section_content).strip()
         
-        # 何もセクションに当てはまらなかった場合は、最初のキーに全テキストを入れる
-        if all(value == "" for value in detailed_analysis.values()):
+        # セクションが分割できなかった場合は、全テキストを最初のセクションに入れる
+        if all(not value.strip() for value in detailed_analysis.values()):
             detailed_analysis["detailed_topic_analysis"] = detailed_analysis_text
+            print("セクション分割に失敗したため、全文を最初のセクションに配置しました")
+        
+        # デバッグ情報を追加
+        print(f"分析結果セクション:")
+        for key, value in detailed_analysis.items():
+            if value.strip():
+                print(f"  {key}: {len(value)} 文字")
+            else:
+                print(f"  {key}: 空")
         
         return {
             "detailed_analysis": detailed_analysis
@@ -634,7 +670,18 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
         import traceback
         print(f"詳細ビジネス分析エラー: {str(e)}")
         print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
+        
+        # エラーの場合でも基本的な分析結果を返す
+        return {
+            "detailed_analysis": {
+                "detailed_topic_analysis": f"分析処理中にエラーが発生しました: {str(e)}",
+                "efficiency_opportunities": "エラーのため分析できませんでした。",
+                "frustration_points": "エラーのため分析できませんでした。",
+                "improvement_suggestions": "エラーのため分析できませんでした。",
+                "communication_gaps": "エラーのため分析できませんでした。",
+                "specific_recommendations": "システム管理者に連絡して、エラーログを確認してください。"
+            }
+        }
 
 # 社員詳細情報を取得するエンドポイント
 @app.get("/chatbot/api/admin/employee-details/{employee_id}", response_model=List[ChatHistoryItem])
@@ -972,6 +1019,36 @@ async def read_root():
 if os.path.exists(os.path.join(frontend_build_dir, "assets")):
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_build_dir, "assets")), name="assets")
 
+# プラン履歴取得エンドポイント（catch_allより前に配置）
+@app.get("/chatbot/api/plan-history", response_model=dict)
+async def get_plan_history_endpoint(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """プラン履歴を取得する"""
+    try:
+        print(f"プラン履歴取得要求 - ユーザー: {current_user['email']} (ロール: {current_user['role']})")
+        
+        from modules.database import get_plan_history
+        
+        # 管理者は全てのプラン履歴を、一般ユーザーは自分の履歴のみを取得
+        if current_user["role"] in ["admin"] or current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"]:
+            history = get_plan_history(db=db)
+        else:
+            history = get_plan_history(user_id=current_user["id"], db=db)
+        
+        return {
+            "success": True,
+            "history": history,
+            "count": len(history)
+        }
+        
+    except Exception as e:
+        print(f"プラン履歴取得エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"プラン履歴の取得に失敗しました: {str(e)}"
+        )
+
 # チャット履歴をCSV形式でダウンロードするエンドポイント（catch_allより前に配置）
 @app.get("/chatbot/api/admin/chat-history/csv")
 async def download_chat_history_csv(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
@@ -1081,43 +1158,20 @@ async def catch_all(full_path: str):
 
 @app.post("/chatbot/api/admin/update-user-status/{user_id}", response_model=dict)
 async def admin_update_user_status(user_id: str, request: dict, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """管理者によるユーザーステータス変更（強化版）"""
-    # adminロール、特別な管理者、またはuserロール（同じ会社のユーザーのみ）が実行可能
+    """管理者によるユーザーステータス変更（adminのみ実行可能）"""
+    # adminロールまたは特別な管理者のみが実行可能
     is_admin = current_user["role"] == "admin"
     is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
-    is_user = current_user["role"] == "user"
     
     print(f"=== ユーザーステータス変更権限チェック ===")
-    print(f"操作者: {current_user['email']} (管理者: {is_admin}, 特別管理者: {is_special_admin}, user: {is_user})")
+    print(f"操作者: {current_user['email']} (管理者: {is_admin}, 特別管理者: {is_special_admin})")
     
-    # 権限チェック
-    if not (is_admin or is_special_admin or is_user):
+    # 権限チェック - adminまたは特別管理者のみ
+    if not (is_admin or is_special_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="この操作には管理者権限またはuser権限が必要です"
+            detail="この操作には管理者権限が必要です。一般ユーザーは自分のプラン変更を行うことはできません。"
         )
-    
-    # userロールの場合は、同じ会社のユーザーのみ操作可能
-    if is_user and not is_admin and not is_special_admin:
-        # 対象ユーザーの会社IDを確認
-        target_user_result = select_data("users", columns="company_id", filters={"id": user_id})
-        current_user_company_id = current_user.get("company_id")
-        
-        if not target_user_result or not target_user_result.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="指定されたユーザーが見つかりません"
-            )
-        
-        target_user_company_id = target_user_result.data[0].get("company_id")
-        
-        if not current_user_company_id or not target_user_company_id or current_user_company_id != target_user_company_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="他の会社のユーザーのステータスを変更する権限がありません"
-            )
-        
-        print(f"userロールとして同じ会社（{current_user_company_id}）のユーザーステータス変更を実行します")
     
     try:
         print(f"=== ユーザーステータス変更開始 ===")
@@ -1202,6 +1256,13 @@ async def admin_update_user_status(user_id: str, request: dict, current_user = D
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="利用制限の更新に失敗しました"
             )
+        
+        # プラン履歴を記録
+        print("プラン履歴を記録します...")
+        from modules.database import record_plan_change
+        from_plan = "unlimited" if was_unlimited else "demo"
+        to_plan = "unlimited" if new_is_unlimited else "demo"
+        record_plan_change(user_id, from_plan, to_plan, db)
         
         # 作成したアカウントも同期
         print("子アカウントの同期を開始します...")

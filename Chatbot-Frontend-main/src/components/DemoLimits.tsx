@@ -16,6 +16,12 @@ import {
   Badge,
   Drawer,
   Stack,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  Avatar,
+  Divider,
 } from "@mui/material";
 import ErrorIcon from "@mui/icons-material/Error";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
@@ -24,6 +30,10 @@ import InfoIcon from "@mui/icons-material/Info";
 import CloseIcon from "@mui/icons-material/Close";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import UpgradeIcon from "@mui/icons-material/Upgrade";
+import HistoryIcon from "@mui/icons-material/History";
+import TrendingUpIcon from "@mui/icons-material/TrendingUp";
+import TrendingDownIcon from "@mui/icons-material/TrendingDown";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import { useAuth } from "../contexts/AuthContext";
 import ApplicationForm from "./ApplicationForm";
 import api from "../api";
@@ -33,6 +43,17 @@ interface DemoLimitsProps {
   remainingQuestions?: number | null;
   showAlert?: boolean;
   onCloseAlert?: () => void;
+}
+
+interface PlanHistoryItem {
+  id: string;
+  user_id: string;
+  user_name?: string;
+  user_email?: string;
+  from_plan: string;
+  to_plan: string;
+  changed_at: string;
+  duration_days: number | null;
 }
 
 const DemoLimits: React.FC<DemoLimitsProps> = ({
@@ -46,6 +67,7 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
     remainingUploads,
     isUnlimited,
     refreshUserData,
+    user,
   } = useAuth();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -55,6 +77,8 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [applicationOpen, setApplicationOpen] = useState(false);
   const [upgradeSuccess, setUpgradeSuccess] = useState(false);
+  const [planHistory, setPlanHistory] = useState<PlanHistoryItem[]>([]);
+  const [isPlanHistoryLoading, setIsPlanHistoryLoading] = useState(false);
 
   useEffect(() => {
     // マウント時にアニメーションを開始
@@ -67,9 +91,194 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
       ? propRemainingQuestions
       : authRemainingQuestions;
 
-  // 無制限アカウントの場合は表示しない
+  // プラン履歴を取得する関数
+  const fetchPlanHistory = async () => {
+    if (!user) return;
+    
+    setIsPlanHistoryLoading(true);
+    try {
+      console.log("プラン履歴を取得中...");
+      const response = await api.get("/plan-history");
+      console.log("プラン履歴取得結果:", response.data);
+      
+      if (response.data && response.data.history) {
+        // 自分の履歴のみフィルタリング
+        const userHistory = response.data.history.filter(
+          (item: PlanHistoryItem) => item.user_id === user.id
+        );
+        setPlanHistory(userHistory);
+      } else {
+        setPlanHistory([]);
+      }
+    } catch (error) {
+      console.error("プラン履歴の取得に失敗しました:", error);
+      setPlanHistory([]);
+    } finally {
+      setIsPlanHistoryLoading(false);
+    }
+  };
+
+  // ドロワー開いた時にプラン履歴を取得
+  useEffect(() => {
+    if (drawerOpen) {
+      fetchPlanHistory();
+    }
+  }, [drawerOpen, user]);
+
+  // 無制限アカウントの場合はプラン履歴のみ表示
   if (isUnlimited) {
-    return null;
+    return (
+      <>
+        <Button
+          variant="outlined"
+          size="small"
+          onClick={() => setDrawerOpen(true)}
+          startIcon={<HistoryIcon fontSize="small" />}
+          sx={{
+            borderRadius: "20px",
+            fontSize: { xs: "0.7rem", sm: "0.75rem", md: "0.8rem" },
+            py: { xs: 0.3, sm: 0.4, md: 0.5 },
+            px: { xs: 1, sm: 1.2, md: 1.5 },
+            minHeight: 0,
+            minWidth: 0,
+            textTransform: "none",
+            color: theme.palette.success.main,
+            borderColor: "rgba(46, 125, 50, 0.3)",
+            backgroundColor: "rgba(255, 255, 255, 0.9)",
+            backdropFilter: "blur(8px)",
+            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.05)",
+            position: "relative",
+            "&:hover": {
+              backgroundColor: "rgba(255, 255, 255, 0.95)",
+              borderColor: theme.palette.success.main,
+              boxShadow: "0 3px 10px rgba(46, 125, 50, 0.12)",
+            },
+            mx: "auto",
+          }}
+        >
+          {isDesktop ? "プラン履歴" : isMobile ? "履歴" : "プラン履歴"}
+        </Button>
+
+        {/* プラン履歴用ドロワー */}
+        <Drawer anchor="right" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
+          <Box sx={{ width: { xs: "90vw", sm: "400px", md: "450px" }, p: 2 }}>
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                mb: 3,
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{ fontWeight: 600, color: "success.main" }}
+              >
+                🎉 本番版をご利用中
+              </Typography>
+              <IconButton onClick={() => setDrawerOpen(false)} size="small">
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Box>
+
+                         <Alert severity="success" sx={{ mb: 2 }}>
+               本番版では質問・アップロード制限はありません
+             </Alert>
+
+             {/* プラン履歴セクション */}
+             <Paper
+               elevation={0}
+               sx={{
+                 p: 2,
+                 borderRadius: 2,
+                 background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
+                 border: "1px solid rgba(37, 99, 235, 0.08)",
+                 boxShadow: "0 3px 15px rgba(37, 99, 235, 0.08)",
+                 mb: 2,
+               }}
+             >
+               <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+                 <HistoryIcon sx={{ mr: 1, color: "primary.main" }} />
+                 <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                   プラン変更履歴
+                 </Typography>
+               </Box>
+
+               {isPlanHistoryLoading ? (
+                 <Box sx={{ textAlign: "center", py: 3 }}>
+                   <Typography variant="body2" color="text.secondary">
+                     履歴を読み込み中...
+                   </Typography>
+                 </Box>
+               ) : planHistory.length === 0 ? (
+                 <Box sx={{ textAlign: "center", py: 3 }}>
+                   <Typography variant="body2" color="text.secondary">
+                     プラン変更履歴がありません
+                   </Typography>
+                 </Box>
+               ) : (
+                 <List dense sx={{ maxHeight: 200, overflow: "auto" }}>
+                   {planHistory.slice(0, 5).map((item, index) => (
+                     <React.Fragment key={item.id}>
+                       <ListItem
+                         sx={{
+                           py: 1,
+                           px: 0,
+                           alignItems: "flex-start",
+                         }}
+                       >
+                         <ListItemIcon sx={{ minWidth: 40, mt: 0.5 }}>
+                           <Avatar
+                             sx={{
+                               width: 32,
+                               height: 32,
+                               bgcolor: "success.main",
+                               color: "white",
+                             }}
+                           >
+                             <CheckCircleIcon />
+                           </Avatar>
+                         </ListItemIcon>
+                         <ListItemText
+                           primary={
+                             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                               <Chip
+                                 label={item.from_plan === "demo" ? "デモ版" : "本番版"}
+                                 size="small"
+                                 color={item.from_plan === "demo" ? "warning" : "success"}
+                                 variant="outlined"
+                                 sx={{ fontSize: "0.7rem" }}
+                               />
+                               <Typography variant="body2" color="text.secondary">
+                                 →
+                               </Typography>
+                               <Chip
+                                 label={item.to_plan === "demo" ? "デモ版" : "本番版"}
+                                 size="small"
+                                 color={item.to_plan === "demo" ? "warning" : "success"}
+                                 sx={{ fontSize: "0.7rem" }}
+                               />
+                             </Box>
+                           }
+                           secondary={
+                             <Typography variant="caption" color="text.secondary">
+                               {new Date(item.changed_at).toLocaleString("ja-JP")}
+                             </Typography>
+                           }
+                         />
+                       </ListItem>
+                       {index < Math.min(planHistory.length, 5) - 1 && (
+                         <Divider variant="inset" component="li" />
+                       )}
+                     </React.Fragment>
+                   ))}
+                 </List>
+               )}
+             </Paper>
+          </Box>
+        </Drawer>
+      </>
+    );
   }
 
   // 質問の残り回数のパーセンテージを計算
@@ -264,6 +473,8 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
       </IconButton>
     </Stack>
   );
+
+
 
   // 詳細表示のコンテンツ（ドロワー用）
   const renderDetailContent = () => (
@@ -563,6 +774,97 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
           本番版にアップグレード
         </Button>
       )}
+
+      {/* プラン履歴セクション */}
+      <Paper
+        elevation={0}
+        sx={{
+          p: 2,
+          borderRadius: 2,
+          background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
+          border: "1px solid rgba(37, 99, 235, 0.08)",
+          boxShadow: "0 3px 15px rgba(37, 99, 235, 0.08)",
+          mb: 2,
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+          <HistoryIcon sx={{ mr: 1, color: "primary.main" }} />
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+            プラン変更履歴
+          </Typography>
+        </Box>
+
+        {isPlanHistoryLoading ? (
+          <Box sx={{ textAlign: "center", py: 3 }}>
+            <Typography variant="body2" color="text.secondary">
+              履歴を読み込み中...
+            </Typography>
+          </Box>
+        ) : planHistory.length === 0 ? (
+          <Box sx={{ textAlign: "center", py: 3 }}>
+            <Typography variant="body2" color="text.secondary">
+              プラン変更履歴がありません
+            </Typography>
+          </Box>
+        ) : (
+          <List dense sx={{ maxHeight: 200, overflow: "auto" }}>
+            {planHistory.slice(0, 5).map((item, index) => (
+              <React.Fragment key={item.id}>
+                <ListItem
+                  sx={{
+                    py: 1,
+                    px: 0,
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 40, mt: 0.5 }}>
+                    <Avatar
+                      sx={{
+                        width: 32,
+                        height: 32,
+                        bgcolor: "primary.main",
+                        color: "white",
+                      }}
+                    >
+                      <HistoryIcon />
+                    </Avatar>
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <Chip
+                          label={item.from_plan === "demo" ? "デモ版" : "本番版"}
+                          size="small"
+                          color={item.from_plan === "demo" ? "warning" : "success"}
+                          variant="outlined"
+                          sx={{ fontSize: "0.7rem" }}
+                        />
+                        <Typography variant="body2" color="text.secondary">
+                          →
+                        </Typography>
+                        <Chip
+                          label={item.to_plan === "demo" ? "デモ版" : "本番版"}
+                          size="small"
+                          color={item.to_plan === "demo" ? "warning" : "success"}
+                          sx={{ fontSize: "0.7rem" }}
+                        />
+                      </Box>
+                    }
+                    secondary={
+                      <Typography variant="caption" color="text.secondary">
+                        {new Date(item.changed_at).toLocaleString("ja-JP")}
+                      </Typography>
+                    }
+                  />
+                </ListItem>
+                {index < Math.min(planHistory.length, 5) - 1 && (
+                  <Divider variant="inset" component="li" />
+                )}
+              </React.Fragment>
+            ))}
+          </List>
+        )}
+      </Paper>
     </Box>
   );
 

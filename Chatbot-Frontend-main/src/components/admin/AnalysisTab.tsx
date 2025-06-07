@@ -109,14 +109,14 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
 
     try {
       setIsBusinessAnalysisLoading(true);
+      console.log('ビジネス詳細分析を開始...');
 
-      // バックエンドAPIに詳細分析をリクエスト（GETメソッドを使用）
+      // バックエンドAPIに詳細分析をリクエスト
       const response = await api.post(`${import.meta.env.VITE_API_URL}/admin/detailed-analysis`, {
-        params: {
-          prompt: BUSINESS_ANALYSIS_PROMPT
-          // 注意: chat_historyはGETでは大きすぎるため、バックエンドで内部的に取得する必要がある
-        }
+        prompt: BUSINESS_ANALYSIS_PROMPT
       });
+
+      console.log('ビジネス詳細分析レスポンス:', response.data);
 
       // レスポンスから詳細分析結果を取得
       if (response.data && response.data.detailed_analysis) {
@@ -139,13 +139,33 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
           specific_recommendations,
           business_analysis_completed: true
         });
+
+        console.log('ビジネス詳細分析結果をマージ完了');
+      } else {
+        console.error('詳細分析レスポンスの形式が不正です:', response.data);
+        throw new Error('詳細分析レスポンスの形式が不正です');
       }
 
       // ビジネス分析モードに切り替え
       setAnalysisMode('business');
     } catch (error) {
       console.error('詳細ビジネス分析の取得エラー:', error);
-      alert('詳細ビジネス分析の取得中にエラーが発生しました。');
+      
+      // より詳細なエラーメッセージ
+      let errorMessage = '詳細ビジネス分析の取得中にエラーが発生しました。';
+      if (error.response) {
+        if (error.response.status === 500) {
+          errorMessage += '\nサーバーエラーが発生しました。Geminiモデルが初期化されていない可能性があります。';
+        } else if (error.response.status === 401) {
+          errorMessage += '\n認証エラーです。ログインし直してください。';
+        } else {
+          errorMessage += `\nエラーコード: ${error.response.status}`;
+        }
+      } else if (error.request) {
+        errorMessage += '\nサーバーに接続できませんでした。';
+      }
+      
+      alert(errorMessage);
     } finally {
       setIsBusinessAnalysisLoading(false);
     }

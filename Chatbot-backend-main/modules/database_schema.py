@@ -68,6 +68,18 @@ SCHEMA = {
         source_document TEXT,
         source_page TEXT
     )
+    """,
+    
+    "plan_history": """
+    CREATE TABLE IF NOT EXISTS plan_history (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        from_plan TEXT NOT NULL,
+        to_plan TEXT NOT NULL,
+        changed_at TEXT NOT NULL,
+        duration_days INTEGER,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+    )
     """
 }
 

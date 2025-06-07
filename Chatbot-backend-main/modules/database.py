@@ -1434,3 +1434,93 @@ def ensure_usage_limits_integrity(db: SupabaseConnection = None) -> int:
     except Exception as e:
         print(f"✗ データベース整合性チェックエラー: {str(e)}")
         return 0
+
+def record_plan_change(user_id: str, from_plan: str, to_plan: str, db: SupabaseConnection = None, duration_days: int = None) -> bool:
+    """プラン変更履歴を記録する"""
+    try:
+        print(f"=== プラン履歴記録開始 ===")
+        print(f"ユーザーID: {user_id}")
+        print(f"変更: {from_plan} → {to_plan}")
+        
+        # プラン名を正規化（unlimited -> production, demo -> demo）
+        normalized_from_plan = "production" if from_plan == "unlimited" else from_plan
+        normalized_to_plan = "production" if to_plan == "unlimited" else to_plan
+        
+        print(f"正規化後: {normalized_from_plan} → {normalized_to_plan}")
+        
+        # 履歴レコードを挿入
+        plan_history_data = {
+            "user_id": user_id,
+            "from_plan": normalized_from_plan,
+            "to_plan": normalized_to_plan,
+            "changed_at": datetime.datetime.now().isoformat(),
+            "duration_days": duration_days
+        }
+        
+        result = insert_data("plan_history", plan_history_data)
+        
+        if result:
+            print(f"✓ プラン履歴記録完了")
+            return True
+        else:
+            print(f"✗ プラン履歴記録失敗")
+            return False
+            
+    except Exception as e:
+        print(f"✗ プラン履歴記録エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return False
+
+def get_plan_history(user_id: str = None, db: SupabaseConnection = None) -> List[dict]:
+    """プラン履歴を取得する"""
+    try:
+        print(f"=== プラン履歴取得開始 ===")
+        
+        # ユーザー情報とプラン履歴を結合して取得
+        if user_id:
+            print(f"特定ユーザーの履歴を取得: {user_id}")
+            history_result = select_data("plan_history", 
+                                       columns="id, user_id, from_plan, to_plan, changed_at, duration_days",
+                                       filters={"user_id": user_id})
+        else:
+            print("全ユーザーの履歴を取得")
+            history_result = select_data("plan_history", 
+                                       columns="id, user_id, from_plan, to_plan, changed_at, duration_days")
+        
+        if not history_result or not history_result.data:
+            print("プラン履歴が見つかりません")
+            return []
+        
+        history_list = history_result.data
+        print(f"取得した履歴件数: {len(history_list)}")
+        
+        # ユーザー情報を付加する
+        enhanced_history = []
+        for history in history_list:
+            # ユーザー情報を取得
+            user_result = select_data("users", 
+                                    columns="email, name", 
+                                    filters={"id": history.get("user_id")})
+            
+            if user_result and user_result.data:
+                user_info = user_result.data[0]
+                history["user_email"] = user_info.get("email")
+                history["user_name"] = user_info.get("name")
+            else:
+                history["user_email"] = "不明"
+                history["user_name"] = "不明"
+            
+            enhanced_history.append(history)
+        
+        # changed_atで降順にソート（新しいものが上）
+        enhanced_history.sort(key=lambda x: x.get("changed_at", ""), reverse=True)
+        
+        print(f"✓ プラン履歴取得完了: {len(enhanced_history)}件")
+        return enhanced_history
+        
+    except Exception as e:
+        print(f"✗ プラン履歴取得エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return []

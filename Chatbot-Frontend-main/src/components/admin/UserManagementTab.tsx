@@ -72,6 +72,51 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
     setShowPassword(!showPassword);
   };
 
+  // employeeロールの場合はアクセス権限なしを表示
+  if (user?.role === "employee") {
+    return (
+      <Fade in={true} timeout={400}>
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "400px",
+            textAlign: "center",
+            p: 4,
+          }}
+        >
+          <PersonAddIcon
+            sx={{
+              fontSize: "4rem",
+              color: "text.disabled",
+              mb: 2,
+            }}
+          />
+          <Typography
+            variant="h6"
+            sx={{
+              fontWeight: 600,
+              color: "text.secondary",
+              mb: 1,
+            }}
+          >
+            アクセス権限がありません
+          </Typography>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ maxWidth: "400px" }}
+          >
+            社員アカウントにはユーザー作成権限がありません。<br />
+            管理者にお問い合わせください。
+          </Typography>
+        </Box>
+      </Fade>
+    );
+  }
+
   return (
     <Fade in={true} timeout={400}>
       <Box>
@@ -362,108 +407,27 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
                     />
                   )}
 
-                  {/* 特別管理者(queue@queuefood.co.jp)の場合はロール選択を表示 */}
-                  {isSpecialAdmin && user?.email === "queue@queuefood.co.jp" && (
-                    <Box sx={{ mb: 0.5, mt: 0.5 }}>
+                  {/* アカウント作成ボタン */}
+                  <Box sx={{ mt: 1 }}>
                       <Typography
-                        variant="subtitle2"
-                        sx={{
-                          mb: 1,
-                          fontWeight: 600,
-                          color: "text.primary",
-                          fontSize: "0.85rem",
-                        }}
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 2, fontSize: "0.85rem" }}
                       >
-                        アカウントタイプを選択:
-                      </Typography>
-                      <Box
-                        sx={{
-                          display: "flex",
-                          flexDirection: { xs: "column", sm: "row" },
-                          gap: 1.5,
-                        }}
-                      >
-                        <Button
-                          variant="outlined"
-                          color="primary"
-                          size="small"
-                          onClick={() => onCreateUser("user")}
-                          disabled={
-                            isUserCreating || !newUserEmail || !newUserPassword
-                          }
-                          startIcon={<AdminPanelSettingsIcon />}
-                          sx={{
-                            py: 1,
-                            borderRadius: 1.5,
-                            flex: { sm: 1 },
-                            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)",
-                            transition: "all 0.3s",
-                            "&:hover": {
-                              boxShadow: "0 2px 5px rgba(0, 0, 0, 0.1)",
-                              backgroundColor: alpha(
-                                theme.palette.primary.main,
-                                0.1
-                              ),
-                            },
-                          }}
-                        >
-                          <Box>
-                            管理者用アカウント
-                            <Typography
-                              variant="caption"
-                              sx={{
-                                display: "block",
-                                mt: 0.3,
-                                color: "text.secondary",
-                                fontSize: "0.7rem",
-                              }}
-                            >
-                              (管理画面アクセス可)
+                      {user?.role === "admin" 
+                        ? "管理者用アカウントは管理画面にアクセスできます" 
+                        : "社員アカウントは管理画面にアクセスできません"
+                      }
                             </Typography>
-                          </Box>
-                        </Button>
-
-                        {/* <Button
-                          variant="outlined"
-                          color="primary"
-                          size="small"
-                          onClick={() => onCreateUser("employee")}
-                          disabled={isUserCreating || !newUserEmail || !newUserPassword}
-                          startIcon={<GroupIcon />}
-                          sx={{ 
-                            py: 1,
-                            borderRadius: 1.5,
-                            flex: { sm: 1 },
-                            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
-                            transition: 'all 0.3s',
-                            '&:hover': {
-                              boxShadow: '0 2px 5px rgba(0, 0, 0, 0.1)',
-                              backgroundColor: alpha(theme.palette.primary.main, 0.1)
-                            }
-                          }}
-                        >
-                          <Box>
-                            社員アカウント
-                            <Typography variant="caption" sx={{ display: 'block', mt: 0.3, color: 'text.secondary', fontSize: '0.7rem' }}>
-                              (管理画面アクセス不可)
-                            </Typography>
-                          </Box>
-                        </Button> */}
-                      </Box>
-                    </Box>
-                  )}
-
-                  {/* 通常のユーザーの場合は社員アカウント作成ボタンのみ表示 */}
-                  {!isSpecialAdmin && (
                     <Button
                       variant="contained"
                       color="primary"
                       size="small"
-                      onClick={() => onCreateUser("employee")}
+                      onClick={() => onCreateUser(user?.role === "admin" ? "user" : "employee")}
                       disabled={
                         isUserCreating || !newUserEmail || !newUserPassword
                       }
-                      startIcon={isUserCreating ? null : <GroupIcon />}
+                      startIcon={isUserCreating ? null : (user?.role === "admin" ? <AdminPanelSettingsIcon /> : <GroupIcon />)}
                       sx={{
                         py: 0.8,
                         mt: 0.5,
@@ -481,10 +445,10 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
                       {isUserCreating ? (
                         <LoadingIndicator size={24} message="" />
                       ) : (
-                        "社員アカウントを作成"
+                        user?.role === "admin" ? "管理者用アカウントを作成" : "社員アカウントを作成"
                       )}
                     </Button>
-                  )}
+                  </Box>
 
                   {userCreateError && (
                     <Alert

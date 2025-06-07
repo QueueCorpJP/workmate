@@ -31,6 +31,7 @@ import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import SettingsApplicationsIcon from "@mui/icons-material/SettingsApplications";
 import CloseIcon from "@mui/icons-material/Close";
 import CircularProgress from "@mui/material/CircularProgress";
+import TimelineIcon from "@mui/icons-material/Timeline";
 import api from "../../api";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -41,6 +42,7 @@ import EmployeeUsageTab from "./EmployeeUsageTab";
 import ResourcesTab from "./ResourcesTab";
 import DemoStatsTab from "./DemoStatsTab";
 import UserManagementTab from "./UserManagementTab";
+import PlanHistoryTab from "./PlanHistoryTab";
 import CompanyDetailsDialog from "./CompanyDetailsDialog";
 
 // Import types
@@ -659,6 +661,11 @@ const AdminPanel: React.FC = () => {
       label: "リソース",
       ariaLabel: "リソースタブ",
     },
+    {
+      icon: <TimelineIcon sx={{ color: "#3b82f6" }} />,
+      label: "プラン履歴",
+      ariaLabel: "プラン履歴タブ",
+    },
     ...(isUserRole
       ? []
       : [
@@ -677,7 +684,7 @@ const AdminPanel: React.FC = () => {
 
   // タブが変更されたときの実際のインデックスを計算する関数
   const getActualTabIndex = (visibleIndex: number) => {
-    if (isUserRole && visibleIndex >= 4) {
+    if (isUserRole && visibleIndex >= 5) {
       return visibleIndex + 1; // デモ統計タブがスキップされるので+1する
     }
     return visibleIndex;
@@ -703,12 +710,15 @@ const AdminPanel: React.FC = () => {
       case 3: // リソース
         fetchResources();
         break;
-      case 4: // デモ統計 (ユーザーロールでない場合のみ)
+      case 4: // プラン履歴
+        // プラン履歴は内部で自動読み込みするため何もしない
+        break;
+      case 5: // デモ統計 (ユーザーロールでない場合のみ)
         if (!isUserRole) {
           fetchDemoStats();
         }
         break;
-      case 5: // ユーザー管理
+      case 6: // ユーザー管理
         break;
       default:
         break;
@@ -1100,8 +1110,13 @@ const AdminPanel: React.FC = () => {
                 />
               )}
 
+              {/* プラン履歴タブ */}
+              {tabValue === 4 && (
+                <PlanHistoryTab />
+              )}
+
               {/* デモ統計タブ - ユーザーロールでない場合のみ表示 */}
-              {!isUserRole && getActualTabIndex(tabValue) === 4 && (
+              {!isUserRole && getActualTabIndex(tabValue) === 5 && (
                 <DemoStatsTab
                   demoStats={demoStats}
                   isLoading={isDemoStatsLoading}
@@ -1112,7 +1127,7 @@ const AdminPanel: React.FC = () => {
               )}
 
               {/* ユーザー管理タブ */}
-              {tabValue === (isUserRole ? 4 : 5) && (
+              {tabValue === (isUserRole ? 5 : 6) && (
                 <UserManagementTab
                   isSpecialAdmin={isSpecialAdmin}
                   newUserEmail={newUserEmail}
