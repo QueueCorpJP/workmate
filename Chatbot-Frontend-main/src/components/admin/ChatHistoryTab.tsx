@@ -69,7 +69,7 @@ const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({
       console.log('CSVダウンロード開始...');
       console.log('API URL:', `${api.defaults.baseURL}/admin/chat-history/csv`);
       
-      const response = await api.get('/admin/chat-history/csv', {
+      const response = await api.get('/chatbot/api/admin/chat-history/csv', {
         responseType: 'blob',
         timeout: 60000, // 60秒のタイムアウト
       });
