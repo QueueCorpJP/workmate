@@ -1679,23 +1679,6 @@ async def admin_update_application_status(
             detail=f"申請ステータスの更新に失敗しました: {str(e)}"
         )
 
-# その他のルートパスをindex.htmlにリダイレクト（SPAのルーティング用）
-# 注意：これを最後に登録することで、他のAPIエンドポイントを優先する
-@app.get("/{full_path:path}", include_in_schema=False)
-async def catch_all(full_path: str):
-    print(f"catch_all handler called with path: {full_path}")
-    
-    # APIエンドポイントはスキップ（/api で始まるパスまたは chatbot/api で始まるパスはAPIエンドポイントとして処理）
-    if full_path.startswith("api/") or full_path.startswith("chatbot/api/"):
-        # APIエンドポイントの場合は404を返す
-        raise HTTPException(status_code=404, detail="API endpoint not found")
-    
-    # SPAルーティング用にindex.htmlを返す
-    index_path = os.path.join(frontend_build_dir, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    raise HTTPException(status_code=404, detail="Not Found")
-
 # 会社全体のトークン使用量と料金情報を取得するエンドポイント
 @app.get("/chatbot/api/company-token-usage", response_model=dict)
 async def get_company_token_usage(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
@@ -1798,6 +1781,23 @@ async def simulate_token_cost(request: dict, current_user = Depends(get_current_
     except Exception as e:
         print(f"料金シミュレーションエラー: {str(e)}")
         raise HTTPException(status_code=500, detail=f"料金シミュレーション中にエラーが発生しました: {str(e)}")
+
+# その他のルートパスをindex.htmlにリダイレクト（SPAのルーティング用）
+# 注意：これを最後に登録することで、他のAPIエンドポイントを優先する
+@app.get("/{full_path:path}", include_in_schema=False)
+async def catch_all(full_path: str):
+    print(f"catch_all handler called with path: {full_path}")
+    
+    # APIエンドポイントはスキップ（/api で始まるパスまたは chatbot/api で始まるパスはAPIエンドポイントとして処理）
+    if full_path.startswith("api/") or full_path.startswith("chatbot/api/"):
+        # APIエンドポイントの場合は404を返す
+        raise HTTPException(status_code=404, detail="API endpoint not found")
+    
+    # SPAルーティング用にindex.htmlを返す
+    index_path = os.path.join(frontend_build_dir, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    raise HTTPException(status_code=404, detail="Not Found")
 
 # アプリケーションの実行
 if __name__ == "__main__":
