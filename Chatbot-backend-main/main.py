@@ -1430,21 +1430,7 @@ async def admin_ensure_database_integrity(current_user = Depends(get_admin_or_us
         )
 
 
-# その他のルートパスをindex.htmlにリダイレクト（SPAのルーティング用）
-@app.get("/{full_path:path}", include_in_schema=False)
-async def catch_all(full_path: str):
-    print(f"catch_all handler called with path: {full_path}")
-    
-    # APIエンドポイントはスキップ（/api で始まるパスまたは chatbot/api で始まるパスはAPIエンドポイントとして処理）
-    if full_path.startswith("api/") or full_path.startswith("chatbot/api/"):
-        # APIエンドポイントの場合は404を返す
-        raise HTTPException(status_code=404, detail="API endpoint not found")
-    
-    # SPAルーティング用にindex.htmlを返す
-    index_path = os.path.join(frontend_build_dir, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    raise HTTPException(status_code=404, detail="Not Found")
+
 
 # 申請管理エンドポイント（管理者用）
 @app.get("/chatbot/api/admin/applications")
@@ -1541,6 +1527,23 @@ async def admin_update_application_status(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"申請ステータスの更新に失敗しました: {str(e)}"
         )
+
+# その他のルートパスをindex.htmlにリダイレクト（SPAのルーティング用）
+# 注意：これを最後に登録することで、他のAPIエンドポイントを優先する
+@app.get("/{full_path:path}", include_in_schema=False)
+async def catch_all(full_path: str):
+    print(f"catch_all handler called with path: {full_path}")
+    
+    # APIエンドポイントはスキップ（/api で始まるパスまたは chatbot/api で始まるパスはAPIエンドポイントとして処理）
+    if full_path.startswith("api/") or full_path.startswith("chatbot/api/"):
+        # APIエンドポイントの場合は404を返す
+        raise HTTPException(status_code=404, detail="API endpoint not found")
+    
+    # SPAルーティング用にindex.htmlを返す
+    index_path = os.path.join(frontend_build_dir, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    raise HTTPException(status_code=404, detail="Not Found")
 
 # アプリケーションの実行
 if __name__ == "__main__":
