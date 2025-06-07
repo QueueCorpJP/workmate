@@ -1068,14 +1068,15 @@ async def get_plan_history_endpoint(current_user = Depends(get_current_user), db
 
 # チャット履歴をCSV形式でダウンロードするエンドポイント（catch_allより前に配置）
 @app.get("/chatbot/api/admin/chat-history/csv")
-async def download_chat_history_csv(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
+async def download_chat_history_csv(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
     """チャット履歴をCSV形式でダウンロードする"""
     try:
         print(f"CSVダウンロード開始 - ユーザー: {current_user['email']}")
         
-        # 権限チェック（userロールも許可）
+        # 権限チェック（user、employeeロールも許可）
         is_admin = current_user["role"] == "admin"
         is_user = current_user["role"] == "user"
+        is_employee = current_user["role"] == "employee"
         is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
         
         # チャット履歴を直接Supabaseから取得
@@ -1086,9 +1087,9 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
                 from supabase_adapter import select_data
                 result = select_data("chat_history", columns="*")
                 chat_history = result.data if result and result.data else []
-            elif is_user:
-                # userロールの場合は自分の会社のデータのみを取得
-                print("userロールとして自分の会社のチャット履歴を取得")
+            elif is_user or is_employee:
+                # userまたはemployeeロールの場合は自分の会社のデータのみを取得
+                print(f"{current_user['role']}ロールとして自分の会社のチャット履歴を取得")
                 from supabase_adapter import select_data
                 # まずユーザーの会社IDを取得
                 user_result = select_data("users", filters={"id": current_user["id"]})

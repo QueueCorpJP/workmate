@@ -38,12 +38,10 @@ def get_admin_or_user(user = Depends(get_current_user)):
     else:
         user["is_special_admin"] = False
     
-    # 社員アカウントは管理画面にアクセスできない
+    # 社員アカウントの管理画面アクセス制限を緩和（一部機能は利用可能）
+    # 完全な制限ではなく、ログ出力のみ行う
     if user["role"] == "employee":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="社員アカウントは管理画面にアクセスできません",
-        )
+        print(f"社員アカウント ({user['email']}) が管理機能にアクセスしています")
     
     # 管理者権限チェックを行わない（管理者と通常ユーザーにアクセスを許可）
     return user
