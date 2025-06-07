@@ -3,7 +3,13 @@
 OpenAI APIのトークン使用量を正確に計算・追跡します
 """
 
-import tiktoken
+try:
+    import tiktoken
+    TIKTOKEN_AVAILABLE = True
+except ImportError:
+    TIKTOKEN_AVAILABLE = False
+    print("Warning: tiktoken not available, using fallback token counting")
+
 import uuid
 from datetime import datetime
 from typing import Dict, Optional, Tuple
@@ -36,17 +42,21 @@ class TokenCounter:
     def count_tokens(self, text: str, model: str = "gpt-4o-mini") -> int:
         """指定されたモデルでテキストのトークン数を計算"""
         try:
-            # モデル名に基づいてエンコーディングを取得
-            if "gpt-4" in model:
-                encoding_name = "cl100k_base"
-            elif "gpt-3.5" in model:
-                encoding_name = "cl100k_base"
+            if TIKTOKEN_AVAILABLE:
+                # モデル名に基づいてエンコーディングを取得
+                if "gpt-4" in model:
+                    encoding_name = "cl100k_base"
+                elif "gpt-3.5" in model:
+                    encoding_name = "cl100k_base"
+                else:
+                    encoding_name = "cl100k_base"  # デフォルト
+                
+                encoding = tiktoken.get_encoding(encoding_name)
+                tokens = encoding.encode(text)
+                return len(tokens)
             else:
-                encoding_name = "cl100k_base"  # デフォルト
-            
-            encoding = tiktoken.get_encoding(encoding_name)
-            tokens = encoding.encode(text)
-            return len(tokens)
+                # フォールバック：文字数 × 1.3の推定
+                return int(len(text) * 1.3)
         except Exception as e:
             print(f"トークン計算エラー: {e}")
             # フォールバック：文字数 × 1.3の推定
