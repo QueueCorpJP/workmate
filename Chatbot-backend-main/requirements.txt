@@ -18,3 +18,4 @@ boto3==1.37.22
 youtube_transcript_api
 playwright
 yt-dlp
+tiktoken
