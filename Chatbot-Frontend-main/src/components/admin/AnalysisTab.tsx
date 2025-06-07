@@ -112,7 +112,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
       console.log('ビジネス詳細分析を開始...');
 
       // バックエンドAPIに詳細分析をリクエスト
-      const response = await api.post(`${import.meta.env.VITE_API_URL}/admin/detailed-analysis`, {
+      const response = await api.post('/admin/detailed-analysis', {
         prompt: BUSINESS_ANALYSIS_PROMPT
       });
 

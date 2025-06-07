@@ -539,15 +539,19 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
     """詳細なビジネス分析を行う"""
     try:
         # ユーザー情報の取得
+        is_admin = current_user["role"] == "admin"
+        is_user = current_user["role"] == "user"
         is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
         
         # プロンプトを取得
         prompt = request.get("prompt", "")
         
         # 通常の分析結果を取得
-        if is_special_admin:
+        if is_special_admin or is_admin:
+            # 管理者または特別管理者は全データで分析
             analysis_result = await analyze_chats(None, db)
         else:
+            # userロールを含む一般ユーザーは自分のデータのみで分析
             analysis_result = await analyze_chats(current_user["id"], db)
         
         # チャット履歴からのサンプルデータを取得（analysis_resultから取得可能）
@@ -967,7 +971,7 @@ async def submit_application(request: Request):
         body = await request.json()
         print(f"申請フォーム受信: {body}")
         
-        # 申請データを処理（実際の実装ではデータベースに保存やメール送信を行う）
+        # 申請データを処理
         application_data = {
             "company_name": body.get("companyName"),
             "contact_name": body.get("contactName"),
@@ -976,29 +980,40 @@ async def submit_application(request: Request):
             "expected_users": body.get("expectedUsers"),
             "current_usage": body.get("currentUsage"),
             "message": body.get("message"),
-            "application_type": body.get("applicationType", "production-upgrade"),
-            "submitted_at": datetime.datetime.now().isoformat()
+            "application_type": body.get("applicationType", "production-upgrade")
         }
         
-        # ログに記録（実際の実装ではデータベースに保存）
-        print(f"本番版移行申請受信:")
-        print(f"  会社名: {application_data['company_name']}")
-        print(f"  担当者: {application_data['contact_name']}")
-        print(f"  メール: {application_data['email']}")
-        print(f"  電話: {application_data['phone']}")
-        print(f"  予想利用者: {application_data['expected_users']}")
-        print(f"  現在の利用状況: {application_data['current_usage']}")
-        print(f"  メッセージ: {application_data['message']}")
+        # データベースに申請データを保存
+        from modules.database import save_application
+        application_id = save_application(application_data)
         
-        # TODO: 実際の実装では以下を行う
-        # 1. データベースに申請データを保存
-        # 2. 営業担当者にメール通知
-        # 3. 申請者に受付完了メールを送信
-        
-        return {"success": True, "message": "申請を受け付けました"}
+        if application_id:
+            print(f"✓ 申請受付完了: ID={application_id}")
+            print(f"  会社名: {application_data['company_name']}")
+            print(f"  担当者: {application_data['contact_name']}")
+            print(f"  メール: {application_data['email']}")
+            print(f"  電話: {application_data['phone']}")
+            print(f"  予想利用者: {application_data['expected_users']}")
+            print(f"  現在の利用状況: {application_data['current_usage']}")
+            print(f"  メッセージ: {application_data['message']}")
+            
+            # TODO: 今後の機能追加
+            # 1. 営業担当者にメール通知
+            # 2. 申請者に受付完了メールを送信
+            # 3. Slack通知などの外部連携
+            
+            return {
+                "success": True, 
+                "message": "申請を受け付けました。営業担当者よりご連絡いたします。",
+                "application_id": application_id
+            }
+        else:
+            raise HTTPException(status_code=500, detail="申請データの保存に失敗しました")
         
     except Exception as e:
         print(f"申請フォーム処理エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail="申請の処理中にエラーが発生しました")
 
 # 静的ファイルのマウント
@@ -1028,10 +1043,12 @@ async def get_plan_history_endpoint(current_user = Depends(get_current_user), db
         
         from modules.database import get_plan_history
         
-        # 管理者は全てのプラン履歴を、一般ユーザーは自分の履歴のみを取得
+        # 管理者・特別管理者は全てのプラン履歴を、一般ユーザーは自分の履歴のみを取得
         if current_user["role"] in ["admin"] or current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"]:
+            # 管理者または特別管理者は全履歴を取得
             history = get_plan_history(db=db)
         else:
+            # 一般ユーザー（userロール含む）は自分の履歴のみを取得
             history = get_plan_history(user_id=current_user["id"], db=db)
         
         return {
@@ -1056,20 +1073,46 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
     try:
         print(f"CSVダウンロード開始 - ユーザー: {current_user['email']}")
         
-        # 管理者権限チェック
+        # 権限チェック（userロールも許可）
         is_admin = current_user["role"] == "admin"
+        is_user = current_user["role"] == "user"
         is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
         
         # チャット履歴を直接Supabaseから取得
         try:
             if is_special_admin or is_admin:
-                # 管理者の場合は全ユーザーのデータを取得
+                # 管理者または特別管理者の場合は全ユーザーのデータを取得
                 print("管理者として全ユーザーのチャット履歴を取得")
                 from supabase_adapter import select_data
                 result = select_data("chat_history", columns="*")
                 chat_history = result.data if result and result.data else []
+            elif is_user:
+                # userロールの場合は自分の会社のデータのみを取得
+                print("userロールとして自分の会社のチャット履歴を取得")
+                from supabase_adapter import select_data
+                # まずユーザーの会社IDを取得
+                user_result = select_data("users", filters={"id": current_user["id"]})
+                if user_result and user_result.data:
+                    user_data = user_result.data[0]
+                    company_name = user_data.get("company_name")
+                    if company_name:
+                        # 同じ会社のユーザーIDリストを取得
+                        company_users_result = select_data("users", filters={"company_name": company_name})
+                        if company_users_result and company_users_result.data:
+                            company_user_ids = [user["id"] for user in company_users_result.data]
+                            # 会社のユーザーのチャット履歴を取得
+                            result = select_data("chat_history", filters={"employee_id": f"in.({','.join(company_user_ids)})"})
+                            chat_history = result.data if result and result.data else []
+                        else:
+                            chat_history = []
+                    else:
+                        # 会社名がない場合は自分のデータのみ
+                        result = select_data("chat_history", filters={"employee_id": current_user["id"]})
+                        chat_history = result.data if result and result.data else []
+                else:
+                    chat_history = []
             else:
-                # 通常のユーザーの場合は自分のデータのみを取得
+                # その他のユーザーの場合は自分のデータのみを取得
                 user_id = current_user["id"]
                 print(f"通常ユーザーとして個人のチャット履歴を取得: {user_id}")
                 from supabase_adapter import select_data
@@ -1402,6 +1445,101 @@ async def catch_all(full_path: str):
         return FileResponse(index_path)
     raise HTTPException(status_code=404, detail="Not Found")
 
+# 申請管理エンドポイント（管理者用）
+@app.get("/chatbot/api/admin/applications")
+async def admin_get_applications(status: str = None, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
+    """管理者が申請一覧を取得する"""
+    try:
+        print(f"申請一覧取得要求 - ユーザー: {current_user['email']} (ロール: {current_user['role']})")
+        
+        # 管理者権限チェック
+        is_admin = current_user["role"] == "admin"
+        is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
+        
+        if not (is_admin or is_special_admin):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="この操作には管理者権限が必要です"
+            )
+        
+        from modules.database import get_applications
+        applications = get_applications(status=status, db=db)
+        
+        return {
+            "success": True,
+            "applications": applications,
+            "count": len(applications)
+        }
+        
+    except Exception as e:
+        print(f"申請一覧取得エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"申請一覧の取得に失敗しました: {str(e)}"
+        )
+
+@app.post("/chatbot/api/admin/applications/{application_id}/status")
+async def admin_update_application_status(
+    application_id: str, 
+    request: dict, 
+    current_user = Depends(get_admin_or_user), 
+    db: SupabaseConnection = Depends(get_db)
+):
+    """管理者が申請のステータスを更新する"""
+    try:
+        print(f"申請ステータス更新要求 - ユーザー: {current_user['email']}")
+        print(f"申請ID: {application_id}")
+        print(f"リクエスト: {request}")
+        
+        # 管理者権限チェック
+        is_admin = current_user["role"] == "admin"
+        is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
+        
+        if not (is_admin or is_special_admin):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="この操作には管理者権限が必要です"
+            )
+        
+        new_status = request.get("status")
+        notes = request.get("notes", "")
+        
+        if not new_status:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="ステータスが指定されていません"
+            )
+        
+        from modules.database import update_application_status
+        result = update_application_status(
+            application_id=application_id,
+            status=new_status,
+            processed_by=current_user["email"],
+            notes=notes,
+            db=db
+        )
+        
+        if result:
+            return {
+                "success": True,
+                "message": f"申請ステータスを'{new_status}'に更新しました"
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="申請ステータスの更新に失敗しました"
+            )
+        
+    except Exception as e:
+        print(f"申請ステータス更新エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"申請ステータスの更新に失敗しました: {str(e)}"
+        )
 
 # アプリケーションの実行
 if __name__ == "__main__":

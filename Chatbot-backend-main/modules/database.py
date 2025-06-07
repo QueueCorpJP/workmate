@@ -1524,3 +1524,116 @@ def get_plan_history(user_id: str = None, db: SupabaseConnection = None) -> List
         import traceback
         print(traceback.format_exc())
         return []
+
+def save_application(application_data: dict, db: SupabaseConnection = None) -> str:
+    """申請データをデータベースに保存する"""
+    try:
+        print(f"=== 申請データ保存開始 ===")
+        print(f"会社名: {application_data.get('company_name')}")
+        print(f"担当者: {application_data.get('contact_name')}")
+        print(f"メール: {application_data.get('email')}")
+        
+        # 一意のIDを生成
+        import uuid
+        application_id = str(uuid.uuid4())
+        
+        # 保存用データを準備
+        save_data = {
+            "id": application_id,
+            "company_name": application_data.get("company_name", ""),
+            "contact_name": application_data.get("contact_name", ""),
+            "email": application_data.get("email", ""),
+            "phone": application_data.get("phone", ""),
+            "expected_users": application_data.get("expected_users", ""),
+            "current_usage": application_data.get("current_usage", ""),
+            "message": application_data.get("message", ""),
+            "application_type": application_data.get("application_type", "production-upgrade"),
+            "status": "pending",
+            "submitted_at": datetime.datetime.now().isoformat()
+        }
+        
+        # データベースに挿入
+        result = insert_data("applications", save_data)
+        
+        if result:
+            print(f"✓ 申請データ保存完了: ID={application_id}")
+            return application_id
+        else:
+            print(f"✗ 申請データ保存失敗")
+            return None
+            
+    except Exception as e:
+        print(f"✗ 申請データ保存エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return None
+
+def get_applications(status: str = None, db: SupabaseConnection = None) -> List[dict]:
+    """申請データを取得する"""
+    try:
+        print(f"=== 申請データ取得開始 ===")
+        
+        # フィルター条件を設定
+        filters = {}
+        if status:
+            filters["status"] = status
+            print(f"ステータスフィルター: {status}")
+        
+        # 申請データを取得
+        applications_result = select_data("applications", 
+                                        columns="*",
+                                        filters=filters if filters else None)
+        
+        if not applications_result or not applications_result.data:
+            print("申請データが見つかりません")
+            return []
+        
+        applications = applications_result.data
+        print(f"取得した申請件数: {len(applications)}")
+        
+        # submitted_atで降順にソート（新しいものが上）
+        applications.sort(key=lambda x: x.get("submitted_at", ""), reverse=True)
+        
+        print(f"✓ 申請データ取得完了: {len(applications)}件")
+        return applications
+        
+    except Exception as e:
+        print(f"✗ 申請データ取得エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return []
+
+def update_application_status(application_id: str, status: str, processed_by: str = None, notes: str = None, db: SupabaseConnection = None) -> bool:
+    """申請のステータスを更新する"""
+    try:
+        print(f"=== 申請ステータス更新開始 ===")
+        print(f"申請ID: {application_id}")
+        print(f"新ステータス: {status}")
+        
+        # 更新データを準備
+        update_data = {
+            "status": status,
+            "processed_at": datetime.datetime.now().isoformat()
+        }
+        
+        if processed_by:
+            update_data["processed_by"] = processed_by
+        
+        if notes:
+            update_data["notes"] = notes
+        
+        # データベースを更新
+        result = update_data_by_id("applications", update_data, "id", application_id)
+        
+        if result:
+            print(f"✓ 申請ステータス更新完了")
+            return True
+        else:
+            print(f"✗ 申請ステータス更新失敗")
+            return False
+            
+    except Exception as e:
+        print(f"✗ 申請ステータス更新エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return False

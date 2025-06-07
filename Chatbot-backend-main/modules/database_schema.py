@@ -80,6 +80,25 @@ SCHEMA = {
         duration_days INTEGER,
         FOREIGN KEY (user_id) REFERENCES users (id)
     )
+    """,
+    
+    "applications": """
+    CREATE TABLE IF NOT EXISTS applications (
+        id TEXT PRIMARY KEY,
+        company_name TEXT NOT NULL,
+        contact_name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        phone TEXT,
+        expected_users TEXT,
+        current_usage TEXT,
+        message TEXT,
+        application_type TEXT NOT NULL DEFAULT 'production-upgrade',
+        status TEXT NOT NULL DEFAULT 'pending',
+        submitted_at TEXT NOT NULL,
+        processed_at TEXT,
+        processed_by TEXT,
+        notes TEXT
+    )
     """
 }
 
