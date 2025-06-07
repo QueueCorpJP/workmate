@@ -1067,7 +1067,7 @@ async def get_plan_history_endpoint(current_user = Depends(get_current_user), db
         )
 
 # チャット履歴をCSV形式でダウンロードするエンドポイント（catch_allより前に配置）
-@app.get("/chatbot/api/admin/chat-history/csv")
+@app.get("/admin/chat-history/csv")
 async def download_chat_history_csv(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
     """チャット履歴をCSV形式でダウンロードする"""
     try:
