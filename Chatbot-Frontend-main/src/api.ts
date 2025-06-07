@@ -2,9 +2,14 @@ import axios from "axios";
 
 // 環境変数からAPIのURL取得
 // Use local backend server by default
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8083/chatbot/api";
+const API_URL = import.meta.env.VITE_API_URL || 
+  (import.meta.env.PROD ? 
+    `${window.location.origin}/chatbot/api` : 
+    "http://localhost:8083/chatbot/api");
 
 console.log("API URL:", API_URL);
+console.log("Environment:", import.meta.env.MODE);
+console.log("VITE_API_URL:", import.meta.env.VITE_API_URL);
 
 // axiosのインスタンス
 const api = axios.create({

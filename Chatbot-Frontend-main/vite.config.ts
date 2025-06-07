@@ -22,4 +22,8 @@ export default defineConfig({
     assetsDir: "assets", // アセットディレクトリ名を明示的に指定
   },
   base: "/", // ベースパスを設定
+  define: {
+    // 本番環境でのフォールバック設定
+    __PROD_API_URL__: JSON.stringify("/chatbot/api"),
+  },
 });
