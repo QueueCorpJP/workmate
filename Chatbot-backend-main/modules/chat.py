@@ -137,14 +137,27 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
         if not active_knowledge_text or (isinstance(active_knowledge_text, str) and not active_knowledge_text.strip()):
             response_text = f"申し訳ございません。アクティブな知識ベースの内容が空です。管理画面で別のリソースを有効にしてください。"
             
-            # チャット履歴を保存
-            chat_id = str(uuid.uuid4())
-            cursor = db.cursor()
-            cursor.execute(
-                "INSERT INTO chat_history (id, user_message, bot_response, timestamp, category, sentiment, employee_id, employee_name) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                (chat_id, message_text, response_text, datetime.now().isoformat(), "設定エラー", "neutral", message.employee_id, message.employee_name)
+            # トークン使用量を計算してチャット履歴を保存（エラーケース）
+            from modules.token_counter import TokenUsageTracker
+            
+            # ユーザーの会社IDを取得
+            from supabase_adapter import select_data
+            user_result = select_data("users", filters={"id": message.user_id}) if hasattr(message, 'user_id') and message.user_id else None
+            company_id = user_result.data[0].get("company_id") if user_result and user_result.data else None
+            
+            # トークン追跡機能を使用してチャット履歴を保存
+            tracker = TokenUsageTracker(db)
+            chat_id = tracker.save_chat_with_tokens(
+                user_message=message_text,
+                bot_response=response_text,
+                user_id=getattr(message, 'user_id', None),
+                company_id=company_id,
+                employee_id=message.employee_id,
+                employee_name=message.employee_name,
+                category="設定エラー",
+                sentiment="neutral",
+                model="gpt-4o-mini"
             )
-            db.commit()
             
             # ユーザーIDがある場合は質問カウントを更新（知識ベースが空でも利用制限は更新する）
             if message.user_id and not limits_check.get("is_unlimited", False):
@@ -323,14 +336,29 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
             source_doc = ""
             source_page = ""
         
-        # チャット履歴を保存
-        chat_id = str(uuid.uuid4())
-        cursor = db.cursor()
-        cursor.execute(
-            "INSERT INTO chat_history (id, user_message, bot_response, timestamp, category, sentiment, employee_id, employee_name, source_document, source_page) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (chat_id, message_text, response_text, datetime.now().isoformat(), category, sentiment, message.employee_id, message.employee_name, source_doc, source_page)
+        # トークン使用量を計算してチャット履歴を保存
+        from modules.token_counter import TokenUsageTracker
+        
+        # ユーザーの会社IDを取得
+        from supabase_adapter import select_data
+        user_result = select_data("users", filters={"id": message.user_id})
+        company_id = user_result.data[0].get("company_id") if user_result.data else None
+        
+        # トークン追跡機能を使用してチャット履歴を保存
+        tracker = TokenUsageTracker(db)
+        chat_id = tracker.save_chat_with_tokens(
+            user_message=message_text,
+            bot_response=response_text,
+            user_id=message.user_id,
+            company_id=company_id,
+            employee_id=message.employee_id,
+            employee_name=message.employee_name,
+            category=category,
+            sentiment=sentiment,
+            source_document=source_doc,
+            source_page=source_page,
+            model="gpt-4o-mini"  # 使用しているモデル名
         )
-        db.commit()
         
         # ユーザーIDがある場合は質問カウントを更新
         if message.user_id and not limits_check.get("is_unlimited", False):

@@ -554,11 +554,78 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
             # userロールを含む一般ユーザーは自分のデータのみで分析
             analysis_result = await analyze_chats(current_user["id"], db)
         
-        # チャット履歴からのサンプルデータを取得（analysis_resultから取得可能）
+        # より詳細なチャットデータを取得
+        try:
+            if is_special_admin or is_admin:
+                # 全データを取得
+                chat_result = select_data("chat_history", limit=1000, order="created_at desc")
+            else:
+                # 自分のデータのみ取得
+                chat_result = select_data("chat_history", filters={"user_id": current_user["id"]}, limit=1000, order="created_at desc")
+            
+            chat_data = chat_result.data if chat_result.data else []
+            
+            # 詳細なデータ分析
+            detailed_metrics = {
+                "total_conversations": len(chat_data),
+                "average_message_length": 0,
+                "response_satisfaction_rate": 0,
+                "repeat_question_rate": 0,
+                "resolution_rate": 0,
+                "peak_usage_hours": [],
+                "common_failure_patterns": [],
+                "user_journey_analysis": {},
+                "topic_complexity_analysis": {},
+                "temporal_trends": {}
+            }
+            
+            if chat_data:
+                # メッセージ長の分析
+                message_lengths = [len(msg.get("message", "")) for msg in chat_data if msg.get("message")]
+                detailed_metrics["average_message_length"] = sum(message_lengths) / len(message_lengths) if message_lengths else 0
+                
+                # 時間帯別の分析
+                from datetime import datetime
+                hour_counts = {}
+                for msg in chat_data:
+                    if msg.get("created_at"):
+                        try:
+                            dt = datetime.fromisoformat(msg["created_at"].replace('Z', '+00:00'))
+                            hour = dt.hour
+                            hour_counts[hour] = hour_counts.get(hour, 0) + 1
+                        except:
+                            continue
+                
+                # ピーク時間帯を特定
+                if hour_counts:
+                    sorted_hours = sorted(hour_counts.items(), key=lambda x: x[1], reverse=True)
+                    detailed_metrics["peak_usage_hours"] = sorted_hours[:3]
+                
+                # 繰り返し質問の分析
+                message_texts = [msg.get("message", "").lower() for msg in chat_data if msg.get("message")]
+                unique_messages = set(message_texts)
+                if message_texts:
+                    detailed_metrics["repeat_question_rate"] = (len(message_texts) - len(unique_messages)) / len(message_texts) * 100
+                
+                # よくある失敗パターンの特定
+                failure_keywords = ["エラー", "わからない", "できない", "失敗", "問題", "困った", "うまくいかない", "動かない"]
+                failure_count = 0
+                for msg in message_texts:
+                    if any(keyword in msg for keyword in failure_keywords):
+                        failure_count += 1
+                
+                if message_texts:
+                    detailed_metrics["resolution_rate"] = max(0, (len(message_texts) - failure_count) / len(message_texts) * 100)
+            
+        except Exception as e:
+            print(f"詳細メトリクス取得エラー: {e}")
+            detailed_metrics = {"error": "詳細メトリクスの取得に失敗しました"}
+        
         # カテゴリーとセンチメントの分布から洞察を生成
         categories = analysis_result.get("category_distribution", {})
         sentiments = analysis_result.get("sentiment_distribution", {})
         questions = analysis_result.get("common_questions", [])
+        daily_usage = analysis_result.get("daily_usage", [])
         
         # Gemini APIで詳細な分析を実行
         from modules.admin import model
@@ -567,32 +634,79 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
         if model is None:
             raise HTTPException(status_code=500, detail="Geminiモデルが初期化されていません")
         
+        # 改善されたプロンプト
         analysis_prompt = f"""
         {prompt}
         
-        # 分析データ
+        # 詳細分析データ
         
-        ## カテゴリ分布:
+        ## 基本統計情報
+        - 総会話数: {detailed_metrics.get('total_conversations', 0)}
+        - 平均メッセージ長: {detailed_metrics.get('average_message_length', 0):.1f}文字
+        - 繰り返し質問率: {detailed_metrics.get('repeat_question_rate', 0):.1f}%
+        - 問題解決率: {detailed_metrics.get('resolution_rate', 0):.1f}%
+        - ピーク利用時間帯: {detailed_metrics.get('peak_usage_hours', [])}
+        
+        ## カテゴリ分布（質問の種類別）:
         {json.dumps(categories, ensure_ascii=False, indent=2)}
         
-        ## 感情分布:
+        ## 感情分布（ユーザーの満足度）:
         {json.dumps(sentiments, ensure_ascii=False, indent=2)}
         
-        ## よくある質問（上位件）:
-        {json.dumps(questions, ensure_ascii=False, indent=2)}
+        ## よくある質問（頻度順）:
+        {json.dumps(questions[:10], ensure_ascii=False, indent=2)}
+        
+        ## 日別利用状況:
+        {json.dumps(daily_usage[-7:], ensure_ascii=False, indent=2)}
         
         ## 基本的な洞察:
         {analysis_result.get("insights", "")}
         
-        上記のデータに基づいて、以下の6つのセクションに分けて詳細な分析を行ってください。
-        各セクションは明確に区別できるよう、【セクション名】の形式で記載してください：
+        # 分析指針
+        
+        上記のデータを基に、以下の6つの観点から実践的で具体的な分析を行ってください。
+        各セクションでは、データに基づいた具体的な数値や傾向を示し、実行可能な改善案を提示してください。
+        
+        【重要】各セクションは必ず以下の形式で明確に区別してください：
         
         【1. 頻出トピック/質問とその傾向分析】
+        - データに基づく具体的な質問パターンの特定
+        - 質問頻度の時系列変化の分析
+        - 背景にある業務課題の推測
+        - 質問の複雑度レベルの評価
+        
         【2. 業務効率化の機会】
+        - 繰り返し質問から見える標準化機会
+        - 自動化可能な業務プロセスの特定
+        - 情報格差の解消方法
+        - ROI算出可能な改善提案
+        
         【3. 社員のフラストレーションポイント】
+        - ネガティブ感情の具体的な原因分析
+        - 未解決問題のパターン特定
+        - ユーザビリティ上の課題
+        - 改善優先度の明確化
+        
         【4. 製品/サービス改善の示唆】
+        - 機能追加・改善の具体的な提案
+        - ユーザーニーズの定量的分析
+        - 競合優位性の強化ポイント
+        - 開発リソース配分の提案
+        
         【5. コミュニケーションギャップ】
+        - 情報伝達の課題となっている領域
+        - 部門間連携の改善点
+        - ドキュメント化が必要な知識の特定
+        - 情報共有プロセスの最適化案
+        
         【6. 具体的な改善提案】
+        - 短期改善施策（1-3ヶ月）：実装コストと期待効果を含む
+        - 中期戦略（3-6ヶ月）：必要リソースと成功指標を含む
+        - 長期ビジョン（6ヶ月-1年）：投資対効果の試算を含む
+        - 優先順位付けと実行計画
+        
+        各セクションでは、推測ではなくデータに基づいた分析を心がけ、
+        実際の数値や具体例を交えて説明してください。
         """
         
         # Gemini APIによる詳細分析
@@ -614,60 +728,80 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
             "specific_recommendations": ""
         }
         
-        # セクション分割の改善
+        # より精密なセクション分割パターン
         sections = [
-            (r"【1\..*?頻出トピック.*?】|1\..*?頻出トピック|頻出トピック", "detailed_topic_analysis"),
-            (r"【2\..*?業務効率化.*?】|2\..*?業務効率化|業務効率化", "efficiency_opportunities"),
-            (r"【3\..*?フラストレーション.*?】|3\..*?フラストレーション|フラストレーション", "frustration_points"),
-            (r"【4\..*?改善.*?示唆.*?】|4\..*?改善.*?示唆|製品.*?改善|サービス.*?改善", "improvement_suggestions"),
-            (r"【5\..*?コミュニケーション.*?】|5\..*?コミュニケーション|コミュニケーション", "communication_gaps"),
-            (r"【6\..*?具体的.*?改善提案.*?】|6\..*?具体的.*?改善|具体的.*?改善提案", "specific_recommendations")
+            (r"【1\..*?頻出トピック.*?】", "detailed_topic_analysis"),
+            (r"【2\..*?業務効率化.*?】", "efficiency_opportunities"),
+            (r"【3\..*?フラストレーション.*?】", "frustration_points"),
+            (r"【4\..*?製品.*?サービス.*?改善.*?】", "improvement_suggestions"),
+            (r"【5\..*?コミュニケーション.*?】", "communication_gaps"),
+            (r"【6\..*?具体的.*?改善提案.*?】", "specific_recommendations")
         ]
         
-        # テキストを行に分割
-        lines = detailed_analysis_text.split("\n")
+        # セクション分割処理の改善
+        text_lines = detailed_analysis_text.split("\n")
         current_section = None
         section_content = []
         
-        for line in lines:
-            matched = False
-            
-            # 各セクションのパターンをチェック
+        for line in text_lines:
+            line = line.strip()
+            if not line:
+                if current_section:
+                    section_content.append("")
+                continue
+                
+            matched_section = None
             for pattern, section_key in sections:
                 if re.search(pattern, line, re.IGNORECASE):
-                    # 前のセクションの内容を保存
-                    if current_section and section_content:
-                        detailed_analysis[current_section] = "\n".join(section_content).strip()
-                    
-                    # 新しいセクションを開始
-                    current_section = section_key
-                    section_content = []
-                    matched = True
+                    matched_section = section_key
                     break
             
-            # セクションヘッダー以外の行は現在のセクションに追加
-            if not matched and current_section:
+            if matched_section:
+                # 前のセクションの内容を保存
+                if current_section and section_content:
+                    content = "\n".join(section_content).strip()
+                    if content:
+                        detailed_analysis[current_section] = content
+                
+                # 新しいセクションを開始
+                current_section = matched_section
+                section_content = []
+            elif current_section:
+                # 現在のセクションに内容を追加
                 section_content.append(line)
         
         # 最後のセクションを処理
         if current_section and section_content:
-            detailed_analysis[current_section] = "\n".join(section_content).strip()
+            content = "\n".join(section_content).strip()
+            if content:
+                detailed_analysis[current_section] = content
         
-        # セクションが分割できなかった場合は、全テキストを最初のセクションに入れる
-        if all(not value.strip() for value in detailed_analysis.values()):
-            detailed_analysis["detailed_topic_analysis"] = detailed_analysis_text
-            print("セクション分割に失敗したため、全文を最初のセクションに配置しました")
+        # セクション分割に失敗した場合の対処
+        filled_sections = sum(1 for value in detailed_analysis.values() if value.strip())
+        if filled_sections < 3:
+            # セクション分割に失敗した場合は、全テキストを分割して配布
+            text_parts = detailed_analysis_text.split("\n\n")
+            section_keys = list(detailed_analysis.keys())
+            
+            for i, part in enumerate(text_parts[:len(section_keys)]):
+                if part.strip():
+                    detailed_analysis[section_keys[i]] = part.strip()
+            
+            print("セクション分割に失敗したため、テキストを均等に分配しました")
         
-        # デバッグ情報を追加
+        # デバッグ情報
         print(f"分析結果セクション:")
         for key, value in detailed_analysis.items():
-            if value.strip():
-                print(f"  {key}: {len(value)} 文字")
-            else:
-                print(f"  {key}: 空")
+            char_count = len(value.strip()) if value else 0
+            print(f"  {key}: {char_count} 文字")
         
         return {
-            "detailed_analysis": detailed_analysis
+            "detailed_analysis": detailed_analysis,
+            "analysis_metadata": {
+                "total_conversations": detailed_metrics.get("total_conversations", 0),
+                "analysis_timestamp": datetime.now().isoformat(),
+                "data_quality_score": min(100, (filled_sections / 6) * 100)
+            }
         }
         
     except Exception as e:
@@ -675,15 +809,20 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
         print(f"詳細ビジネス分析エラー: {str(e)}")
         print(traceback.format_exc())
         
-        # エラーの場合でも基本的な分析結果を返す
+        # エラーの場合でも有用な分析結果を返す
         return {
             "detailed_analysis": {
-                "detailed_topic_analysis": f"分析処理中にエラーが発生しました: {str(e)}",
-                "efficiency_opportunities": "エラーのため分析できませんでした。",
-                "frustration_points": "エラーのため分析できませんでした。",
-                "improvement_suggestions": "エラーのため分析できませんでした。",
-                "communication_gaps": "エラーのため分析できませんでした。",
-                "specific_recommendations": "システム管理者に連絡して、エラーログを確認してください。"
+                "detailed_topic_analysis": f"分析処理中にエラーが発生しました: {str(e)}\n\n利用可能な基本データから推測される主要な質問パターンを確認し、手動での詳細分析を検討してください。",
+                "efficiency_opportunities": "システムエラーにより自動分析が完了できませんでした。チャット履歴を手動で確認し、繰り返し質問や標準化可能な業務を特定することをお勧めします。",
+                "frustration_points": "エラーにより詳細な感情分析ができませんでした。ユーザーからの否定的なフィードバックやクレームを個別に確認してください。",
+                "improvement_suggestions": "自動分析は利用できませんが、基本的な改善として以下を検討してください：\n- FAQ の充実\n- 回答精度の向上\n- ユーザーインターフェースの改善",
+                "communication_gaps": "システム制限により分析できませんでした。部門間での情報共有状況を手動で確認し、ドキュメント化が必要な領域を特定してください。",
+                "specific_recommendations": "技術的な問題により詳細な提案ができませんが、以下の基本的な改善を優先してください：\n1. システムの安定性向上\n2. エラー処理の改善\n3. 分析機能の再設計"
+            },
+            "analysis_metadata": {
+                "error": str(e),
+                "analysis_timestamp": datetime.now().isoformat(),
+                "data_quality_score": 0
             }
         }
 
@@ -1556,6 +1695,109 @@ async def catch_all(full_path: str):
     if os.path.exists(index_path):
         return FileResponse(index_path)
     raise HTTPException(status_code=404, detail="Not Found")
+
+# 会社全体のトークン使用量と料金情報を取得するエンドポイント
+@app.get("/chatbot/api/company-token-usage", response_model=dict)
+async def get_company_token_usage(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """会社全体のトークン使用量と料金情報を取得する（実際のデータベースから）"""
+    try:
+        # ユーザーの会社IDを取得
+        user_result = select_data("users", filters={"id": current_user["id"]})
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
+        
+        user_data = user_result.data[0]
+        company_id = user_data.get("company_id")
+        
+        if not company_id:
+            raise HTTPException(status_code=400, detail="会社IDが設定されていません")
+        
+        # トークン使用量追跡機能を使用
+        from modules.token_counter import TokenUsageTracker
+        tracker = TokenUsageTracker(db)
+        
+        # 今月の会社全体の使用量を取得
+        usage_data = tracker.get_company_monthly_usage(company_id)
+        
+        # 基本プラン制限
+        basic_limit = 25000000  # 25M tokens
+        
+        # 使用率計算
+        total_tokens = usage_data["total_tokens"]
+        usage_percentage = min(100, (total_tokens / basic_limit) * 100)
+        remaining_tokens = max(0, basic_limit - total_tokens)
+        
+        # 日本円での料金計算
+        from modules.token_counter import calculate_japanese_pricing
+        cost_breakdown = calculate_japanese_pricing(total_tokens)
+        
+        # 警告レベルの判定
+        warning_level = "safe"
+        if usage_percentage >= 95:
+            warning_level = "critical"
+        elif usage_percentage >= 80:
+            warning_level = "warning"
+        
+        # 同じ会社のユーザー数を取得
+        company_users_result = select_data("users", filters={"company_id": company_id})
+        company_users_count = len(company_users_result.data) if company_users_result.data else 0
+        
+        return {
+            "total_tokens_used": total_tokens,
+            "total_input_tokens": usage_data["total_input_tokens"],
+            "total_output_tokens": usage_data["total_output_tokens"],
+            "basic_plan_limit": basic_limit,
+            "current_month_cost": cost_breakdown["total_cost_jpy"],
+            "cost_breakdown": cost_breakdown,
+            "usage_percentage": round(usage_percentage, 1),
+            "remaining_tokens": remaining_tokens,
+            "warning_level": warning_level,
+            "company_users_count": company_users_count,
+            "active_users": usage_data["active_users"],
+            "total_conversations": usage_data["conversation_count"],
+            "cost_usd": usage_data["total_cost_usd"],
+            "current_month": usage_data["year_month"],
+            "company_name": user_data.get("company_name", "未設定")
+        }
+        
+    except Exception as e:
+        print(f"会社トークン使用量取得エラー: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"トークン使用量の取得中にエラーが発生しました: {str(e)}")
+
+# 料金シミュレーションエンドポイント
+@app.post("/chatbot/api/simulate-cost", response_model=dict)
+async def simulate_token_cost(request: dict, current_user = Depends(get_current_user)):
+    """指定されたトークン数での料金をシミュレーション"""
+    try:
+        tokens = request.get("tokens", 0)
+        
+        if not isinstance(tokens, (int, float)) or tokens < 0:
+            raise HTTPException(status_code=400, detail="有効なトークン数を指定してください")
+        
+        # 統一された料金計算関数を使用
+        from modules.token_counter import calculate_japanese_pricing
+        simulation_result = calculate_japanese_pricing(tokens)
+        
+        # 実効レートを計算
+        effective_rate = simulation_result["total_cost_jpy"] / tokens * 1000 if tokens > 0 else 0
+        
+        return {
+            "simulated_tokens": tokens,
+            "cost_breakdown": {
+                "total_cost": simulation_result["total_cost_jpy"],
+                "basic_plan": simulation_result["basic_plan_cost"],
+                "tier1_cost": simulation_result["tier1_cost"],
+                "tier2_cost": simulation_result["tier2_cost"],
+                "tier3_cost": simulation_result["tier3_cost"],
+                "effective_rate": effective_rate
+            },
+            "tokens_in_millions": tokens / 1000000,  # M単位での表示
+            "cost_per_million": simulation_result["total_cost_jpy"] / (tokens / 1000000) if tokens > 0 else 0
+        }
+        
+    except Exception as e:
+        print(f"料金シミュレーションエラー: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"料金シミュレーション中にエラーが発生しました: {str(e)}")
 
 # アプリケーションの実行
 if __name__ == "__main__":

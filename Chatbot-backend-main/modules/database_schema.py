@@ -66,7 +66,48 @@ SCHEMA = {
         employee_id TEXT,
         employee_name TEXT,
         source_document TEXT,
-        source_page TEXT
+        source_page TEXT,
+        input_tokens INTEGER DEFAULT 0,
+        output_tokens INTEGER DEFAULT 0,
+        total_tokens INTEGER DEFAULT 0,
+        model_name TEXT DEFAULT 'gpt-4o-mini',
+        cost_usd DECIMAL(10,6) DEFAULT 0.000000,
+        user_id TEXT,
+        company_id TEXT,
+        FOREIGN KEY (user_id) REFERENCES users (id),
+        FOREIGN KEY (company_id) REFERENCES companies (id)
+    )
+    """,
+    
+    "monthly_token_usage": """
+    CREATE TABLE IF NOT EXISTS monthly_token_usage (
+        id TEXT PRIMARY KEY,
+        company_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        year_month TEXT NOT NULL,
+        total_input_tokens INTEGER DEFAULT 0,
+        total_output_tokens INTEGER DEFAULT 0,
+        total_tokens INTEGER DEFAULT 0,
+        total_cost_usd DECIMAL(10,6) DEFAULT 0.000000,
+        conversation_count INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (company_id) REFERENCES companies (id),
+        FOREIGN KEY (user_id) REFERENCES users (id),
+        UNIQUE(company_id, user_id, year_month)
+    )
+    """,
+
+    "company_settings": """
+    CREATE TABLE IF NOT EXISTS company_settings (
+        company_id TEXT PRIMARY KEY,
+        monthly_token_limit INTEGER DEFAULT 25000000,
+        warning_threshold_percentage INTEGER DEFAULT 80,
+        critical_threshold_percentage INTEGER DEFAULT 95,
+        pricing_tier TEXT DEFAULT 'basic',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (company_id) REFERENCES companies (id)
     )
     """,
     
@@ -102,6 +143,64 @@ SCHEMA = {
     """
 }
 
+# データベースビューの定義
+VIEWS = {
+    "current_month_usage": """
+    CREATE VIEW IF NOT EXISTS current_month_usage AS
+    SELECT 
+        company_id,
+        user_id,
+        SUM(total_tokens) as current_month_tokens,
+        COUNT(*) as current_month_conversations,
+        SUM(cost_usd) as current_month_cost_usd
+    FROM chat_history 
+    WHERE strftime('%Y-%m', timestamp) = strftime('%Y-%m', 'now')
+    GROUP BY company_id, user_id
+    """,
+
+    "company_current_month_summary": """
+    CREATE VIEW IF NOT EXISTS company_current_month_summary AS
+    SELECT 
+        c.id as company_id,
+        c.name as company_name,
+        COALESCE(SUM(cmu.current_month_tokens), 0) as total_current_month_tokens,
+        COALESCE(SUM(cmu.current_month_conversations), 0) as total_current_month_conversations,
+        COALESCE(SUM(cmu.current_month_cost_usd), 0) as total_current_month_cost_usd,
+        COUNT(DISTINCT cmu.user_id) as active_users_this_month
+    FROM companies c
+    LEFT JOIN current_month_usage cmu ON c.id = cmu.company_id
+    GROUP BY c.id, c.name
+    """
+}
+
+# インデックスの定義
+INDEXES = {
+    "idx_chat_history_company_timestamp": """
+    CREATE INDEX IF NOT EXISTS idx_chat_history_company_timestamp 
+    ON chat_history(company_id, timestamp)
+    """,
+    
+    "idx_chat_history_user_timestamp": """
+    CREATE INDEX IF NOT EXISTS idx_chat_history_user_timestamp 
+    ON chat_history(user_id, timestamp)
+    """,
+    
+    "idx_chat_history_tokens": """
+    CREATE INDEX IF NOT EXISTS idx_chat_history_tokens 
+    ON chat_history(total_tokens)
+    """,
+    
+    "idx_monthly_usage_company_month": """
+    CREATE INDEX IF NOT EXISTS idx_monthly_usage_company_month 
+    ON monthly_token_usage(company_id, year_month)
+    """,
+    
+    "idx_monthly_usage_user_month": """
+    CREATE INDEX IF NOT EXISTS idx_monthly_usage_user_month 
+    ON monthly_token_usage(user_id, year_month)
+    """
+}
+
 INITIAL_DATA = {
     "default_company": """
     INSERT OR IGNORE INTO companies (id, name, created_at)
@@ -116,5 +215,10 @@ INITIAL_DATA = {
     "admin_unlimited": """
     INSERT OR IGNORE INTO usage_limits (user_id, is_unlimited)
     VALUES ('admin', 1)
+    """,
+
+    "default_company_settings": """
+    INSERT OR IGNORE INTO company_settings (company_id)
+    SELECT id FROM companies
     """
 }

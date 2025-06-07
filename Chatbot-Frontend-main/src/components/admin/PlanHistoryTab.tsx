@@ -15,11 +15,13 @@ import {
   Divider,
   Paper,
   Stack,
+  Tooltip,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import HistoryIcon from "@mui/icons-material/History";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import api from "../../api";
 import { formatDate } from "./utils";
 import LoadingIndicator from "./LoadingIndicator";
@@ -128,6 +130,90 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
     return remainingDays > 0 ? `${months}ヶ月${remainingDays}日間` : `${months}ヶ月間`;
   };
 
+  const formatDetailedDuration = (durationDays: number | null) => {
+    if (!durationDays) return "期間不明";
+    
+    const years = Math.floor(durationDays / 365);
+    const months = Math.floor((durationDays % 365) / 30);
+    const weeks = Math.floor(((durationDays % 365) % 30) / 7);
+    const days = ((durationDays % 365) % 30) % 7;
+    
+    const parts = [];
+    if (years > 0) parts.push(`${years}年`);
+    if (months > 0) parts.push(`${months}ヶ月`);
+    if (weeks > 0) parts.push(`${weeks}週間`);
+    if (days > 0) parts.push(`${days}日間`);
+    
+    if (parts.length === 0) return "1日未満";
+    return `${parts.join('')} (合計${durationDays}日間)`;
+  };
+
+  const formatRelativeTime = (dateString: string) => {
+    const now = new Date();
+    const date = new Date(dateString);
+    const diffTime = Math.abs(now.getTime() - date.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 1) return "1日前";
+    if (diffDays < 7) return `${diffDays}日前`;
+    if (diffDays < 30) {
+      const weeks = Math.floor(diffDays / 7);
+      return `${weeks}週間前`;
+    }
+    if (diffDays < 365) {
+      const months = Math.floor(diffDays / 30);
+      return `${months}ヶ月前`;
+    }
+    const years = Math.floor(diffDays / 365);
+    return `${years}年前`;
+  };
+
+  const calculateStatistics = () => {
+    const demoToProd = planHistory.filter(item => item.from_plan === "demo" && item.to_plan === "production");
+    const prodToDemo = planHistory.filter(item => item.from_plan === "production" && item.to_plan === "demo");
+    
+    const demoToProdDurations = demoToProd.filter(item => item.duration_days).map(item => item.duration_days!);
+    const avgDemoUsage = demoToProdDurations.length > 0 
+      ? Math.round(demoToProdDurations.reduce((sum, days) => sum + days, 0) / demoToProdDurations.length)
+      : null;
+    
+    const prodToDemoDurations = prodToDemo.filter(item => item.duration_days).map(item => item.duration_days!);
+    const avgProdUsage = prodToDemoDurations.length > 0
+      ? Math.round(prodToDemoDurations.reduce((sum, days) => sum + days, 0) / prodToDemoDurations.length)
+      : null;
+
+    const totalPlanUsageDays = planHistory
+      .filter(item => item.duration_days)
+      .reduce((total, item) => total + item.duration_days!, 0);
+
+    return {
+      demoToProdCount: demoToProd.length,
+      prodToDemoCount: prodToDemo.length,
+      avgDemoUsage,
+      avgProdUsage,
+      totalPlanUsageDays,
+      totalUsers: new Set(planHistory.map(item => item.user_id)).size
+    };
+  };
+
+  const getCurrentPlanDuration = (userId: string) => {
+    const userChanges = planHistory
+      .filter(item => item.user_id === userId)
+      .sort((a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime());
+    
+    if (userChanges.length === 0) return null;
+    
+    const latestChange = userChanges[0];
+    const now = new Date();
+    const changeDate = new Date(latestChange.changed_at);
+    const daysSinceChange = Math.floor((now.getTime() - changeDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    return {
+      currentPlan: latestChange.to_plan,
+      daysSinceChange
+    };
+  };
+
   if (isLoading) {
     return <LoadingIndicator message="プラン履歴を読み込み中..." />;
   }
@@ -229,15 +315,35 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                               size="small"
                             />
                           </Stack>
-                          <Stack direction="row" spacing={2} alignItems="center">
-                            <Typography variant="body2" color="text.secondary">
-                              変更日時: {formatDate(item.changed_at)}
-                            </Typography>
+                          <Stack direction="column" spacing={0.5}>
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <AccessTimeIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
+                              <Tooltip title={`詳細: ${formatDate(item.changed_at)}`}>
+                                <Typography variant="body2" color="text.secondary">
+                                  {formatRelativeTime(item.changed_at)}に変更
+                                </Typography>
+                              </Tooltip>
+                            </Stack>
                             {item.duration_days && (
-                              <Typography variant="body2" color="text.secondary">
-                                利用期間: {formatDuration(item.duration_days)}
+                              <Typography variant="body2" color="text.secondary" sx={{ pl: 2.5 }}>
+                                📅 {getPlanDisplayName(item.from_plan)}利用期間: {formatDetailedDuration(item.duration_days)}
                               </Typography>
                             )}
+                            {(() => {
+                              const currentPlanInfo = getCurrentPlanDuration(item.user_id);
+                              const isLastChange = planHistory
+                                .filter(change => change.user_id === item.user_id)
+                                .sort((a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime())[0]?.id === item.id;
+                              
+                              if (isLastChange && currentPlanInfo) {
+                                return (
+                                  <Typography variant="body2" color="primary.main" sx={{ pl: 2.5, fontWeight: 500 }}>
+                                    🔄 現在{getPlanDisplayName(currentPlanInfo.currentPlan)}: {formatDetailedDuration(currentPlanInfo.daysSinceChange)}
+                                  </Typography>
+                                );
+                              }
+                              return null;
+                            })()}
                           </Stack>
                         </Box>
                       }
@@ -257,32 +363,107 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
           <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
             統計情報
           </Typography>
-          <Stack direction="row" spacing={3}>
-            <Box>
-              <Typography variant="body2" color="text.secondary">
-                総変更回数
-              </Typography>
-              <Typography variant="h5" sx={{ fontWeight: 600 }}>
-                {planHistory.length}
-              </Typography>
-            </Box>
-            <Box>
-              <Typography variant="body2" color="text.secondary">
-                デモ→本番への変更
-              </Typography>
-              <Typography variant="h5" sx={{ fontWeight: 600, color: "success.main" }}>
-                {planHistory.filter(item => item.from_plan === "demo" && item.to_plan === "production").length}
-              </Typography>
-            </Box>
-            <Box>
-              <Typography variant="body2" color="text.secondary">
-                本番→デモへの変更
-              </Typography>
-              <Typography variant="h5" sx={{ fontWeight: 600, color: "warning.main" }}>
-                {planHistory.filter(item => item.from_plan === "production" && item.to_plan === "demo").length}
-              </Typography>
-            </Box>
-          </Stack>
+          {(() => {
+            const stats = calculateStatistics();
+            return (
+              <Stack spacing={3}>
+                {/* 基本統計 */}
+                <Stack direction="row" spacing={3} flexWrap="wrap">
+                  <Box>
+                    <Typography variant="body2" color="text.secondary">
+                      総変更回数
+                    </Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 600 }}>
+                      {planHistory.length}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="body2" color="text.secondary">
+                      対象ユーザー数
+                    </Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 600 }}>
+                      {stats.totalUsers}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="body2" color="text.secondary">
+                      デモ→本番への変更
+                    </Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 600, color: "success.main" }}>
+                      {stats.demoToProdCount}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="body2" color="text.secondary">
+                      本番→デモへの変更
+                    </Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 600, color: "warning.main" }}>
+                      {stats.prodToDemoCount}
+                    </Typography>
+                  </Box>
+                </Stack>
+
+                <Divider />
+
+                {/* 利用期間統計 */}
+                <Stack direction="row" spacing={3} flexWrap="wrap">
+                  <Box>
+                    <Typography variant="body2" color="text.secondary">
+                      累計利用期間
+                    </Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                      {formatDetailedDuration(stats.totalPlanUsageDays)}
+                    </Typography>
+                  </Box>
+                  {stats.avgDemoUsage && (
+                    <Box>
+                      <Typography variant="body2" color="text.secondary">
+                        デモ版平均利用期間
+                      </Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 600, color: "warning.main" }}>
+                        {formatDetailedDuration(stats.avgDemoUsage)}
+                      </Typography>
+                    </Box>
+                  )}
+                  {stats.avgProdUsage && (
+                    <Box>
+                      <Typography variant="body2" color="text.secondary">
+                        本番版平均利用期間
+                      </Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 600, color: "success.main" }}>
+                        {formatDetailedDuration(stats.avgProdUsage)}
+                      </Typography>
+                    </Box>
+                  )}
+                </Stack>
+
+                {/* 効率性指標 */}
+                {stats.demoToProdCount > 0 && (
+                  <>
+                    <Divider />
+                    <Stack direction="row" spacing={3} flexWrap="wrap">
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          本番移行率
+                        </Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 600, color: "info.main" }}>
+                          {Math.round((stats.demoToProdCount / (stats.demoToProdCount + stats.prodToDemoCount)) * 100)}%
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          ユーザーあたり平均変更回数
+                        </Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                          {(planHistory.length / stats.totalUsers).toFixed(1)}回
+                        </Typography>
+                      </Box>
+                    </Stack>
+                  </>
+                )}
+              </Stack>
+            );
+          })()}
         </Paper>
       )}
     </Box>

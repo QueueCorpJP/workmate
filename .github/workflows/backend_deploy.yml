@@ -225,8 +225,11 @@ jobs:
             # PM2プロセス確認
             pm2 list
             
-            # アプリケーション名を確認して再起動
-            if pm2 describe workmate-backend >/dev/null 2>&1; then
+            # アプリケーション名を確認して再起動（優先順位付き）
+            if pm2 describe chatbot-backend >/dev/null 2>&1; then
+              echo "chatbot-backend を再起動します..."
+              pm2 restart chatbot-backend
+            elif pm2 describe workmate-backend >/dev/null 2>&1; then
               echo "workmate-backend を再起動します..."
               pm2 restart workmate-backend
             elif pm2 describe app >/dev/null 2>&1; then
@@ -234,7 +237,7 @@ jobs:
               pm2 restart app
             else
               echo "新しいPM2プロセスを開始します..."
-              pm2 start main.py --name workmate-backend
+              pm2 start main.py --name chatbot-backend
             fi
             
             # PM2プロセス状態確認
@@ -253,7 +256,7 @@ jobs:
           
           echo "✅ バックエンドデプロイ完了"
         ENDSSH
-        
+        ouhaenriphiuhoeuthneieyr9husent
         echo "✅ デプロイプロセス完了"
 
     - name: Verify deployment
