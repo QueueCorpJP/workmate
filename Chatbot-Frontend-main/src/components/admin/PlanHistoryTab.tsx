@@ -176,9 +176,9 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
       {/* プラン履歴リスト */}
       {planHistory.length === 0 ? (
         <EmptyState
-          icon={<HistoryIcon sx={{ fontSize: 48, color: "text.secondary" }} />}
-          title="プラン変更履歴がありません"
-          description="まだプランの変更が行われていません。"
+          icon="custom"
+          customIcon={<HistoryIcon sx={{ fontSize: '4rem', color: 'text.secondary' }} />}
+          message="プラン変更履歴がありません。まだプランの変更が行われていません。"
         />
       ) : (
         <Card>

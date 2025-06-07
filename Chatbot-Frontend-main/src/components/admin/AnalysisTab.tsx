@@ -148,7 +148,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
 
       // ビジネス分析モードに切り替え
       setAnalysisMode('business');
-    } catch (error) {
+    } catch (error: any) {
       console.error('詳細ビジネス分析の取得エラー:', error);
       
       // より詳細なエラーメッセージ
