@@ -324,7 +324,7 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
         }}
       >
         <Typography variant="h5" sx={{ fontWeight: 600 }}>
-          会社の管理者用アカウント利用状況
+          会社の管理アカウント利用状況
         </Typography>
       </Box>
 
