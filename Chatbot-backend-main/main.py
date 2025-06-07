@@ -1140,22 +1140,6 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"CSVダウンロード中にエラーが発生しました: {str(e)}")
 
-# その他のルートパスをindex.htmlにリダイレクト（SPAのルーティング用）
-@app.get("/{full_path:path}", include_in_schema=False)
-async def catch_all(full_path: str):
-    print(f"catch_all handler called with path: {full_path}")
-    
-    # APIエンドポイントはスキップ（/api で始まるパスまたは chatbot/api で始まるパスはAPIエンドポイントとして処理）
-    if full_path.startswith("api/") or full_path.startswith("chatbot/api/"):
-        # APIエンドポイントの場合は404を返す
-        raise HTTPException(status_code=404, detail="API endpoint not found")
-    
-    # SPAルーティング用にindex.htmlを返す
-    index_path = os.path.join(frontend_build_dir, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    raise HTTPException(status_code=404, detail="Not Found")
-
 @app.post("/chatbot/api/admin/update-user-status/{user_id}", response_model=dict)
 async def admin_update_user_status(user_id: str, request: dict, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """管理者によるユーザーステータス変更（adminのみ実行可能）"""
@@ -1401,6 +1385,22 @@ async def admin_ensure_database_integrity(current_user = Depends(get_admin_or_us
             detail=f"データベース整合性チェック中にエラーが発生しました: {str(e)}"
         )
 
+
+# その他のルートパスをindex.htmlにリダイレクト（SPAのルーティング用）
+@app.get("/{full_path:path}", include_in_schema=False)
+async def catch_all(full_path: str):
+    print(f"catch_all handler called with path: {full_path}")
+    
+    # APIエンドポイントはスキップ（/api で始まるパスまたは chatbot/api で始まるパスはAPIエンドポイントとして処理）
+    if full_path.startswith("api/") or full_path.startswith("chatbot/api/"):
+        # APIエンドポイントの場合は404を返す
+        raise HTTPException(status_code=404, detail="API endpoint not found")
+    
+    # SPAルーティング用にindex.htmlを返す
+    index_path = os.path.join(frontend_build_dir, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    raise HTTPException(status_code=404, detail="Not Found")
 
 
 # アプリケーションの実行

@@ -98,8 +98,11 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
     setIsPlanHistoryLoading(true);
     try {
       console.log("プラン履歴を取得中...");
+      console.log("API URL:", `${api.defaults.baseURL}/plan-history`);
+      
       const response = await api.get("/plan-history");
       console.log("プラン履歴取得結果:", response.data);
+      console.log("レスポンスステータス:", response.status);
       
       if (response.data && response.data.history) {
         // 自分の履歴のみフィルタリング
@@ -110,8 +113,16 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
       } else {
         setPlanHistory([]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("プラン履歴の取得に失敗しました:", error);
+      if (error.response) {
+        console.error("エラーレスポンス:", error.response.status, error.response.data);
+        console.error("エラーヘッダー:", error.response.headers);
+      } else if (error.request) {
+        console.error("リクエストエラー:", error.request);
+      } else {
+        console.error("設定エラー:", error.message);
+      }
       setPlanHistory([]);
     } finally {
       setIsPlanHistoryLoading(false);

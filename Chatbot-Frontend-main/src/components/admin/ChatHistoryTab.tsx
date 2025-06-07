@@ -66,9 +66,15 @@ const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({
   // CSVダウンロード機能
   const handleDownloadCSV = async () => {
     try {
+      console.log('CSVダウンロード開始...');
+      console.log('API URL:', `${api.defaults.baseURL}/admin/chat-history/csv`);
+      
       const response = await api.get('/admin/chat-history/csv', {
         responseType: 'blob',
+        timeout: 60000, // 60秒のタイムアウト
       });
+      
+      console.log('CSVレスポンス受信:', response.status, response.data);
       
       // Blobからダウンロードリンクを作成
       const blob = new Blob([response.data], { type: 'text/csv; charset=utf-8' });
@@ -87,9 +93,19 @@ const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({
       window.URL.revokeObjectURL(url);
       
       console.log('チャット履歴のCSVダウンロードが完了しました');
-    } catch (error) {
+    } catch (error: any) {
       console.error('CSVダウンロードエラー:', error);
-      alert('CSVファイルのダウンロードに失敗しました。');
+      
+      if (error.response) {
+        console.error('エラーレスポンス:', error.response.status, error.response.data);
+        alert(`CSVファイルのダウンロードに失敗しました。ステータス: ${error.response.status}`);
+      } else if (error.request) {
+        console.error('リクエストエラー:', error.request);
+        alert('サーバーに接続できませんでした。ネットワーク接続を確認してください。');
+      } else {
+        console.error('設定エラー:', error.message);
+        alert('CSVファイルのダウンロード中にエラーが発生しました。');
+      }
     }
   };
 
