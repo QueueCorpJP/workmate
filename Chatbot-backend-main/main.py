@@ -1066,9 +1066,21 @@ async def get_plan_history_endpoint(current_user = Depends(get_current_user), db
             detail=f"プラン履歴の取得に失敗しました: {str(e)}"
         )
 
+# テスト用デバッグエンドポイント（認証なし）
+@app.get("/chatbot/api/test-simple")
+async def simple_test():
+    """認証なしの簡単なテスト"""
+    return {"message": "Backend is working!", "timestamp": datetime.datetime.now().isoformat()}
+
+# テスト用デバッグエンドポイント
+@app.get("/chatbot/api/admin/csv-test")
+async def csv_test_endpoint():
+    """CSVエンドポイントのテスト"""
+    return {"message": "CSV endpoint is working", "timestamp": datetime.datetime.now().isoformat()}
+
 # チャット履歴をCSV形式でダウンロードするエンドポイント（catch_allより前に配置）
 @app.get("/chatbot/api/admin/chat-history/csv")
-async def download_chat_history_csv(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def download_chat_history_csv(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """チャット履歴をCSV形式でダウンロードする"""
     try:
         print(f"CSVダウンロード開始 - ユーザー: {current_user['email']}")
