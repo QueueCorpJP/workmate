@@ -18,6 +18,7 @@ jobs:
     - name: Build Frontend
       env:
         VITE_API_URL: https://workmatechat.com/chatbot/api
+       
       run: |
         echo "🏗️ フロントエンドビルド開始..."
         cd Chatbot-Frontend-main

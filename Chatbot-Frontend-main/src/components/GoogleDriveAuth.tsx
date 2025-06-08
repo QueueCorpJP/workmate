@@ -93,7 +93,8 @@ export const GoogleDriveAuth: React.FC<GoogleDriveAuthProps> = ({
       console.log('Google認証初期化完了');
     } catch (error) {
       console.error('認証初期化エラー:', error);
-      onAuthError(`認証の初期化に失敗しました: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      onAuthError(`認証の初期化に失敗しました: ${errorMessage}`);
     }
   };
 
