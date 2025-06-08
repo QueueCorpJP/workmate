@@ -1,0 +1,24 @@
+# 機密情報ファイル
+大事.txt
+secrets.txt
+config.txt
+credentials.txt
+
+# 環境変数ファイル
+.env
+.env.local
+.env.production
+
+# APIキー・認証情報
+*key*.txt
+*secret*.txt
+*credential*.txt
+
+# Google OAuth関連
+client_secret.json
+service-account.json
+
+# その他
+.DS_Store
+Thumbs.db
+*.log 

@@ -192,205 +192,205 @@ function CompanySettings() {
         >
           {/* コンテンツ */}
           <Box sx={{ p: { xs: 2, sm: 3, md: 4 } }}>
-            <Typography
-              variant={isMobile ? "h5" : "h4"}
-              sx={{
-                mb: 4,
-                fontWeight: 700,
-                color: "text.primary",
-                textAlign: "center",
-                position: "relative",
-                "&:after": {
-                  content: '""',
-                  position: "absolute",
-                  bottom: -12,
-                  left: "50%",
-                  width: "60px",
-                  height: "3px",
-                  backgroundColor: "primary.main",
-                  transform: "translateX(-50%)",
-                  borderRadius: "10px",
-                },
-              }}
-            >
-              会社情報設定
-            </Typography>
+          <Typography
+            variant={isMobile ? "h5" : "h4"}
+            sx={{
+              mb: 4,
+              fontWeight: 700,
+              color: "text.primary",
+              textAlign: "center",
+              position: "relative",
+              "&:after": {
+                content: '""',
+                position: "absolute",
+                bottom: -12,
+                left: "50%",
+                width: "60px",
+                height: "3px",
+                backgroundColor: "primary.main",
+                transform: "translateX(-50%)",
+                borderRadius: "10px",
+              },
+            }}
+          >
+            会社情報設定
+          </Typography>
 
-            <Grid container spacing={4}>
-              {/* 現在の会社名 */}
-              <Grid item xs={12}>
-                <Card
-                  elevation={0}
+          <Grid container spacing={4}>
+            {/* 現在の会社名 */}
+            <Grid item xs={12}>
+              <Card
+                elevation={0}
+                sx={{
+                  p: 3,
+                  borderRadius: 2.5,
+                  border: "1px solid rgba(37, 99, 235, 0.1)",
+                  backgroundColor: "rgba(37, 99, 235, 0.03)",
+                  transition: "all 0.3s ease",
+                  "&:hover": {
+                    boxShadow: "0 8px 24px rgba(37, 99, 235, 0.12)",
+                    transform: "translateY(-2px)",
+                  },
+                }}
+              >
+                <Typography
+                  variant="subtitle1"
                   sx={{
-                    p: 3,
-                    borderRadius: 2.5,
-                    border: "1px solid rgba(37, 99, 235, 0.1)",
-                    backgroundColor: "rgba(37, 99, 235, 0.03)",
-                    transition: "all 0.3s ease",
-                    "&:hover": {
-                      boxShadow: "0 8px 24px rgba(37, 99, 235, 0.12)",
-                      transform: "translateY(-2px)",
-                    },
+                    mb: 1.5,
+                    fontWeight: 600,
+                    color: "primary.main",
+                    display: "flex",
+                    alignItems: "center",
                   }}
                 >
-                  <Typography
-                    variant="subtitle1"
-                    sx={{
-                      mb: 1.5,
-                      fontWeight: 600,
-                      color: "primary.main",
-                      display: "flex",
-                      alignItems: "center",
-                    }}
-                  >
-                    <BusinessIcon sx={{ mr: 1, fontSize: "1.2rem" }} />
-                    現在の会社名
-                  </Typography>
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      p: 2.5,
-                      backgroundColor: "white",
-                      borderRadius: 2,
-                      border: "1px solid rgba(37, 99, 235, 0.15)",
-                      fontWeight: 500,
-                      textAlign: "center",
-                      color: "text.primary",
-                      wordBreak: "break-word",
-                      boxShadow: "inset 0 2px 4px rgba(0, 0, 0, 0.02)",
-                    }}
-                  >
-                    {companyName || "未設定"}
-                  </Typography>
-                </Card>
-              </Grid>
-
-              {/* 会社名変更フォーム */}
-              <Grid item xs={12}>
-                <Card
-                  elevation={0}
+                  <BusinessIcon sx={{ mr: 1, fontSize: "1.2rem" }} />
+                  現在の会社名
+                </Typography>
+                <Typography
+                  variant="h6"
                   sx={{
-                    p: 3,
-                    borderRadius: 2.5,
-                    border: "1px solid rgba(37, 99, 235, 0.1)",
+                    p: 2.5,
                     backgroundColor: "white",
-                    transition: "all 0.3s ease",
-                    position: "relative",
-                    overflow: "visible",
-                    "&:hover": {
-                      boxShadow: "0 8px 24px rgba(0, 0, 0, 0.08)",
-                      transform: "translateY(-2px)",
-                    },
+                    borderRadius: 2,
+                    border: "1px solid rgba(37, 99, 235, 0.15)",
+                    fontWeight: 500,
+                    textAlign: "center",
+                    color: "text.primary",
+                    wordBreak: "break-word",
+                    boxShadow: "inset 0 2px 4px rgba(0, 0, 0, 0.02)",
                   }}
                 >
-                  <Typography
-                    variant="subtitle1"
-                    sx={{
-                      mb: 1.5,
-                      fontWeight: 600,
-                      color: "primary.main",
-                    }}
-                  >
-                    新しい会社名
-                  </Typography>
-                  <TextField
-                    fullWidth
-                    variant="outlined"
-                    placeholder="新しい会社名を入力してください"
-                    value={newCompanyName}
-                    onChange={(e) => setNewCompanyName(e.target.value)}
-                    sx={{
-                      mb: 3,
-                      "& .MuiOutlinedInput-root": {
-                        borderRadius: 2,
-                        backgroundColor: "rgba(0, 0, 0, 0.01)",
-                        transition: "all 0.3s ease",
-                        border: "1px solid rgba(37, 99, 235, 0.1)",
-                        "&:hover": {
-                          boxShadow: "0 0 0 2px rgba(37, 99, 235, 0.15)",
-                        },
-                        "&.Mui-focused": {
-                          boxShadow: "0 0 0 2px rgba(37, 99, 235, 0.25)",
-                        },
-                      },
-                    }}
-                  />
-                  {!isEmployee && (
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={handleSave}
-                        disabled={
-                          isLoading ||
-                          !newCompanyName.trim() ||
-                          newCompanyName === companyName
-                        }
-                        startIcon={
-                          isLoading ? (
-                            <CircularProgress size={20} color="inherit" />
-                          ) : (
-                            <SaveIcon />
-                          )
-                        }
-                        sx={{
-                          py: 1.2,
-                          px: 3,
-                          fontWeight: 600,
-                          borderRadius: 2,
-                          boxShadow: "0 4px 14px rgba(37, 99, 235, 0.25)",
-                          background:
-                            "linear-gradient(to right, #2563eb, #3b82f6)",
-                          "&:hover": {
-                            boxShadow: "0 6px 20px rgba(37, 99, 235, 0.35)",
-                            background:
-                              "linear-gradient(to right, #1d4ed8, #2563eb)",
-                          },
-                          transition: "all 0.3s ease",
-                        }}
-                      >
-                        {isLoading ? "保存中..." : "保存する"}
-                      </Button>
-                    </Box>
-                  )}
+                  {companyName || "未設定"}
+                </Typography>
+              </Card>
+            </Grid>
 
-                  {error && (
-                    <Alert
-                      severity="error"
+            {/* 会社名変更フォーム */}
+            <Grid item xs={12}>
+              <Card
+                elevation={0}
+                sx={{
+                  p: 3,
+                  borderRadius: 2.5,
+                  border: "1px solid rgba(37, 99, 235, 0.1)",
+                  backgroundColor: "white",
+                  transition: "all 0.3s ease",
+                  position: "relative",
+                  overflow: "visible",
+                  "&:hover": {
+                    boxShadow: "0 8px 24px rgba(0, 0, 0, 0.08)",
+                    transform: "translateY(-2px)",
+                  },
+                }}
+              >
+                <Typography
+                  variant="subtitle1"
+                  sx={{
+                    mb: 1.5,
+                    fontWeight: 600,
+                    color: "primary.main",
+                  }}
+                >
+                  新しい会社名
+                </Typography>
+                <TextField
+                  fullWidth
+                  variant="outlined"
+                  placeholder="新しい会社名を入力してください"
+                  value={newCompanyName}
+                  onChange={(e) => setNewCompanyName(e.target.value)}
+                  sx={{
+                    mb: 3,
+                    "& .MuiOutlinedInput-root": {
+                      borderRadius: 2,
+                      backgroundColor: "rgba(0, 0, 0, 0.01)",
+                      transition: "all 0.3s ease",
+                      border: "1px solid rgba(37, 99, 235, 0.1)",
+                      "&:hover": {
+                        boxShadow: "0 0 0 2px rgba(37, 99, 235, 0.15)",
+                      },
+                      "&.Mui-focused": {
+                        boxShadow: "0 0 0 2px rgba(37, 99, 235, 0.25)",
+                      },
+                    },
+                  }}
+                />
+                {!isEmployee && (
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={handleSave}
+                      disabled={
+                        isLoading ||
+                        !newCompanyName.trim() ||
+                        newCompanyName === companyName
+                      }
+                      startIcon={
+                        isLoading ? (
+                          <CircularProgress size={20} color="inherit" />
+                        ) : (
+                          <SaveIcon />
+                        )
+                      }
                       sx={{
-                        mt: 3,
+                        py: 1.2,
+                        px: 3,
+                        fontWeight: 600,
                         borderRadius: 2,
-                        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.05)",
+                        boxShadow: "0 4px 14px rgba(37, 99, 235, 0.25)",
+                        background:
+                          "linear-gradient(to right, #2563eb, #3b82f6)",
+                        "&:hover": {
+                          boxShadow: "0 6px 20px rgba(37, 99, 235, 0.35)",
+                          background:
+                            "linear-gradient(to right, #1d4ed8, #2563eb)",
+                        },
+                        transition: "all 0.3s ease",
                       }}
                     >
-                      {error}
-                    </Alert>
-                  )}
-                </Card>
-              </Grid>
+                      {isLoading ? "保存中..." : "保存する"}
+                    </Button>
+                  </Box>
+                )}
 
-              {/* 情報 */}
-              <Grid item xs={12}>
-                <Alert
-                  severity="info"
-                  icon={<InfoIcon />}
-                  sx={{
-                    borderRadius: 2,
-                    boxShadow: "0 4px 12px rgba(37, 99, 235, 0.08)",
-                    border: "1px solid rgba(37, 99, 235, 0.1)",
-                    backgroundColor: "rgba(37, 99, 235, 0.03)",
-                    "& .MuiAlert-message": {
-                      fontSize: "0.95rem",
-                    },
-                    "& .MuiAlert-icon": {
-                      color: "primary.main",
-                    },
-                  }}
-                >
-                  会社名は、チャットボットのカスタマイズや社内向けレポートに使用されます。いつでも変更できます。
-                </Alert>
-              </Grid>
+                {error && (
+                  <Alert
+                    severity="error"
+                    sx={{
+                      mt: 3,
+                      borderRadius: 2,
+                      boxShadow: "0 4px 12px rgba(0, 0, 0, 0.05)",
+                    }}
+                  >
+                    {error}
+                  </Alert>
+                )}
+              </Card>
             </Grid>
+
+            {/* 情報 */}
+            <Grid item xs={12}>
+              <Alert
+                severity="info"
+                icon={<InfoIcon />}
+                sx={{
+                  borderRadius: 2,
+                  boxShadow: "0 4px 12px rgba(37, 99, 235, 0.08)",
+                  border: "1px solid rgba(37, 99, 235, 0.1)",
+                  backgroundColor: "rgba(37, 99, 235, 0.03)",
+                  "& .MuiAlert-message": {
+                    fontSize: "0.95rem",
+                  },
+                  "& .MuiAlert-icon": {
+                    color: "primary.main",
+                  },
+                }}
+              >
+                  会社名は、チャットボットのカスタマイズや社内向けレポートに使用されます。いつでも変更できます。
+              </Alert>
+            </Grid>
+          </Grid>
           </Box>
         </Paper>
       </Container>

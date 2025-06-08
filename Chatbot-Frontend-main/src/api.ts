@@ -35,7 +35,17 @@ const api = axios.create({
     (data) => {
       console.log("Response:", { data });
       try {
-        return typeof data === "string" && data ? JSON.parse(data) : data;
+        // 既にオブジェクトの場合はそのまま返す
+        if (typeof data === "object" && data !== null) {
+          return data;
+        }
+        // 文字列の場合はJSONパースを試行
+        if (typeof data === "string" && data) {
+          const parsed = JSON.parse(data);
+          console.log("Parsed response:", parsed);
+          return parsed;
+        }
+        return data;
       } catch (error) {
         console.error("Failed to parse response:", error);
         console.log("Raw response:", data);

@@ -41,6 +41,7 @@ import {
 } from "@mui/material";
 import { useDropzone } from "react-dropzone";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import { Cloud } from "@mui/icons-material";
 import SendIcon from "@mui/icons-material/Send";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import LinkIcon from "@mui/icons-material/Link";
@@ -58,7 +59,9 @@ import SourceCitation from "./components/SourceCitation";
 import ApplicationForm from "./components/ApplicationForm";
 import { useTheme } from "@mui/material/styles";
 import { useMediaQuery } from "@mui/material";
-import { isValidURL } from './components/admin/utils'
+import { isValidURL } from './components/admin/utils';
+import { GoogleDriveAuth } from './components/GoogleDriveAuth';
+import { GoogleDriveFilePicker } from './components/GoogleDriveFilePicker';
 
 interface Message {
   text: string;
@@ -131,6 +134,11 @@ function ChatInterface() {
   const [url, setUrl] = useState("");
   const [applicationOpen, setApplicationOpen] = useState(false);
   const [upgradeSuccess, setUpgradeSuccess] = useState(false);
+  
+  // Google Drive関連のstate
+  const [driveAccessToken, setDriveAccessToken] = useState<string>('');
+  const [drivePickerOpen, setDrivePickerOpen] = useState(false);
+  const [driveAuthError, setDriveAuthError] = useState<string>('');
 
   // メッセージエリアのスタイルを改善 - モバイル対応を強化
   const messageContainerStyles = {
@@ -698,6 +706,78 @@ function ChatInterface() {
     setApplicationOpen(false);
   };
 
+  // Google Drive関連のハンドラー
+  const handleDriveAuthSuccess = (accessToken: string) => {
+    setDriveAccessToken(accessToken);
+    setDriveAuthError('');
+    console.log('Google Drive認証成功');
+  };
+
+  const handleDriveAuthError = (error: string) => {
+    setDriveAuthError(error);
+    console.error('Google Drive認証エラー:', error);
+  };
+
+  const handleDriveFileSelect = async (file: any) => {
+    try {
+      setIsUploading(true);
+      setUploadProgress("Google Driveからファイルを取得中...");
+
+      console.log('選択されたファイル:', file);
+
+      // Google Driveファイルをサーバーに送信
+      const formData = new FormData();
+      formData.append('file_id', file.id);
+      formData.append('access_token', driveAccessToken);
+      formData.append('file_name', file.name);
+      formData.append('mime_type', file.mimeType);
+
+      setUploadProgress("ファイルを処理中...");
+
+      const response = await api.post('/upload-from-drive', formData);
+      
+      console.log("Google Driveアップロード成功:", response.data);
+      setKnowledgeBase({
+        ...response.data,
+        preview: response.data.preview || [],
+        columns: response.data.columns || [],
+      });
+
+      // 残りアップロード回数を更新
+      if (!isUnlimited && response.data.remaining_uploads !== undefined) {
+        updateRemainingUploads(response.data.remaining_uploads);
+      }
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          text: `Google Driveから「${file.name}」が正常に読み込まれました。`,
+          isUser: false,
+        },
+      ]);
+
+      setDrivePickerOpen(false);
+    } catch (error: any) {
+      console.error("Google Driveアップロードエラー:", error);
+      
+      let errorMessage = "Google Driveからのファイル読み込みに失敗しました。";
+      if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      }
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          text: `エラー: ${errorMessage}`,
+          isUser: false,
+        },
+      ]);
+    } finally {
+      setIsUploading(false);
+      setUploadProgress("");
+    }
+  };
+
   // AppBarコンポーネントのスタイル修正 - メニューボタン追加
   const renderAppBar = () => (
     <AppBar
@@ -1050,6 +1130,40 @@ function ChatInterface() {
           >
             URL
           </Button>
+          <Button
+            variant="outlined"
+            color="primary"
+            onClick={() => setUploadTab(2)}
+            startIcon={
+              <Cloud sx={{ fontSize: { xs: "0.65rem", sm: "0.7rem" } }} />
+            }
+            size="small"
+            sx={{
+              py: { xs: 0.2, sm: 0.2 },
+              px: { xs: 0.7, sm: 0.8 },
+              minHeight: 0,
+              minWidth: 0,
+              height: { xs: "22px", sm: "24px" },
+              borderRadius: "12px",
+              fontWeight: 500,
+              fontSize: { xs: "0.6rem", sm: "0.65rem" },
+              textTransform: "none",
+              backgroundColor: "rgba(255, 255, 255, 0.9)",
+              backdropFilter: "blur(8px)",
+              borderColor: "rgba(37, 99, 235, 0.15)",
+              color: "#3b82f6",
+              boxShadow: "0 1px 2px rgba(37, 99, 235, 0.03)",
+              "&:hover": {
+                borderColor: "rgba(37, 99, 235, 0.3)",
+                backgroundColor: "rgba(237, 242, 255, 0.8)",
+                transform: "translateY(-1px)",
+                boxShadow: "0 2px 4px rgba(37, 99, 235, 0.08)",
+              },
+              transition: "all 0.2s ease",
+            }}
+          >
+            Drive
+          </Button>
         </Box>
 
         {/* アップロード・URL送信モーダル */}
@@ -1075,10 +1189,11 @@ function ChatInterface() {
             }}
           >
             <Typography
+              component="div"
               variant="h6"
               sx={{ fontWeight: 700, color: "primary.main" }}
             >
-              {uploadTab === 0 ? "ファイルをアップロード" : "URLを送信"}
+              {uploadTab === 0 ? "ファイルをアップロード" : uploadTab === 1 ? "URLを送信" : "Google Drive"}
             </Typography>
             <IconButton
               onClick={() => setUploadTab(-1)}
@@ -1210,6 +1325,64 @@ function ChatInterface() {
                     "URLを送信"
                   )}
                 </Button>
+              </Box>
+            )}
+
+            {uploadTab === 2 && (
+              <Box>
+                <GoogleDriveAuth
+                  onAuthSuccess={handleDriveAuthSuccess}
+                  onAuthError={handleDriveAuthError}
+                />
+                
+                {driveAuthError && (
+                  <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+                    {driveAuthError}
+                  </Alert>
+                )}
+
+                {driveAccessToken && (
+                  <Box>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={() => setDrivePickerOpen(true)}
+                      fullWidth
+                      sx={{
+                        py: 1.5,
+                        borderRadius: "12px",
+                        fontWeight: 600,
+                        textTransform: "none",
+                        boxShadow: "0 2px 10px rgba(37, 99, 235, 0.2)",
+                        background:
+                          "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)",
+                        "&:hover": {
+                          boxShadow: "0 4px 14px rgba(37, 99, 235, 0.3)",
+                          background:
+                            "linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)",
+                        },
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      Google Driveからファイルを選択
+                    </Button>
+                  </Box>
+                )}
+
+                {(isUploading || uploadProgress) && (
+                  <Box sx={{ textAlign: "center", my: 2 }}>
+                    {isUploading ? (
+                      <CircularProgress size={32} sx={{ mb: 1.5 }} />
+                    ) : null}
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ fontWeight: 500 }}
+                    >
+                      {uploadProgress}
+                    </Typography>
+                  </Box>
+                )}
               </Box>
             )}
           </DialogContent>
@@ -1527,6 +1700,14 @@ function ChatInterface() {
       <ApplicationForm
         open={applicationOpen}
         onClose={handleCloseApplication}
+      />
+
+      {/* Google DriveファイルピッカーDialog */}
+      <GoogleDriveFilePicker
+        open={drivePickerOpen}
+        onClose={() => setDrivePickerOpen(false)}
+        onFileSelect={handleDriveFileSelect}
+        accessToken={driveAccessToken}
       />
     </Box>
   );

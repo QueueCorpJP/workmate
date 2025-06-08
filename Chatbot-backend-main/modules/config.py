@@ -33,9 +33,10 @@ def setup_gemini():
     """Gemini APIの設定を行います"""
     import google.generativeai as genai
     
-    api_key = os.getenv("GOOGLE_API_KEY")
+    # GEMINI_API_KEY（推奨）またはGOOGLE_API_KEY（後方互換）をサポート
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        raise ValueError("GOOGLE_API_KEY環境変数が設定されていません")
+        raise ValueError("GEMINI_API_KEY環境変数が設定されていません")
     
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-2.0-flash-exp')
