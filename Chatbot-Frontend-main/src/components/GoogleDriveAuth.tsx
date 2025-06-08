@@ -34,12 +34,19 @@ export const GoogleDriveAuth: React.FC<GoogleDriveAuthProps> = ({
 
   const loadGoogleAPI = async () => {
     try {
-      // gapiとgoogleの両方が読み込まれるまで待機
+      // gapiとgoogleの両方が読み込まれるまで待機（タイムアウト付き）
       const waitForGapi = () => {
-        return new Promise<void>((resolve) => {
+        return new Promise<void>((resolve, reject) => {
+          let attempts = 0;
+          const maxAttempts = 100; // 10秒待機
+          
           const checkGapi = () => {
+            attempts++;
             if (window.gapi && window.google) {
+              console.log('Google API 読み込み完了');
               resolve();
+            } else if (attempts >= maxAttempts) {
+              reject(new Error('Google API の読み込みがタイムアウトしました'));
             } else {
               setTimeout(checkGapi, 100);
             }
@@ -52,30 +59,41 @@ export const GoogleDriveAuth: React.FC<GoogleDriveAuthProps> = ({
       await initializeAuth();
     } catch (error) {
       console.error('Google API読み込みエラー:', error);
-      onAuthError('Google APIの読み込みに失敗しました');
+      onAuthError('Google APIの読み込みに失敗しました。ページを再読み込みしてください。');
     }
   };
 
   const initializeAuth = async () => {
     try {
-      // 新しいGoogle Identity Servicesで初期化
-      window.google.accounts.oauth2.initTokenClient({
-        client_id: import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID,
-        scope: 'https://www.googleapis.com/auth/drive.readonly',
-        callback: (response: any) => {
-          if (response.error) {
-            console.error('認証エラー:', response.error);
-            onAuthError('認証に失敗しました');
-          } else {
-            setIsAuthenticated(true);
-            onAuthSuccess(response.access_token);
-          }
-        }
-      });
+      // 環境変数を確認
+      const clientId = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
+      const apiKey = import.meta.env.VITE_GOOGLE_DRIVE_API_KEY;
+      const redirectUri = import.meta.env.VITE_GOOGLE_REDIRECT_URI;
+      
+      console.log('=== 環境変数デバッグ ===');
+      console.log('Client ID:', clientId);
+      console.log('API Key:', apiKey);
+      console.log('Redirect URI:', redirectUri);
+      console.log('Client ID Type:', typeof clientId);
+      console.log('Client ID Length:', clientId?.length);
+      console.log('=== デバッグ終了 ===');
+      
+      if (!clientId) {
+        throw new Error('Google Drive Client ID が設定されていません');
+      }
+      
+      console.log('Google認証初期化中...');
+      
+      // Google Identity Services が利用可能かチェック
+      if (!window.google?.accounts?.oauth2) {
+        throw new Error('Google Identity Services が読み込まれていません');
+      }
+      
       setGapiLoaded(true);
+      console.log('Google認証初期化完了');
     } catch (error) {
       console.error('認証初期化エラー:', error);
-      onAuthError('認証の初期化に失敗しました');
+      onAuthError(`認証の初期化に失敗しました: ${error.message}`);
     }
   };
 
@@ -85,22 +103,33 @@ export const GoogleDriveAuth: React.FC<GoogleDriveAuthProps> = ({
       return;
     }
 
+    const clientId = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
+    if (!clientId) {
+      onAuthError('Google Drive Client ID が設定されていません');
+      return;
+    }
+
     setIsLoading(true);
     try {
+      console.log('Google認証開始...');
+      
       // 新しいGoogle Identity Servicesでトークンを要求
       const tokenClient = window.google.accounts.oauth2.initTokenClient({
-        client_id: import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID,
+        client_id: clientId,
         scope: 'https://www.googleapis.com/auth/drive.readonly',
         callback: (response: any) => {
           setIsLoading(false);
+          console.log('認証レスポンス:', response);
+          
           if (response.error) {
             console.error('認証エラー:', response.error);
             if (response.error === 'popup_closed_by_user') {
               onAuthError('認証がキャンセルされました');
             } else {
-              onAuthError('認証に失敗しました');
+              onAuthError(`認証に失敗しました: ${response.error}`);
             }
           } else {
+            console.log('Google認証成功');
             setIsAuthenticated(true);
             onAuthSuccess(response.access_token);
           }
@@ -108,9 +137,10 @@ export const GoogleDriveAuth: React.FC<GoogleDriveAuthProps> = ({
       });
       
       tokenClient.requestAccessToken();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('認証エラー:', error);
-      onAuthError('認証に失敗しました');
+      const errorMessage = error instanceof Error ? error.message : '不明なエラー';
+      onAuthError(`認証に失敗しました: ${errorMessage}`);
       setIsLoading(false);
     }
   };
@@ -128,8 +158,11 @@ export const GoogleDriveAuth: React.FC<GoogleDriveAuthProps> = ({
   if (!gapiLoaded) {
     return (
       <Box sx={{ p: 2, textAlign: 'center' }}>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           Google APIを読み込み中...
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          しばらく待ってもこの画面が表示される場合は、ページを再読み込みしてください。
         </Typography>
       </Box>
     );

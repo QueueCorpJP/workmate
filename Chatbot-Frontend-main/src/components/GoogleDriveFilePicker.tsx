@@ -74,14 +74,27 @@ export const GoogleDriveFilePicker: React.FC<GoogleDriveFilePickerProps> = ({
     try {
       // gapiが利用可能かチェック
       if (!window.gapi) {
-        throw new Error('Google API が読み込まれていません');
+        throw new Error('Google API が読み込まれていません。ページを再読み込みしてください。');
       }
+
+      console.log('Google Drive API読み込み開始...');
 
       // clientライブラリを読み込み
       await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Google API の読み込みがタイムアウトしました'));
+        }, 10000); // 10秒タイムアウト
+
         window.gapi.load('client', {
-          callback: resolve,
-          onerror: reject
+          callback: () => {
+            clearTimeout(timeout);
+            console.log('Google API client 読み込み完了');
+            resolve();
+          },
+          onerror: (error: Error) => {
+            clearTimeout(timeout);
+            reject(error);
+          }
         });
       });
 
@@ -100,7 +113,9 @@ export const GoogleDriveFilePicker: React.FC<GoogleDriveFilePickerProps> = ({
         initConfig.apiKey = apiKey;
       }
       
+      console.log('Google Drive API初期化中...');
       await window.gapi.client.init(initConfig);
+      console.log('Google Drive API初期化完了');
       
       // アクセストークンを設定
       window.gapi.client.setToken({ access_token: accessToken });
@@ -134,6 +149,8 @@ export const GoogleDriveFilePicker: React.FC<GoogleDriveFilePickerProps> = ({
       setFiles(supportedFiles);
     } catch (error) {
       console.error('ファイル読み込みエラー:', error);
+      const errorMessage = error instanceof Error ? error.message : '不明なエラー';
+      console.error('詳細:', errorMessage);
       setFiles([]);
     } finally {
       setLoading(false);
