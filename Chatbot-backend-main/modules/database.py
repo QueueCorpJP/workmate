@@ -1503,12 +1503,12 @@ def get_plan_history(user_id: str = None, db: SupabaseConnection = None) -> List
             
             # ユーザー情報を取得（初回のみ）
             if user_id_key not in user_histories:
-            user_result = select_data("users", 
-                                        columns="email, name, company_id", 
-                                        filters={"id": user_id_key})
-            
-            if user_result and user_result.data:
-                user_info = user_result.data[0]
+                user_result = select_data("users", 
+                                            columns="email, name, company_id", 
+                                            filters={"id": user_id_key})
+                
+                if user_result and user_result.data:
+                    user_info = user_result.data[0]
                     user_histories[user_id_key] = {
                         "user_id": user_id_key,
                         "user_email": user_info.get("email"),
@@ -1516,7 +1516,7 @@ def get_plan_history(user_id: str = None, db: SupabaseConnection = None) -> List
                         "company_id": user_info.get("company_id"),
                         "changes": []
                     }
-            else:
+                else:
                     user_histories[user_id_key] = {
                         "user_id": user_id_key,
                         "user_email": "不明",
