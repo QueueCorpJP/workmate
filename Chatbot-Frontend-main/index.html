@@ -99,8 +99,8 @@
 <body>
   <div id="root"></div>
   <!-- Google APIs -->
-  <script src="https://apis.google.com/js/api.js"></script>
-  <script src="https://accounts.google.com/gsi/client"></script>
+  <script src="https://apis.google.com/js/api.js" async defer onload="console.log('GAPI loaded')" onerror="console.error('GAPI failed to load')"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer onload="console.log('GSI loaded')" onerror="console.error('GSI failed to load')"></script>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 

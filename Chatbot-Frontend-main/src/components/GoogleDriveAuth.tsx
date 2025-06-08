@@ -66,9 +66,9 @@ export const GoogleDriveAuth: React.FC<GoogleDriveAuthProps> = ({
   const initializeAuth = async () => {
     try {
       // 環境変数を確認
-      const clientId = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
-      const apiKey = import.meta.env.VITE_GOOGLE_DRIVE_API_KEY;
-      const redirectUri = import.meta.env.VITE_GOOGLE_REDIRECT_URI;
+      const clientId = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID || '780511796066-1q5g2i7u8vla9jescuvatr41ob7698uq.apps.googleusercontent.com';
+      const apiKey = import.meta.env.VITE_GOOGLE_DRIVE_API_KEY || 'AIzaSyC1B--LQvYZVDo95rLrDwfOidEAdkmGRSw';
+      const redirectUri = import.meta.env.VITE_GOOGLE_REDIRECT_URI || 'https://workmatechat.com/auth/callback';
       
       console.log('=== 環境変数デバッグ ===');
       console.log('Client ID:', clientId);
