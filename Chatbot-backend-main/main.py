@@ -716,15 +716,15 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
                     break
             
             if matched_section:
-                    # 前のセクションの内容を保存
-                    if current_section and section_content:
+                # 前のセクションの内容を保存
+                if current_section and section_content:
                     content = "\n".join(section_content).strip()
                     if content:
                         detailed_analysis[current_section] = content
-                    
-                    # 新しいセクションを開始
+                
+                # 新しいセクションを開始
                 current_section = matched_section
-                    section_content = []
+                section_content = []
             elif current_section:
                 # 現在のセクションに内容を追加
                 section_content.append(line)
