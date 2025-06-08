@@ -928,6 +928,7 @@ const AdminPanel: React.FC = () => {
             bgcolor: "white",
             border: "1px solid rgba(37, 99, 235, 0.08)",
             boxShadow: "0 4px 20px rgba(37, 99, 235, 0.05)",
+            position: "relative",
           }}
         >
           {/* タブバー */}
@@ -938,12 +939,16 @@ const AdminPanel: React.FC = () => {
               bgcolor: "rgba(249, 250, 252, 0.9)",
               boxShadow: "0 2px 5px rgba(0, 0, 0, 0.03)",
               borderRadius: "16px 16px 0 0",
-              px: { xs: 0.5, sm: 1.5, md: 2 },
+              px: { xs: 0, sm: 1.5, md: 2 },
               position: "relative",
               width: "100%",
+              height: { xs: "52px", sm: "48px" },
+              minHeight: { xs: "52px", sm: "48px" },
               display: "flex",
               justifyContent: "center",
-              overflow: "visible",
+              alignItems: "center",
+              overflow: isMobile ? "hidden" : "visible",
+              flexShrink: 0,
             }}
           >
             <Tabs
@@ -953,30 +958,38 @@ const AdminPanel: React.FC = () => {
               scrollButtons={isMobile ? "auto" : false}
               allowScrollButtonsMobile
               sx={{
-                minHeight: { xs: "42px", sm: "48px" },
+                height: { xs: "52px", sm: "48px" },
+                minHeight: { xs: "52px", sm: "48px" },
+                maxHeight: { xs: "52px", sm: "48px" },
                 width: "100%",
                 maxWidth: "100%",
                 "& .MuiTabs-flexContainer": {
-                  width: "100%",
+                  width: isMobile ? "auto" : "100%",
+                  gap: { xs: 0.5, sm: 0 }
                 },
                 "& .MuiTabs-scroller": {
                   width: "100%",
-                  overflow: "visible !important",
+                  overflow: isMobile ? "auto" : "visible",
+                  scrollbarWidth: "none", // Firefox
+                  msOverflowStyle: "none", // IE and Edge
+                  "&::-webkit-scrollbar": {
+                    display: "none", // Webkit browsers
+                  },
                 },
                 "& .MuiTab-root": {
-                  minWidth: { xs: 72, sm: 100, md: 120 },
-                  minHeight: { xs: "42px", sm: "48px" },
+                  minWidth: { xs: 85, sm: 100, md: 120 },
+                  minHeight: { xs: "52px", sm: "48px" },
                   fontSize: { xs: "0.65rem", sm: "0.75rem", md: "0.8rem" },
                   fontWeight: 600,
                   color: "text.secondary",
                   textTransform: "none",
                   py: { xs: 1, sm: 1.5 },
-                  px: { xs: 1, sm: 2 },
-                  flexDirection: "row",
+                  px: { xs: 0.5, sm: 2 },
+                  flexDirection: isMobile ? "column" : "row",
                   alignItems: "center",
-                  gap: { xs: 0.5, sm: 1 },
+                  gap: { xs: 0.25, sm: 1 },
                   transition: "all 0.2s ease",
-                  flex: isMobile ? "none" : 1,
+                  flex: isMobile ? "0 0 auto" : 1,
                   display: "flex",
                   justifyContent: "center",
                   whiteSpace: "nowrap",
@@ -994,11 +1007,20 @@ const AdminPanel: React.FC = () => {
                   borderRadius: "3px 3px 0 0",
                 },
                 "& .MuiTabScrollButton-root": {
-                  width: { xs: 28, sm: 36 },
+                  width: { xs: 32, sm: 36 },
                   height: "100%",
                   color: "rgba(59, 130, 246, 0.7)",
+                  backgroundColor: "rgba(255, 255, 255, 0.9)",
+                  borderRadius: "4px",
+                  margin: "4px 2px",
+                  "&:hover": {
+                    backgroundColor: "rgba(59, 130, 246, 0.1)",
+                  },
                   "&.Mui-disabled": {
                     opacity: 0.3,
+                  },
+                  "& .MuiSvgIcon-root": {
+                    fontSize: "1.2rem",
                   },
                 },
               }}
@@ -1007,18 +1029,21 @@ const AdminPanel: React.FC = () => {
                 <Tab
                   key={index}
                   icon={tab.icon}
-                  label={isMobile ? "" : tab.label}
+                  label={tab.label}
                   aria-label={tab.ariaLabel}
-                  iconPosition="start"
+                  iconPosition={isMobile ? "top" : "start"}
                   sx={{
                     "&:hover": {
                       bgcolor: "rgba(59, 130, 246, 0.05)",
                       color: "primary.main",
                     },
                     "& .MuiSvgIcon-root": {
-                      fontSize: { xs: "1.1rem", sm: "1.2rem", md: "1.3rem" },
+                      fontSize: { xs: "1rem", sm: "1.2rem", md: "1.3rem" },
                       marginRight: isMobile ? 0 : 1,
-                      marginBottom: "0px",
+                      marginBottom: isMobile ? "2px" : "0px",
+                    },
+                    "& .MuiTab-iconWrapper": {
+                      marginBottom: isMobile ? "2px" : 0,
                     },
                   }}
                 />
@@ -1032,6 +1057,7 @@ const AdminPanel: React.FC = () => {
               flexGrow: 1,
               overflow: "auto",
               p: { xs: 1.5, sm: 2, md: 3 },
+              mt: 0, // 上部マージンを明示的に0に設定
               "::-webkit-scrollbar": {
                 width: "6px",
               },

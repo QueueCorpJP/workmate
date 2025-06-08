@@ -1473,7 +1473,7 @@ def record_plan_change(user_id: str, from_plan: str, to_plan: str, db: SupabaseC
         return False
 
 def get_plan_history(user_id: str = None, db: SupabaseConnection = None) -> List[dict]:
-    """プラン履歴を取得する"""
+    """プラン履歴を人単位でグループ化して取得する"""
     try:
         print(f"=== プラン履歴取得開始 ===")
         
@@ -1495,29 +1495,72 @@ def get_plan_history(user_id: str = None, db: SupabaseConnection = None) -> List
         history_list = history_result.data
         print(f"取得した履歴件数: {len(history_list)}")
         
-        # ユーザー情報を付加する
-        enhanced_history = []
+        # ユーザー別でグループ化して整理
+        user_histories = {}
+        
         for history in history_list:
-            # ユーザー情報を取得
+            user_id_key = history.get("user_id")
+            
+            # ユーザー情報を取得（初回のみ）
+            if user_id_key not in user_histories:
             user_result = select_data("users", 
-                                    columns="email, name", 
-                                    filters={"id": history.get("user_id")})
+                                        columns="email, name, company_id", 
+                                        filters={"id": user_id_key})
             
             if user_result and user_result.data:
                 user_info = user_result.data[0]
-                history["user_email"] = user_info.get("email")
-                history["user_name"] = user_info.get("name")
+                    user_histories[user_id_key] = {
+                        "user_id": user_id_key,
+                        "user_email": user_info.get("email"),
+                        "user_name": user_info.get("name"),
+                        "company_id": user_info.get("company_id"),
+                        "changes": []
+                    }
             else:
-                history["user_email"] = "不明"
-                history["user_name"] = "不明"
+                    user_histories[user_id_key] = {
+                        "user_id": user_id_key,
+                        "user_email": "不明",
+                        "user_name": "不明", 
+                        "company_id": None,
+                        "changes": []
+                    }
             
-            enhanced_history.append(history)
+            # 履歴情報を追加
+            change_info = {
+                "id": history.get("id"),
+                "from_plan": history.get("from_plan"),
+                "to_plan": history.get("to_plan"),
+                "changed_at": history.get("changed_at"),
+                "duration_days": history.get("duration_days")
+            }
+            user_histories[user_id_key]["changes"].append(change_info)
         
-        # changed_atで降順にソート（新しいものが上）
-        enhanced_history.sort(key=lambda x: x.get("changed_at", ""), reverse=True)
+        # 各ユーザーの変更履歴を時系列で並び替え（新しいものが上）
+        for user_id_key in user_histories:
+            user_histories[user_id_key]["changes"].sort(
+                key=lambda x: x.get("changed_at", ""), reverse=True
+            )
+            
+            # 最新の変更情報をユーザー情報に追加
+            if user_histories[user_id_key]["changes"]:
+                latest_change = user_histories[user_id_key]["changes"][0]
+                user_histories[user_id_key]["latest_change"] = latest_change.get("changed_at")
+                user_histories[user_id_key]["current_plan"] = latest_change.get("to_plan")
+                user_histories[user_id_key]["total_changes"] = len(user_histories[user_id_key]["changes"])
+            else:
+                user_histories[user_id_key]["latest_change"] = None
+                user_histories[user_id_key]["current_plan"] = "不明"
+                user_histories[user_id_key]["total_changes"] = 0
         
-        print(f"✓ プラン履歴取得完了: {len(enhanced_history)}件")
-        return enhanced_history
+        # ユーザーリストを最新変更日時でソート（新しく変更されたユーザーが上）
+        sorted_users = sorted(
+            user_histories.values(), 
+            key=lambda x: x.get("latest_change", ""), 
+            reverse=True
+        )
+        
+        print(f"✓ プラン履歴取得完了: {len(sorted_users)}人の履歴")
+        return sorted_users
         
     except Exception as e:
         print(f"✗ プラン履歴取得エラー: {str(e)}")

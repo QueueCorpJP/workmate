@@ -38,12 +38,29 @@ interface PlanHistoryItem {
   duration_days: number | null;
 }
 
+interface UserPlanHistory {
+  user_id: string;
+  user_name?: string;
+  user_email?: string;
+  company_id?: string;
+  current_plan: string;
+  latest_change: string;
+  total_changes: number;
+  changes: {
+    id: string;
+    from_plan: string;
+    to_plan: string;
+    changed_at: string;
+    duration_days: number | null;
+  }[];
+}
+
 interface PlanHistoryTabProps {
   // 必要に応じてプロパティを追加
 }
 
 const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
-  const [planHistory, setPlanHistory] = useState<PlanHistoryItem[]>([]);
+  const [userPlanHistories, setUserPlanHistories] = useState<UserPlanHistory[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,15 +72,15 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
       const response = await api.get("/plan-history");
       console.log("プラン履歴取得結果:", response.data);
       
-      if (response.data && response.data.history) {
-        setPlanHistory(response.data.history);
+      if (response.data && response.data.success && response.data.data && response.data.data.users) {
+        setUserPlanHistories(response.data.data.users);
       } else {
-        setPlanHistory([]);
+        setUserPlanHistories([]);
       }
     } catch (error) {
       console.error("プラン履歴の取得に失敗しました:", error);
       setError("プラン履歴の取得に失敗しました");
-      setPlanHistory([]);
+      setUserPlanHistories([]);
     } finally {
       setIsLoading(false);
     }
@@ -169,8 +186,24 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
   };
 
   const calculateStatistics = () => {
-    const demoToProd = planHistory.filter(item => item.from_plan === "demo" && item.to_plan === "production");
-    const prodToDemo = planHistory.filter(item => item.from_plan === "production" && item.to_plan === "demo");
+    const allChanges: PlanHistoryItem[] = [];
+    userPlanHistories.forEach(user => {
+      user.changes.forEach(change => {
+        allChanges.push({
+          id: change.id,
+          user_id: user.user_id,
+          user_name: user.user_name,
+          user_email: user.user_email,
+          from_plan: change.from_plan,
+          to_plan: change.to_plan,
+          changed_at: change.changed_at,
+          duration_days: change.duration_days
+        });
+      });
+    });
+
+    const demoToProd = allChanges.filter(item => item.from_plan === "demo" && item.to_plan === "production");
+    const prodToDemo = allChanges.filter(item => item.from_plan === "production" && item.to_plan === "demo");
     
     const demoToProdDurations = demoToProd.filter(item => item.duration_days).map(item => item.duration_days!);
     const avgDemoUsage = demoToProdDurations.length > 0 
@@ -182,7 +215,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
       ? Math.round(prodToDemoDurations.reduce((sum, days) => sum + days, 0) / prodToDemoDurations.length)
       : null;
 
-    const totalPlanUsageDays = planHistory
+    const totalPlanUsageDays = allChanges
       .filter(item => item.duration_days)
       .reduce((total, item) => total + item.duration_days!, 0);
 
@@ -192,18 +225,15 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
       avgDemoUsage,
       avgProdUsage,
       totalPlanUsageDays,
-      totalUsers: new Set(planHistory.map(item => item.user_id)).size
+      totalUsers: userPlanHistories.length,
+      totalChanges: allChanges.length
     };
   };
 
-  const getCurrentPlanDuration = (userId: string) => {
-    const userChanges = planHistory
-      .filter(item => item.user_id === userId)
-      .sort((a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime());
+  const getCurrentPlanDuration = (user: UserPlanHistory) => {
+    if (user.changes.length === 0) return null;
     
-    if (userChanges.length === 0) return null;
-    
-    const latestChange = userChanges[0];
+    const latestChange = user.changes[0];
     const now = new Date();
     const changeDate = new Date(latestChange.changed_at);
     const daysSinceChange = Math.floor((now.getTime() - changeDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -260,7 +290,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
       </Box>
 
       {/* プラン履歴リスト */}
-      {planHistory.length === 0 ? (
+      {userPlanHistories.length === 0 ? (
         <EmptyState
           icon="custom"
           customIcon={<HistoryIcon sx={{ fontSize: '4rem', color: 'text.secondary' }} />}
@@ -270,39 +300,67 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
         <Card>
           <CardContent sx={{ p: 0 }}>
             <List sx={{ py: 0 }}>
-              {planHistory.map((item, index) => (
-                <React.Fragment key={item.id}>
+              {userPlanHistories.map((user, userIndex) => (
+                <React.Fragment key={user.user_id}>
+                  {/* ユーザー情報ヘッダー */}
                   <ListItem
                     sx={{
                       py: 2,
                       px: 3,
-                      "&:hover": {
-                        bgcolor: "rgba(0, 0, 0, 0.02)",
-                      },
+                      bgcolor: "rgba(0, 0, 0, 0.02)",
+                      borderBottom: "1px solid rgba(0, 0, 0, 0.08)"
                     }}
                   >
                     <ListItemIcon>
-                      {getChangeIcon(item.from_plan, item.to_plan)}
+                      <HistoryIcon color="primary" />
                     </ListItemIcon>
                     <ListItemText
                       primary={
                         <Stack direction="row" spacing={1} alignItems="center">
-                          <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                            {item.user_name || item.user_email || "ユーザー"}
+                          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                            {user.user_name || user.user_email || "ユーザー"}
                           </Typography>
-                          {item.user_email && item.user_name && (
+                          {user.user_email && user.user_name && (
                             <Typography variant="body2" color="text.secondary">
-                              ({item.user_email})
+                              ({user.user_email})
                             </Typography>
                           )}
+                          <Chip
+                            label={`現在: ${getPlanDisplayName(user.current_plan)}`}
+                            color={getPlanColor(user.current_plan) as any}
+                            size="small"
+                          />
+                          <Chip
+                            label={`変更回数: ${user.total_changes}`}
+                            variant="outlined"
+                            size="small"
+                          />
                         </Stack>
                       }
-                      secondary={
-                        <Box sx={{ mt: 1 }}>
+                    />
+                  </ListItem>
+
+                  {/* 変更履歴 */}
+                  {user.changes.map((change, changeIndex) => (
+                    <ListItem
+                      key={change.id}
+                      sx={{
+                        py: 1.5,
+                        px: 6, // インデントを深く
+                        "&:hover": {
+                          bgcolor: "rgba(0, 0, 0, 0.02)",
+                        },
+                      }}
+                    >
+                      <ListItemIcon sx={{ minWidth: 32 }}>
+                        {getChangeIcon(change.from_plan, change.to_plan)}
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={
                           <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
                             <Chip
-                              label={getPlanDisplayName(item.from_plan)}
-                              color={getPlanColor(item.from_plan) as any}
+                              label={getPlanDisplayName(change.from_plan)}
+                              color={getPlanColor(change.from_plan) as any}
                               size="small"
                               variant="outlined"
                             />
@@ -310,32 +368,30 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                               →
                             </Typography>
                             <Chip
-                              label={getPlanDisplayName(item.to_plan)}
-                              color={getPlanColor(item.to_plan) as any}
+                              label={getPlanDisplayName(change.to_plan)}
+                              color={getPlanColor(change.to_plan) as any}
                               size="small"
                             />
                           </Stack>
+                        }
+                        secondary={
                           <Stack direction="column" spacing={0.5}>
                             <Stack direction="row" spacing={1} alignItems="center">
                               <AccessTimeIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
-                              <Tooltip title={`詳細: ${formatDate(item.changed_at)}`}>
+                              <Tooltip title={`詳細: ${formatDate(change.changed_at)}`}>
                                 <Typography variant="body2" color="text.secondary">
-                                  {formatRelativeTime(item.changed_at)}に変更
+                                  {formatRelativeTime(change.changed_at)}に変更
                                 </Typography>
                               </Tooltip>
                             </Stack>
-                            {item.duration_days && (
+                            {change.duration_days && (
                               <Typography variant="body2" color="text.secondary" sx={{ pl: 2.5 }}>
-                                📅 {getPlanDisplayName(item.from_plan)}利用期間: {formatDetailedDuration(item.duration_days)}
+                                📅 {getPlanDisplayName(change.from_plan)}利用期間: {formatDetailedDuration(change.duration_days)}
                               </Typography>
                             )}
-                            {(() => {
-                              const currentPlanInfo = getCurrentPlanDuration(item.user_id);
-                              const isLastChange = planHistory
-                                .filter(change => change.user_id === item.user_id)
-                                .sort((a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime())[0]?.id === item.id;
-                              
-                              if (isLastChange && currentPlanInfo) {
+                            {changeIndex === 0 && (() => {
+                              const currentPlanInfo = getCurrentPlanDuration(user);
+                              if (currentPlanInfo) {
                                 return (
                                   <Typography variant="body2" color="primary.main" sx={{ pl: 2.5, fontWeight: 500 }}>
                                     🔄 現在{getPlanDisplayName(currentPlanInfo.currentPlan)}: {formatDetailedDuration(currentPlanInfo.daysSinceChange)}
@@ -345,11 +401,11 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                               return null;
                             })()}
                           </Stack>
-                        </Box>
-                      }
-                    />
-                  </ListItem>
-                  {index < planHistory.length - 1 && <Divider />}
+                        }
+                      />
+                    </ListItem>
+                  ))}
+                  {userIndex < userPlanHistories.length - 1 && <Divider sx={{ my: 1 }} />}
                 </React.Fragment>
               ))}
             </List>
@@ -358,7 +414,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
       )}
 
       {/* 統計情報 */}
-      {planHistory.length > 0 && (
+      {userPlanHistories.length > 0 && (
         <Paper sx={{ mt: 3, p: 2 }}>
           <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
             統計情報
@@ -374,7 +430,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                       総変更回数
                     </Typography>
                     <Typography variant="h5" sx={{ fontWeight: 600 }}>
-                      {planHistory.length}
+                      {stats.totalChanges}
                     </Typography>
                   </Box>
                   <Box>
@@ -455,7 +511,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                           ユーザーあたり平均変更回数
                         </Typography>
                         <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                          {(planHistory.length / stats.totalUsers).toFixed(1)}回
+                          {(stats.totalChanges / stats.totalUsers).toFixed(1)}回
                         </Typography>
                       </Box>
                     </Stack>

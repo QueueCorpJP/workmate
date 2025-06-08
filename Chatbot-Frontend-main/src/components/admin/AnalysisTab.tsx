@@ -237,23 +237,23 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
             {/* 更新ボタン */}
             <Tooltip title="データを更新">
               <span>
-                <Button
-                  variant="outlined"
-                  color="primary"
-                  onClick={onRefresh}
-                  disabled={isLoading}
-                  startIcon={<RefreshIcon />}
-                  size={isMobile ? "small" : "medium"}
-                  sx={{
-                    borderRadius: 2,
-                    px: { xs: 1.5, sm: 2 },
-                    '&:hover': {
-                      backgroundColor: 'rgba(25, 118, 210, 0.08)',
-                    }
-                  }}
-                >
-                  {!isMobile && '更新'}
-                </Button>
+              <Button
+                variant="outlined"
+                color="primary"
+                onClick={onRefresh}
+                disabled={isLoading}
+                startIcon={<RefreshIcon />}
+                size={isMobile ? "small" : "medium"}
+                sx={{
+                  borderRadius: 2,
+                  px: { xs: 1.5, sm: 2 },
+                  '&:hover': {
+                    backgroundColor: 'rgba(25, 118, 210, 0.08)',
+                  }
+                }}
+              >
+                {!isMobile && '更新'}
+              </Button>
               </span>
             </Tooltip>
           </Box>

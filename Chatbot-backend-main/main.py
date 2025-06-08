@@ -716,15 +716,15 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
                     break
             
             if matched_section:
-                # 前のセクションの内容を保存
-                if current_section and section_content:
+                    # 前のセクションの内容を保存
+                    if current_section and section_content:
                     content = "\n".join(section_content).strip()
                     if content:
                         detailed_analysis[current_section] = content
-                
-                # 新しいセクションを開始
+                    
+                    # 新しいセクションを開始
                 current_section = matched_section
-                section_content = []
+                    section_content = []
             elif current_section:
                 # 現在のセクションに内容を追加
                 section_content.append(line)
@@ -1135,7 +1135,7 @@ if os.path.exists(os.path.join(frontend_build_dir, "assets")):
 # プラン履歴取得エンドポイント（catch_allより前に配置）
 @app.get("/chatbot/api/plan-history", response_model=dict)
 async def get_plan_history_endpoint(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
-    """プラン履歴を取得する"""
+    """プラン履歴を人単位でグループ化して取得する"""
     try:
         print(f"プラン履歴取得要求 - ユーザー: {current_user['email']} (ロール: {current_user['role']})")
         
@@ -1144,15 +1144,36 @@ async def get_plan_history_endpoint(current_user = Depends(get_current_user), db
         # 管理者・特別管理者は全てのプラン履歴を、一般ユーザーは自分の履歴のみを取得
         if current_user["role"] in ["admin"] or current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"]:
             # 管理者または特別管理者は全履歴を取得
-            history = get_plan_history(db=db)
+            user_histories = get_plan_history(db=db)
         else:
             # 一般ユーザー（userロール含む）は自分の履歴のみを取得
-            history = get_plan_history(user_id=current_user["id"], db=db)
+            user_histories = get_plan_history(user_id=current_user["id"], db=db)
+        
+        # 追加の統計情報を計算
+        total_users = len(user_histories)
+        total_changes = sum(user.get("total_changes", 0) for user in user_histories)
+        
+        # プラン別の統計
+        plan_stats = {}
+        for user in user_histories:
+            current_plan = user.get("current_plan", "不明")
+            if current_plan in plan_stats:
+                plan_stats[current_plan] += 1
+            else:
+                plan_stats[current_plan] = 1
         
         return {
             "success": True,
-            "history": history,
-            "count": len(history)
+            "data": {
+                "users": user_histories,
+                "statistics": {
+                    "total_users": total_users,
+                    "total_changes": total_changes,
+                    "plan_distribution": plan_stats
+                }
+            },
+            "count": total_users,
+            "message": f"{total_users}人のプラン履歴を人単位でグループ化して表示しています"
         }
         
     except Exception as e:
