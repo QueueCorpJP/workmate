@@ -140,10 +140,10 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
             # トークン使用量を計算してチャット履歴を保存（エラーケース）
             from modules.token_counter import TokenUsageTracker
             
-            # ユーザーの会社IDを取得
+            # ユーザーの会社IDを取得（チャット履歴保存用）
             from supabase_adapter import select_data
             user_result = select_data("users", filters={"id": message.user_id}) if hasattr(message, 'user_id') and message.user_id else None
-            company_id = user_result.data[0].get("company_id") if user_result and user_result.data else None
+            chat_company_id = user_result.data[0].get("company_id") if user_result and user_result.data else None
             
             # トークン追跡機能を使用してチャット履歴を保存
             tracker = TokenUsageTracker(db)
@@ -151,7 +151,7 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
                 user_message=message_text,
                 bot_response=response_text,
                 user_id=getattr(message, 'user_id', None),
-                company_id=company_id,
+                company_id=chat_company_id,
                 employee_id=message.employee_id,
                 employee_name=message.employee_name,
                 category="設定エラー",
@@ -339,14 +339,14 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
         # トークン使用量を計算してチャット履歴を保存
         from modules.token_counter import TokenUsageTracker
         
-        # ユーザーの会社IDを取得
+        # ユーザーの会社IDを取得（トークン追跡用）
         from supabase_adapter import select_data
-        user_result = select_data("users", filters={"id": message.user_id})
-        company_id = user_result.data[0].get("company_id") if user_result.data else None
+        user_result = select_data("users", filters={"id": message.user_id}) if message.user_id else None
+        final_company_id = user_result.data[0].get("company_id") if user_result and user_result.data else None
         
         print(f"🔍 トークン追跡デバッグ:")
         print(f"  ユーザーID: {message.user_id}")
-        print(f"  会社ID: {company_id}")
+        print(f"  会社ID: {final_company_id}")
         print(f"  メッセージ長: {len(message_text)}")
         print(f"  応答長: {len(response_text)}")
         
@@ -357,7 +357,7 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
                 user_message=message_text,
                 bot_response=response_text,
                 user_id=message.user_id,
-                company_id=company_id,
+                company_id=final_company_id,
                 employee_id=message.employee_id,
                 employee_name=message.employee_name,
                 category=category,

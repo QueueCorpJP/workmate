@@ -102,7 +102,7 @@ class TokenUsageTracker:
         user_message: str,
         bot_response: str,
         user_id: str,
-        company_id: str,
+        company_id: Optional[str] = None,
         employee_id: Optional[str] = None,
         employee_name: Optional[str] = None,
         category: Optional[str] = None,
@@ -121,6 +121,11 @@ class TokenUsageTracker:
         # チャット履歴IDを生成
         chat_id = str(uuid.uuid4())
         timestamp = datetime.now().isoformat()
+        
+        # company_idがNoneの場合はデフォルト値を設定
+        if company_id is None:
+            print(f"⚠️ company_idがNullです。デフォルト値'default'を使用します。")
+            company_id = "default"
         
         try:
             cursor = self.db.cursor()
