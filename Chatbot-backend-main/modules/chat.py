@@ -344,21 +344,39 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
         user_result = select_data("users", filters={"id": message.user_id})
         company_id = user_result.data[0].get("company_id") if user_result.data else None
         
+        print(f"🔍 トークン追跡デバッグ:")
+        print(f"  ユーザーID: {message.user_id}")
+        print(f"  会社ID: {company_id}")
+        print(f"  メッセージ長: {len(message_text)}")
+        print(f"  応答長: {len(response_text)}")
+        
         # トークン追跡機能を使用してチャット履歴を保存
-        tracker = TokenUsageTracker(db)
-        chat_id = tracker.save_chat_with_tokens(
-            user_message=message_text,
-            bot_response=response_text,
-            user_id=message.user_id,
-            company_id=company_id,
-            employee_id=message.employee_id,
-            employee_name=message.employee_name,
-            category=category,
-            sentiment=sentiment,
-            source_document=source_doc,
-            source_page=source_page,
-            model="gpt-4o-mini"  # 使用しているモデル名
-        )
+        try:
+            tracker = TokenUsageTracker(db)
+            chat_id = tracker.save_chat_with_tokens(
+                user_message=message_text,
+                bot_response=response_text,
+                user_id=message.user_id,
+                company_id=company_id,
+                employee_id=message.employee_id,
+                employee_name=message.employee_name,
+                category=category,
+                sentiment=sentiment,
+                source_document=source_doc,
+                source_page=source_page,
+                model="gpt-4o-mini"  # 使用しているモデル名
+            )
+            print(f"✅ トークン追跡保存成功: {chat_id}")
+        except Exception as token_error:
+            print(f"❌ トークン追跡エラー: {token_error}")
+            # エラーでも通常のチャット履歴は保存する
+            chat_id = str(uuid.uuid4())
+            cursor = db.cursor()
+            cursor.execute(
+                "INSERT INTO chat_history (id, user_message, bot_response, timestamp, category, sentiment, employee_id, employee_name, source_document, source_page) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (chat_id, message_text, response_text, datetime.now().isoformat(), category, sentiment, message.employee_id, message.employee_name, source_doc, source_page)
+            )
+            db.commit()
         
         # ユーザーIDがある場合は質問カウントを更新
         if message.user_id and not limits_check.get("is_unlimited", False):

@@ -586,12 +586,11 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
                 detailed_metrics["average_message_length"] = sum(message_lengths) / len(message_lengths) if message_lengths else 0
                 
                 # 時間帯別の分析
-                from datetime import datetime
                 hour_counts = {}
                 for msg in chat_data:
                     if msg.get("created_at"):
                         try:
-                            dt = datetime.fromisoformat(msg["created_at"].replace('Z', '+00:00'))
+                            dt = datetime.datetime.fromisoformat(msg["created_at"].replace('Z', '+00:00'))
                             hour = dt.hour
                             hour_counts[hour] = hour_counts.get(hour, 0) + 1
                         except:
@@ -635,79 +634,38 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
         if model is None:
             raise HTTPException(status_code=500, detail="Geminiモデルが初期化されていません")
         
-        # 改善されたプロンプト
+        # 短縮されたビジネス特化プロンプト
         analysis_prompt = f"""
         {prompt}
         
-        # 詳細分析データ
-        
-        ## 基本統計情報
-        - 総会話数: {detailed_metrics.get('total_conversations', 0)}
-        - 平均メッセージ長: {detailed_metrics.get('average_message_length', 0):.1f}文字
+        # 分析データ
+        - 総会話数: {detailed_metrics.get('total_conversations', 0)}件
         - 繰り返し質問率: {detailed_metrics.get('repeat_question_rate', 0):.1f}%
-        - 問題解決率: {detailed_metrics.get('resolution_rate', 0):.1f}%
-        - ピーク利用時間帯: {detailed_metrics.get('peak_usage_hours', [])}
+        - ピーク利用時間: {detailed_metrics.get('peak_usage_hours', [])}
         
-        ## カテゴリ分布（質問の種類別）:
-        {json.dumps(categories, ensure_ascii=False, indent=2)}
+        カテゴリ分布: {json.dumps(categories, ensure_ascii=False)}
+        感情分布: {json.dumps(sentiments, ensure_ascii=False)}
+        頻出質問: {json.dumps(questions[:5], ensure_ascii=False)}
         
-        ## 感情分布（ユーザーの満足度）:
-        {json.dumps(sentiments, ensure_ascii=False, indent=2)}
+        # 以下の6項目でビジネス分析を実施してください。各項目300文字以内で簡潔に。
         
-        ## よくある質問（頻度順）:
-        {json.dumps(questions[:10], ensure_ascii=False, indent=2)}
+        【1. 頻出トピック分析】
+        最多質問パターンと業務課題を特定し、標準化の機会を示してください。
         
-        ## 日別利用状況:
-        {json.dumps(daily_usage[-7:], ensure_ascii=False, indent=2)}
+        【2. 効率化機会】
+        繰り返し質問から自動化可能な業務を特定し、ROIの高い改善案を提案してください。
         
-        ## 基本的な洞察:
-        {analysis_result.get("insights", "")}
+        【3. フラストレーション要因】
+        ネガティブ感情の原因と未解決問題のパターンを分析し、優先改善点を明示してください。
         
-        # 分析指針
+        【4. システム改善案】
+        機能追加・改善の具体提案とユーザーニーズの優先順位を示してください。
         
-        上記のデータを基に、以下の6つの観点から実践的で具体的な分析を行ってください。
-        各セクションでは、データに基づいた具体的な数値や傾向を示し、実行可能な改善案を提示してください。
+        【5. 情報共有課題】
+        部門間の情報ギャップとドキュメント化が必要な領域を特定してください。
         
-        【重要】各セクションは必ず以下の形式で明確に区別してください：
-        
-        【1. 頻出トピック/質問とその傾向分析】
-        - データに基づく具体的な質問パターンの特定
-        - 質問頻度の時系列変化の分析
-        - 背景にある業務課題の推測
-        - 質問の複雑度レベルの評価
-        
-        【2. 業務効率化の機会】
-        - 繰り返し質問から見える標準化機会
-        - 自動化可能な業務プロセスの特定
-        - 情報格差の解消方法
-        - ROI算出可能な改善提案
-        
-        【3. 社員のフラストレーションポイント】
-        - ネガティブ感情の具体的な原因分析
-        - 未解決問題のパターン特定
-        - ユーザビリティ上の課題
-        - 改善優先度の明確化
-        
-        【4. 製品/サービス改善の示唆】
-        - 機能追加・改善の具体的な提案
-        - ユーザーニーズの定量的分析
-        - 競合優位性の強化ポイント
-        - 開発リソース配分の提案
-        
-        【5. コミュニケーションギャップ】
-        - 情報伝達の課題となっている領域
-        - 部門間連携の改善点
-        - ドキュメント化が必要な知識の特定
-        - 情報共有プロセスの最適化案
-        
-        【6. 具体的な改善提案】
-        - 短期改善施策（1-3ヶ月）：実装コストと期待効果を含む
-        - 中期戦略（3-6ヶ月）：必要リソースと成功指標を含む
-        - 長期ビジョン（6ヶ月-1年）：投資対効果の試算を含む
-        - 優先順位付けと実行計画
-        
-        各セクションでは、推測ではなくデータに基づいた分析を心がけ、
-        実際の数値や具体例を交えて説明してください。
+        【6. 実行計画】
+        短期（1-3ヶ月）・中期（3-6ヶ月）・長期（6ヶ月-1年）の改善提案を投資対効果と共に提示してください。
         """
         
         # Gemini APIによる詳細分析
@@ -800,7 +758,7 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
             "detailed_analysis": detailed_analysis,
             "analysis_metadata": {
                 "total_conversations": detailed_metrics.get("total_conversations", 0),
-                "analysis_timestamp": datetime.now().isoformat(),
+                "analysis_timestamp": datetime.datetime.now().isoformat(),
                 "data_quality_score": min(100, (filled_sections / 6) * 100)
             }
         }
@@ -822,7 +780,7 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
             },
             "analysis_metadata": {
                 "error": str(e),
-                "analysis_timestamp": datetime.now().isoformat(),
+                "analysis_timestamp": datetime.datetime.now().isoformat(),
                 "data_quality_score": 0
             }
         }
@@ -1687,33 +1645,118 @@ async def get_company_token_usage(current_user = Depends(get_current_user), db: 
     try:
         print(f"company-token-usageエンドポイントが呼び出されました - ユーザー: {current_user['email']}")
         
-        # 直接モックデータを返す（DBエラーを回避）
-        mock_data = {
-            "total_tokens_used": 15000000,  # 15M tokens
-            "total_input_tokens": 8000000,
-            "total_output_tokens": 7000000,
-            "basic_plan_limit": 25000000,  # 25M tokens
-            "current_month_cost": 45000,  # ¥45,000
+        # ユーザーの会社IDを取得
+        from supabase_adapter import select_data
+        user_result = select_data("users", columns="company_id", filters={"id": current_user["id"]})
+        company_id = None
+        if user_result and user_result.data:
+            company_id = user_result.data[0].get("company_id")
+        
+        # 実際の会社ユーザー数を取得
+        company_users_count = 1  # デフォルト（自分だけ）
+        company_name = "あなたの会社"
+        
+        if company_id:
+            # 同じ会社のユーザー数をカウント
+            company_users_result = select_data("users", columns="id, name", filters={"company_id": company_id})
+            if company_users_result and company_users_result.data:
+                company_users_count = len(company_users_result.data)
+                print(f"✓ 会社ID {company_id} のユーザー数: {company_users_count}人")
+            
+            # 会社名を取得
+            company_result = select_data("companies", columns="name", filters={"id": company_id})
+            if company_result and company_result.data:
+                company_name = company_result.data[0].get("name", "あなたの会社")
+        
+        # 実際のトークン使用量を取得
+        total_tokens_used = 0
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_conversations = 0
+        total_cost_usd = 0.0
+        
+        try:
+            if company_id:
+                # TokenUsageTrackerを使用して実際の使用量を取得
+                from modules.token_counter import TokenUsageTracker
+                import datetime
+                
+                tracker = TokenUsageTracker(db)
+                
+                # 現在の月を取得
+                current_month = datetime.datetime.now().strftime('%Y-%m')
+                print(f"🔍 現在の月: {current_month}")
+                
+                usage_data = tracker.get_company_monthly_usage(company_id, current_month)
+                
+                if usage_data and usage_data.get("total_tokens", 0) > 0:
+                    total_tokens_used = usage_data.get("total_tokens", 0)
+                    total_input_tokens = usage_data.get("total_input_tokens", 0) 
+                    total_output_tokens = usage_data.get("total_output_tokens", 0)
+                    total_conversations = usage_data.get("conversation_count", 0)
+                    total_cost_usd = usage_data.get("total_cost_usd", 0.0)
+                    print(f"✓ 会社ID {company_id} の実際のトークン使用量: {total_tokens_used:,} tokens")
+                else:
+                    print("⚠️ 今月のトークン使用量データなし - 全期間で確認します")
+                    # 全期間のデータを取得
+                    usage_data_all = tracker.get_company_monthly_usage(company_id, "ALL")
+                    if usage_data_all and usage_data_all.get("total_tokens", 0) > 0:
+                        total_tokens_used = usage_data_all.get("total_tokens", 0)
+                        total_input_tokens = usage_data_all.get("total_input_tokens", 0) 
+                        total_output_tokens = usage_data_all.get("total_output_tokens", 0)
+                        total_conversations = usage_data_all.get("conversation_count", 0)
+                        total_cost_usd = usage_data_all.get("total_cost_usd", 0.0)
+                        print(f"✓ 全期間での会社ID {company_id} のトークン使用量: {total_tokens_used:,} tokens")
+                    else:
+                        print("⚠️ 全期間でもトークン使用量データなし")
+            else:
+                print("⚠️ 会社IDなし - 個人ユーザーのトークン使用量は現在未対応")
+        except Exception as e:
+            print(f"⚠️ トークン使用量取得エラー: {e} - モックデータを使用します")
+        
+        # 基本設定
+        basic_plan_limit = 25000000  # 25M tokens
+        usage_percentage = (total_tokens_used / basic_plan_limit * 100) if basic_plan_limit > 0 else 0
+        remaining_tokens = max(0, basic_plan_limit - total_tokens_used)
+        
+        # 警告レベル計算
+        warning_level = "safe"
+        if usage_percentage >= 95:
+            warning_level = "critical"
+        elif usage_percentage >= 80:
+            warning_level = "warning"
+        
+        # 日本円料金計算
+        from modules.token_counter import calculate_japanese_pricing
+        pricing_info = calculate_japanese_pricing(total_tokens_used)
+        
+        # 実際のデータを返す
+        data = {
+            "total_tokens_used": total_tokens_used,
+            "total_input_tokens": total_input_tokens,
+            "total_output_tokens": total_output_tokens,
+            "basic_plan_limit": basic_plan_limit,
+            "current_month_cost": pricing_info["total_cost_jpy"],
             "cost_breakdown": {
-                "basic_plan_cost": 150000,
-                "tier1_cost": 0,
-                "tier2_cost": 0,
-                "tier3_cost": 0,
-                "total_cost_jpy": 150000
+                "basic_plan_cost": pricing_info["basic_plan_cost"],
+                "tier1_cost": pricing_info["tier1_cost"],
+                "tier2_cost": pricing_info["tier2_cost"],
+                "tier3_cost": pricing_info["tier3_cost"],
+                "total_cost_jpy": pricing_info["total_cost_jpy"]
             },
-            "usage_percentage": 60.0,
-            "remaining_tokens": 10000000,
-            "warning_level": "safe",
-            "company_users_count": 5,
-            "active_users": 3,
-            "total_conversations": 150,
-            "cost_usd": 75.0,
+            "usage_percentage": round(usage_percentage, 1),
+            "remaining_tokens": remaining_tokens,
+            "warning_level": warning_level,
+            "company_users_count": company_users_count,
+            "active_users": min(total_conversations // 5 if total_conversations > 0 else 1, company_users_count),
+            "total_conversations": total_conversations,
+            "cost_usd": total_cost_usd,
             "current_month": "2025-01",
-            "company_name": "テスト会社"
+            "company_name": company_name
         }
         
-        print(f"モックデータを返却します: {mock_data}")
-        return mock_data
+        print(f"実際のデータを返却します: company_users_count={company_users_count}, total_tokens={total_tokens_used:,}, company_name={company_name}")
+        return data
         
     except Exception as e:
         print(f"会社トークン使用量取得エラー: {str(e)}")

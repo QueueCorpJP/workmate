@@ -154,50 +154,133 @@ class TokenUsageTracker:
     def get_company_monthly_usage(self, company_id: str, year_month: Optional[str] = None) -> Dict:
         """会社の月次トークン使用量を取得"""
         
-        if not year_month:
+        if year_month is None:
             year_month = datetime.now().strftime('%Y-%m')
         
         try:
-            cursor = self.db.cursor()
+            # データベース接続タイプを確認
+            print(f"🔍 データベース接続タイプ: {type(self.db)}")
             
-            # 今月の使用量を直接集計
-            cursor.execute("""
-                SELECT 
-                    COUNT(*) as conversation_count,
-                    SUM(input_tokens) as total_input_tokens,
-                    SUM(output_tokens) as total_output_tokens,
-                    SUM(total_tokens) as total_tokens,
-                    SUM(cost_usd) as total_cost_usd,
-                    COUNT(DISTINCT user_id) as active_users
-                FROM chat_history 
-                WHERE company_id = %s 
-                AND TO_CHAR(timestamp::timestamp, 'YYYY-MM') = %s
-            """, (company_id, year_month))
+            # Supabase接続の場合はsupabase_adapterを使用
+            if 'SupabaseConnection' in str(type(self.db)):
+                print("🔍 Supabase接続を検出 - supabase_adapterを使用")
+                from supabase_adapter import select_data
+                
+                # 基本統計を取得
+                try:
+                    # 全チャット履歴を取得してPythonで集計
+                    chat_result = select_data(
+                        "chat_history", 
+                        columns="input_tokens,output_tokens,total_tokens,cost_usd,user_id",
+                        filters={"company_id": company_id}
+                    )
+                    
+                    if chat_result and chat_result.data:
+                        chats = chat_result.data
+                        print(f"🔍 取得したチャット数: {len(chats)}")
+                        
+                        # Pythonで集計
+                        total_input = sum(chat.get('input_tokens', 0) or 0 for chat in chats)
+                        total_output = sum(chat.get('output_tokens', 0) or 0 for chat in chats)
+                        total_tokens = sum(chat.get('total_tokens', 0) or 0 for chat in chats)
+                        total_cost = sum(float(chat.get('cost_usd', 0) or 0) for chat in chats)
+                        active_users = len(set(chat.get('user_id') for chat in chats if chat.get('user_id')))
+                        conversation_count = len(chats)
+                        
+                        print(f"🔍 Supabase集計結果: トークン={total_tokens}, チャット={conversation_count}")
+                        
+                        return {
+                            "company_id": company_id,
+                            "year_month": year_month or "ALL",
+                            "conversation_count": conversation_count,
+                            "total_input_tokens": total_input,
+                            "total_output_tokens": total_output,
+                            "total_tokens": total_tokens,
+                            "total_cost_usd": total_cost,
+                            "active_users": active_users
+                        }
+                    else:
+                        print("⚠️ Supabaseからデータを取得できませんでした")
+                        return {
+                            "company_id": company_id,
+                            "year_month": year_month or "ALL",
+                            "conversation_count": 0,
+                            "total_input_tokens": 0,
+                            "total_output_tokens": 0,
+                            "total_tokens": 0,
+                            "total_cost_usd": 0.0,
+                            "active_users": 0
+                        }
+                        
+                except Exception as supabase_error:
+                    print(f"⚠️ Supabaseクエリエラー: {supabase_error}")
+                    return {
+                        "company_id": company_id,
+                        "year_month": year_month or "ALL",
+                        "conversation_count": 0,
+                        "total_input_tokens": 0,
+                        "total_output_tokens": 0,
+                        "total_tokens": 0,
+                        "total_cost_usd": 0.0,
+                        "active_users": 0
+                    }
             
-            result = cursor.fetchone()
-            
-            if result:
-                return {
-                    "company_id": company_id,
-                    "year_month": year_month,
-                    "conversation_count": result[0] or 0,
-                    "total_input_tokens": result[1] or 0,
-                    "total_output_tokens": result[2] or 0,
-                    "total_tokens": result[3] or 0,
-                    "total_cost_usd": float(result[4] or 0),
-                    "active_users": result[5] or 0
-                }
+            # PostgreSQL直接接続の場合
             else:
-                return {
-                    "company_id": company_id,
-                    "year_month": year_month,
-                    "conversation_count": 0,
-                    "total_input_tokens": 0,
-                    "total_output_tokens": 0,
-                    "total_tokens": 0,
-                    "total_cost_usd": 0.0,
-                    "active_users": 0
-                }
+                print("🔍 PostgreSQL直接接続を使用")
+                cursor = self.db.cursor()
+                print(f"🔍 カーソータイプ: {type(cursor)}")
+                
+                # まず基本的なデータ確認
+                cursor.execute("""
+                    SELECT COUNT(*), SUM(total_tokens), MAX(total_tokens)
+                    FROM chat_history 
+                    WHERE company_id = %s
+                """, (company_id,))
+                basic_stats = cursor.fetchone()
+                print(f"🔍 基本統計: 総チャット={basic_stats[0]}, 総トークン={basic_stats[1]}, 最大トークン={basic_stats[2]}")
+                
+                # 全期間のデータを取得
+                cursor.execute("""
+                    SELECT 
+                        COUNT(*) as conversation_count,
+                        SUM(COALESCE(input_tokens, 0)) as total_input_tokens,
+                        SUM(COALESCE(output_tokens, 0)) as total_output_tokens,
+                        SUM(COALESCE(total_tokens, 0)) as total_tokens,
+                        SUM(COALESCE(cost_usd, 0)) as total_cost_usd,
+                        COUNT(DISTINCT user_id) as active_users
+                    FROM chat_history 
+                    WHERE company_id = %s 
+                    AND total_tokens IS NOT NULL 
+                    AND total_tokens > 0
+                """, (company_id,))
+                
+                result = cursor.fetchone()
+                print(f"🔍 PostgreSQLクエリ結果: {result}")
+                
+                if result:
+                    return {
+                        "company_id": company_id,
+                        "year_month": year_month or "ALL",
+                        "conversation_count": result[0] or 0,
+                        "total_input_tokens": result[1] or 0,
+                        "total_output_tokens": result[2] or 0,
+                        "total_tokens": result[3] or 0,
+                        "total_cost_usd": float(result[4] or 0),
+                        "active_users": result[5] or 0
+                    }
+                else:
+                    print("⚠️ PostgreSQL結果がNullまたは空です")
+                    return {
+                        "company_id": company_id,
+                        "year_month": year_month or "ALL",
+                        "conversation_count": 0,
+                        "total_input_tokens": 0,
+                        "total_output_tokens": 0,
+                        "total_tokens": 0,
+                        "total_cost_usd": 0.0,
+                        "active_users": 0
+                    }
                 
         except Exception as e:
             print(f"月次使用量取得エラー: {e}")
