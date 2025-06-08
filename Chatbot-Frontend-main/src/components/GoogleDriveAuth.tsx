@@ -38,7 +38,7 @@ export const GoogleDriveAuth: React.FC<GoogleDriveAuthProps> = ({
       const waitForGapi = () => {
         return new Promise<void>((resolve, reject) => {
           let attempts = 0;
-          const maxAttempts = 100; // 10秒待機
+          const maxAttempts = 300; // 30秒待機
           
           const checkGapi = () => {
             attempts++;
