@@ -105,6 +105,12 @@ export const GoogleDriveAuth: React.FC<GoogleDriveAuthProps> = ({
     }
 
     const clientId = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
+    console.log('=== handleAuth デバッグ ===');
+    console.log('Client ID:', clientId);
+    console.log('Client ID Type:', typeof clientId);
+    console.log('Client ID Truthy:', !!clientId);
+    console.log('=== デバッグ終了 ===');
+    
     if (!clientId) {
       onAuthError('Google Drive Client ID が設定されていません');
       return;
