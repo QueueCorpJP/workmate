@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Typography, Box, Alert } from '@mui/material';
 import { Cloud } from '@mui/icons-material';
+import { CONFIG, validateConfig } from '../config/constants';
 
 interface GoogleDriveAuthProps {
   onAuthSuccess: (accessToken: string) => void;
@@ -65,20 +66,10 @@ export const GoogleDriveAuth: React.FC<GoogleDriveAuthProps> = ({
 
   const initializeAuth = async () => {
     try {
-      // 環境変数を確認
-      const clientId = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID || '780511796066-1q5g2i7u8vla9jescuvatr41ob7698uq.apps.googleusercontent.com';
-      const apiKey = import.meta.env.VITE_GOOGLE_DRIVE_API_KEY || 'AIzaSyC1B--LQvYZVDo95rLrDwfOidEAdkmGRSw';
-      const redirectUri = import.meta.env.VITE_GOOGLE_REDIRECT_URI || 'https://workmatechat.com/auth/callback';
+      // 設定検証
+      validateConfig();
       
-      console.log('=== 環境変数デバッグ ===');
-      console.log('Client ID:', clientId);
-      console.log('API Key:', apiKey);
-      console.log('Redirect URI:', redirectUri);
-      console.log('Client ID Type:', typeof clientId);
-      console.log('Client ID Length:', clientId?.length);
-      console.log('=== デバッグ終了 ===');
-      
-      if (!clientId) {
+      if (!CONFIG.GOOGLE_DRIVE.CLIENT_ID) {
         throw new Error('Google Drive Client ID が設定されていません');
       }
       
@@ -104,7 +95,7 @@ export const GoogleDriveAuth: React.FC<GoogleDriveAuthProps> = ({
       return;
     }
 
-    const clientId = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
+    const clientId = CONFIG.GOOGLE_DRIVE.CLIENT_ID;
     console.log('=== handleAuth デバッグ ===');
     console.log('Client ID:', clientId);
     console.log('Client ID Type:', typeof clientId);
