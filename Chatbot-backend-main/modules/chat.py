@@ -370,13 +370,13 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
         except Exception as token_error:
             print(f"❌ トークン追跡エラー: {token_error}")
             # トークン追跡でエラーが発生した場合はフォールバック保存
-            chat_id = str(uuid.uuid4())
-            cursor = db.cursor()
-            cursor.execute(
-                "INSERT INTO chat_history (id, user_message, bot_response, timestamp, category, sentiment, employee_id, employee_name, source_document, source_page) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (chat_id, message_text, response_text, datetime.now().isoformat(), category, sentiment, message.employee_id, message.employee_name, source_doc, source_page)
-            )
-            db.commit()
+        chat_id = str(uuid.uuid4())
+        cursor = db.cursor()
+        cursor.execute(
+            "INSERT INTO chat_history (id, user_message, bot_response, timestamp, category, sentiment, employee_id, employee_name, source_document, source_page) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (chat_id, message_text, response_text, datetime.now().isoformat(), category, sentiment, message.employee_id, message.employee_name, source_doc, source_page)
+        )
+        db.commit()
         
         # ユーザーIDがある場合は質問カウントを更新
         if message.user_id and not limits_check.get("is_unlimited", False):

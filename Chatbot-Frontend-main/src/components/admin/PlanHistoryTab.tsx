@@ -307,7 +307,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                     sx={{
                       py: 2,
                       px: 3,
-                      bgcolor: "rgba(0, 0, 0, 0.02)",
+                        bgcolor: "rgba(0, 0, 0, 0.02)",
                       borderBottom: "1px solid rgba(0, 0, 0, 0.08)"
                     }}
                   >
@@ -401,9 +401,9 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                               return null;
                             })()}
                           </Stack>
-                        }
-                      />
-                    </ListItem>
+                      }
+                    />
+                  </ListItem>
                   ))}
                   {userIndex < userPlanHistories.length - 1 && <Divider sx={{ my: 1 }} />}
                 </React.Fragment>

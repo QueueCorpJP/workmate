@@ -1506,7 +1506,7 @@ def get_plan_history(user_id: str = None, db: SupabaseConnection = None) -> List
                 user_result = select_data("users", 
                                             columns="email, name, company_id", 
                                             filters={"id": user_id_key})
-                
+            
                 if user_result and user_result.data:
                     user_info = user_result.data[0]
                     user_histories[user_id_key] = {

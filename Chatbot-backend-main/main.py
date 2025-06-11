@@ -232,6 +232,12 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                 detail="; ".join(errors)
             )
         
+        if not user_data.role or not user_data.company_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="役割(role)と会社ID(company_id)は必須です。"
+            )
+        
         # まず、メールアドレスが既に存在するかチェック
         from supabase_adapter import select_data
         existing_user_result = select_data("users", filters={"email": user_data.email})
@@ -716,15 +722,15 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
                     break
             
             if matched_section:
-                # 前のセクションの内容を保存
-                if current_section and section_content:
-                    content = "\n".join(section_content).strip()
-                    if content:
-                        detailed_analysis[current_section] = content
-                
-                # 新しいセクションを開始
-                current_section = matched_section
-                section_content = []
+                    # 前のセクションの内容を保存
+                    if current_section and section_content:
+                        content = "\n".join(section_content).strip()
+                        if content:
+                            detailed_analysis[current_section] = content
+                    
+                    # 新しいセクションを開始
+                    current_section = matched_section
+                    section_content = []
             elif current_section:
                 # 現在のセクションに内容を追加
                 section_content.append(line)
