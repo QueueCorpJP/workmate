@@ -232,10 +232,17 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                 detail="; ".join(errors)
             )
         
-        if not user_data.role or not user_data.company_id:
+        # roleとcompany_idの空文字チェックを強化
+        if not user_data.role or not user_data.role.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="役割(role)と会社ID(company_id)は必須です。"
+                detail="役割(role)は必須です。"
+            )
+
+        if not user_data.company_id or not user_data.company_id.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="会社ID(company_id)は必須です。"
             )
         
         # まず、メールアドレスが既に存在するかチェック
