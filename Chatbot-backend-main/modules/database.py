@@ -466,45 +466,59 @@ def init_db():
                 # SQLステートメントからテーブル名と値を抽出
                 if "companies" in insert_statement:
                     # 既存のcompanyを確認
-                    result = select_data("companies", filters={"id": "company_1"})
+                    result = select_data("companies", filters={"name": "ヘルプ"})
                     if not result.data:
+                        # UUIDで会社IDを生成
+                        company_id = str(uuid.uuid4())
                         insert_data("companies", {
-                            "id": "company_1",
+                            "id": company_id,
                             "name": "ヘルプ",
                             "created_at": datetime.datetime.now().isoformat()
                         })
-                        print(f"{data_name} 初期データを挿入しました")
+                        print(f"{data_name} 初期データを挿入しました (ID: {company_id})")
                     else:
                         print(f"{data_name} 初期データは既に存在します")
+                        company_id = result.data[0]["id"]
                         
                 elif "users" in insert_statement and "admin" in insert_statement:
                     # 既存のadminユーザーを確認
-                    result = select_data("users", filters={"id": "admin"})
+                    result = select_data("users", filters={"email": "queue@queueu-tech.jp"})
                     if not result.data:
-                        insert_data("users", {
-                            "id": "admin",
-                            "email": "queue@queuefood.co.jp",
-                            "password": "John.Queue2025",
-                            "name": "管理者",
-                            "role": "admin",
-                            "company_id": "company_1",
-                            "created_at": datetime.datetime.now().isoformat()
-                        })
-                        print(f"{data_name} 初期データを挿入しました")
+                        # ヘルプ会社のIDを取得
+                        company_result = select_data("companies", filters={"name": "ヘルプ"})
+                        if company_result and company_result.data:
+                            help_company_id = company_result.data[0]["id"]
+                            admin_user_id = str(uuid.uuid4())
+                            insert_data("users", {
+                                "id": admin_user_id,
+                                "email": "queue@queueu-tech.jp",
+                                "password": "John.Queue2025",
+                                "name": "管理者",
+                                "role": "admin",
+                                "company_id": help_company_id,
+                                "created_at": datetime.datetime.now().isoformat()
+                            })
+                            print(f"{data_name} 初期データを挿入しました (ID: {admin_user_id})")
+                        else:
+                            print(f"ヘルプ会社が見つからないため、管理者ユーザーを作成できませんでした")
                     else:
                         print(f"{data_name} 初期データは既に存在します")
+                        admin_user_id = result.data[0]["id"]
                         
                 elif "usage_limits" in insert_statement:
                     # 既存の利用制限を確認
-                    result = select_data("usage_limits", filters={"user_id": "admin"})
-                    if not result.data:
-                        insert_data("usage_limits", {
-                            "user_id": "admin",
-                            "is_unlimited": True
-                        })
-                        print(f"{data_name} 初期データを挿入しました")
-                    else:
-                        print(f"{data_name} 初期データは既に存在します")
+                    admin_result = select_data("users", filters={"email": "queue@queueu-tech.jp"})
+                    if admin_result and admin_result.data:
+                        admin_user_id = admin_result.data[0]["id"]
+                        result = select_data("usage_limits", filters={"user_id": admin_user_id})
+                        if not result.data:
+                            insert_data("usage_limits", {
+                                "user_id": admin_user_id,
+                                "is_unlimited": True
+                            })
+                            print(f"{data_name} 初期データを挿入しました")
+                        else:
+                            print(f"{data_name} 初期データは既に存在します")
             except Exception as e:
                 print(f"初期データ挿入エラー ({data_name}): {e}")
                 
@@ -561,7 +575,46 @@ def create_user(email: str, password: str, name: str, role: str = "user", compan
     print(f"=== ユーザー作成開始 ===")
     print(f"新規ユーザー: {email} ({name}) - ロール: {role}")
     print(f"作成者ID: {creator_user_id}")
-    print(f"会社ID: {company_id}")
+    print(f"指定会社ID: {company_id}")
+
+    # company_idの自動生成または継承
+    final_company_id = company_id
+    if not final_company_id:
+        if creator_user_id:
+            # 作成者の会社IDを取得して継承
+            try:
+                creator_result = select_data("users", columns="company_id", filters={"id": creator_user_id})
+                if creator_result and creator_result.data and len(creator_result.data) > 0:
+                    creator_company_id = creator_result.data[0].get("company_id")
+                    if creator_company_id:
+                        final_company_id = creator_company_id
+                        print(f"✓ 作成者の会社ID {final_company_id} を継承")
+                    else:
+                        print("作成者に会社IDが設定されていません")
+            except Exception as e:
+                print(f"作成者の会社ID取得エラー: {e}")
+        
+        # 会社IDが設定されていない場合は新規生成
+        if not final_company_id:
+            final_company_id = str(uuid.uuid4())
+            print(f"✓ 新しい会社ID {final_company_id} を生成")
+            
+            # 新しい会社レコードをcompaniesテーブルに作成
+            try:
+                company_data = {
+                    "id": final_company_id,
+                    "name": f"会社_{name}",  # ユーザー名を使用したデフォルト会社名
+                    "created_at": created_at
+                }
+                company_result = insert_data("companies", company_data)
+                if company_result:
+                    print(f"✓ 新しい会社レコード作成完了: {company_data['name']} (ID: {final_company_id})")
+                else:
+                    print(f"✗ 会社レコード作成失敗: {final_company_id}")
+                    raise Exception(f"会社レコードの作成に失敗しました: {final_company_id}")
+            except Exception as e:
+                print(f"✗ 会社レコード作成エラー: {e}")
+                raise Exception(f"会社レコードの作成中にエラーが発生しました: {str(e)}")
 
     user_data = {
         "id": user_id,
@@ -569,7 +622,7 @@ def create_user(email: str, password: str, name: str, role: str = "user", compan
         "password": password,
         "name": name,
         "role": role,
-        "company_id": company_id,
+        "company_id": final_company_id,
         "created_by": creator_user_id,  # 作成者IDを記録
         "created_at": created_at
     }
@@ -582,7 +635,7 @@ def create_user(email: str, password: str, name: str, role: str = "user", compan
     questions_limit = 10
     uploads_limit = 2
     
-    if role == "admin" or email == "queue@queuefood.co.jp":
+    if role == "admin" or email == "queue@queueu-tech.jp":
         # adminロールまたは特別管理者は常に無制限
         is_unlimited = True
         questions_limit = 999999
@@ -1396,7 +1449,7 @@ def ensure_usage_limits_integrity(db: SupabaseConnection = None) -> int:
                 print(f"--- {user_email} ({user_name}) のusage_limitsレコード作成 ---")
                 
                 # デフォルトの利用制限を設定
-                if user_role == "admin" or user_email == "queue@queuefood.co.jp":
+                if user_role == "admin" or user_email == "queue@queueu-tech.jp":
                     # 管理者は無制限
                     is_unlimited = True
                     questions_limit = 999999

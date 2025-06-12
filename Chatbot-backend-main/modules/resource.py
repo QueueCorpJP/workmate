@@ -1,7 +1,7 @@
 from psycopg2.extensions import connection as Connection
 from .database import ensure_string
 
-async def get_uploaded_resources_by_company_id(company_id: str, db: Connection):
+async def get_uploaded_resources_by_company_id(company_id: str, db: Connection, uploaded_by: str = None):
     """会社IDに基づいてアップロードされたリソースの詳細情報を取得します"""
     try:
         from supabase_adapter import execute_query, select_data, get_supabase_client
@@ -15,6 +15,10 @@ async def get_uploaded_resources_by_company_id(company_id: str, db: Connection):
         # 会社IDに基づいてフィルタリング
         if company_id is not None:
             query = query.eq("company_id", company_id)
+        
+        # アップロード者IDに基づいてフィルタリング（管理者用）
+        if uploaded_by is not None:
+            query = query.eq("uploaded_by", uploaded_by)
         
         # クエリを実行
         sources_result = query.execute()
@@ -169,7 +173,7 @@ async def remove_resource_by_id(resource_id: str, db: Connection):
             "message": f"リソースの削除中にエラーが発生しました: {str(e)}"
         }
 
-async def get_active_resources_by_company_id(company_id: str, db: Connection):
+async def get_active_resources_by_company_id(company_id: str, db: Connection, uploaded_by: str = None):
     """アクティブなリソースのIDリストを取得します"""
     try:
         from supabase_adapter import get_supabase_client
@@ -182,6 +186,9 @@ async def get_active_resources_by_company_id(company_id: str, db: Connection):
         
         if company_id is not None:
             query = query.eq("company_id", company_id)
+        
+        if uploaded_by is not None:
+            query = query.eq("uploaded_by", uploaded_by)
         
         # クエリを実行
         result = query.execute()

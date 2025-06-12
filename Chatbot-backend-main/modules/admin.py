@@ -183,7 +183,7 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
             user_role = user_data.get("role")
             user_email = user_data.get("email")
         
-        is_special_admin = user_email == "queue@queuefood.co.jp"
+        is_special_admin = user_email == "queue@queueu-tech.jp"
         is_admin = user_role == "admin"
         is_user = user_role == "user"
         
@@ -262,11 +262,8 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
         employees = []
         
         # 特別な管理者またはadminロールの場合は全社員を取得
-        if is_special_admin or is_admin:
-            if is_special_admin:
-                print("特別な管理者として全社員情報を取得します")
-            else:
-                print("adminロールとして全社員情報を取得します")
+        if is_special_admin:
+            print("特別な管理者として全社員情報を取得します")
             # Supabaseから全ユーザーを取得
             result = select_data("users", columns="id, name, email, role, created_at, company_id")
             
@@ -292,11 +289,6 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
             if result and result.data:
                 print(f"会社の社員情報取得結果: {len(result.data)}件")
                 for employee in result.data:
-                    # userロールの場合はadminロールを除外
-                    if is_user and employee.get("role") == "admin":
-                        print(f"userロールのため管理者 {employee.get('email')} を除外します")
-                        continue
-                    
                     # 使用状況を取得
                     stats = get_employee_stats(employee.get("id"))
                     employee_with_stats = {
@@ -546,7 +538,7 @@ async def get_employee_details(employee_id: str, db = None, current_user_id: str
                 user_role = user_data.get("role")
                 current_user_company_id = user_data.get("company_id")
                 
-                if user_email == "queue@queuefood.co.jp":
+                if user_email == "queue@queueu-tech.jp":
                     is_special_admin = True
                     print("特別な管理者として社員詳細情報を取得します")
                 elif user_role == "admin":
@@ -646,7 +638,7 @@ async def get_demo_stats(db: Connection = Depends(get_db), company_id: str = Non
         print(f"デモ統計取得エラー: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-async def analyze_chats(user_id: str = None, db = None):
+async def analyze_chats(user_id: str = None, db = None, company_id: str = None):
     """チャット履歴を分析する"""
     try:
         print("analyze_chats関数が呼び出されました")
@@ -671,6 +663,22 @@ async def analyze_chats(user_id: str = None, db = None):
                     print("データが取得できませんでした")
             except Exception as e:
                 print(f"データ取得エラー: {e}")
+        elif company_id:
+            print(f"会社ID {company_id} のチャット履歴を分析します")
+            # 特定の会社のチャット履歴を取得
+            try:
+                result = select_data(
+                    "chat_history",
+                    columns="*",
+                    filters={"company_id": company_id}
+                )
+                if result and hasattr(result, 'data') and result.data:
+                    chat_data = result.data
+                    print(f"会社別データ取得結果: {len(chat_data)}件")
+                else:
+                    print("会社別データが取得できませんでした")
+            except Exception as e:
+                print(f"会社別データ取得エラー: {e}")
         else:
             print("全ユーザーのチャット履歴を分析します")
             # 全ユーザーのチャット履歴を取得

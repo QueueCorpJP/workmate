@@ -5,6 +5,7 @@
 import json
 import re
 import uuid
+import sys
 from datetime import datetime
 import logging
 from psycopg2.extensions import connection as Connection
@@ -19,6 +20,23 @@ from .resource import get_active_resources_by_company_id, get_active_resources_c
 
 logger = logging.getLogger(__name__)
 
+def safe_print(text):
+    """Windows環境でのUnicode文字エンコーディング問題を回避する安全なprint関数"""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        # エンコーディングエラーが発生した場合は、問題のある文字を置換
+        try:
+            safe_text = str(text).encode('utf-8', errors='replace').decode('utf-8')
+            print(safe_text)
+        except:
+            # それでも失敗する場合はエラーメッセージのみ出力
+            print("[出力エラー: Unicode文字を含むメッセージ]")
+
+def safe_safe_print(text):
+    """Windows環境でのUnicode文字エンコーディング問題を回避する安全なsafe_print関数"""
+    safe_print(text)
+
 # Geminiモデル（グローバル変数）
 model = None
 
@@ -27,7 +45,7 @@ def set_model(gemini_model):
     global model
     model = gemini_model
 
-async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
+async def process_chat(message: ChatMessage, db: Connection = Depends(get_db), current_user: dict = None):
     """チャットメッセージを処理してGeminiからの応答を返す"""
     try:
         # モデルが設定されているか確認
@@ -67,16 +85,31 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
         # ユーザーの会社IDを取得
         company_id = None
         if message.user_id:
-            cursor = db.cursor()
-            cursor.execute("SELECT company_id FROM users WHERE id = %s", (message.user_id,))
-            user = cursor.fetchone()
-            if user and user['company_id']:
-                company_id = user['company_id']
+            try:
+                from supabase_adapter import select_data
+                user_result = select_data("users", columns="company_id", filters={"id": message.user_id})
+                if user_result.data and len(user_result.data) > 0:
+                    user_data = user_result.data[0]
+                    if user_data.get('company_id'):
+                        company_id = user_data['company_id']
+                        safe_print(f"ユーザーID {message.user_id} の会社ID: {company_id}")
+                    else:
+                        safe_print(f"ユーザーID {message.user_id} に会社IDが設定されていません")
+                else:
+                    safe_print(f"ユーザーID {message.user_id} が見つかりません")
+            except Exception as e:
+                safe_print(f"会社ID取得エラー: {str(e)}")
+                # エラー時はcompany_id = Noneのまま継続
         
         # 会社固有のアクティブなリソースを取得
-        # active_sources = get_active_resources(company_id)
-        active_sources = await get_active_resources_by_company_id(company_id, db)
-        print(f"アクティブなリソース (会社ID: {company_id}): {', '.join(active_sources)}")
+        # 管理者の場合は自分がアップロードしたリソースのみ取得
+        uploaded_by = None
+        if current_user and current_user.get("role") == "admin":
+            uploaded_by = current_user["id"]
+            safe_print(f"管理者ユーザー: {current_user.get('email')} - 自分のリソースのみ参照")
+        
+        active_sources = await get_active_resources_by_company_id(company_id, db, uploaded_by)
+        safe_print(f"アクティブなリソース (会社ID: {company_id}): {', '.join(active_sources)}")
         
         # アクティブなリソースがない場合はエラーメッセージを返す
         if not active_sources:
@@ -86,27 +119,27 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
             chat_id = str(uuid.uuid4())
             cursor = db.cursor()
             cursor.execute(
-                "INSERT INTO chat_history (id, user_message, bot_response, timestamp, category, sentiment, employee_id, employee_name) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                (chat_id, message_text, response_text, datetime.now().isoformat(), "設定エラー", "neutral", message.employee_id, message.employee_name)
+                "INSERT INTO chat_history (id, user_message, bot_response, timestamp, category, sentiment, employee_id, employee_name, user_id, company_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (chat_id, message_text, response_text, datetime.now().isoformat(), "設定エラー", "neutral", message.employee_id, message.employee_name, message.user_id, company_id)
             )
             db.commit()
             
             # ユーザーIDがある場合は質問カウントを更新（アクティブなリソースがなくても利用制限は更新する）
             if message.user_id and not limits_check.get("is_unlimited", False):
-                print(f"利用制限更新開始（アクティブリソースなし） - ユーザーID: {message.user_id}")
-                print(f"更新前の制限情報: {limits_check}")
+                safe_print(f"利用制限更新開始（アクティブリソースなし） - ユーザーID: {message.user_id}")
+                safe_print(f"更新前の制限情報: {limits_check}")
                 
                 updated_limits = update_usage_count(message.user_id, "questions_used", db)
-                print(f"更新後の制限情報: {updated_limits}")
+                safe_print(f"更新後の制限情報: {updated_limits}")
                 
                 if updated_limits:
                     remaining_questions = updated_limits["questions_limit"] - updated_limits["questions_used"]
                     limit_reached = remaining_questions <= 0
-                    print(f"計算された残り質問数: {remaining_questions}, 制限到達: {limit_reached}")
+                    safe_print(f"計算された残り質問数: {remaining_questions}, 制限到達: {limit_reached}")
                 else:
-                    print("利用制限の更新に失敗しました")
+                    safe_print("利用制限の更新に失敗しました")
             
-            print(f"返り値（アクティブリソースなし）: remaining_questions={remaining_questions}, limit_reached={limit_reached}")
+            safe_print(f"返り値（アクティブリソースなし）: remaining_questions={remaining_questions}, limit_reached={limit_reached}")
             
             return {
                 "response": response_text,
@@ -130,8 +163,8 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
             for res_name in active_resource_names
         ]
         
-        # print(f"知識ベースの生データ長: {len(knowledge_base.raw_text) if knowledge_base.raw_text else 0}")
-        print(f"アクティブなソース: {active_sources}")
+        # safe_print(f"知識ベースの生データ長: {len(knowledge_base.raw_text) if knowledge_base.raw_text else 0}")
+        safe_print(f"アクティブなソース: {active_sources}")
         active_knowledge_text = await get_active_resources_content_by_ids(active_sources, db)
         # アクティブな知識ベースが空の場合はエラーメッセージを返す
         if not active_knowledge_text or (isinstance(active_knowledge_text, str) and not active_knowledge_text.strip()):
@@ -161,20 +194,20 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
             
             # ユーザーIDがある場合は質問カウントを更新（知識ベースが空でも利用制限は更新する）
             if message.user_id and not limits_check.get("is_unlimited", False):
-                print(f"利用制限更新開始（知識ベース空） - ユーザーID: {message.user_id}")
-                print(f"更新前の制限情報: {limits_check}")
+                safe_print(f"利用制限更新開始（知識ベース空） - ユーザーID: {message.user_id}")
+                safe_print(f"更新前の制限情報: {limits_check}")
                 
                 updated_limits = update_usage_count(message.user_id, "questions_used", db)
-                print(f"更新後の制限情報: {updated_limits}")
+                safe_print(f"更新後の制限情報: {updated_limits}")
                 
                 if updated_limits:
                     remaining_questions = updated_limits["questions_limit"] - updated_limits["questions_used"]
                     limit_reached = remaining_questions <= 0
-                    print(f"計算された残り質問数: {remaining_questions}, 制限到達: {limit_reached}")
+                    safe_print(f"計算された残り質問数: {remaining_questions}, 制限到達: {limit_reached}")
                 else:
-                    print("利用制限の更新に失敗しました")
+                    safe_print("利用制限の更新に失敗しました")
             
-            print(f"返り値（知識ベース空）: remaining_questions={remaining_questions}, limit_reached={limit_reached}")
+            safe_print(f"返り値（知識ベース空）: remaining_questions={remaining_questions}, limit_reached={limit_reached}")
             
             return {
                 "response": response_text,
@@ -202,7 +235,7 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
                     recent_messages = list(cursor_result)
                     recent_messages.reverse()
         except Exception as e:
-            print(f"会話履歴取得エラー: {str(e)}")
+            safe_print(f"会話履歴取得エラー: {str(e)}")
             recent_messages = []
         
         # 会話履歴の構築
@@ -217,7 +250,8 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
                     conversation_history += f"ユーザー: {user_msg}\n"
                     conversation_history += f"アシスタント: {bot_msg}\n\n"
                 except Exception as e:
-                    print(f"会話履歴処理エラー: {str(e)}")
+                    # Windows環境でのUnicode文字エンコーディング問題を避けるため、safe_safe_print関数を使用
+                    safe_safe_print(f"会話履歴処理エラー: {str(e)}")
                     # エラーが発生した場合はその行をスキップ
                     continue
 
@@ -258,7 +292,7 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
                 raise ValueError("AIモデルからの応答が無効です")
             response_text = response.text
         except Exception as model_error:
-            print(f"AIモデル応答生成エラー: {str(model_error)}")
+            safe_print(f"AIモデル応答生成エラー: {str(model_error)}")
             response_text = "申し訳ございません。応答の生成中にエラーが発生しました。しばらく経ってからもう一度お試しください。"
         
         # カテゴリと感情を分析するプロンプト
@@ -298,7 +332,7 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
                 raise ValueError("分析応答が無効です")
             analysis_text = analysis_response.text
         except Exception as analysis_error:
-            print(f"分析応答生成エラー: {str(analysis_error)}")
+            safe_print(f"分析応答生成エラー: {str(analysis_error)}")
             analysis_text = '{"category": "未分類", "sentiment": "neutral", "source": {"name": "", "section": "", "page": ""}}'
         
         # JSON部分を抽出
@@ -327,10 +361,10 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
             #         response_text = re.sub(r'\n*情報ソース:.*$', '', response_text, flags=re.DOTALL)
             #     source_doc = ""
             #     source_page = ""
-            #     print("2222222222222")
+            #     safe_print("2222222222222")
                 
         except Exception as json_error:
-            print(f"JSON解析エラー: {str(json_error)}")
+            safe_print(f"JSON解析エラー: {str(json_error)}")
             category = "未分類"
             sentiment = "neutral"
             source_doc = ""
@@ -344,11 +378,11 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
         user_result = select_data("users", filters={"id": message.user_id}) if message.user_id else None
         final_company_id = user_result.data[0].get("company_id") if user_result and user_result.data else None
         
-        print(f"🔍 トークン追跡デバッグ:")
-        print(f"  ユーザーID: {message.user_id}")
-        print(f"  会社ID: {final_company_id}")
-        print(f"  メッセージ長: {len(message_text)}")
-        print(f"  応答長: {len(response_text)}")
+        safe_print(f"🔍 トークン追跡デバッグ:")
+        safe_print(f"  ユーザーID: {message.user_id}")
+        safe_print(f"  会社ID: {final_company_id}")
+        safe_print(f"  メッセージ長: {len(message_text)}")
+        safe_print(f"  応答長: {len(response_text)}")
         
         # トークン追跡機能を使用してチャット履歴を保存
         try:
@@ -366,34 +400,34 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
                 source_page=source_page,
                 model="gpt-4o-mini"  # 使用しているモデル名
             )
-            print(f"✅ トークン追跡保存成功: {chat_id}")
+            safe_print(f"✅ トークン追跡保存成功: {chat_id}")
         except Exception as token_error:
-            print(f"❌ トークン追跡エラー: {token_error}")
+            safe_print(f"❌ トークン追跡エラー: {token_error}")
             # トークン追跡でエラーが発生した場合はフォールバック保存
         chat_id = str(uuid.uuid4())
         cursor = db.cursor()
         cursor.execute(
-            "INSERT INTO chat_history (id, user_message, bot_response, timestamp, category, sentiment, employee_id, employee_name, source_document, source_page) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (chat_id, message_text, response_text, datetime.now().isoformat(), category, sentiment, message.employee_id, message.employee_name, source_doc, source_page)
+            "INSERT INTO chat_history (id, user_message, bot_response, timestamp, category, sentiment, employee_id, employee_name, source_document, source_page, user_id, company_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (chat_id, message_text, response_text, datetime.now().isoformat(), category, sentiment, message.employee_id, message.employee_name, source_doc, source_page, message.user_id, company_id)
         )
         db.commit()
         
         # ユーザーIDがある場合は質問カウントを更新
         if message.user_id and not limits_check.get("is_unlimited", False):
-            print(f"利用制限更新開始 - ユーザーID: {message.user_id}")
-            print(f"更新前の制限情報: {limits_check}")
+            safe_print(f"利用制限更新開始 - ユーザーID: {message.user_id}")
+            safe_print(f"更新前の制限情報: {limits_check}")
             
             updated_limits = update_usage_count(message.user_id, "questions_used", db)
-            print(f"更新後の制限情報: {updated_limits}")
+            safe_print(f"更新後の制限情報: {updated_limits}")
             
             if updated_limits:
                 remaining_questions = updated_limits["questions_limit"] - updated_limits["questions_used"]
                 limit_reached = remaining_questions <= 0
-                print(f"計算された残り質問数: {remaining_questions}, 制限到達: {limit_reached}")
+                safe_print(f"計算された残り質問数: {remaining_questions}, 制限到達: {limit_reached}")
             else:
-                print("利用制限の更新に失敗しました")
+                safe_print("利用制限の更新に失敗しました")
         
-        print(f"返り値: remaining_questions={remaining_questions}, limit_reached={limit_reached}")
+        safe_print(f"返り値: remaining_questions={remaining_questions}, limit_reached={limit_reached}")
         
         return {
             "response": response_text,
@@ -402,5 +436,5 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db)):
             "limit_reached": limit_reached
         }
     except Exception as e:
-        print(f"チャットエラー: {str(e)}")
+        safe_print(f"チャットエラー: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -123,7 +123,8 @@ class AdminUserCreate(BaseModel):
     password: str
     name: str
     role: str  # "user" または "employee"
-    company_id: str
+    company_id: Optional[str] = None  # company_idを任意にして自動生成対応
+    company_name: Optional[str] = None  # 会社名を管理者が設定可能
 
 # プラン変更関連のモデル
 class UpgradePlanRequest(BaseModel):

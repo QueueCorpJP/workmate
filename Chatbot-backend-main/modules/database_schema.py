@@ -202,23 +202,5 @@ INDEXES = {
 }
 
 INITIAL_DATA = {
-    "default_company": """
-    INSERT OR IGNORE INTO companies (id, name, created_at)
-    VALUES ('company_1', 'ヘルプ', datetime('now'))
-    """,
-
-    "admin_user": """
-    INSERT OR IGNORE INTO users (id, email, password, name, role, company_id, created_at)
-    VALUES ('admin', 'queue@queuefood.co.jp', 'John.Queue2025', '管理者', 'admin', 'company_1', datetime('now'))
-    """,
-
-    "admin_unlimited": """
-    INSERT OR IGNORE INTO usage_limits (user_id, is_unlimited)
-    VALUES ('admin', 1)
-    """,
-
-    "default_company_settings": """
-    INSERT OR IGNORE INTO company_settings (company_id)
-    SELECT id FROM companies
-    """
+    # 初期データは database.py の init_db() 関数で動的に生成される
 }

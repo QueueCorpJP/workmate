@@ -33,23 +33,23 @@ def get_current_admin(user = Depends(get_current_user)):
 def get_admin_or_user(user = Depends(get_current_user)):
     """現在のユーザーを取得します（管理者でなくても可）"""
     # 特定のメールアドレスを持つユーザーは特別な権限を持つ
-    if user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"]:
+    if user["email"] == "queue@queueu-tech.jp":
         user["is_special_admin"] = True
     else:
         user["is_special_admin"] = False
     
-    # 社員アカウントの管理画面アクセス制限を緩和（一部機能は利用可能）
-    # 完全な制限ではなく、ログ出力のみ行う
+    # 社員アカウントは管理画面に完全にアクセス不可
     if user["role"] == "employee":
-        print(f"社員アカウント ({user['email']}) が管理機能にアクセスしています")
-    
-    # 管理者権限チェックを行わない（管理者と通常ユーザーにアクセスを許可）
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="社員アカウントは管理画面にアクセスできません",
+        )
     return user
 
 def get_company_admin(user = Depends(get_current_user)):
     """会社の管理者ユーザーを取得します"""
     # 特定のメールアドレスを持つユーザーは特別な権限を持つ
-    if user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"]:
+    if user["email"] == "queue@queueu-tech.jp":
         user["is_special_admin"] = True
         return user
         

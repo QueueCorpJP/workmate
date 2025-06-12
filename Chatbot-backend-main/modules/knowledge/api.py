@@ -37,17 +37,25 @@ def _get_user_info(user_id: str, db: Connection) -> Tuple[Optional[str], bool]:
     """ユーザー情報を取得し、アップロード権限をチェックする"""
     if not user_id:
         return None, True
-        
-    cursor = db.cursor()
-    cursor.execute("SELECT company_id, role FROM users WHERE id = %s", (user_id,))
-    user = cursor.fetchone()
     
-    if not user:
-        return None, True
+    try:
+        from supabase_adapter import select_data
+        user_result = select_data("users", columns="company_id,role", filters={"id": user_id})
         
-    # 社員アカウントはアップロード不可
-    if user['role'] == 'employee':
-        raise HTTPException(status_code=403, detail=EMPLOYEE_UPLOAD_ERROR)
+        if not user_result.data or len(user_result.data) == 0:
+            return None, True
+        
+        user = user_result.data[0]
+        
+        # 社員アカウントはアップロード不可
+        if user.get('role') == 'employee':
+            raise HTTPException(status_code=403, detail=EMPLOYEE_UPLOAD_ERROR)
+    except HTTPException:
+        # HTTPExceptionは再度発生させる
+        raise
+    except Exception as e:
+        logger.error(f"ユーザー情報取得エラー: {str(e)}")
+        return None, True
         
     return user['company_id'], True
 

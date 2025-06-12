@@ -56,7 +56,7 @@ vite.config.ts でローカル開発用のプロキシターゲット URL を設
 ```ts
 proxy: {
   "/chatbot/api": {
-    target: "http://localhost:8083", // ローカルでのテスト用
+    target: `http://localhost:${process.env.VITE_BACKEND_PORT || 8083}`, // 環境変数からポート取得
     changeOrigin: true,
     secure: false,
   },

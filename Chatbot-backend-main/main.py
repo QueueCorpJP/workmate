@@ -89,18 +89,31 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 # CORSミドルウェアの設定
 # すべてのオリジンを許可する
-origins = [
-    "http://localhost:3000",
-    "http://localhost:3025",
-    "http://localhost:5173",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:3025",
-    "http://127.0.0.1:5173",
-    "https://chatbot-frontend-nine-eta.vercel.app",
-    "http://13.211.77.231",
-    "https://13.211.77.231",
-    "*"
-]
+origins = []
+# 環境変数からCORSオリジンを取得
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173,https://chatbot-frontend-nine-eta.vercel.app")
+if allowed_origins:
+    origins = [origin.strip() for origin in allowed_origins.split(",")]
+    
+# 開発環境では追加のローカルオリジンを許可
+if os.getenv("ENVIRONMENT", "development") == "development":
+    # 環境変数からフロントエンドポートを取得（デフォルト値を設定）
+    frontend_ports = os.getenv("FRONTEND_PORTS", "3000,3025,5173")
+    ports = [port.strip() for port in frontend_ports.split(",")]
+    
+    dev_origins = []
+    for port in ports:
+        if port.isdigit():
+            dev_origins.extend([
+                f"http://localhost:{port}",
+                f"http://127.0.0.1:{port}"
+            ])
+    
+    origins.extend(dev_origins)
+
+# すべてのオリジンを許可する場合（開発環境のみ推奨）
+if os.getenv("ALLOW_ALL_ORIGINS", "false").lower() == "true":
+    origins.append("*")
 
 # CORSミドルウェアを最初に追加して優先度を上げる
 app.add_middleware(
@@ -239,10 +252,11 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                 detail="役割(role)は必須です。"
             )
 
-        if not user_data.company_id or not user_data.company_id.strip():
+        # 会社IDの事前チェックを緩和 - 後続の処理で作成者のcompany_idを継承する場合があるため
+        if user_data.company_id and not user_data.company_id.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="会社ID(company_id)は必須です。"
+                detail="会社IDが指定されている場合は空文字列にはできません。"
             )
         
         # まず、メールアドレスが既に存在するかチェック
@@ -255,8 +269,8 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                 detail="このメールアドレスは既に登録されています"
             )
         
-        # 特別な管理者（queue@queuefood.co.jp）またはadminロールの場合はuserロールのみ作成可能
-        is_special_admin = current_user["email"] == "queue@queuefood.co.jp" and current_user.get("is_special_admin", False)
+        # 特別な管理者（queue@queueu-tech.jp）またはadminロールの場合はuserロールのみ作成可能
+        is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
         is_admin = current_user["role"] == "admin"
         
         if is_special_admin or is_admin:
@@ -267,7 +281,17 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
             
             # 会社IDの指定
             company_id = None
-            if hasattr(user_data, "company_id") and user_data.company_id:
+            company_name = ""
+            
+            if hasattr(user_data, "company_name") and user_data.company_name:
+                # 会社名が指定されている場合、新しい会社を作成
+                from modules.database import create_company
+                company_id = create_company(user_data.company_name, db)
+                company_name = user_data.company_name
+                print(f"特別管理者により新しい会社 '{user_data.company_name}' が作成されました (ID: {company_id})")
+                # 新しい会社作成なので作成者の会社IDは継承しない
+                new_company_created = True
+            elif hasattr(user_data, "company_id") and user_data.company_id:
                 # 指定された会社IDが存在するかチェック
                 company_result = select_data("companies", filters={"id": user_data.company_id})
                 if not company_result.data:
@@ -276,12 +300,39 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                         detail="指定された会社IDが存在しません"
                     )
                 company_id = user_data.company_id
-                print(f"管理者により会社ID {company_id} が指定されました")
+                company_name = company_result.data[0].get("name", "")
+                print(f"管理者により既存の会社ID {company_id} が指定されました")
+                new_company_created = False
             else:
-                # 会社IDが指定されていない場合、作成者の会社IDを使用
-                company_id = current_user.get("company_id")
-                if company_id:
-                    print(f"作成者の会社ID {company_id} を使用します")
+                # 会社IDも会社名も指定されていない場合
+                if is_special_admin:
+                    # 特別管理者の場合は新しい会社IDを自動生成
+                    company_id = None  # create_user関数で自動生成される
+                    print("特別管理者により新しい会社IDが自動生成されます")
+                    new_company_created = True
+                else:
+                    # 通常の管理者の場合は作成者の会社IDを使用
+                    company_id = current_user.get("company_id")
+                    if company_id:
+                        # 会社名も取得
+                        company_result = select_data("companies", filters={"id": company_id})
+                        if company_result.data:
+                            company_name = company_result.data[0].get("name", "")
+                        print(f"作成者の会社ID {company_id} を使用します")
+                    new_company_created = False
+            
+            # 特別管理者が社長ユーザーを作成する場合、会社IDが指定されていなければ新しい独立した会社を作成
+            if is_special_admin and company_id is None:
+                # 特別管理者が会社ID未指定で社長ユーザー作成 → 新しい独立した会社を作成
+                creator_id_to_pass = None
+                print("特別管理者による社長ユーザー作成: 新しい独立した会社IDを生成します")
+            elif is_special_admin and new_company_created:
+                # 特別管理者が新しい会社名を指定して会社作成 → 新しい独立した会社
+                creator_id_to_pass = None
+                print("特別管理者による新会社作成: 作成者の会社IDは継承しません")
+            else:
+                # その他の場合は作成者の会社IDを継承
+                creator_id_to_pass = current_user["id"]
             
             # create_user関数を直接呼び出す（管理者が作成するアカウントは作成者のステータスを継承）
             user_id = create_user(
@@ -291,7 +342,7 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                 role=role,
                 company_id=company_id,
                 db=db,
-                creator_user_id=current_user["id"]  # 作成者IDを渡す
+                creator_user_id=creator_id_to_pass  # 新しい会社作成時はNone
             )
             
             return {
@@ -299,7 +350,7 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                 "email": user_data.email,
                 "name": name,
                 "role": role,
-                "company_name": "",
+                "company_name": company_name,
                 "created_at": datetime.datetime.now().isoformat()
             }
         else:
@@ -342,22 +393,24 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
             }
     except HTTPException as e:
         # HTTPExceptionはそのまま再送出
-        print(f"社員アカウント作成エラー: {e.status_code}: {e.detail}")
+        account_type = "ユーザーアカウント" if (current_user["email"] == "queue@queueu-tech.jp" or current_user["role"] == "admin") else "社員アカウント"
+        print(f"{account_type}作成エラー: {e.status_code}: {e.detail}")
         raise
     except Exception as e:
-        print(f"社員アカウント作成エラー: {str(e)}")
+        account_type = "ユーザーアカウント" if (current_user["email"] == "queue@queueu-tech.jp" or current_user["role"] == "admin") else "社員アカウント"
+        print(f"{account_type}作成エラー: {str(e)}")
         import traceback
         print(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"社員アカウント作成に失敗しました: {str(e)}"
+            detail=f"{account_type}作成に失敗しました: {str(e)}"
         )
 
 @app.delete("/chatbot/api/admin/delete-user/{user_id}", response_model=dict)
 async def admin_delete_user(user_id: str, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """管理者によるユーザー削除"""
-    # 特別な管理者（queue@queuefood.co.jp）のみがユーザーを削除できる
-    if current_user["email"] != "queue@queuefood.co.jp" or not current_user.get("is_special_admin", False):
+    # 特別な管理者（queue@queueu-tech.jp）のみがユーザーを削除できる
+    if current_user["email"] != "queue@queueu-tech.jp" or not current_user.get("is_special_admin", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="この操作には特別な管理者権限が必要です"
@@ -391,8 +444,8 @@ async def admin_delete_user(user_id: str, current_user = Depends(get_admin_or_us
 @app.get("/chatbot/api/admin/users", response_model=List[UserResponse])
 async def admin_get_users(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """全ユーザー一覧を取得"""
-    # 特別な管理者（queue@queuefood.co.jp）のみが全ユーザー一覧を取得できる
-    if current_user["email"] != "queue@queuefood.co.jp" or not current_user.get("is_special_admin", False):
+    # 特別な管理者（queue@queueu-tech.jp）のみが全ユーザー一覧を取得できる
+    if current_user["email"] != "queue@queueu-tech.jp" or not current_user.get("is_special_admin", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="この操作には特別な管理者権限が必要です"
@@ -502,7 +555,7 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
     message.user_id = current_user["id"]
     message.employee_name = current_user["name"]
     
-    return await process_chat(message, db)
+    return await process_chat(message, db, current_user)
 
 # チャット履歴を取得するエンドポイント
 @app.get("/chatbot/api/admin/chat-history", response_model=List[ChatHistoryItem])
@@ -510,7 +563,7 @@ async def admin_get_chat_history(current_user = Depends(get_admin_or_user), db: 
     """チャット履歴を取得する"""
     # 現在のユーザーIDを渡して、そのユーザーのデータのみを取得
     # 特別な管理者（queue@queuefood.co.jp）の場合は全ユーザーのデータを取得できるようにする
-    if current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False):
+    if current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False):
         # 特別な管理者の場合は全ユーザーのデータを取得
         return get_chat_history(None, db)
     else:
@@ -524,7 +577,7 @@ async def admin_analyze_chats(current_user = Depends(get_admin_or_user), db: Sup
     """チャット履歴を分析する"""
     try:
         # 特別な管理者（queue@queuefood.co.jp）の場合は全ユーザーのデータを分析できるようにする
-        if current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False):
+        if current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False):
             # 特別な管理者の場合は全ユーザーのデータを分析
             result = await analyze_chats(None, db)
             print(f"分析結果: {result}")
@@ -555,27 +608,37 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
         # ユーザー情報の取得
         is_admin = current_user["role"] == "admin"
         is_user = current_user["role"] == "user"
-        is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
+        is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
         
         # プロンプトを取得
         prompt = request.get("prompt", "")
         
         # 通常の分析結果を取得
-        if is_special_admin or is_admin:
-            # 管理者または特別管理者は全データで分析
+        if is_special_admin:
+            # 特別管理者は全データで分析
             analysis_result = await analyze_chats(None, db)
         else:
-            # userロールを含む一般ユーザーは自分のデータのみで分析
-            analysis_result = await analyze_chats(current_user["id"], db)
+            # 一般ユーザーは自分の会社のデータのみで分析
+            user_company_id = current_user.get("company_id")
+            if user_company_id:
+                analysis_result = await analyze_chats(None, db, company_id=user_company_id)
+            else:
+                # 会社IDがない場合は自分のデータのみ
+                analysis_result = await analyze_chats(current_user["id"], db)
         
         # より詳細なチャットデータを取得
         try:
-            if is_special_admin or is_admin:
-                # 全データを取得
+            if is_special_admin:
+                # 特別管理者は全データを取得
                 chat_result = select_data("chat_history", limit=1000, order="created_at desc")
             else:
-                # 自分のデータのみ取得
-                chat_result = select_data("chat_history", filters={"user_id": current_user["id"]}, limit=1000, order="created_at desc")
+                # 一般ユーザーは自分の会社のデータのみ取得
+                user_company_id = current_user.get("company_id")
+                if user_company_id:
+                    chat_result = select_data("chat_history", filters={"company_id": user_company_id}, limit=1000, order="created_at desc")
+                else:
+                    # 会社IDがない場合は自分のデータのみ
+                    chat_result = select_data("chat_history", filters={"user_id": current_user["id"]}, limit=1000, order="created_at desc")
             
             chat_data = chat_result.data if chat_result.data else []
             
@@ -812,13 +875,11 @@ async def admin_get_employee_details(employee_id: str, current_user = Depends(ge
 @app.get("/chatbot/api/admin/company-employees", response_model=List[dict])
 async def admin_get_company_employees(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """会社の全社員情報を取得する"""
-    # adminロールのユーザーは全ユーザーのデータを取得できるようにする
-    is_admin = current_user["role"] == "admin"
-    is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
+    # 特別管理者のみが全データにアクセス可能
+    is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
     
-    # 直接get_company_employees関数に処理を委譲
-    if is_admin or is_special_admin:
-        # adminロールまたは特別な管理者の場合は全ユーザーのデータを取得
+    if is_special_admin:
+        # 特別管理者の場合は全ユーザーのデータを取得
         result = await get_company_employees(current_user["id"], db, None)
         return result
     else:
@@ -838,12 +899,11 @@ async def admin_get_company_employees(current_user = Depends(get_admin_or_user),
 @app.get("/chatbot/api/admin/employee-usage", response_model=EmployeeUsageResult)
 async def admin_get_employee_usage(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """社員ごとの利用状況を取得する"""
-    # adminロールのユーザーは全ユーザーのデータを取得できるようにする
-    is_admin = current_user["role"] == "admin"
-    is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
+    # 特別管理者のみが全データにアクセス可能
+    is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
     
-    if is_admin or is_special_admin:
-        # adminロールまたは特別な管理者の場合は全ユーザーのデータを取得
+    if is_special_admin:
+        # 特別管理者の場合は全ユーザーのデータを取得
         return await get_employee_usage(None, db, is_special_admin=True)
     else:
         # 通常のユーザーの場合は自分の会社の社員のデータのみを取得
@@ -854,15 +914,19 @@ async def admin_get_employee_usage(current_user = Depends(get_admin_or_user), db
 @app.get("/chatbot/api/admin/resources", response_model=ResourcesResult)
 async def admin_get_resources(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """アップロードされたリソース（URL、PDF、Excel、TXT）の情報を取得する"""
-    # adminロールのユーザーは全リソースのデータを取得できるようにする
-    is_admin = current_user["role"] == "admin"
-    is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queue-tech.jp"] and current_user.get("is_special_admin", False)
+    # 特別管理者のみが全データにアクセス可能
+    is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
     
-    if is_admin or is_special_admin:
-        return await get_uploaded_resources_by_company_id(None, db)
+    if is_special_admin:
+        # 特別管理者は全てのリソースを表示
+        return await get_uploaded_resources_by_company_id(None, db, uploaded_by=None)
     else:
-        company_id = current_user["company_id"]
-        print(await get_uploaded_resources_by_company_id(company_id, db))
+        # 通常のユーザーは自分の会社のリソースのみ表示
+        company_id = current_user.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="会社IDが見つかりません")
+        
+        print(f"会社ID {company_id} のリソースを取得します")
         return await get_uploaded_resources_by_company_id(company_id, db)
 
 # リソースのアクティブ状態を切り替えるエンドポイント

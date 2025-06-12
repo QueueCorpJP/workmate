@@ -51,6 +51,39 @@ PostgreSQL をインストールした後、データベースとユーザーを
 プロジェクトのルートディレクトリに .env ファイルを作成し、以下の内容を追加します（プレースホルダーを実際の値に置き換えてください）：
 
 ```txt
+# ========================================
+# サーバー設定（必須）
+# ========================================
+
+# バックエンドサーバーのポート番号（必須）
+PORT=8083
+
+# 環境設定（development / production）
+ENVIRONMENT=development
+
+# CORS許可オリジン（カンマ区切り）
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,https://chatbot-frontend-nine-eta.vercel.app
+
+# 開発環境でのフロントエンドポート（カンマ区切り）
+FRONTEND_PORTS=3000,3025,5173
+
+# 全てのオリジンを許可（開発環境のみ推奨）
+ALLOW_ALL_ORIGINS=false
+
+# ========================================
+# API設定（必須）
+# ========================================
+
+# Gemini API Key（必須）
+GEMINI_API_KEY=AI...7I
+
+# YouTube API Key（オプション）
+YOUTUBE_API_KEY=your_youtube_api_key_here
+
+# ========================================
+# レガシー設定（互換性のため）
+# ========================================
+
 GOOGLE_API_KEY=AI...7I
 COMPANY_NAME="Queue"
 WEBSHAREPROXY_USERNAME=xv...ll
@@ -61,6 +94,13 @@ DB_USER=postgres
 DB_PASSWORD=yourpassword
 DB_HOST=localhost
 DB_PORT=5432
+
+# ========================================
+# プロキシ設定（企業環境の場合）
+# ========================================
+
+# HTTP_PROXY=http://proxy.company.com:8080
+# HTTPS_PROXY=https://proxy.company.com:8080
 ```
 
 ## FastAPI アプリの実行
@@ -69,7 +109,7 @@ DB_PORT=5432
 python main.py
 ```
 
-サーバーは `http://localhost:8083` で起動します。
+サーバーは環境変数PORTで指定されたポート（デフォルト例：`http://localhost:8083`）で起動します。
 
 # AWS EC2 上で FastAPI + PostgreSQL アプリケーションを構築・デプロイする手順
 

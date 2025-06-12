@@ -526,7 +526,7 @@ function LoginPage() {
                   },
                 }}
               >
-                お問い合わせ対応
+                お問い合わせ
               </Link>
             </Box>
           </Paper>

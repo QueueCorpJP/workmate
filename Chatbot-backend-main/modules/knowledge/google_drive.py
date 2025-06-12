@@ -18,8 +18,8 @@ class GoogleDriveHandler:
     """Google Drive API処理ハンドラー"""
     
     def __init__(self):
-        self.base_url = "https://www.googleapis.com/drive/v3"
-        self.download_url = "https://www.googleapis.com/drive/v3/files"
+        self.base_url = os.getenv("GOOGLE_DRIVE_API_BASE_URL", "https://www.googleapis.com/drive/v3")
+        self.download_url = os.getenv("GOOGLE_DRIVE_FILES_URL", "https://www.googleapis.com/drive/v3/files")
     
     async def get_file_metadata(self, file_id: str, access_token: str) -> Optional[Dict[str, Any]]:
         """

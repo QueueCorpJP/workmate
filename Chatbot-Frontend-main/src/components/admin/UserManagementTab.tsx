@@ -18,6 +18,7 @@ import {
   InputAdornment,
   Fade,
   Chip,
+
 } from "@mui/material";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
@@ -44,6 +45,8 @@ interface UserManagementTabProps {
   onSelectedCompanyIdChange?: (companyId: string) => void;
   isCompaniesLoading?: boolean;
   user?: any;
+  newCompanyName?: string;
+  onNewCompanyNameChange?: (name: string) => void;
 }
 
 const UserManagementTab: React.FC<UserManagementTabProps> = ({
@@ -62,6 +65,8 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
   onSelectedCompanyIdChange,
   isCompaniesLoading,
   user,
+  newCompanyName,
+  onNewCompanyNameChange,
 }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -259,8 +264,8 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
                       />
                     </svg>
                     {isSpecialAdmin
-                      ? "管理者として、管理者用アカウントまたは社員アカウントを作成できます"
-                      : "通常のユーザーは社員アカウント（管理画面アクセス不可）のみ作成できます"}
+                      ? "特別管理者として、新しい会社の社長用アカウントを作成できます"
+                      : "社長として、自分の会社の社員アカウント（管理画面アクセス不可）を作成できます"}
                   </Typography>
                 </Paper>
 
@@ -367,16 +372,18 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
                     }}
                   />
 
-                  {/* 管理者の場合は会社選択を表示 */}
+                  
+
+                  {/* 特別管理者の場合は会社名入力を表示 */}
                   {isSpecialAdmin && (
                     <TextField
-                      label="会社ID (任意)"
+                      label="会社名"
                       variant="outlined"
                       fullWidth
                       size="small"
-                      value={selectedCompanyId || ""}
-                      onChange={(e) => onSelectedCompanyIdChange?.(e.target.value)}
-                      placeholder="例: company_1"
+                      value={newCompanyName || ""}
+                      onChange={(e) => onNewCompanyNameChange?.(e.target.value)}
+                      placeholder="例: 新しい会社"
                       InputProps={{
                         startAdornment: (
                           <InputAdornment position="start">
@@ -403,7 +410,7 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
                           fontSize: "0.9rem",
                         },
                       }}
-                      helperText="会社IDを入力してください（空白の場合は作成者の会社が使用されます）"
+                      helperText="新しい会社名を入力してください（空白の場合は自動生成されます）"
                     />
                   )}
 
@@ -414,8 +421,8 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
                       color="text.secondary"
                       sx={{ mb: 2, fontSize: "0.85rem" }}
                       >
-                      {user?.role === "admin" 
-                        ? "管理者用アカウントは管理画面にアクセスできます" 
+                      {isSpecialAdmin 
+                        ? "社長用アカウントは管理画面にアクセスできます" 
                         : "社員アカウントは管理画面にアクセスできません"
                       }
                             </Typography>
@@ -423,11 +430,11 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
                       variant="contained"
                       color="primary"
                       size="small"
-                      onClick={() => onCreateUser(user?.role === "admin" ? "user" : "employee")}
+                      onClick={() => onCreateUser(isSpecialAdmin ? "user" : "employee")}
                       disabled={
                         isUserCreating || !newUserEmail || !newUserPassword
                       }
-                      startIcon={isUserCreating ? null : (user?.role === "admin" ? <AdminPanelSettingsIcon /> : <GroupIcon />)}
+                      startIcon={isUserCreating ? null : (isSpecialAdmin ? <AdminPanelSettingsIcon /> : <GroupIcon />)}
                       sx={{
                         py: 0.8,
                         mt: 0.5,
@@ -445,7 +452,9 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
                       {isUserCreating ? (
                         <LoadingIndicator size={24} message="" />
                       ) : (
-                        user?.role === "admin" ? "管理者用アカウントを作成" : "社員アカウントを作成"
+                        isSpecialAdmin 
+                          ? "社長用アカウントを作成"
+                          : "社員アカウントを作成"
                       )}
                     </Button>
                   </Box>

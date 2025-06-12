@@ -53,4 +53,17 @@ def get_db_params():
 # ポート設定
 def get_port():
     """サーバーのポート番号を取得します"""
-    return int(os.getenv("PORT", 8083))
+    # 環境変数PORTから取得（必須）
+    port_env = os.getenv("PORT")
+    if not port_env:
+        raise ValueError("PORT環境変数が設定されていません。サーバー起動に必要です。")
+    
+    try:
+        port = int(port_env)
+        if port < 1 or port > 65535:
+            raise ValueError(f"ポート番号が無効です: {port}. 1-65535の範囲で指定してください。")
+        return port
+    except ValueError as e:
+        if "invalid literal" in str(e):
+            raise ValueError(f"PORT環境変数は数値である必要があります: {port_env}")
+        raise e

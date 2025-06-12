@@ -439,7 +439,7 @@ const AdminPanel: React.FC = () => {
       const response = await api.post("/admin/register-user", requestData);
 
         setUserCreateSuccess(
-        `${role === "user" ? "管理者用" : "社員"}アカウントが正常に作成されました`
+        `${role === "user" ? "社長用" : "社員"}アカウントが正常に作成されました`
         );
       setNewUserEmail("");
       setNewUserPassword("");

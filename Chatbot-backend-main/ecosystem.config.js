@@ -4,14 +4,15 @@ module.exports = {
     script: 'main.py',
     interpreter: './venv/bin/python',
     interpreter_args: '-m uvicorn',
-    args: 'main:app --host 0.0.0.0 --port 8083',
+    args: 'main:app --host 0.0.0.0 --port ${PORT}',
     cwd: '/home/ec2-user/workmate/Chatbot-backend-main',
     instances: 1,
     exec_mode: 'fork',
     watch: false,
     max_memory_restart: '1G',
     env: {
-      NODE_ENV: 'production'
+      NODE_ENV: 'production',
+      PORT: process.env.PORT || '8083'
     },
     error_file: '/home/ec2-user/.pm2/logs/chatbot-backend-error.log',
     out_file: '/home/ec2-user/.pm2/logs/chatbot-backend-out.log',

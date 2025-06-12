@@ -36,7 +36,7 @@ async def get_company_name(user=None, db: Connection = Depends(get_db)):
         return {"company_name": DEFAULT_COMPANY_NAME}
     
     # 特別な管理者の場合はデフォルト会社名を返す
-    if user["email"] == "queue@queuefood.co.jp":
+    if user["email"] == "queue@queueu-tech.jp":
         return {"company_name": DEFAULT_COMPANY_NAME}
     
     # ユーザーの会社IDがある場合は、その会社の名前を返す
@@ -60,7 +60,7 @@ async def set_company_name(request: CompanyNameRequest, user=None, db: Connectio
         raise HTTPException(status_code=400, detail="会社名は空にできません")
     
     # 特別な管理者の場合はデフォルト会社名を更新する
-    if not user or user["email"] == "queue@queuefood.co.jp":
+    if not user or user["email"] == "queue@queueu-tech.jp":
         # グローバル変数を更新
         global DEFAULT_COMPANY_NAME
         DEFAULT_COMPANY_NAME = new_company_name

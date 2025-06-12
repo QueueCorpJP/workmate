@@ -9,8 +9,7 @@ export default defineConfig({
     host: "0.0.0.0",
     proxy: {
       "/chatbot/api": {
-        target: "http://localhost:8083", // ポートを8083に更新
-        // target: "https://13.211.77.231",
+        target: `http://localhost:${process.env.VITE_BACKEND_PORT || 8083}`,
         changeOrigin: true,
         secure: false,
       },
