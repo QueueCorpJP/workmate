@@ -39,7 +39,8 @@ def setup_gemini():
         raise ValueError("GEMINI_API_KEY環境変数が設定されていません")
     
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash-exp')
+    # より高いクォータ制限のあるモデルを使用
+    model = genai.GenerativeModel('gemini-1.5-flash')
     return model
 
 def get_db_params():
@@ -54,7 +55,7 @@ def get_db_params():
 def get_port():
     """サーバーのポート番号を取得します"""
     # 環境変数PORTから取得、未設定の場合はデフォルト値を使用
-    port_env = os.getenv("PORT", "8083")  # デフォルト8083
+    port_env = os.getenv("PORT", "8085")  # デフォルト8085
     
     try:
         port = int(port_env)

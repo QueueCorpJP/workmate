@@ -438,8 +438,8 @@ async def admin_delete_user(user_id: str, current_user = Depends(get_admin_or_us
 
 @app.get("/chatbot/api/admin/users", response_model=List[UserResponse])
 async def admin_get_users(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """全ユーザー一覧を取得"""
-    # 特別な管理者のみ
+    """全ユーザー一覧を取得""
+    # 特別な管理者のue
     if current_user["email"] != "queue@queueu-tech.jp" or not current_user.get("is_special_admin", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -456,32 +456,29 @@ async def admin_get_demo_stats(current_user = Depends(get_admin_or_user), db: Su
 async def submit_url(submission: UrlSubmission, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
     """URLを送信して知識ベースを更新"""
     try:
-        # URLが空でないことを確認
-        if not submission.url or not submission.url.strip():
+        # URLが空でないことを確認        if not submission.url or not submission.url.strip():
             raise HTTPException(
                 status_code=400,
                 detail="URLが指定されていないか、ファイル名が無効です"
             )
             
-        # URLの基本検証
+        # URLの基本皁ー検証
         if not submission.url.startswith(('http://', 'https://')) and not submission.url.startswith('www.'):
             submission.url = 'https://' + submission.url
             
-        # URL処理実施
-        result = await process_url(submission.url, current_user["id"], None, db)
+        # URL処理実施        result = await process_url(submission.url, current_user["id"], None, db)
         return result
     except Exception as e:
         logger.error(f"URL送信エラー: {str(e)}")
         logger.error(traceback.format_exc())
         
-        # 'int' object has no attribute 'strip' エラーの特別処理
-        if "'int' object has no attribute 'strip'" in str(e):
+        # 'int' object has no attribute 'strip' エラーの特別処理        if "'int' object has no attribute 'strip'" in str(e):
             raise HTTPException(
                 status_code=500,
-                detail="チャットのデータ型エラーが発生しました。管理者に連絡してください"
+                detail="チャットのタイプ型エラーが発生しました。管理者の連絡してください"
             )
         
-        # その他の例外は通常のエラーレスポンスを返す
+        # そ�E他�E例外�E通常のエラーレスポンスを返す
         raise HTTPException(
             status_code=500,
             detail=f"URLの処理にエラーが発生しました: {str(e)}"
@@ -491,44 +488,39 @@ async def submit_url(submission: UrlSubmission, current_user = Depends(get_curre
 async def upload_knowledge(file: UploadFile = File(...), current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
     """ファイルをアップロードして知識ベースを更新"""
     try:
-        # ファイル名が存在することを確認
-        if not file or not file.filename:
+        # ファイル名が存在することを確誁E        if not file or not file.filename:
             raise HTTPException(
                 status_code=400,
                 detail="ファイルが指定されていないか、ファイル名が無効です"
             )
             
-        # ファイル拡張子をチェック。Google Driveアップロードの場合はスキップ
-        if not file.filename.lower().endswith(('.xlsx', '.xls', '.pdf', '.txt', '.avi', '.mp4', '.webp')):
+        # ファイル拡張子をチェック。Google Driveアップロードの場合はスキップ        if not file.filename.lower().endswith(('.xlsx', '.xls', '.pdf', '.txt', '.avi', '.mp4', '.webp')):
             raise HTTPException(
                 status_code=400,
                 detail="無効なファイル形式です、ExcelファイルまたはPDFファイル、テキストファイルのxlsx、Exls、pdf、txtのみ対応しています"
             )
             
-        # ファイル処理実施
-        result = await process_file(file, current_user["id"], None, db)
+        # ファイル処理実施        result = await process_file(file, current_user["id"], None, db)
         return result
     except Exception as e:
         logger.error(f"ファイルアップロードエラー: {str(e)}")
         logger.error(traceback.format_exc())
         
-        # 'int' object has no attribute 'strip' エラーの特別処理
-        if "'int' object has no attribute 'strip'" in str(e):
+        # 'int' object has no attribute 'strip' エラーの特別処理        if "'int' object has no attribute 'strip'" in str(e):
             raise HTTPException(
                 status_code=500,
-                detail="チャットのデータ型エラーが発生しました。管理者に連絡してください"
+                detail="チャットのタイプ型エラーが発生しました。管理者の連絡してください"
             )
         
-        # その他の例外は通常のエラーレスポンスを返す
+        # そ�E他�E例外�E通常のエラーレスポンスを返す
         raise HTTPException(
             status_code=500,
             detail=f"ファイルのアップロード中にエラーが発生しました: {str(e)}"
         )
 
-# 知識ベース情報を取得するエンドポイント
-@app.get("/chatbot/api/knowledge-base")
+# 知識ベース情報を取得するエンドポイント@app.get("/chatbot/api/knowledge-base")
 async def get_knowledge_base(current_user = Depends(get_current_user)):
-    """現在の知識ベースの情報を取得"""
+    """現在の知識ベースの情報を取得""
     return get_knowledge_base_info()
 
 # チャットエンドポイント
@@ -550,34 +542,27 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
     
     return await process_chat(message, db, current_user)
 
-# チャット履歴を取得するエンドポイント
-@app.get("/chatbot/api/admin/chat-history", response_model=List[ChatHistoryItem])
+# チャット履歴を取得するエンドポイント@app.get("/chatbot/api/admin/chat-history", response_model=List[ChatHistoryItem])
 async def admin_get_chat_history(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """チャット履歴を取得する"""
-    # 現在のユーザーIDを渡して、そのユーザーのチャットのみを取得
-    # 特別な管理者のqueue@queueu-tech.jpの場合は全ユーザーのチャットを取得できるようにする
+    """チャット履歴を取得すめE""
+    # 現在のユーザーIDを渡して、そのユーザーのチャットのみを取得    # 特別な管理者の�Eueue@queuefood.co.jpの場合は全ユーザーのチャットを取得できるようにする
     if current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False):
-        # 特別な管理者の場合は全ユーザーのチャットを取得
-        return get_chat_history(None, db)
+        # 特別な管理者の場合は全ユーザーのチャットを取得        return get_chat_history(None, db)
     else:
-        # 通常のユーザーの場合は自分のチャットのみを取得
-        user_id = current_user["id"]
+        # 通常のユーザーの場合は自刁のチャットのみを取得        user_id = current_user["id"]
         return get_chat_history(user_id, db)
 
-# チャット履歴分析エンドポイント
-@app.get("/chatbot/api/admin/analyze-chats")
+# チャチャット履歴エンドポイント@app.get("/chatbot/api/admin/analyze-chats")
 async def admin_analyze_chats(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """チャット履歴を分析する"""
+    """チャット履歴を分析すめて""
     try:
-        # 特別な管理者のqueue@queueu-tech.jpの場合は全ユーザーのチャットを分析できるようにする
+        # 特別な管理者のueue@queuefood.co.jpの場合は全ユーザーのチャットを分析できるようにする
         if current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False):
-            # 特別な管理者の場合は全ユーザーのチャットを分析
-            result = await analyze_chats(None, db)
+            # 特別な管理者の場合は全ユーザーのチャットを分析            result = await analyze_chats(None, db)
             print(f"分析結果: {result}")
             return result
         else:
-            # 通常のユーザーの場合は自分のチャットのみを分析
-            user_id = current_user["id"]
+            # 通常のユーザーの場合は自分のチャットのみを分析            user_id = current_user["id"]
             result = await analyze_chats(user_id, db)
             print(f"分析結果: {result}")
             return result
@@ -595,22 +580,19 @@ async def admin_analyze_chats(current_user = Depends(get_admin_or_user), db: Sup
 
 # 詳細ビジネス情報エンドポイント@app.post("/chatbot/api/admin/detailed-analysis")
 async def admin_detailed_analysis(request: dict, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """詳細なビジネス分析を行う"""
+    """詳細なビジネス情報を行う""
     try:
-        # ユーザー情報の取得
-        is_admin = current_user["role"] == "admin"
+        # ユーザー情報の取得        is_admin = current_user["role"] == "admin"
         is_user = current_user["role"] == "user"
         is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
         
-        # プロンプトを取得
-        prompt = request.get("prompt", "")
+        # プロンプトを取得        prompt = request.get("prompt", "")
         
-        # 通常の分析結果を取得
-        if is_special_admin:
-            # 特別管理者の全チャットのタイプで分析
+        # 通常の刁ー結果を取得        if is_special_admin:
+            # 特別管理者の全チャットのタイプで刁ー
             analysis_result = await analyze_chats(None, db)
         else:
-            # 一般ユーザーは自分の会社のチャットのみで分析
+            # 一般ユーザーは自分の会社のチャットのみで刁ー
             user_company_id = current_user.get("company_id")
             if user_company_id:
                 analysis_result = await analyze_chats(None, db, company_id=user_company_id)
@@ -618,14 +600,11 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
                 # 会社IDがない場合は自分のチャットのみ
                 analysis_result = await analyze_chats(current_user["id"], db)
         
-        # より詳細なチャットデータを取得
-        try:
+        # より詳細なチャットチャットを取得        try:
             if is_special_admin:
-                # 特別管理者の全チャットを取得
-                chat_result = select_data("chat_history", limit=1000, order="created_at desc")
+                # 特別管理者の全チャットを取得                chat_result = select_data("chat_history", limit=1000, order="created_at desc")
             else:
-                # 一般ユーザーは自分の会社のチャットのみ取得
-                user_company_id = current_user.get("company_id")
+                # 一般ユーザーは自分の会社のチャットのみ取得                user_company_id = current_user.get("company_id")
                 if user_company_id:
                     chat_result = select_data("chat_history", filters={"company_id": user_company_id}, limit=1000, order="created_at desc")
                 else:
@@ -693,40 +672,32 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
         questions = analysis_result.get("common_questions", [])
         daily_usage = analysis_result.get("daily_usage", [])
         
-        # Gemini APIで詳細な分析を実施
-        from modules.admin import model
+        # Gemini APIで詳細な刁ーを実施        from modules.admin import model
         
         # Geminiモデルが初期化されていない場合エラーハンドリング
         if model is None:
             raise HTTPException(status_code=500, detail="Geminiモデルが初期化されていない")
         
         # 短縮されたビジネス特化プロンプト
-        repeat_rate = detailed_metrics.get('repeat_question_rate', 0)
-        repeat_rate_str = f"{repeat_rate:.1f}%"
+        analysis_prompt = f"""
+        {prompt}
         
-        total_conversations = detailed_metrics.get('total_conversations', 0)
-        peak_hours = detailed_metrics.get('peak_usage_hours', [])
-        categories_json = json.dumps(categories, ensure_ascii=False)
-        sentiments_json = json.dumps(sentiments, ensure_ascii=False)
-        questions_json = json.dumps(questions[:5], ensure_ascii=False)
+        # データの概要
+        - 総会話数: {detailed_metrics.get('total_conversations', 0)}件
+        - 繰り返し質問率: {detailed_metrics.get('repeat_question_rate', 0):.1f}%
+        - ピーク利用時間: {detailed_metrics.get('peak_usage_hours', [])}
         
-        data_summary = "# データの概要\n"
-        data_summary += f"総会話数: {total_conversations}件\n"
-        data_summary += f"繰り返し質問率: {repeat_rate_str}\n"
-        data_summary += f"ピーク利用時間: {peak_hours}\n\n"
-        data_summary += f"カテゴリー別データ: {categories_json}\n"
-        data_summary += f"感情データ: {sentiments_json}\n"
-        data_summary += f"頻出質問: {questions_json}"
+        カテゴリー別データ: {json.dumps(categories, ensure_ascii=False)}
+        感情データ: {json.dumps(sentiments, ensure_ascii=False)}
+        頻出質問: {json.dumps(questions[:5], ensure_ascii=False)}
         
-        analysis_instructions = "\n# Please analyze the following 6 items in detail:\n"
-        analysis_instructions += "Item 1: Frequent Topic Analysis - Identify the most common question patterns and business issues from chat history, and show standardization opportunities.\n"
-        analysis_instructions += "Item 2: Efficiency Opportunities - Identify automatable tasks from repetitive questions and propose high-ROI improvement measures.\n"
-        analysis_instructions += "Item 3: Frustration Factors - Analyze the causes of negative emotions and unresolved problem patterns, and show priority improvement items.\n"
-        analysis_instructions += "Item 4: System Improvement Proposals - Propose specific feature additions/improvements and prioritize user needs.\n"
-        analysis_instructions += "Item 5: Information Sharing Issues - Identify departmental information gaps and areas lacking documentation.\n"
-        analysis_instructions += "Item 6: Implementation Plan - Present short-term (1-3 months), medium-term (3-6 months), and long-term (6 months-1 year) improvement plans with investment effects."
-        
-        analysis_prompt = f"{prompt}\n\n{data_summary}\n{analysis_instructions}"
+        # 以下6項目で詳細分析してください
+        1. 頻出トピック分析： チャット履歴から最多質問パターンと業務課題を特定し、標準化の機会を示してください。
+        2. 効率化機会： 繰り返し質問から自動化可能な業務を特定し、ROIの高い改善策を提案してください。
+        3. フラストレーション要因： ネガティブな感情の原因と未解決問題パターンを分析し、優先改善項目を示してください。
+        4. システム改善案： 機能追加・改善の具体提案とユーザーニーズの優先順位を示してください。
+        5. 情報共有課題： 部門間情報ギャップとドキュメント化が不足している領域を特定してください。
+        6. 実行計画： 短期（1-3ヶ月）、中期（3-6ヶ月）、長期（6ヶ月-1年）の改善案を投資効果と共に提示してください。"""
         
         # Gemini APIによる詳細分析
         analysis_response = model.generate_content(analysis_prompt)
@@ -775,21 +746,18 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
                     break
             
             if matched_section:
-                # 前のセクションの内容を保持
-                if current_section and section_content:
-                    content = "\n".join(section_content).strip()
-                    if content:
-                        detailed_analysis[current_section] = content
-                
-                # 新しいセクションを開始
-                current_section = matched_section
-                section_content = []
+                    # 前のセクションの刁ーを保持                    if current_section and section_content:
+                        content = "\n".join(section_content).strip()
+                        if content:
+                            detailed_analysis[current_section] = content
+                    
+                    # 新しいセクションを開始                    current_section = matched_section
+                    section_content = []
             elif current_section:
-                # 現在のセクションに内容を追加
+                # 現在のセクションに刁ーを追加
                 section_content.append(line)
         
-        # 最後のセクションを処理
-        if current_section and section_content:
+        # 最後のセクションを刁ー理        if current_section and section_content:
             content = "\n".join(section_content).strip()
             if content:
                 detailed_analysis[current_section] = content
@@ -843,26 +811,23 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
             }
         }
 
-# 社員詳細情報を取得するエンドポイント
-@app.get("/chatbot/api/admin/employee-details/{employee_id}", response_model=List[ChatHistoryItem])
+# 社員詳細情報を取得するエンドポイント@app.get("/chatbot/api/admin/employee-details/{employee_id}", response_model=List[ChatHistoryItem])
 async def admin_get_employee_details(employee_id: str, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """特定の社員の詳細なチャット履歴を取得する"""
+    """特定の社員の詳細なチャット履歴を取得すめて""
     # 特別な管理者のueue@queuefood.co.jpの場合は全ユーザーのチャットを取得できるようにする
     is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
     
     # ユーザーIDを渡して権限チェックを行う
     return await get_employee_details(employee_id, db, current_user["id"])
 
-# 会社の全社員情報を取得するエンドポイント
-@app.get("/chatbot/api/admin/company-employees", response_model=List[dict])
+# 会社の全社員情報を取得するエンドポイント@app.get("/chatbot/api/admin/company-employees", response_model=List[dict])
 async def admin_get_company_employees(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """会社の全社員情報を取得する"""
-    # 特別管理者のみがデータにアクセス可能
+    """会社の全社員情報を取得すめて""
+    # 特別管理者のみがチのタにアクセス可能
     is_special_admin = current_user["email"] == "queue@queueu-tech.jp"
     
     if is_special_admin:
-        # 特別管理者の場合は全ユーザーのチャットを取得
-        result = await get_company_employees(current_user["id"], db, None)
+        # 特別管理者の場合は全ユーザーのチャットを取得        result = await get_company_employees(current_user["id"], db, None)
         return result
     else:
         # 通常のユーザーの場合は自刁の会社の社員のチャットのみを取得        # ユーザーの会社IDを取得        user_result = select_data("users", filters={"id": current_user["id"]})
@@ -875,25 +840,21 @@ async def admin_get_company_employees(current_user = Depends(get_admin_or_user),
         result = await get_company_employees(current_user["id"], db, company_id)
         return result
 
-# 社員利用状況を取得するエンドポイント
-@app.get("/chatbot/api/admin/employee-usage", response_model=EmployeeUsageResult)
+# 社員利用状況を取得するエンドポイント@app.get("/chatbot/api/admin/employee-usage", response_model=EmployeeUsageResult)
 async def admin_get_employee_usage(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """社員ごとの利用状況を取得する"""
+    """社員ごとの利用状況を取得すめて""
     # 特別管理者のみがチのタにアクセス可能
     is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
     
     if is_special_admin:
-        # 特別管理者の場合は全ユーザーのチャットを取得
-        return await get_employee_usage(None, db, is_special_admin=True)
+        # 特別管理者の場合は全ユーザーのチャットを取得        return await get_employee_usage(None, db, is_special_admin=True)
     else:
-        # 通常のユーザーの場合は自分の会社の社員のチャットのみを取得
-        user_id = current_user["id"]
+        # 通常のユーザーの場合は自分の会社の社員のチャットのみを取得        user_id = current_user["id"]
         return await get_employee_usage(user_id, db, is_special_admin=False)
 
-# アップロードされたリソースを取得するエンドポイント
-@app.get("/chatbot/api/admin/resources", response_model=ResourcesResult)
+# アップロードされたリソースを取得するエンドポイント@app.get("/chatbot/api/admin/resources", response_model=ResourcesResult)
 async def admin_get_resources(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """アップロードされたリソースのURL、PDF、Excel、TXTの情報を取得する"""
+    """アップロードされたリソースのRL、PDF、Excel、TXTの情報を取得すめて""
     # 特別管理者のみがチのタにアクセス可能
     is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
     
@@ -909,45 +870,38 @@ async def admin_get_resources(current_user = Depends(get_admin_or_user), db: Sup
         print(f"会社ID {company_id} のリソースを取得します")
         return await get_uploaded_resources_by_company_id(company_id, db)
 
-# リソースのアクティブ状態を切り替えるエンドポイント
-@app.post("/chatbot/api/admin/resources/{resource_id:path}/toggle", response_model=ResourceToggleResponse)
+# リソースのアクチェックブ状態を刁ー替えるエンドポイント@app.post("/chatbot/api/admin/resources/{resource_id:path}/toggle", response_model=ResourceToggleResponse)
 async def admin_toggle_resource(resource_id: str, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """リソースのアクティブ状態を切り替える"""
-    # URLデコード
-    import urllib.parse
+    """リソースのアクチェックブ状態を均一化替える"""
+    # URLチェックート    import urllib.parse
     decoded_id = urllib.parse.unquote(resource_id)
-    print(f"トグルリクエスト {resource_id} -> デコード後 {decoded_id}")
+    print(f"トグルリクエスト {resource_id} -> チェックード得 {decoded_id}")
     return await toggle_resource_active_by_id(decoded_id, db)
 
-# リソースを削除するエンドポイント
-@app.delete("/chatbot/api/admin/resources/{resource_id:path}", response_model=dict)
+# リソースを削除するエンドポイント@app.delete("/chatbot/api/admin/resources/{resource_id:path}", response_model=dict)
 async def admin_delete_resource(resource_id: str, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """リソースを削除する"""
-    # URLデコード
-    import urllib.parse
+    # URLチェックート    import urllib.parse
     decoded_id = urllib.parse.unquote(resource_id)
-    print(f"削除リクエスト {resource_id} -> デコード後 {decoded_id}")
+    print(f"削除リクエスト {resource_id} -> チェックード得 {decoded_id}")
     # return await delete_resource(decoded_id)
     return await remove_resource_by_id(decoded_id, db)
 
-# 会社名を取得するエンドポイント
-@app.get("/chatbot/api/company-name", response_model=CompanyNameResponse)
+# 会社名を取得するエンドポイント@app.get("/chatbot/api/company-name", response_model=CompanyNameResponse)
 async def api_get_company_name(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
-    """現在の会社名を取得する"""
+    """現在の会社名を取得すめて""
     return await get_company_name(current_user, db)
 
-# 会社名を設定するエンドポイント
-@app.post("/chatbot/api/company-name", response_model=CompanyNameResponse)
+# 会社名を設定するエンドポイント@app.post("/chatbot/api/company-name", response_model=CompanyNameResponse)
 async def api_set_company_name(request: CompanyNameRequest, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
-    """会社名を設定する"""
+    """会社名を設定すめて""
     return await set_company_name(request, current_user, db)
 
-# プラン変更エンドポイント
-@app.post("/chatbot/api/upgrade-plan", response_model=UpgradePlanResponse)
+# プラン変更エンドポイント@app.post("/chatbot/api/upgrade-plan", response_model=UpgradePlanResponse)
 async def upgrade_plan(request: UpgradePlanRequest, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
-    """チェック版から有料プランにアップグレードする"""
+    """チェック版から有料プランにアップグレードする（強化版の""
     try:
-        print(f"=== プランアップグレード開始 ===")
+        print(f"=== プランアチのグレード開姁E===")
         print(f"ユーザー: {current_user['email']} ({current_user['name']})")
         print(f"ユーザーID: {current_user['id']}")
         print(f"要求プラン: {request.plan_id}")
@@ -997,7 +951,7 @@ async def upgrade_plan(request: UpgradePlanRequest, current_user = Depends(get_c
         payment_success = True  # モデルとして成功とする
         
         if payment_success:
-            print("決済成功")
+            print("✁E決済成功")
             
             # 新しい制限値を計算            new_questions_limit = plan["questions_limit"] if plan["questions_limit"] != -1 else 999999
             new_uploads_limit = plan["uploads_limit"] if plan["uploads_limit"] != -1 else 999999
@@ -1014,20 +968,19 @@ async def upgrade_plan(request: UpgradePlanRequest, current_user = Depends(get_c
             }, "user_id", user_id)
             
             if update_result:
-                print("利用制限更新完了")
+                print("✁E利用制限更新完了")
             else:
-                print("❌ 利用制限更新失敗")
+                print("✁E利用制限更新失敗")
                 raise HTTPException(status_code=500, detail="利用制限の更新に失敗しました")
             
-            # ユーザーテーブルにプラン情報を追加とroleを更新
-            user_update_result = update_data("users", {
+            # ユーザーチのブルにプラン情報を追加のoleを更新の            user_update_result = update_data("users", {
                 "role": "user"  # チェック版からuserプランに変更
             }, "id", user_id)
             
             if user_update_result:
-                print("✓ ユーザーロール更新完了(demo -> user)")
+                print("✁Eユーザーロール更新完了(demo -> user)")
             else:
-                print("❌ ユーザーロール更新失敗")
+                print("✁Eユーザーロール更新失敗")
             
             # チェック版から本番版に刁ー替わった場合、作成したアカウントも同期
             print("子アカウントの同期を開始します..")
@@ -1040,9 +993,9 @@ async def upgrade_plan(request: UpgradePlanRequest, current_user = Depends(get_c
             
             success_message = f"{plan['name']}へのアップグレードが完了しました"
             if updated_children > 0 or updated_company_users > 0:
-                success_message += f"（子アカウント{updated_children}個、同じ会社のユーザー{updated_company_users}個も同期更新）"
+                success_message += f"の子アカウント{updated_children} 個、同じ会社のユーザー {updated_company_users} 個も同期の
             
-            print(f"=== プランアップグレード完了 ===")
+            print(f"=== プランアチのグレード完了===")
             print(f"結果: {success_message}")
             
             return UpgradePlanResponse(
@@ -1053,22 +1006,22 @@ async def upgrade_plan(request: UpgradePlanRequest, current_user = Depends(get_c
                 payment_url=None
             )
         else:
-            print("❌ 決済失敗")
-            raise HTTPException(status_code=400, detail="決済処理に失敗しました")
+            print("✁E決済失敗")
+            raise HTTPException(status_code=400, detail="決済理に失敗しました")
             
     except HTTPException as e:
-        print(f"❌ HTTPエラー: {e.detail}")
+        print(f"✁EHTTPエラー: {e.detail}")
         raise
     except Exception as e:
-        print(f"❌ プランアップグレードエラー: {str(e)}")
+        print(f"✁Eプランアップグレードエラー: {str(e)}")
         import traceback
         print(traceback.format_exc())
         logger.error(f"プランアップグレードエラー: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"アップグレード処理にエラーが発生しました: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"アチのグレード理にエラーが発生しました: {str(e)}")
 
 @app.get("/chatbot/api/subscription-info", response_model=SubscriptionInfo)
 async def get_subscription_info(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
-    """現在のユーザーのサブスクリプション情報を取得する"""
+    """現在のユーザーのサブスクリプション情報を取得すめて""
     try:
         from supabase_adapter import select_data
         
@@ -1139,7 +1092,7 @@ async def submit_application(request: Request):
         application_id = save_application(application_data)
         
         if application_id:
-            print(f"申請受付完了 ID={application_id}")
+            print(f"✁E申請受付完了 ID={application_id}")
             print(f"  会社名: {application_data['company_name']}")
             print(f"  連絡先: {application_data['contact_name']}")
             print(f"  メール: {application_data['email']}")
@@ -1167,9 +1120,7 @@ async def submit_application(request: Request):
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail="申請処理にエラーが発生しました")
 
-# 静的ファイルのマウント
-# フロントエンドのビルドディレクトリを指定
-frontend_build_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+# 静的ファイルのマウント# フロントエンドのビルドディレクトリを指定frontend_build_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 # 静的ファイルを提供するためのルートを追加
 @app.get("/", include_in_schema=False)
@@ -1181,33 +1132,26 @@ async def read_root():
 
 
 
-# 静的ファイルをマウント
-if os.path.exists(os.path.join(frontend_build_dir, "assets")):
+# 静的ファイルをマウントif os.path.exists(os.path.join(frontend_build_dir, "assets")):
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_build_dir, "assets")), name="assets")
 
-# プラン履歴取得エンドポイント（catch_allより前に配置）
-@app.get("/chatbot/api/plan-history", response_model=dict)
+# プラン履歴取得エンドポイント！Eatch_allより前に配置の@app.get("/chatbot/api/plan-history", response_model=dict)
 async def get_plan_history_endpoint(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
-    """プラン履歴を人単位でグループ化して取得する"""
+    """プラン履歴を人単位でグループ化して取得すめE""
     try:
-        print(f"プラン履歴取得要求 - ユーザー: {current_user['email']} (ロール: {current_user['role']})")
+        print(f"プラン履歴取得要汁E- ユーザー: {current_user['email']} (ロール: {current_user['role']})")
         
         from modules.database import get_plan_history
         
-        # 管理者の特別管理者の全てのプラン履歴を、一般ユーザーは自分の履歴のみを取得
-        if current_user["role"] in ["admin"] or current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"]:
-            # 管理者の特別管理者の全履歴を取得
-            user_histories = get_plan_history(db=db)
+        # 管理者の特別管理者の全てのプラン履歴を、一般ユーザーは自刁の履歴のみを取得        if current_user["role"] in ["admin"] or current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"]:
+            # 管理者の特別管理者の全履歴を取得            user_histories = get_plan_history(db=db)
         else:
-            # 一般ユーザー（userロール含む）の自分の履歴のみを取得
-            user_histories = get_plan_history(user_id=current_user["id"], db=db)
+            # 一般ユーザーのserロール含むの自分の履歴のみを取得            user_histories = get_plan_history(user_id=current_user["id"], db=db)
         
-        # 追加の統計情報を計算
-        total_users = len(user_histories)
+        # 追加の統計情報を計算        total_users = len(user_histories)
         total_changes = sum(user.get("total_changes", 0) for user in user_histories)
         
-        # プラン別の統計
-        plan_stats = {}
+            # プラン別の統訁E        plan_stats = {}
         for user in user_histories:
             current_plan = user.get("current_plan", "不明")
             if current_plan in plan_stats:
@@ -1245,20 +1189,17 @@ async def get_plan_history_endpoint(current_user = Depends(get_current_user), db
             detail=f"プラン履歴の取得に失敗しました: {str(e)}"
         )
 
-# テスト用チェックエンドポイント（認証なし）
-@app.get("/chatbot/api/test-simple")
+# チェックト用チェックチェックエンド�Eイント（認証なし！E@app.get("/chatbot/api/test-simple")
 async def simple_test():
-    """認証なしの簡単なテスト"""
+    """認証なしの簡単なチェックト""
     return {"message": "Backend is working!", "timestamp": datetime.datetime.now().isoformat()}
 
-# テスト用CSVエンドポイント
-@app.get("/chatbot/api/admin/csv-test")
+# チェックト用チェックチェックエンドポイント@app.get("/chatbot/api/admin/csv-test")
 async def csv_test_endpoint():
-    """CSVエンドポイントのテスト"""
+    """CSVエンドポイントのチェック""""""
     return {"message": "CSV endpoint is working", "timestamp": datetime.datetime.now().isoformat()}
 
-# チャット履歴をCSV形式でダウンロードするエンドポイント（catch_allより前に配置）
-@app.get("/chatbot/api/admin/chat-history/csv")
+# チャット履歴をCSV形式でダウンロードするエンド�Eイント！Eatch_allより前に配置の@app.get("/chatbot/api/admin/chat-history/csv")
 async def download_chat_history_csv(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """チャット履歴をCSV形式でダウンロードする"""
     try:
@@ -1269,20 +1210,16 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
         is_employee = current_user["role"] == "employee"
         is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
         
-        # チャット履歴を直接Supabaseから取得
-        try:
+        # チャット履歴を直接Supabaseから取得        try:
             if is_special_admin or is_admin:
-                # 管理者の特別管理者の場合は全ユーザーのチャットを取得
-                print("管理者の特別管理者として全ユーザーのチャット履歴を取得")
+                # 管理者の特別管理者の場合は全ユーザーのチャットを取得                print("管理者の特別管理者として全ユーザーのチャット履歴を取得)
                 from supabase_adapter import select_data
                 result = select_data("chat_history", columns="*")
                 chat_history = result.data if result and result.data else []
             elif is_user or is_employee:
-                # userまたはemployeeロールの場合は自分の会社のチャットのみを取得
-                print(f"{current_user['role']}ロールとして自分の会社のチャット履歴を取得")
+                # userまたはemployeeロールの場合は自分の会社のチャットのみを取得                print(f"{current_user['role']}ロールとして自分の会社のチャット履歴を取得)
                 from supabase_adapter import select_data
-                # まずユーザーの会社IDを取得
-                user_result = select_data("users", filters={"id": current_user["id"]})
+                # まずユーザーの会社IDを取得                user_result = select_data("users", filters={"id": current_user["id"]})
                 if user_result and user_result.data:
                     user_data = user_result.data[0]
                     company_name = user_data.get("company_name")
@@ -1322,10 +1259,10 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
             "日時",
             "ユーザーの質問",
             "ボットの回答",
-            "カテゴリ",
+            "カチェックリ",
             "感情",
             "社員ID",
-            "社員名",
+            "社員吁E,
             "参考ドキュメント",
             "ページ番号"
         ])
@@ -1371,7 +1308,7 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
 
 @app.post("/chatbot/api/admin/update-user-status/{user_id}", response_model=dict)
 async def admin_update_user_status(user_id: str, request: dict, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """管理者の操作によるユーザーステータス変更。Adminのみ実行可能"""
+    """管理者の操作によるユーザーステータス変更のdminのみ実行可能の""
     # adminロールまたは特別な管理者のみが実行可能
     is_admin = current_user["role"] == "admin"
     is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
@@ -1460,9 +1397,9 @@ async def admin_update_user_status(user_id: str, request: dict, current_user = D
         }, "user_id", user_id)
         
         if update_result:
-            print("本人のステータス更新完了")
+            print("✁E本人のステータス更新完了")
         else:
-            print("本人のステータス更新失敗")
+            print("✁E本人のステータス更新失敗")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="利用制限の更新に失敗しました"
@@ -1487,7 +1424,7 @@ async def admin_update_user_status(user_id: str, request: dict, current_user = D
         
         result_message = f"ユーザー {user['email']} のステータスを{'本番' if new_is_unlimited else 'チェック'}に変更しました"
         if updated_children > 0 or updated_company_users > 0:
-            result_message += f"。子アカウント{updated_children} 個、同じ会社のユーザー {updated_company_users} 個も同期しました。"
+            result_message += f"の子アカウント{updated_children} 個、同じ会社のユーザー {updated_company_users} 個も同期の
         
         print(f"=== ユーザーステータス変更完了===")
         print(f"結果: {result_message}")
@@ -1508,10 +1445,10 @@ async def admin_update_user_status(user_id: str, request: dict, current_user = D
         }
         
     except HTTPException as e:
-        print(f"HTTPエラー: {e.detail}")
+        print(f"✁EHTTPエラー: {e.detail}")
         raise
     except Exception as e:
-        print(f"ユーザーステータス変更エラー: {str(e)}")
+        print(f"✁Eユーザーステータス変更エラー: {str(e)}")
         import traceback
         print(traceback.format_exc())
         raise HTTPException(
@@ -1519,8 +1456,7 @@ async def admin_update_user_status(user_id: str, request: dict, current_user = D
             detail=f"ステータス変更中にエラーが発生しました: {str(e)}"
         )
 
-# YouTube接続テスト用エンドポイント
-@app.get("/chatbot/api/test-youtube")
+# YouTube接続テスト用エンドポイント@app.get("/chatbot/api/test-youtube")
 async def test_youtube_connection():
     """YouTube接続をチェックする"""
     try:
@@ -1540,7 +1476,7 @@ async def test_youtube_connection():
 
 @app.get("/chatbot/api/admin/companies", response_model=List[dict])
 async def admin_get_companies(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """会社一覧を取得(Adminのみ)"""
+    """会社一覧を取得！Edminのみの""
     # 特別な管理者のみがアクセス可能
     if current_user["email"] not in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] or not current_user.get("is_special_admin", False):
         raise HTTPException(
@@ -1554,8 +1490,8 @@ async def admin_get_companies(current_user = Depends(get_admin_or_user), db: Sup
 
 @app.post("/chatbot/api/admin/fix-company-status/{company_id}", response_model=dict)
 async def admin_fix_company_status(company_id: str, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """会社内のユーザーステータス不整合を修正する"""
-    # adminロールまたは特別な管理者のみが実行可能
+    """会社冁のユーザーステータス不整合を修正する"""
+    # adminロールまた�E特別な管理者のみが実行可能
     is_admin = current_user["role"] == "admin"
     is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
     
@@ -1584,7 +1520,7 @@ async def admin_fix_company_status(company_id: str, current_user = Depends(get_a
 
 @app.post("/chatbot/api/admin/ensure-database-integrity", response_model=dict)
 async def admin_ensure_database_integrity(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """データベース整合性をチェックして修正する"""
+    """チのタベース整合性をチェックして修正する"""
     # adminロールまたは特別な管理者のみが実行可能
     is_admin = current_user["role"] == "admin"
     is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
@@ -1730,7 +1666,7 @@ async def get_company_token_usage(current_user = Depends(get_current_user), db: 
             # 同じ会社のユーザー数をカウント            company_users_result = select_data("users", columns="id, name", filters={"company_id": company_id})
             if company_users_result and company_users_result.data:
                 company_users_count = len(company_users_result.data)
-                print(f"会社ID {company_id} のユーザー数: {company_users_count}人")
+                print(f"✁E会社ID {company_id} のユーザー数: {company_users_count}人")
             
             # 会社名を取得            company_result = select_data("companies", columns="name", filters={"id": company_id})
             if company_result and company_result.data:
@@ -1761,7 +1697,7 @@ async def get_company_token_usage(current_user = Depends(get_current_user), db: 
                     total_output_tokens = usage_data.get("total_output_tokens", 0)
                     total_conversations = usage_data.get("conversation_count", 0)
                     total_cost_usd = usage_data.get("total_cost_usd", 0.0)
-                    print(f"会社ID {company_id} の実際のトークン使用量 {total_tokens_used:,} tokens")
+                    print(f"✁E会社ID {company_id} の実際のトークン使用量 {total_tokens_used:,} tokens")
                 else:
                     print("⚠の今月のトークン使用量データない- 全期間で確認します")
                     # 全期間のチャットを取得                    usage_data_all = tracker.get_company_monthly_usage(company_id, "ALL")
@@ -1771,13 +1707,13 @@ async def get_company_token_usage(current_user = Depends(get_current_user), db: 
                         total_output_tokens = usage_data_all.get("total_output_tokens", 0)
                         total_conversations = usage_data_all.get("conversation_count", 0)
                         total_cost_usd = usage_data_all.get("total_cost_usd", 0.0)
-                        print(f"全期間での会社ID {company_id} のトークン使用量 {total_tokens_used:,} tokens")
+                        print(f"✁E全期間での会社ID {company_id} のトークン使用量 {total_tokens_used:,} tokens")
                     else:
                         print("⚠の全期間でもトークン使用量データない")
             else:
                 print("⚠の会社IDない- 個人ユーザーのトークン使用量現在未対忁")
         except Exception as e:
-            print(f"⚠ トークン使用量取得エラー: {e} - モデルチャットを使用します")
+            print(f"⚠のト�Eクン使用量取得エラー: {e} - モデルチャットを使用しまぁE)
         
         # 基本設定        basic_plan_limit = 25000000  # 25M tokens
         usage_percentage = (total_tokens_used / basic_plan_limit * 100) if basic_plan_limit > 0 else 0
@@ -1902,12 +1838,11 @@ async def upload_from_google_drive(
     current_user = Depends(get_current_user),
     db: SupabaseConnection = Depends(get_db)
 ):
-    """Google Driveからファイルをアップロード"""
+    """Google Driveからファイルをアチのロート""
     try:
-        # Google Driveハンドラー初期化
-        drive_handler = GoogleDriveHandler()
+        # Google Driveハンドラー初期化        drive_handler = GoogleDriveHandler()
         
-        print(f"Google Driveファイルアップロード開始 {file_name} (ID: {file_id})")
+        print(f"Google Driveファイルアップロード開姁E {file_name} (ID: {file_id})")
         
         # サポートされているファイル形式かチェック
         if not drive_handler.is_supported_file(mime_type):
@@ -1988,7 +1923,7 @@ async def list_drive_files(
     search_query: str = None,
     current_user = Depends(get_current_user)
 ):
-    """Google Driveファイル一覧取得"""
+    """Google Driveファイル一覧取得""
     try:
         print(f"Google Driveファイル一覧取得 フォルダID={folder_id}")
         

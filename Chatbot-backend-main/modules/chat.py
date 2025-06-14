@@ -50,7 +50,11 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db), c
     try:
         # モデルが設定されているか確認
         if model is None:
+            safe_print("❌ モデルが初期化されていません")
             raise HTTPException(status_code=500, detail="AIモデルが初期化されていません")
+        
+        safe_print(f"✅ モデル初期化確認: {model}")
+        safe_print(f"📊 モデルタイプ: {type(model)}")
         
         # メッセージがNoneでないことを確認
         if not message or not hasattr(message, 'text') or message.text is None:
@@ -166,6 +170,12 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db), c
         # safe_print(f"知識ベースの生データ長: {len(knowledge_base.raw_text) if knowledge_base.raw_text else 0}")
         safe_print(f"アクティブなソース: {active_sources}")
         active_knowledge_text = await get_active_resources_content_by_ids(active_sources, db)
+        
+        # 知識ベースのサイズを制限（最大50万文字）
+        MAX_KNOWLEDGE_SIZE = 500000
+        if active_knowledge_text and len(active_knowledge_text) > MAX_KNOWLEDGE_SIZE:
+            safe_print(f"⚠️ 知識ベースが大きすぎます ({len(active_knowledge_text)} 文字)。{MAX_KNOWLEDGE_SIZE} 文字に制限します。")
+            active_knowledge_text = active_knowledge_text[:MAX_KNOWLEDGE_SIZE] + "\n\n[注意: 知識ベースが大きいため、一部のみ表示しています]"
         # アクティブな知識ベースが空の場合はエラーメッセージを返す
         if not active_knowledge_text or (isinstance(active_knowledge_text, str) and not active_knowledge_text.strip()):
             response_text = f"申し訳ございません。アクティブな知識ベースの内容が空です。管理画面で別のリソースを有効にしてください。"
@@ -215,7 +225,7 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db), c
                 "limit_reached": limit_reached
             }
             
-        # 直近のメッセージを取得（最大5件）
+        # 直近のメッセージを取得（最大3件に制限）
         recent_messages = []
         try:
             if message.user_id:
@@ -226,7 +236,7 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db), c
                         FROM chat_history
                         WHERE employee_id = %s
                         ORDER BY timestamp DESC
-                        LIMIT 5
+                        LIMIT 3
                         """,
                         (message.user_id,)
                     )
@@ -238,7 +248,7 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db), c
             safe_print(f"会話履歴取得エラー: {str(e)}")
             recent_messages = []
         
-        # 会話履歴の構築
+        # 会話履歴の構築（各メッセージを制限）
         conversation_history = ""
         if recent_messages:
             conversation_history = "直近の会話履歴：\n"
@@ -247,6 +257,13 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db), c
                 try:
                     user_msg = msg.get('user_message', '') or ''
                     bot_msg = msg.get('bot_response', '') or ''
+                    
+                    # 各メッセージを200文字に制限
+                    if len(user_msg) > 200:
+                        user_msg = user_msg[:200] + "..."
+                    if len(bot_msg) > 200:
+                        bot_msg = bot_msg[:200] + "..."
+                    
                     conversation_history += f"ユーザー: {user_msg}\n"
                     conversation_history += f"アシスタント: {bot_msg}\n\n"
                 except Exception as e:
@@ -285,15 +302,87 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db), c
         {message_text}
         """
 
+        # プロンプトサイズの最終チェック
+        MAX_PROMPT_SIZE = 800000  # 80万文字制限
+        if len(prompt) > MAX_PROMPT_SIZE:
+            safe_print(f"⚠️ プロンプトが大きすぎます ({len(prompt)} 文字)。知識ベースをさらに制限します。")
+            # 知識ベースをさらに制限
+            reduced_knowledge_size = MAX_PROMPT_SIZE - (len(prompt) - len(active_knowledge_text)) - 10000
+            if reduced_knowledge_size > 0:
+                active_knowledge_text = active_knowledge_text[:reduced_knowledge_size] + "\n\n[注意: プロンプトサイズ制限のため、知識ベースを短縮しています]"
+                # プロンプトを再構築
+                prompt = f"""
+        あなたは親切で丁寧な対応ができる{current_company_name}のアシスタントです。
+        以下の知識ベースを参考に、ユーザーの質問に対して可能な限り具体的で役立つ回答を提供してください。
+
+        回答の際の注意点：
+        1. 常に丁寧な言葉遣いを心がけ、ユーザーに対して敬意を持って接してください
+        2. 知識ベースに情報がない場合でも、一般的な文脈で回答できる場合は適切に対応してください
+        3. ユーザーが「もっと詳しく」などと質問した場合は、前回の回答内容に関連する詳細情報を提供してください。「どのような情報について詳しく知りたいですか？」などと聞き返さないでください。
+        4. 可能な限り具体的で実用的な情報を提供してください
+        5. 知識ベースにOCRで抽出されたテキスト（PDF (OCR)と表示されている部分）が含まれている場合は、それが画像から抽出されたテキストであることを考慮してください
+        6. OCRで抽出されたテキストには多少の誤りがある可能性がありますが、文脈から適切に解釈して回答してください
+        7. 知識ベースの情報を使用して回答した場合は、回答の最後に情報の出典を「情報ソース: [ドキュメント名]（[セクション名]、[ページ番号]）」の形式で必ず記載してください。複数のソースを参照した場合は、それぞれを記載してください。
+        8. 「こんにちは」「おはよう」などの単純な挨拶のみの場合は、情報ソースを記載しないでください。それ以外の質問には基本的に情報ソースを記載してください。
+        9. 回答可能かどうかが判断できる質問に対しては、最初に「はい」または「いいえ」で簡潔に答えてから、具体的な説明や補足情報を記載してください
+        
+        知識ベース内容（アクティブなリソースのみ）：
+        {active_knowledge_text}
+
+        {conversation_history}
+
+        ユーザーの質問：
+        {message_text}
+        """
+            else:
+                safe_print("❌ プロンプトが大きすぎて制限できません")
+                return {
+                    "response": "申し訳ございません。知識ベースが大きすぎるため、現在処理できません。管理者にお問い合わせください。",
+                    "source": "",
+                    "remaining_questions": remaining_questions,
+                    "limit_reached": limit_reached
+                }
+
         # Geminiによる応答生成
         try:
+            safe_print(f"🤖 Gemini API呼び出し開始 - モデル: {model}")
+            safe_print(f"📝 プロンプト長: {len(prompt)} 文字")
+            
             response = model.generate_content(prompt)
+            
+            safe_print(f"📨 Gemini API応答受信: {response}")
+            
             if not response or not hasattr(response, 'text'):
+                safe_print(f"❌ 無効な応答: response={response}, hasattr(text)={hasattr(response, 'text') if response else 'N/A'}")
                 raise ValueError("AIモデルからの応答が無効です")
+            
             response_text = response.text
+            safe_print(f"✅ 応答テキスト取得成功: {len(response_text)} 文字")
+            
         except Exception as model_error:
-            safe_print(f"AIモデル応答生成エラー: {str(model_error)}")
-            response_text = "申し訳ございません。応答の生成中にエラーが発生しました。しばらく経ってからもう一度お試しください。"
+            error_str = str(model_error)
+            safe_print(f"❌ AIモデル応答生成エラー: {error_str}")
+            safe_print(f"🔍 エラータイプ: {type(model_error)}")
+            
+            # より詳細なエラー情報をログ出力
+            import traceback
+            safe_print(f"📋 エラートレースバック:")
+            safe_print(traceback.format_exc())
+            
+            # クォータ制限エラーの場合の特別な処理
+            if "429" in error_str or "quota" in error_str.lower() or "rate limit" in error_str.lower():
+                response_text = "申し訳ございません。現在、AIサービスの利用制限に達しています。しばらく時間をおいてから再度お試しください。"
+                safe_print("⏸️ 利用制限の更新をスキップ: AIモデル応答生成エラー: " + error_str)
+                
+                # エラー応答を返す（利用制限は更新しない）
+                return {
+                    "response": response_text,
+                    "source": "",
+                    "remaining_questions": remaining_questions,
+                    "limit_reached": limit_reached
+                }
+            else:
+                response_text = f"申し訳ございません。応答の生成中にエラーが発生しました。エラー詳細: {error_str[:100]}..."
         
         # カテゴリと感情を分析するプロンプト
         analysis_prompt = f"""
@@ -332,7 +421,13 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db), c
                 raise ValueError("分析応答が無効です")
             analysis_text = analysis_response.text
         except Exception as analysis_error:
-            safe_print(f"分析応答生成エラー: {str(analysis_error)}")
+            error_str = str(analysis_error)
+            safe_print(f"分析応答生成エラー: {error_str}")
+            
+            # クォータ制限エラーの場合でも分析は継続（デフォルト値を使用）
+            if "429" in error_str or "quota" in error_str.lower() or "rate limit" in error_str.lower():
+                safe_print("分析でクォータ制限エラー、デフォルト値を使用")
+            
             analysis_text = '{"category": "未分類", "sentiment": "neutral", "source": {"name": "", "section": "", "page": ""}}'
         
         # JSON部分を抽出
