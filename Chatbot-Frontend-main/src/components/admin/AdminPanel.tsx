@@ -485,7 +485,7 @@ const AdminPanel: React.FC = () => {
     setIsCompanyDetailsLoading(true);
     try {
       console.log("会社詳細情報を取得中...");
-      const response = await api.get(`${import.meta.env.VITE_API_URL}/admin/users`);
+      const response = await api.get("/admin/company-employees");
       console.log("会社詳細情報取得結果:", response.data);
       setCompanyDetails(response.data);
     } catch (error) {

@@ -1,4 +1,4 @@
-"""
+﻿"""
 メインアプリケーションファイル
 FastAPIアプリケーションの設定とルーチE��ングを行いまぁEmain.py
 """
@@ -59,10 +59,11 @@ async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"グローバル例外ハンドラーがエラーをキャチE��しました: {str(exc)}")
     logger.error(traceback.format_exc())
     
-    # 'int' object has no attribute 'strip' エラーの特別処琁E    if "'int' object has no attribute 'strip'" in str(exc):
+    # 'int' object has no attribute 'strip' エラーの特別処理
+    if "'int' object has no attribute 'strip'" in str(exc):
         return JSONResponse(
             status_code=500,
-            content={"detail": "チE�Eタ型エラーが発生しました。管琁E��E��連絡してください、E}
+            content={"detail": "データ型エラーが発生しました。管理者に連絡してください。"}
         )
     
     # そ�E他�E例外�E通常のエラーレスポンスを返す

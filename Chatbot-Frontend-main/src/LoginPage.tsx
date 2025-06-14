@@ -24,6 +24,7 @@ import HomeIcon from "@mui/icons-material/Home";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import { validateEmail, validatePassword } from "./utils/validation";
+import { shouldShowDemoBadge } from "./config/constants";
 
 function LoginPage() {
   const [email, setEmail] = useState("");
@@ -335,30 +336,32 @@ function LoginPage() {
                 </Box>
               </Box>
 
-              {/* デモ版表示 */}
-              <Box
-                sx={{
-                  width: "100%",
-                  p: { xs: 2, sm: 2.5 },
-                  bgcolor: "rgba(37, 99, 235, 0.03)",
-                  color: "text.primary",
-                  borderRadius: 3,
-                  textAlign: "center",
-                  border: "1px solid rgba(37, 99, 235, 0.08)",
-                  mb: 3,
-                }}
-              >
-                <Typography
-                  variant="subtitle1"
-                  component="div"
-                  sx={{ fontWeight: 600, color: "primary.main", mb: 0.5 }}
+              {/* デモ版表示 - 環境に応じて表示制御 */}
+              {shouldShowDemoBadge() && (
+                <Box
+                  sx={{
+                    width: "100%",
+                    p: { xs: 2, sm: 2.5 },
+                    bgcolor: "rgba(37, 99, 235, 0.03)",
+                    color: "text.primary",
+                    borderRadius: 3,
+                    textAlign: "center",
+                    border: "1px solid rgba(37, 99, 235, 0.08)",
+                    mb: 3,
+                  }}
                 >
-                  🎉 デモ版 🎉
-                </Typography>
-                <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                  資料アップロードは2回、質問は10回までご利用いただけます
-                </Typography>
-              </Box>
+                  <Typography
+                    variant="subtitle1"
+                    component="div"
+                    sx={{ fontWeight: 600, color: "primary.main", mb: 0.5 }}
+                  >
+                    🎉 デモ版 🎉
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                    資料アップロードは2回、質問は10回までご利用いただけます
+                  </Typography>
+                </Box>
+              )}
             </Box>
 
             <Box

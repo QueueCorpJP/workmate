@@ -40,6 +40,8 @@ import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import CloseIcon from "@mui/icons-material/Close";
+import BusinessIcon from "@mui/icons-material/Business";
+import PeopleIcon from "@mui/icons-material/People";
 import { EmployeeUsageItem, CompanyEmployee, categoryColors } from "./types";
 import LoadingIndicator from "./LoadingIndicator";
 import EmptyState from "./EmptyState";
@@ -111,7 +113,10 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
 }) => {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin" || 
-    (user?.email && ["queue@queuefood.co.jp", "queue@queue-tech.jp"].includes(user.email));
+    (user?.email && ["queue@queuefood.co.jp", "queue@queueu-tech.jp"].includes(user.email));
+  const isQueueTechAdmin = user?.email === "queue@queueu-tech.jp";
+  
+
   
   const [emailError, setEmailError] = useState<string>("");
   const [passwordError, setPasswordError] = useState<string>("");
@@ -122,6 +127,11 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
   const [selectedUserForHistory, setSelectedUserForHistory] = useState<CompanyEmployee | null>(null);
   const [planHistory, setPlanHistory] = useState<PlanHistoryItem[]>([]);
   const [isPlanHistoryLoading, setIsPlanHistoryLoading] = useState(false);
+  
+  // queue@queueu-tech.jp用の社員表示ダイアログ
+  const [employeeDialogOpen, setEmployeeDialogOpen] = useState(false);  
+  const [selectedCompanyAdmin, setSelectedCompanyAdmin] = useState<CompanyEmployee | null>(null);
+  const [selectedCompanyEmployees, setSelectedCompanyEmployees] = useState<CompanyEmployee[]>([]);
 
   const handleEmailChange = (email: string) => {
     onNewEmployeeEmailChange(email);
@@ -154,7 +164,6 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
   const handleCreateEmployee = (role: string) => {
     // admin権限チェック
     if (!isAdmin) {
-      console.log("admin権限がないため、アカウント作成をキャンセルしました");
       return;
     }
     
@@ -167,53 +176,171 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
 
   const passwordStrength = getPasswordStrength(newEmployeePassword);
 
+  // 社長ごとに社員をグループ化する関数（queue@queueu-tech.jp用）
+  const groupEmployeesByPresident = () => {
+    console.log("=== 社長別グループ化開始 ===");
+    console.log("全社員データ:", companyEmployees);
+    
+    // まず社長（userロール）を抽出
+    const presidents = companyEmployees.filter(employee => 
+      employee.role === 'user' || employee.role === 'admin'
+    );
+    
+    console.log("社長一覧:", presidents);
+    
+    // 各社長に対して、同じ会社の社員を紐づける
+    const result = presidents.map(president => {
+      // 社長の会社IDを取得（emailドメインを使用）
+      const presidentCompanyId = president.email.split('@')[1];
+      
+      // 同じ会社の社員（employeeロール）を検索
+      const employees = companyEmployees.filter(employee => {
+        if (employee.role !== 'employee') return false;
+        
+        const employeeCompanyId = employee.email.split('@')[1];
+        return employeeCompanyId === presidentCompanyId;
+      });
+      
+      return {
+        president,
+        employees,
+        companyId: presidentCompanyId
+      };
+    });
+    
+    return result;
+  };
+
+  // 社長カードをクリックした時の処理
+  const handlePresidentClick = (president: CompanyEmployee) => {
+    const groupedData = groupEmployeesByPresident();
+    const presidentData = groupedData.find(group => group.president.id === president.id);
+    
+    if (presidentData) {
+      setSelectedCompanyAdmin(president);
+      setSelectedCompanyEmployees(presidentData.employees);
+      setEmployeeDialogOpen(true);
+    }
+  };
+
+  // 社員ダイアログを閉じる
+  const handleCloseEmployeeDialog = () => {
+    setEmployeeDialogOpen(false);
+    setSelectedCompanyAdmin(null);
+    setSelectedCompanyEmployees([]);
+  };
+
+  // queue@queueu-tech.jp用の社長カード表示
+  const renderPresidentCards = () => {
+    const groupedData = groupEmployeesByPresident();
+    
+    if (groupedData.length === 0) {
+      return (
+        <EmptyState
+          message="社長データがありません"
+          icon="custom"
+          customIcon={<BusinessIcon />}
+        />
+      );
+    }
+
+    return (
+      <Box>
+        <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
+          社長一覧
+        </Typography>
+        <Grid container spacing={3}>
+          {groupedData.map((group, index) => (
+            <Grid item xs={12} sm={6} md={4} key={group.president.id}>
+              <Card
+                sx={{
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    transform: 'translateY(-4px)',
+                    boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
+                    borderColor: 'primary.main',
+                  },
+                  border: '2px solid rgba(0,0,0,0.08)',
+                  borderRadius: 3,
+                }}
+                onClick={() => handlePresidentClick(group.president)}
+              >
+                <CardContent sx={{ p: 3 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                    <Avatar sx={{ bgcolor: 'primary.main', width: 56, height: 56, mr: 2 }}>
+                      {(group.president.name || group.president.email).charAt(0).toUpperCase()}
+                    </Avatar>
+                    <Box sx={{ flexGrow: 1 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+                        {group.president.name || group.president.email.split('@')[0]}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        社長・管理者
+                      </Typography>
+                    </Box>
+                  </Box>
+                  
+                  <Divider sx={{ my: 2 }} />
+                  
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      メールアドレス
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      {group.president.email}
+                    </Typography>
+                  </Box>
+                  
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      会社ドメイン
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      {group.companyId}
+                    </Typography>
+                  </Box>
+                  
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
+                    <Chip
+                      label={group.president.usage_limits?.is_unlimited ? "本番版" : "デモ版"}
+                      color={group.president.usage_limits?.is_unlimited ? "success" : "warning"}
+                      size="small"
+                    />
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <PeopleIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                      <Typography variant="body2" color="text.secondary">
+                        社員 {group.employees.length}名
+                      </Typography>
+                    </Box>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+      </Box>
+    );
+  };
+
   const handleToggleDemo = async (employee: CompanyEmployee) => {
     // admin権限チェック
     if (!isAdmin) {
-      console.log("admin権限がないため、プラン変更をキャンセルしました");
       return;
     }
     
     try {
-      console.log("=== プラン変更開始 ===");
-      console.log("対象ユーザー:", employee.email, "(ID:", employee.id, ")");
-      console.log("現在のステータス:", employee.usage_limits?.is_unlimited ? "本番版" : "デモ版");
-      
       // is_unlimitedの逆の値を設定（現在がfalse(デモ版)ならtrue(本番版)に、現在がtrue(本番版)ならfalse(デモ版)に）
       const newIsUnlimited = !employee.usage_limits?.is_unlimited;
-      console.log("新しいステータス:", newIsUnlimited ? "本番版" : "デモ版");
-      
-      console.log("APIリクエスト送信中...", `/admin/update-user-status/${employee.id}`);
-      console.log("送信データ:", { is_unlimited: newIsUnlimited });
       
       const response = await api.post(`/admin/update-user-status/${employee.id}`, {
         is_unlimited: newIsUnlimited
       });
       
-      console.log("APIレスポンス:", response.data);
-      
-      // 成功メッセージを表示（同期情報を含む）
-      if (response.data && response.data.message) {
-        console.log("ステータス変更完了:", response.data.message);
-        
-        // employeeユーザーの同期情報を表示
-        if (response.data.updated_company_users > 0) {
-          console.log(`同じ会社の ${response.data.updated_company_users} 人のemployeeユーザーも同期されました`);
-        }
-      }
-      
-      console.log("社員一覧を再読み込み中...");
       // 社員一覧を再読み込み
       onRefreshCompanyEmployees();
-      console.log("=== プラン変更完了 ===");
     } catch (error: any) {
-      console.error("=== プラン変更エラー ===", error);
-      if (error?.response) {
-        console.error("レスポンスエラー:", error.response.status, error.response.data);
-      }
-      if (error?.request) {
-        console.error("リクエストエラー:", error.request);
-      }
+      // エラーハンドリングは必要に応じて追加
     }
   };
 
@@ -224,9 +351,7 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
     setIsPlanHistoryLoading(true);
     
     try {
-      console.log("プラン履歴を取得中...", employee.id);
       const response = await api.get("/plan-history");
-      console.log("プラン履歴取得結果:", response.data);
       
       if (response.data && response.data.history) {
         // 選択されたユーザーの履歴のみフィルタリング
@@ -238,7 +363,6 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
         setPlanHistory([]);
       }
     } catch (error) {
-      console.error("プラン履歴の取得に失敗しました:", error);
       setPlanHistory([]);
     } finally {
       setIsPlanHistoryLoading(false);
@@ -450,7 +574,11 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
           <LoadingIndicator />
         ) : companyEmployees.length === 0 ? (
           <EmptyState message="社員データがありません" />
+        ) : isQueueTechAdmin ? (
+          // queue@queueu-tech.jp専用表示
+          renderPresidentCards()
         ) : (
+          // 通常のテーブル表示
           <TableContainer component={Paper} elevation={2} sx={{ mb: 4 }}>
             <Table sx={{ minWidth: 650 }}>
               <TableHead>
@@ -671,18 +799,20 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
         )}
       </Box>
 
-      {/* 利用状況カード */}
-      <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-        詳細な利用状況
-      </Typography>
+              {/* 利用状況カード（queue@queueu-tech.jpは非表示） */}
+      {!isQueueTechAdmin && (
+        <>
+          <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+            詳細な利用状況
+          </Typography>
 
-      {isEmployeeUsageLoading ? (
-        <LoadingIndicator />
-      ) : employeeUsage.length === 0 ? (
-        <EmptyState message="利用状況データがありません" />
-      ) : (
-        <Grid container spacing={3}>
-          {employeeUsage.map((employee, index) => (
+          {isEmployeeUsageLoading ? (
+            <LoadingIndicator />
+          ) : employeeUsage.length === 0 ? (
+            <EmptyState message="利用状況データがありません" />
+          ) : (
+            <Grid container spacing={3}>
+              {employeeUsage.map((employee, index) => (
             <Grid
               item
               xs={12}
@@ -837,6 +967,8 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
             </Grid>
           ))}
         </Grid>
+          )}
+        </>
       )}
 
       {/* 社員詳細ダイアログ */}
@@ -988,6 +1120,168 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
 
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={handleClosePlanHistory} variant="outlined">
+            閉じる
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 社員一覧ダイアログ（queue@queueu-tech.jp専用） */}
+      <Dialog
+        open={employeeDialogOpen}
+        onClose={handleCloseEmployeeDialog}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            maxHeight: "90vh",
+          },
+        }}
+      >
+        <DialogTitle
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            pb: 1,
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+            <BusinessIcon color="primary" />
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              社員一覧
+            </Typography>
+            {selectedCompanyAdmin && (
+              <Chip
+                label={selectedCompanyAdmin.email.split('@')[1]}
+                size="small"
+                color="primary"
+                variant="outlined"
+              />
+            )}
+          </Box>
+          <IconButton onClick={handleCloseEmployeeDialog} size="small">
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ pt: 1 }}>
+          {selectedCompanyAdmin && (
+            <>
+              {/* 管理者情報 */}
+              <Paper sx={{ p: 2, mb: 3, bgcolor: 'rgba(25, 118, 210, 0.04)' }}>
+                <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'primary.main' }}>
+                  管理者アカウント
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <Avatar sx={{ bgcolor: 'primary.main' }}>
+                    {(selectedCompanyAdmin.name || selectedCompanyAdmin.email).charAt(0).toUpperCase()}
+                  </Avatar>
+                  <Box sx={{ flexGrow: 1 }}>
+                    <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                      {selectedCompanyAdmin.name || selectedCompanyAdmin.email}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {selectedCompanyAdmin.email}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                    <Chip
+                      label={selectedCompanyAdmin.usage_limits?.is_unlimited ? "本番版" : "デモ版"}
+                      color={selectedCompanyAdmin.usage_limits?.is_unlimited ? "success" : "warning"}
+                      size="small"
+                    />
+                    <IconButton
+                      size="small"
+                      onClick={() => handleToggleDemo(selectedCompanyAdmin)}
+                      color="primary"
+                    >
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleOpenPlanHistory(selectedCompanyAdmin)}
+                      color="primary"
+                    >
+                      <HistoryIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                </Box>
+              </Paper>
+
+              {/* 社員一覧 */}
+              <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
+                社員アカウント ({selectedCompanyEmployees.length}名)
+              </Typography>
+              
+              {selectedCompanyEmployees.length > 0 ? (
+                <Grid container spacing={2}>
+                  {selectedCompanyEmployees.map((employee) => (
+                    <Grid item xs={12} sm={6} key={employee.id}>
+                      <Card sx={{ 
+                        transition: 'all 0.2s',
+                        '&:hover': { 
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                        }
+                      }}>
+                        <CardContent sx={{ p: 2 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                            <Avatar sx={{ width: 40, height: 40, bgcolor: 'grey.400' }}>
+                              {(employee.name || employee.email).charAt(0).toUpperCase()}
+                            </Avatar>
+                            <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                              <Typography variant="body1" sx={{ fontWeight: 600 }} noWrap>
+                                {employee.name || employee.email}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary" noWrap>
+                                {employee.email}
+                              </Typography>
+                            </Box>
+                          </Box>
+                          
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Chip
+                              label={employee.usage_limits?.is_unlimited ? "本番版" : "デモ版"}
+                              color={employee.usage_limits?.is_unlimited ? "success" : "warning"}
+                              size="small"
+                            />
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleToggleDemo(employee)}
+                              >
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleOpenPlanHistory(employee)}
+                              >
+                                <HistoryIcon fontSize="small" />
+                              </IconButton>
+                            </Box>
+                          </Box>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  ))}
+                </Grid>
+              ) : (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <PeopleIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+                  <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+                    社員アカウントがありません
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    この会社にはまだ社員アカウントが作成されていません。
+                  </Typography>
+                </Box>
+              )}
+            </>
+          )}
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={handleCloseEmployeeDialog} variant="outlined">
             閉じる
           </Button>
         </DialogActions>

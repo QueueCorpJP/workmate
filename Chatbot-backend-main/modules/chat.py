@@ -429,9 +429,18 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db), c
         
         safe_print(f"返り値: remaining_questions={remaining_questions}, limit_reached={limit_reached}")
         
+        # ソース情報が有効な場合のみ返す（source_docとsource_pageが空でない場合）
+        source_text = ""
+        if source_doc and source_doc.strip():
+            source_text = source_doc
+            if source_page and str(source_page).strip():
+                source_text += f" (P.{source_page})"
+        
+        safe_print(f"最終ソース情報: '{source_text}'")
+        
         return {
             "response": response_text,
-            "source": (source_doc or "") + (f" (P.{source_page})" if source_page else ""),
+            "source": source_text,
             "remaining_questions": remaining_questions,
             "limit_reached": limit_reached
         }

@@ -18,7 +18,15 @@ import {
   InputAdornment,
   Fade,
   Chip,
-
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TablePagination,
+  Collapse,
+  Stack,
 } from "@mui/material";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
@@ -27,7 +35,14 @@ import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import EmailIcon from "@mui/icons-material/Email";
 import BusinessIcon from "@mui/icons-material/Business";
+import HistoryIcon from "@mui/icons-material/History";
+import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
+import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
+import TrendingUpIcon from "@mui/icons-material/TrendingUp";
+import TrendingDownIcon from "@mui/icons-material/TrendingDown";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import LoadingIndicator from "./LoadingIndicator";
+import api from "../../api";
 
 interface UserManagementTabProps {
   isSpecialAdmin: boolean;
@@ -47,6 +62,34 @@ interface UserManagementTabProps {
   user?: any;
   newCompanyName?: string;
   onNewCompanyNameChange?: (name: string) => void;
+}
+
+interface PlanHistoryItem {
+  id: string;
+  user_id: string;
+  user_name?: string;
+  user_email?: string;
+  from_plan: string;
+  to_plan: string;
+  changed_at: string;
+  duration_days: number | null;
+}
+
+interface UserPlanHistory {
+  user_id: string;
+  user_name?: string;
+  user_email?: string;
+  company_id?: string;
+  current_plan: string;
+  latest_change: string;
+  total_changes: number;
+  changes: {
+    id: string;
+    from_plan: string;
+    to_plan: string;
+    changed_at: string;
+    duration_days: number | null;
+  }[];
 }
 
 const UserManagementTab: React.FC<UserManagementTabProps> = ({
@@ -490,9 +533,390 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
               </CardContent>
             </Card>
           </Grid>
+
+          {/* プラン履歴セクション */}
+          <Grid item xs={12}>
+            <PlanHistorySection />
+          </Grid>
         </Grid>
       </Box>
     </Fade>
+  );
+};
+
+const PlanHistorySection: React.FC = () => {
+  const [userPlanHistories, setUserPlanHistories] = React.useState<UserPlanHistory[]>([]);
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [page, setPage] = React.useState(0);
+  const [rowsPerPage, setRowsPerPage] = React.useState(5);
+  const [expandedRows, setExpandedRows] = React.useState<Set<string>>(new Set());
+
+  const fetchPlanHistory = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await api.get("/plan-history");
+      if (response.data && response.data.success && response.data.data && response.data.data.users) {
+        setUserPlanHistories(response.data.data.users);
+      } else {
+        setUserPlanHistories([]);
+      }
+    } catch (error) {
+      console.error("プラン履歴の取得に失敗しました:", error);
+      setError("プラン履歴の取得に失敗しました");
+      setUserPlanHistories([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchPlanHistory();
+  }, []);
+
+  const getPlanDisplayName = (plan: string) => {
+    switch (plan) {
+      case "demo":
+        return "デモ版";
+      case "production":
+        return "本番版";
+      case "starter":
+        return "スタータープラン";
+      case "business":
+        return "ビジネスプラン";
+      case "enterprise":
+        return "エンタープライズプラン";
+      default:
+        return plan;
+    }
+  };
+
+  const getPlanColor = (plan: string) => {
+    switch (plan) {
+      case "demo":
+        return "warning";
+      case "production":
+        return "success";
+      case "starter":
+        return "info";
+      case "business":
+        return "primary";
+      case "enterprise":
+        return "secondary";
+      default:
+        return "default";
+    }
+  };
+
+  const getChangeIcon = (fromPlan: string, toPlan: string) => {
+    if (fromPlan === "demo" && toPlan === "production") {
+      return <TrendingUpIcon color="success" fontSize="small" />;
+    } else if (fromPlan === "production" && toPlan === "demo") {
+      return <TrendingDownIcon color="warning" fontSize="small" />;
+    }
+    return <HistoryIcon color="primary" fontSize="small" />;
+  };
+
+  const formatRelativeTime = (dateString: string) => {
+    const now = new Date();
+    const date = new Date(dateString);
+    const diffTime = Math.abs(now.getTime() - date.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 1) return "1日前";
+    if (diffDays < 7) return `${diffDays}日前`;
+    if (diffDays < 30) {
+      const weeks = Math.floor(diffDays / 7);
+      return `${weeks}週間前`;
+    }
+    if (diffDays < 365) {
+      const months = Math.floor(diffDays / 30);
+      return `${months}ヶ月前`;
+    }
+    const years = Math.floor(diffDays / 365);
+    return `${years}年前`;
+  };
+
+  const formatDetailedDuration = (durationDays: number | null) => {
+    if (!durationDays) return "期間不明";
+    
+    const years = Math.floor(durationDays / 365);
+    const months = Math.floor((durationDays % 365) / 30);
+    const weeks = Math.floor(((durationDays % 365) % 30) / 7);
+    const days = ((durationDays % 365) % 30) % 7;
+    
+    const parts = [];
+    if (years > 0) parts.push(`${years}年`);
+    if (months > 0) parts.push(`${months}ヶ月`);
+    if (weeks > 0) parts.push(`${weeks}週間`);
+    if (days > 0) parts.push(`${days}日間`);
+    
+    if (parts.length === 0) return "1日未満";
+    return `${parts.join('')} (${durationDays}日間)`;
+  };
+
+  const handleChangePage = (event: unknown, newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
+  const toggleRowExpansion = (userId: string) => {
+    const newExpandedRows = new Set(expandedRows);
+    if (expandedRows.has(userId)) {
+      newExpandedRows.delete(userId);
+    } else {
+      newExpandedRows.add(userId);
+    }
+    setExpandedRows(newExpandedRows);
+  };
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent>
+          <LoadingIndicator message="プラン履歴を読み込み中..." />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardContent>
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+          <Button
+            variant="outlined"
+            startIcon={<HistoryIcon />}
+            onClick={fetchPlanHistory}
+          >
+            再試行
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card
+      elevation={0}
+      sx={{
+        borderRadius: 2,
+        border: "1px solid rgba(0, 0, 0, 0.12)",
+        position: "relative",
+        overflow: "hidden",
+        transition: "all 0.3s ease",
+        "&:hover": {
+          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
+        },
+        "&::before": {
+          content: '""',
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "4px",
+          background: "linear-gradient(135deg, #9C27B0, #E1BEE7)",
+          opacity: 0.9,
+        },
+      }}
+    >
+      <CardContent sx={{ p: { xs: 1.5, sm: 2 } }}>
+        <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+          <HistoryIcon sx={{ mr: 1.5, color: "#9C27B0", fontSize: "1.8rem" }} />
+          <Typography
+            variant="h6"
+            sx={{
+              fontWeight: 600,
+              color: "#424242",
+              flex: 1,
+            }}
+          >
+            プラン履歴
+          </Typography>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<HistoryIcon />}
+            onClick={fetchPlanHistory}
+            disabled={isLoading}
+            sx={{ 
+              borderRadius: 1.5,
+              fontSize: "0.75rem",
+            }}
+          >
+            更新
+          </Button>
+        </Box>
+
+        <Divider sx={{ mb: 2 }} />
+
+        {userPlanHistories.length === 0 ? (
+          <Box sx={{ textAlign: 'center', py: 4 }}>
+            <HistoryIcon sx={{ fontSize: '3rem', color: 'text.disabled', mb: 1 }} />
+            <Typography variant="body2" color="text.secondary">
+              プラン変更履歴がありません
+            </Typography>
+          </Box>
+        ) : (
+          <>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: 'grey.50' }}>
+                    <TableCell></TableCell>
+                    <TableCell><Typography variant="caption" sx={{ fontWeight: 600 }}>ユーザー</Typography></TableCell>
+                    <TableCell><Typography variant="caption" sx={{ fontWeight: 600 }}>現在のプラン</Typography></TableCell>
+                    <TableCell><Typography variant="caption" sx={{ fontWeight: 600 }}>変更回数</Typography></TableCell>
+                    <TableCell><Typography variant="caption" sx={{ fontWeight: 600 }}>最終変更日</Typography></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {userPlanHistories
+                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                    .map((user) => (
+                      <React.Fragment key={user.user_id}>
+                        <TableRow 
+                          hover 
+                          sx={{ 
+                            cursor: 'pointer',
+                            '&:hover': { bgcolor: 'grey.50' }
+                          }}
+                        >
+                          <TableCell sx={{ width: 48 }}>
+                            <IconButton
+                              size="small"
+                              onClick={() => toggleRowExpansion(user.user_id)}
+                            >
+                              {expandedRows.has(user.user_id) ? 
+                                <KeyboardArrowUpIcon fontSize="small" /> : 
+                                <KeyboardArrowDownIcon fontSize="small" />
+                              }
+                            </IconButton>
+                          </TableCell>
+                          <TableCell>
+                            <Box>
+                              <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                                {user.user_name || "ユーザー"}
+                              </Typography>
+                              {user.user_email && (
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
+                                  {user.user_email}
+                                </Typography>
+                              )}
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={getPlanDisplayName(user.current_plan)}
+                              color={getPlanColor(user.current_plan) as any}
+                              size="small"
+                              sx={{ fontSize: '0.7rem' }}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="caption">
+                              {user.total_changes}回
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="caption">
+                              {formatRelativeTime(user.latest_change)}
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell sx={{ py: 0 }} colSpan={5}>
+                            <Collapse in={expandedRows.has(user.user_id)} timeout="auto" unmountOnExit>
+                              <Box sx={{ py: 1, px: 1, bgcolor: 'grey.25' }}>
+                                <Typography variant="caption" sx={{ mb: 1, fontWeight: 600, display: 'block' }}>
+                                  変更履歴詳細
+                                </Typography>
+                                <Table size="small">
+                                  <TableHead>
+                                    <TableRow>
+                                      <TableCell sx={{ py: 0.5 }}><Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.7rem' }}>変更前</Typography></TableCell>
+                                      <TableCell sx={{ py: 0.5 }}><Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.7rem' }}>変更後</Typography></TableCell>
+                                      <TableCell sx={{ py: 0.5 }}><Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.7rem' }}>変更日時</Typography></TableCell>
+                                      <TableCell sx={{ py: 0.5 }}><Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.7rem' }}>利用期間</Typography></TableCell>
+                                    </TableRow>
+                                  </TableHead>
+                                  <TableBody>
+                                    {user.changes.slice(0, 3).map((change) => (
+                                      <TableRow key={change.id}>
+                                        <TableCell sx={{ py: 0.5 }}>
+                                          <Chip
+                                            label={getPlanDisplayName(change.from_plan)}
+                                            color={getPlanColor(change.from_plan) as any}
+                                            size="small"
+                                            variant="outlined"
+                                            sx={{ fontSize: '0.65rem', height: '20px' }}
+                                          />
+                                        </TableCell>
+                                        <TableCell sx={{ py: 0.5 }}>
+                                          <Stack direction="row" spacing={0.5} alignItems="center">
+                                            {getChangeIcon(change.from_plan, change.to_plan)}
+                                            <Chip
+                                              label={getPlanDisplayName(change.to_plan)}
+                                              color={getPlanColor(change.to_plan) as any}
+                                              size="small"
+                                              sx={{ fontSize: '0.65rem', height: '20px' }}
+                                            />
+                                          </Stack>
+                                        </TableCell>
+                                        <TableCell sx={{ py: 0.5 }}>
+                                          <Typography variant="caption" sx={{ fontSize: '0.7rem' }}>
+                                            {formatRelativeTime(change.changed_at)}
+                                          </Typography>
+                                        </TableCell>
+                                        <TableCell sx={{ py: 0.5 }}>
+                                          <Typography variant="caption" sx={{ fontSize: '0.7rem' }}>
+                                            {change.duration_days ? 
+                                              formatDetailedDuration(change.duration_days) : 
+                                              "期間不明"
+                                            }
+                                          </Typography>
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </Box>
+                            </Collapse>
+                          </TableCell>
+                        </TableRow>
+                      </React.Fragment>
+                    ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            <TablePagination
+              rowsPerPageOptions={[5, 10]}
+              component="div"
+              count={userPlanHistories.length}
+              rowsPerPage={rowsPerPage}
+              page={page}
+              onPageChange={handleChangePage}
+              onRowsPerPageChange={handleChangeRowsPerPage}
+              labelRowsPerPage="行数:"
+              labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+              sx={{
+                '& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows': {
+                  fontSize: '0.75rem',
+                },
+              }}
+            />
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 };
 

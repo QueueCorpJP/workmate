@@ -29,33 +29,52 @@ async def get_uploaded_resources_by_company_id(company_id: str, db: Connection, 
         
         resources = []
         
+        # 全ユーザー情報を一度に取得
+        all_users = {}
+        if sources:
+            unique_uploader_ids = list(set([source.get("uploaded_by") for source in sources if source.get("uploaded_by")]))
+            if unique_uploader_ids:
+                users_query = supabase.table("users").select("id, name").in_("id", unique_uploader_ids)
+                users_result = users_query.execute()
+                if users_result.data:
+                    all_users = {user["id"]: user.get("name", "不明") for user in users_result.data}
+        
+        # 全チャット履歴を一度に取得（使用回数計算用）
+        all_usage_counts = {}
+        all_last_used = {}
+        if sources:
+            resource_ids = [source.get("id") for source in sources if source.get("id")]
+            if resource_ids:
+                # 使用回数を一度に取得
+                usage_query = supabase.table("chat_history").select("source_document, timestamp").in_("source_document", resource_ids)
+                usage_result = usage_query.execute()
+                if usage_result.data:
+                    # 使用回数をカウント
+                    for chat in usage_result.data:
+                        source_doc = chat.get("source_document")
+                        if source_doc:
+                            all_usage_counts[source_doc] = all_usage_counts.get(source_doc, 0) + 1
+                            # 最新の使用日時を記録
+                            timestamp = chat.get("timestamp")
+                            if timestamp:
+                                if source_doc not in all_last_used or timestamp > all_last_used[source_doc]:
+                                    all_last_used[source_doc] = timestamp
+        
         # 各リソースに対して処理
         for source in sources:
             resource_id = source.get("id")
             if not resource_id:
                 continue
             
-            # アップローダー名を取得
+            # アップローダー名を取得（キャッシュから）
             uploader_id = source.get("uploaded_by")
-            uploader_name = "不明"
-            if uploader_id:
-                user_query = supabase.table("users").select("name").eq("id", uploader_id)
-                user_result = user_query.execute()
-                if user_result.data and len(user_result.data) > 0:
-                    uploader_name = user_result.data[0].get("name", "不明")
+            uploader_name = all_users.get(uploader_id, "不明") if uploader_id else "不明"
             
-            # 使用回数を取得
-            usage_count_query = supabase.table("chat_history").select("id").eq("source_document", resource_id)
-            usage_count_result = usage_count_query.execute()
-            usage_count = len(usage_count_result.data) if usage_count_result.data else 0
+            # 使用回数を取得（キャッシュから）
+            usage_count = all_usage_counts.get(resource_id, 0)
             
-            # 最終使用日時を取得
-            last_used = None
-            if usage_count > 0:
-                last_used_query = supabase.table("chat_history").select("timestamp").eq("source_document", resource_id).order("timestamp", desc=True).limit(1)
-                last_used_result = last_used_query.execute()
-                if last_used_result.data and len(last_used_result.data) > 0:
-                    last_used = last_used_result.data[0].get("timestamp")
+            # 最終使用日時を取得（キャッシュから）
+            last_used = all_last_used.get(resource_id)
             
             # リソース情報を構築
             resources.append({

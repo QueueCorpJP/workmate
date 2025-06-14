@@ -172,7 +172,7 @@ def get_chat_history(user_id: str = None, db = None):
 async def get_company_employees(user_id: str = None, db: Connection = Depends(get_db), company_id: str = None):
     """会社の社員情報を取得する"""
     try:
-        from supabase_adapter import select_data
+        from supabase_adapter import select_data, execute_query
         
         # ユーザーロールとアクセス権限の確認
         user_result = select_data("users", columns="email, role", filters={"id": user_id})
@@ -264,16 +264,29 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
         # 特別な管理者またはadminロールの場合は全社員を取得
         if is_special_admin:
             print("特別な管理者として全社員情報を取得します")
-            # Supabaseから全ユーザーを取得
-            result = select_data("users", columns="id, name, email, role, created_at, company_id")
+            # まず全ユーザーを取得
+            users_result = select_data("users", columns="id, name, email, role, created_at, company_id")
             
-            if result and result.data:
-                print(f"全社員情報取得結果: {len(result.data)}件")
-                for employee in result.data:
+            if users_result and users_result.data:
+                print(f"全ユーザー取得結果: {len(users_result.data)}件")
+                
+                # 全会社情報を取得
+                companies_result = select_data("companies", columns="id, name")
+                companies_dict = {}
+                if companies_result and companies_result.data:
+                    for company in companies_result.data:
+                        companies_dict[company.get("id")] = company.get("name")
+                
+                for user in users_result.data:
+                    # 会社名を取得
+                    company_id = user.get("company_id")
+                    company_name = companies_dict.get(company_id, f"会社ID: {company_id}" if company_id else "不明な会社")
+                    
                     # 使用状況を取得
-                    stats = get_employee_stats(employee.get("id"))
+                    stats = get_employee_stats(user.get("id"))
                     employee_with_stats = {
-                        **employee,
+                        **user,
+                        "company_name": company_name,
                         **stats
                     }
                     employees.append(employee_with_stats)

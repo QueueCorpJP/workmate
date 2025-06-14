@@ -324,6 +324,7 @@ function ChatInterface() {
       "video/webm": [".webm"], // WebM
     },
     maxFiles: 1,
+    disabled: isEmployee, // employeeアカウントではドラッグ&ドロップを無効化
     onDrop: async (acceptedFiles) => {
       if (acceptedFiles.length > 0) {
         setIsUploading(true);
@@ -1050,121 +1051,152 @@ function ChatInterface() {
           flexDirection: "column",
         }}
       >
-        {/* アップロードボタン部分 */}
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "center",
-            gap: { xs: 1, sm: 1.5 },
-            mb: { xs: 0.7, sm: 0.8 },
-            mx: "auto",
-          }}
-        >
-          <Button
-            variant="outlined"
-            color="primary"
-            onClick={() => setUploadTab(0)}
-            startIcon={
-              <CloudUploadIcon
-                sx={{ fontSize: { xs: "0.65rem", sm: "0.7rem" } }}
-              />
-            }
-            size="small"
+        {/* アップロードボタン部分 - employeeアカウントでは非表示 */}
+        {!isEmployee && (
+          <Box
             sx={{
-              py: { xs: 0.2, sm: 0.2 },
-              px: { xs: 0.7, sm: 0.8 },
-              minHeight: 0,
-              minWidth: 0,
-              height: { xs: "22px", sm: "24px" },
-              borderRadius: "12px",
-              fontWeight: 500,
-              fontSize: { xs: "0.6rem", sm: "0.65rem" },
-              textTransform: "none",
-              backgroundColor: "rgba(255, 255, 255, 0.9)",
-              backdropFilter: "blur(8px)",
-              borderColor: "rgba(37, 99, 235, 0.15)",
-              color: "#3b82f6",
-              boxShadow: "0 1px 2px rgba(37, 99, 235, 0.03)",
-              "&:hover": {
-                borderColor: "rgba(37, 99, 235, 0.3)",
-                backgroundColor: "rgba(237, 242, 255, 0.8)",
-                transform: "translateY(-1px)",
-                boxShadow: "0 2px 4px rgba(37, 99, 235, 0.08)",
-              },
-              transition: "all 0.2s ease",
+              display: "flex",
+              justifyContent: "center",
+              gap: { xs: 1, sm: 1.5 },
+              mb: { xs: 0.7, sm: 0.8 },
+              mx: "auto",
             }}
           >
-            ファイル
-          </Button>
-          <Button
-            variant="outlined"
-            color="primary"
-            onClick={() => setUploadTab(1)}
-            startIcon={
-              <LinkIcon sx={{ fontSize: { xs: "0.65rem", sm: "0.7rem" } }} />
-            }
-            size="small"
+            <Button
+              variant="outlined"
+              color="primary"
+              onClick={() => setUploadTab(0)}
+              startIcon={
+                <CloudUploadIcon
+                  sx={{ fontSize: { xs: "0.65rem", sm: "0.7rem" } }}
+                />
+              }
+              size="small"
+              sx={{
+                py: { xs: 0.2, sm: 0.2 },
+                px: { xs: 0.7, sm: 0.8 },
+                minHeight: 0,
+                minWidth: 0,
+                height: { xs: "22px", sm: "24px" },
+                borderRadius: "12px",
+                fontWeight: 500,
+                fontSize: { xs: "0.6rem", sm: "0.65rem" },
+                textTransform: "none",
+                backgroundColor: "rgba(255, 255, 255, 0.9)",
+                backdropFilter: "blur(8px)",
+                borderColor: "rgba(37, 99, 235, 0.15)",
+                color: "#3b82f6",
+                boxShadow: "0 1px 2px rgba(37, 99, 235, 0.03)",
+                "&:hover": {
+                  borderColor: "rgba(37, 99, 235, 0.3)",
+                  backgroundColor: "rgba(237, 242, 255, 0.8)",
+                  transform: "translateY(-1px)",
+                  boxShadow: "0 2px 4px rgba(37, 99, 235, 0.08)",
+                },
+                transition: "all 0.2s ease",
+              }}
+            >
+              ファイル
+            </Button>
+            <Button
+              variant="outlined"
+              color="primary"
+              onClick={() => setUploadTab(1)}
+              startIcon={
+                <LinkIcon sx={{ fontSize: { xs: "0.65rem", sm: "0.7rem" } }} />
+              }
+              size="small"
+              sx={{
+                py: { xs: 0.2, sm: 0.2 },
+                px: { xs: 0.7, sm: 0.8 },
+                minHeight: 0,
+                minWidth: 0,
+                height: { xs: "22px", sm: "24px" },
+                borderRadius: "12px",
+                fontWeight: 500,
+                fontSize: { xs: "0.6rem", sm: "0.65rem" },
+                textTransform: "none",
+                backgroundColor: "rgba(255, 255, 255, 0.9)",
+                backdropFilter: "blur(8px)",
+                borderColor: "rgba(37, 99, 235, 0.15)",
+                color: "#3b82f6",
+                boxShadow: "0 1px 2px rgba(37, 99, 235, 0.03)",
+                "&:hover": {
+                  borderColor: "rgba(37, 99, 235, 0.3)",
+                  backgroundColor: "rgba(237, 242, 255, 0.8)",
+                  transform: "translateY(-1px)",
+                  boxShadow: "0 2px 4px rgba(37, 99, 235, 0.08)",
+                },
+                transition: "all 0.2s ease",
+              }}
+            >
+              URL
+            </Button>
+            <Button
+              variant="outlined"
+              color="primary"
+              onClick={() => setUploadTab(2)}
+              startIcon={
+                <Cloud sx={{ fontSize: { xs: "0.65rem", sm: "0.7rem" } }} />
+              }
+              size="small"
+              sx={{
+                py: { xs: 0.2, sm: 0.2 },
+                px: { xs: 0.7, sm: 0.8 },
+                minHeight: 0,
+                minWidth: 0,
+                height: { xs: "22px", sm: "24px" },
+                borderRadius: "12px",
+                fontWeight: 500,
+                fontSize: { xs: "0.6rem", sm: "0.65rem" },
+                textTransform: "none",
+                backgroundColor: "rgba(255, 255, 255, 0.9)",
+                backdropFilter: "blur(8px)",
+                borderColor: "rgba(37, 99, 235, 0.15)",
+                color: "#3b82f6",
+                boxShadow: "0 1px 2px rgba(37, 99, 235, 0.03)",
+                "&:hover": {
+                  borderColor: "rgba(37, 99, 235, 0.3)",
+                  backgroundColor: "rgba(237, 242, 255, 0.8)",
+                  transform: "translateY(-1px)",
+                  boxShadow: "0 2px 4px rgba(37, 99, 235, 0.08)",
+                },
+                transition: "all 0.2s ease",
+              }}
+            >
+              Drive
+            </Button>
+          </Box>
+        )}
+
+        {/* employeeアカウント向けのメッセージ */}
+        {isEmployee && (
+          <Box
             sx={{
-              py: { xs: 0.2, sm: 0.2 },
-              px: { xs: 0.7, sm: 0.8 },
-              minHeight: 0,
-              minWidth: 0,
-              height: { xs: "22px", sm: "24px" },
-              borderRadius: "12px",
-              fontWeight: 500,
-              fontSize: { xs: "0.6rem", sm: "0.65rem" },
-              textTransform: "none",
-              backgroundColor: "rgba(255, 255, 255, 0.9)",
-              backdropFilter: "blur(8px)",
-              borderColor: "rgba(37, 99, 235, 0.15)",
-              color: "#3b82f6",
-              boxShadow: "0 1px 2px rgba(37, 99, 235, 0.03)",
-              "&:hover": {
-                borderColor: "rgba(37, 99, 235, 0.3)",
-                backgroundColor: "rgba(237, 242, 255, 0.8)",
-                transform: "translateY(-1px)",
-                boxShadow: "0 2px 4px rgba(37, 99, 235, 0.08)",
-              },
-              transition: "all 0.2s ease",
+              display: "flex",
+              justifyContent: "center",
+              mb: { xs: 0.7, sm: 0.8 },
+              mx: "auto",
             }}
           >
-            URL
-          </Button>
-          <Button
-            variant="outlined"
-            color="primary"
-            onClick={() => setUploadTab(2)}
-            startIcon={
-              <Cloud sx={{ fontSize: { xs: "0.65rem", sm: "0.7rem" } }} />
-            }
-            size="small"
-            sx={{
-              py: { xs: 0.2, sm: 0.2 },
-              px: { xs: 0.7, sm: 0.8 },
-              minHeight: 0,
-              minWidth: 0,
-              height: { xs: "22px", sm: "24px" },
-              borderRadius: "12px",
-              fontWeight: 500,
-              fontSize: { xs: "0.6rem", sm: "0.65rem" },
-              textTransform: "none",
-              backgroundColor: "rgba(255, 255, 255, 0.9)",
-              backdropFilter: "blur(8px)",
-              borderColor: "rgba(37, 99, 235, 0.15)",
-              color: "#3b82f6",
-              boxShadow: "0 1px 2px rgba(37, 99, 235, 0.03)",
-              "&:hover": {
-                borderColor: "rgba(37, 99, 235, 0.3)",
-                backgroundColor: "rgba(237, 242, 255, 0.8)",
-                transform: "translateY(-1px)",
-                boxShadow: "0 2px 4px rgba(37, 99, 235, 0.08)",
-              },
-              transition: "all 0.2s ease",
-            }}
-          >
-            Drive
-          </Button>
-        </Box>
+            <Alert
+              severity="info"
+              sx={{
+                fontSize: { xs: "0.7rem", sm: "0.8rem" },
+                py: 0.5,
+                px: 1.5,
+                borderRadius: "12px",
+                backgroundColor: "rgba(33, 150, 243, 0.08)",
+                border: "1px solid rgba(33, 150, 243, 0.15)",
+                "& .MuiAlert-icon": {
+                  fontSize: { xs: "0.8rem", sm: "1rem" },
+                },
+              }}
+            >
+              ファイルアップロードは管理者のみ利用できます
+            </Alert>
+          </Box>
+        )}
 
         {/* アップロード・URL送信モーダル */}
         <Dialog

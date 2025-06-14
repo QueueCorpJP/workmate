@@ -16,16 +16,34 @@ import {
   Paper,
   Stack,
   Tooltip,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TablePagination,
+  Collapse,
+  IconButton,
+  Grid,
+  Tab,
+  Tabs,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import HistoryIcon from "@mui/icons-material/History";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
+import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
+import BusinessIcon from "@mui/icons-material/Business";
+import PeopleIcon from "@mui/icons-material/People";
+import AnalyticsIcon from "@mui/icons-material/Analytics";
 import api from "../../api";
 import { formatDate } from "./utils";
 import LoadingIndicator from "./LoadingIndicator";
 import EmptyState from "./EmptyState";
+import { useAuth } from "../../contexts/AuthContext";
 
 interface PlanHistoryItem {
   id: string;
@@ -55,14 +73,74 @@ interface UserPlanHistory {
   }[];
 }
 
+interface AnalyticsData {
+  company_usage_periods: Array<{
+    company_name: string;
+    user_count: number;
+    usage_days: number;
+    start_date: string;
+    usage_months: number;
+  }>;
+  user_usage_periods: Array<{
+    user_id: string;
+    email: string;
+    name: string;
+    company_name: string;
+    usage_days: number;
+    start_date: string;
+    usage_months: number;
+  }>;
+  active_users: {
+    total_active_users: number;
+    active_users_by_company: { [key: string]: number };
+    active_users_list: Array<{
+      user_id: string;
+      name: string;
+      company_name: string;
+      chat_count: number;
+      last_chat: string;
+    }>;
+    analysis_period: string;
+  };
+  plan_continuity: {
+    total_users: number;
+    continuity_stats: {
+      never_changed: number;
+      changed_once: number;
+      changed_multiple: number;
+      demo_to_prod_stayed: number;
+      prod_to_demo_returned: number;
+    };
+    plan_retention: {
+      demo_users: number;
+      production_users: number;
+      demo_avg_duration: number;
+      production_avg_duration: number;
+    };
+    duration_analysis: {
+      demo_duration_samples: number;
+      production_duration_samples: number;
+    };
+  };
+}
+
 interface PlanHistoryTabProps {
   // 必要に応じてプロパティを追加
 }
 
 const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
+  const { user } = useAuth();
   const [userPlanHistories, setUserPlanHistories] = useState<UserPlanHistory[]>([]);
+  const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [currentTab, setCurrentTab] = useState(0);
+  
+  // queue@queueu-tech.jp用の特別表示判定
+  const isQueueTechAdmin = user?.email === "queue@queueu-tech.jp";
 
   const fetchPlanHistory = async () => {
     setIsLoading(true);
@@ -72,15 +150,24 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
       const response = await api.get("/plan-history");
       console.log("プラン履歴取得結果:", response.data);
       
-      if (response.data && response.data.success && response.data.data && response.data.data.users) {
-        setUserPlanHistories(response.data.data.users);
+      if (response.data && response.data.success && response.data.data) {
+        if (response.data.data.users) {
+          setUserPlanHistories(response.data.data.users);
+        }
+        
+        // queue@queueu-tech.jp用の分析データを設定
+        if (isQueueTechAdmin && response.data.data.analytics) {
+          setAnalyticsData(response.data.data.analytics);
+        }
       } else {
         setUserPlanHistories([]);
+        setAnalyticsData(null);
       }
     } catch (error) {
       console.error("プラン履歴の取得に失敗しました:", error);
       setError("プラン履歴の取得に失敗しました");
       setUserPlanHistories([]);
+      setAnalyticsData(null);
     } finally {
       setIsLoading(false);
     }
@@ -244,6 +331,293 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
     };
   };
 
+  const handleChangePage = (event: unknown, newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
+  const toggleRowExpansion = (userId: string) => {
+    const newExpandedRows = new Set(expandedRows);
+    if (expandedRows.has(userId)) {
+      newExpandedRows.delete(userId);
+    } else {
+      newExpandedRows.add(userId);
+    }
+    setExpandedRows(newExpandedRows);
+  };
+
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setCurrentTab(newValue);
+  };
+
+  // 分析データ表示用のコンポーネント
+  const renderAnalytics = () => {
+    if (!analyticsData) return null;
+
+    return (
+      <Box>
+        <Tabs value={currentTab} onChange={handleTabChange} sx={{ mb: 3 }}>
+          <Tab label="プラン履歴" icon={<HistoryIcon />} />
+          <Tab label="会社別利用期間" icon={<BusinessIcon />} />
+          <Tab label="ユーザー別利用期間" icon={<PeopleIcon />} />
+          <Tab label="アクティブユーザー" icon={<AnalyticsIcon />} />
+          <Tab label="プラン継続性分析" icon={<TrendingUpIcon />} />
+        </Tabs>
+
+        {currentTab === 1 && (
+          <Card>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                会社別累計利用期間
+              </Typography>
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: 'grey.50' }}>
+                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>会社名</Typography></TableCell>
+                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>ユーザー数</Typography></TableCell>
+                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>利用期間</Typography></TableCell>
+                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>開始日</Typography></TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {analyticsData.company_usage_periods.map((company, index) => (
+                      <TableRow key={index} hover>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <BusinessIcon sx={{ mr: 1, color: 'primary.main' }} />
+                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                              {company.company_name}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">
+                            {company.user_count}名
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {company.usage_months}ヶ月
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            ({company.usage_days}日間)
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">
+                            {formatDate(company.start_date)}
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </CardContent>
+          </Card>
+        )}
+
+        {currentTab === 2 && (
+          <Card>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                ユーザー別累計利用期間
+              </Typography>
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: 'grey.50' }}>
+                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>ユーザー</Typography></TableCell>
+                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>会社</Typography></TableCell>
+                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>利用期間</Typography></TableCell>
+                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>開始日</Typography></TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {analyticsData.user_usage_periods.slice(0, 50).map((user, index) => (
+                      <TableRow key={index} hover>
+                        <TableCell>
+                          <Box>
+                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                              {user.name || user.email.split('@')[0]}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {user.email}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">
+                            {user.company_name || user.email.split('@')[1]}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {user.usage_months}ヶ月
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            ({user.usage_days}日間)
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">
+                            {formatDate(user.start_date)}
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </CardContent>
+          </Card>
+        )}
+
+        {currentTab === 3 && (
+          <Grid container spacing={3}>
+            <Grid item xs={12} md={6}>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    アクティブユーザー概要
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    {analyticsData.active_users.analysis_period}
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                    <PeopleIcon sx={{ fontSize: 40, color: 'primary.main', mr: 2 }} />
+                    <Box>
+                      <Typography variant="h4" sx={{ fontWeight: 600, color: 'primary.main' }}>
+                        {analyticsData.active_users.total_active_users}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        アクティブユーザー
+                      </Typography>
+                    </Box>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    会社別アクティブユーザー
+                  </Typography>
+                  <List>
+                    {Object.entries(analyticsData.active_users.active_users_by_company).map(([company, count]) => (
+                      <ListItem key={company}>
+                        <ListItemIcon>
+                          <BusinessIcon color="primary" />
+                        </ListItemIcon>
+                        <ListItemText
+                          primary={company}
+                          secondary={`${count}名がアクティブ`}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+        )}
+
+        {currentTab === 4 && (
+          <Grid container spacing={3}>
+            <Grid item xs={12} md={6}>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    プラン変更パターン
+                  </Typography>
+                  <Stack spacing={2}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2">変更なし</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {analyticsData.plan_continuity.continuity_stats.never_changed}名
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2">1回変更</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {analyticsData.plan_continuity.continuity_stats.changed_once}名
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2">複数回変更</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {analyticsData.plan_continuity.continuity_stats.changed_multiple}名
+                      </Typography>
+                    </Box>
+                    <Divider />
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2" color="success.main">デモ→本番継続</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: 'success.main' }}>
+                        {analyticsData.plan_continuity.continuity_stats.demo_to_prod_stayed}名
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2" color="warning.main">本番→デモ戻り</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: 'warning.main' }}>
+                        {analyticsData.plan_continuity.continuity_stats.prod_to_demo_returned}名
+                      </Typography>
+                    </Box>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    プラン保持状況
+                  </Typography>
+                  <Stack spacing={2}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2">デモ版ユーザー</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: 'warning.main' }}>
+                        {analyticsData.plan_continuity.plan_retention.demo_users}名
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2">本番版ユーザー</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: 'success.main' }}>
+                        {analyticsData.plan_continuity.plan_retention.production_users}名
+                      </Typography>
+                    </Box>
+                    <Divider />
+                    {analyticsData.plan_continuity.plan_retention.demo_avg_duration > 0 && (
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="body2">デモ版平均利用期間</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {Math.round(analyticsData.plan_continuity.plan_retention.demo_avg_duration)}日
+                        </Typography>
+                      </Box>
+                    )}
+                    {analyticsData.plan_continuity.plan_retention.production_avg_duration > 0 && (
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="body2">本番版平均利用期間</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {Math.round(analyticsData.plan_continuity.plan_retention.production_avg_duration)}日
+                        </Typography>
+                      </Box>
+                    )}
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+        )}
+      </Box>
+    );
+  };
+
   if (isLoading) {
     return <LoadingIndicator message="プラン履歴を読み込み中..." />;
   }
@@ -277,7 +651,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
         }}
       >
         <Typography variant="h5" sx={{ fontWeight: 600 }}>
-          プラン変更履歴
+          {isQueueTechAdmin ? "利用状況分析・プラン履歴" : "プラン変更履歴"}
         </Typography>
         <Button
           variant="outlined"
@@ -289,132 +663,179 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
         </Button>
       </Box>
 
-      {/* プラン履歴リスト */}
-      {userPlanHistories.length === 0 ? (
-        <EmptyState
-          icon="custom"
-          customIcon={<HistoryIcon sx={{ fontSize: '4rem', color: 'text.secondary' }} />}
-          message="プラン変更履歴がありません。まだプランの変更が行われていません。"
-        />
-      ) : (
-        <Card>
-          <CardContent sx={{ p: 0 }}>
-            <List sx={{ py: 0 }}>
-              {userPlanHistories.map((user, userIndex) => (
-                <React.Fragment key={user.user_id}>
-                  {/* ユーザー情報ヘッダー */}
-                  <ListItem
-                    sx={{
-                      py: 2,
-                      px: 3,
-                        bgcolor: "rgba(0, 0, 0, 0.02)",
-                      borderBottom: "1px solid rgba(0, 0, 0, 0.08)"
-                    }}
-                  >
-                    <ListItemIcon>
-                      <HistoryIcon color="primary" />
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                            {user.user_name || user.user_email || "ユーザー"}
-                          </Typography>
-                          {user.user_email && user.user_name && (
-                            <Typography variant="body2" color="text.secondary">
-                              ({user.user_email})
-                            </Typography>
-                          )}
-                          <Chip
-                            label={`現在: ${getPlanDisplayName(user.current_plan)}`}
-                            color={getPlanColor(user.current_plan) as any}
-                            size="small"
-                          />
-                          <Chip
-                            label={`変更回数: ${user.total_changes}`}
-                            variant="outlined"
-                            size="small"
-                          />
-                        </Stack>
-                      }
-                    />
-                  </ListItem>
+      {/* queue@queueu-tech.jp用の分析表示 */}
+      {isQueueTechAdmin && analyticsData && renderAnalytics()}
 
-                  {/* 変更履歴 */}
-                  {user.changes.map((change, changeIndex) => (
-                    <ListItem
-                      key={change.id}
-                      sx={{
-                        py: 1.5,
-                        px: 6, // インデントを深く
-                        "&:hover": {
-                          bgcolor: "rgba(0, 0, 0, 0.02)",
-                        },
-                      }}
-                    >
-                      <ListItemIcon sx={{ minWidth: 32 }}>
-                        {getChangeIcon(change.from_plan, change.to_plan)}
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={
-                          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                            <Chip
-                              label={getPlanDisplayName(change.from_plan)}
-                              color={getPlanColor(change.from_plan) as any}
-                              size="small"
-                              variant="outlined"
-                            />
-                            <Typography variant="body2" color="text.secondary">
-                              →
-                            </Typography>
-                            <Chip
-                              label={getPlanDisplayName(change.to_plan)}
-                              color={getPlanColor(change.to_plan) as any}
-                              size="small"
-                            />
-                          </Stack>
-                        }
-                        secondary={
-                          <Stack direction="column" spacing={0.5}>
-                            <Stack direction="row" spacing={1} alignItems="center">
-                              <AccessTimeIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
-                              <Tooltip title={`詳細: ${formatDate(change.changed_at)}`}>
-                                <Typography variant="body2" color="text.secondary">
-                                  {formatRelativeTime(change.changed_at)}に変更
+      {/* 通常のプラン履歴表示（queue@queueu-tech.jpの場合はタブ0の時のみ） */}
+      {(!isQueueTechAdmin || currentTab === 0) && (
+        <Box>
+          {/* プラン履歴テーブル */}
+          {userPlanHistories.length === 0 ? (
+            <EmptyState
+              icon="custom"
+              customIcon={<HistoryIcon sx={{ fontSize: '4rem', color: 'text.secondary' }} />}
+              message="プラン変更履歴がありません。まだプランの変更が行われていません。"
+            />
+          ) : (
+            <Card>
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: 'grey.50' }}>
+                      <TableCell></TableCell>
+                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>ユーザー</Typography></TableCell>
+                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>現在のプラン</Typography></TableCell>
+                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>変更回数</Typography></TableCell>
+                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>最終変更日</Typography></TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {userPlanHistories
+                      .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                      .map((user) => (
+                        <React.Fragment key={user.user_id}>
+                          <TableRow 
+                            hover 
+                            sx={{ 
+                              cursor: 'pointer',
+                              '&:hover': { bgcolor: 'grey.50' }
+                            }}
+                          >
+                            <TableCell>
+                              <IconButton
+                                size="small"
+                                onClick={() => toggleRowExpansion(user.user_id)}
+                              >
+                                {expandedRows.has(user.user_id) ? 
+                                  <KeyboardArrowUpIcon /> : 
+                                  <KeyboardArrowDownIcon />
+                                }
+                              </IconButton>
+                            </TableCell>
+                            <TableCell>
+                              <Box>
+                                <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                  {user.user_name || "ユーザー"}
                                 </Typography>
-                              </Tooltip>
-                            </Stack>
-                            {change.duration_days && (
-                              <Typography variant="body2" color="text.secondary" sx={{ pl: 2.5 }}>
-                                📅 {getPlanDisplayName(change.from_plan)}利用期間: {formatDetailedDuration(change.duration_days)}
-                              </Typography>
-                            )}
-                            {changeIndex === 0 && (() => {
-                              const currentPlanInfo = getCurrentPlanDuration(user);
-                              if (currentPlanInfo) {
-                                return (
-                                  <Typography variant="body2" color="primary.main" sx={{ pl: 2.5, fontWeight: 500 }}>
-                                    🔄 現在{getPlanDisplayName(currentPlanInfo.currentPlan)}: {formatDetailedDuration(currentPlanInfo.daysSinceChange)}
+                                {user.user_email && (
+                                  <Typography variant="caption" color="text.secondary">
+                                    {user.user_email}
                                   </Typography>
-                                );
-                              }
-                              return null;
-                            })()}
-                          </Stack>
-                      }
-                    />
-                  </ListItem>
-                  ))}
-                  {userIndex < userPlanHistories.length - 1 && <Divider sx={{ my: 1 }} />}
-                </React.Fragment>
-              ))}
-            </List>
-          </CardContent>
-        </Card>
+                                )}
+                              </Box>
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                label={getPlanDisplayName(user.current_plan)}
+                                color={getPlanColor(user.current_plan) as any}
+                                size="small"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Typography variant="body2">
+                                {user.total_changes}回
+                              </Typography>
+                            </TableCell>
+                            <TableCell>
+                              <Typography variant="body2">
+                                {formatRelativeTime(user.latest_change)}
+                              </Typography>
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell sx={{ py: 0 }} colSpan={5}>
+                              <Collapse in={expandedRows.has(user.user_id)} timeout="auto" unmountOnExit>
+                                <Box sx={{ py: 2, px: 2, bgcolor: 'grey.25' }}>
+                                  <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
+                                    変更履歴詳細
+                                  </Typography>
+                                  <Table size="small">
+                                    <TableHead>
+                                      <TableRow>
+                                        <TableCell><Typography variant="caption" sx={{ fontWeight: 600 }}>変更前</Typography></TableCell>
+                                        <TableCell><Typography variant="caption" sx={{ fontWeight: 600 }}>変更後</Typography></TableCell>
+                                        <TableCell><Typography variant="caption" sx={{ fontWeight: 600 }}>変更日時</Typography></TableCell>
+                                        <TableCell><Typography variant="caption" sx={{ fontWeight: 600 }}>利用期間</Typography></TableCell>
+                                      </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                      {user.changes.map((change, changeIndex) => (
+                                        <TableRow key={change.id}>
+                                          <TableCell>
+                                            <Chip
+                                              label={getPlanDisplayName(change.from_plan)}
+                                              color={getPlanColor(change.from_plan) as any}
+                                              size="small"
+                                              variant="outlined"
+                                            />
+                                          </TableCell>
+                                          <TableCell>
+                                            <Stack direction="row" spacing={1} alignItems="center">
+                                              {getChangeIcon(change.from_plan, change.to_plan)}
+                                              <Chip
+                                                label={getPlanDisplayName(change.to_plan)}
+                                                color={getPlanColor(change.to_plan) as any}
+                                                size="small"
+                                              />
+                                            </Stack>
+                                          </TableCell>
+                                          <TableCell>
+                                            <Tooltip title={`詳細: ${formatDate(change.changed_at)}`}>
+                                              <Typography variant="caption">
+                                                {formatRelativeTime(change.changed_at)}
+                                              </Typography>
+                                            </Tooltip>
+                                          </TableCell>
+                                          <TableCell>
+                                            <Typography variant="caption">
+                                              {change.duration_days ? 
+                                                formatDetailedDuration(change.duration_days) : 
+                                                "期間不明"
+                                              }
+                                            </Typography>
+                                            {changeIndex === 0 && (() => {
+                                              const currentPlanInfo = getCurrentPlanDuration(user);
+                                              if (currentPlanInfo) {
+                                                return (
+                                                  <Typography variant="caption" color="primary.main" sx={{ display: 'block', fontWeight: 500 }}>
+                                                    現在: {formatDetailedDuration(currentPlanInfo.daysSinceChange)}
+                                                  </Typography>
+                                                );
+                                              }
+                                              return null;
+                                            })()}
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </Box>
+                              </Collapse>
+                            </TableCell>
+                          </TableRow>
+                        </React.Fragment>
+                      ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              <TablePagination
+                rowsPerPageOptions={[5, 10, 25]}
+                component="div"
+                count={userPlanHistories.length}
+                rowsPerPage={rowsPerPage}
+                page={page}
+                onPageChange={handleChangePage}
+                onRowsPerPageChange={handleChangeRowsPerPage}
+                labelRowsPerPage="ページ当たりの行数:"
+                labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count !== -1 ? count : `more than ${to}`}`}
+              />
+            </Card>
+          )}
+        </Box>
       )}
 
-      {/* 統計情報 */}
-      {userPlanHistories.length > 0 && (
+      {/* 統計情報（queue@queueu-tech.jpでは非表示） */}
+      {(userPlanHistories.length > 0 && !isQueueTechAdmin) && (
         <Paper sx={{ mt: 3, p: 2 }}>
           <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
             統計情報
