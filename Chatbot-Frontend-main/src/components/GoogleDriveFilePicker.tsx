@@ -27,6 +27,7 @@ import {
   CloudDownload as CloudDownloadIcon
 } from '@mui/icons-material';
 import { SUPPORTED_MIME_TYPES } from '../utils/googleConfig';
+import { GoogleAuthStorage } from '../utils/googleAuthStorage';
 
 interface GoogleDriveFile {
   id: string;
@@ -64,8 +65,12 @@ export const GoogleDriveFilePicker: React.FC<GoogleDriveFilePickerProps> = ({
   ]);
 
   useEffect(() => {
-    if (open && accessToken) {
-      loadFiles();
+    if (open) {
+      // アクセストークンが渡されていない場合は保存された認証状態から取得
+      const token = accessToken || GoogleAuthStorage.getAccessToken();
+      if (token) {
+        loadFiles();
+      }
     }
   }, [open, accessToken, currentFolder]);
 
@@ -117,8 +122,12 @@ export const GoogleDriveFilePicker: React.FC<GoogleDriveFilePickerProps> = ({
       await window.gapi.client.init(initConfig);
       console.log('Google Drive API初期化完了');
       
-      // アクセストークンを設定
-      window.gapi.client.setToken({ access_token: accessToken });
+      // アクセストークンを設定（渡されたトークンか保存されたトークンを使用）
+      const token = accessToken || GoogleAuthStorage.getAccessToken();
+      if (!token) {
+        throw new Error('アクセストークンが見つかりません。再度認証してください。');
+      }
+      window.gapi.client.setToken({ access_token: token });
 
       // Driveクライアントが利用可能かチェック
       if (!window.gapi.client.drive) {

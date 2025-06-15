@@ -62,6 +62,7 @@ import { useMediaQuery } from "@mui/material";
 import { isValidURL } from './components/admin/utils';
 import { GoogleDriveAuth } from './components/GoogleDriveAuth';
 import { GoogleDriveFilePicker } from './components/GoogleDriveFilePicker';
+import { GoogleAuthStorage } from './utils/googleAuthStorage';
 
 interface Message {
   text: string;
@@ -136,7 +137,10 @@ function ChatInterface() {
   const [upgradeSuccess, setUpgradeSuccess] = useState(false);
   
   // Google Drive関連のstate
-  const [driveAccessToken, setDriveAccessToken] = useState<string>('');
+  const [driveAccessToken, setDriveAccessToken] = useState<string>(() => {
+    // 初期化時に保存された認証状態を復元
+    return GoogleAuthStorage.getAccessToken() || '';
+  });
   const [drivePickerOpen, setDrivePickerOpen] = useState(false);
   const [driveAuthError, setDriveAuthError] = useState<string>('');
 
@@ -718,6 +722,29 @@ function ChatInterface() {
     setDriveAuthError(error);
     console.error('Google Drive認証エラー:', error);
   };
+
+  // トークンの有効期限をチェックするeffect
+  useEffect(() => {
+    if (!driveAccessToken) return;
+
+    const checkTokenExpiry = () => {
+      if (GoogleAuthStorage.willExpireSoon(5)) { // 5分前に警告
+        console.log('Google Driveトークンの有効期限が近づいています');
+        setDriveAuthError('認証の有効期限が近づいています。再度認証してください。');
+        // トークンを無効化してユーザーに再認証を促す
+        setDriveAccessToken('');
+        GoogleAuthStorage.clearAuthData();
+      }
+    };
+
+    // 1分ごとにチェック
+    const interval = setInterval(checkTokenExpiry, 60000);
+    
+    // 初回チェック
+    checkTokenExpiry();
+
+    return () => clearInterval(interval);
+  }, [driveAccessToken]);
 
   const handleDriveFileSelect = async (file: any) => {
     try {

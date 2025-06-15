@@ -206,13 +206,23 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                 color: 'text.primary'
               }}
             >
-              チャット分析
+              チャット分析ダッシュボード
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{
+                color: 'text.secondary',
+                mt: 0.5,
+                fontSize: '0.9rem'
+              }}
+            >
+              チャットボットの利用状況を詳細に分析し、ビジネス改善の洞察を提供
             </Typography>
           </Box>
 
-          <Box sx={{ display: 'flex', gap: 1 }}>
+          <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
             {/* CSV出力ボタン */}
-            <Tooltip title="CSV形式で出力">
+            <Tooltip title="分析データをCSV形式で出力">
               <span>
                 <Button
                   variant="outlined"
@@ -223,7 +233,8 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                   size={isMobile ? "small" : "medium"}
                   sx={{
                     borderRadius: 2,
-                    px: { xs: 1.5, sm: 2 },
+                    px: { xs: 1.5, sm: 2.5 },
+                    fontWeight: 600,
                     '&:hover': {
                       backgroundColor: 'rgba(156, 39, 176, 0.08)',
                     }
@@ -235,25 +246,27 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
             </Tooltip>
 
             {/* 更新ボタン */}
-            <Tooltip title="データを更新">
+            <Tooltip title="最新データに更新">
               <span>
-              <Button
-                variant="outlined"
-                color="primary"
-                onClick={onRefresh}
-                disabled={isLoading}
-                startIcon={<RefreshIcon />}
-                size={isMobile ? "small" : "medium"}
-                sx={{
-                  borderRadius: 2,
-                  px: { xs: 1.5, sm: 2 },
-                  '&:hover': {
-                    backgroundColor: 'rgba(25, 118, 210, 0.08)',
-                  }
-                }}
-              >
-                {!isMobile && '更新'}
-              </Button>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={onRefresh}
+                  disabled={isLoading}
+                  startIcon={<RefreshIcon />}
+                  size={isMobile ? "small" : "medium"}
+                  sx={{
+                    borderRadius: 2,
+                    px: { xs: 1.5, sm: 2.5 },
+                    fontWeight: 600,
+                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
+                    '&:hover': {
+                      boxShadow: '0 6px 16px rgba(37, 99, 235, 0.4)',
+                    }
+                  }}
+                >
+                  {!isMobile && '更新'}
+                </Button>
               </span>
             </Tooltip>
           </Box>
@@ -376,40 +389,78 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                 {/* グラフセクション */}
                 <Grid item xs={12} md={6}>
                   <Card
-                    elevation={0}
+                    elevation={3}
                     sx={{
-                      borderRadius: 2,
-                      border: '1px solid rgba(0, 0, 0, 0.12)',
+                      borderRadius: 3,
                       height: '100%',
                       display: 'flex',
                       flexDirection: 'column',
-                      transition: 'all 0.3s ease',
+                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                      background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      border: '1px solid rgba(59, 130, 246, 0.08)',
+                      '&::before': {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: '3px',
+                        background: 'linear-gradient(90deg, #3b82f6, #1e40af, #6366f1)',
+                        opacity: 1
+                      },
                       '&:hover': {
-                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+                        transform: 'translateY(-4px)',
+                        boxShadow: '0 20px 40px rgba(59, 130, 246, 0.15), 0 12px 24px rgba(59, 130, 246, 0.1)',
+                        border: '1px solid rgba(59, 130, 246, 0.15)',
                       }
                     }}
                   >
-                    <CardContent sx={{ p: { xs: 2, sm: 3 }, flex: 1, display: 'flex', flexDirection: 'column' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                        <CategoryIcon
+                    <CardContent sx={{ p: { xs: 3, sm: 4 }, flex: 1, display: 'flex', flexDirection: 'column' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                        <Box
                           sx={{
-                            mr: 1.5,
-                            color: theme.palette.primary.main,
-                            fontSize: '1.4rem'
-                          }}
-                        />
-                        <Typography
-                          variant="h6"
-                          sx={{
-                            fontWeight: 600,
-                            color: 'text.primary'
+                            mr: 2,
+                            p: 1.5,
+                            borderRadius: 2.5,
+                            background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(37, 99, 235, 0.05))',
+                            border: '1px solid rgba(59, 130, 246, 0.2)',
+                            boxShadow: '0 4px 12px rgba(59, 130, 246, 0.1)'
                           }}
                         >
-                          カテゴリ分布
-                        </Typography>
+                          <CategoryIcon
+                            sx={{
+                              color: '#3b82f6',
+                              fontSize: '1.4rem'
+                            }}
+                          />
+                        </Box>
+                        <Box>
+                          <Typography
+                            variant="h6"
+                            sx={{
+                              fontWeight: 700,
+                              color: '#1e293b',
+                              fontSize: '1.2rem',
+                              mb: 0.5
+                            }}
+                          >
+                            カテゴリ別分布
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              color: '#64748b',
+                              fontSize: '0.875rem'
+                            }}
+                          >
+                            質問のカテゴリ別統計
+                          </Typography>
+                        </Box>
                       </Box>
 
-                      <Divider sx={{ mb: 2 }} />
+                      <Divider sx={{ mb: 3, borderColor: 'rgba(59, 130, 246, 0.1)' }} />
 
                       <Box sx={{
                         flex: 1,
@@ -433,13 +484,21 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                             options={{
                               responsive: true,
                               maintainAspectRatio: false,
+                              interaction: {
+                                intersect: false,
+                                mode: 'index'
+                              },
                               plugins: {
                                 legend: {
                                   display: false
                                 },
                                 tooltip: {
-                                  backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                                  padding: 12,
+                                  backgroundColor: 'rgba(30, 41, 59, 0.95)',
+                                  titleColor: '#f1f5f9',
+                                  bodyColor: '#e2e8f0',
+                                  borderColor: 'rgba(59, 130, 246, 0.3)',
+                                  borderWidth: 1,
+                                  padding: 16,
                                   titleFont: {
                                     size: 14,
                                     weight: 'bold'
@@ -447,25 +506,86 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                                   bodyFont: {
                                     size: 13
                                   },
-                                  cornerRadius: 8
+                                  cornerRadius: 12,
+                                  displayColors: true,
+                                  boxPadding: 8,
+                                  usePointStyle: true,
+                                  callbacks: {
+                                    title: (tooltipItems) => {
+                                      return tooltipItems[0].label;
+                                    },
+                                    label: (context) => {
+                                      return ` ${context.dataset.label}: ${context.parsed.y.toLocaleString()} 件`;
+                                    }
+                                  }
                                 }
                               },
                               scales: {
                                 y: {
                                   beginAtZero: true,
                                   grid: {
-                                    color: 'rgba(0, 0, 0, 0.04)'
+                                    color: 'rgba(148, 163, 184, 0.3)',
+                                    lineWidth: 1,
+                                    drawTicks: false
+                                  },
+                                  ticks: {
+                                    color: '#475569',
+                                    font: {
+                                      size: 13,
+                                      weight: 600,
+                                      family: "'Inter', sans-serif"
+                                    },
+                                    padding: 15,
+                                    callback: function(value) {
+                                      return value.toLocaleString() + '件';
+                                    }
+                                  },
+                                  border: {
+                                    display: false
                                   }
                                 },
                                 x: {
                                   grid: {
                                     display: false
+                                  },
+                                  ticks: {
+                                    color: '#475569',
+                                    font: {
+                                      size: 12,
+                                      weight: 600,
+                                      family: "'Inter', sans-serif"
+                                    },
+                                    padding: 15,
+                                    maxRotation: 45
+                                  },
+                                  border: {
+                                    color: 'rgba(148, 163, 184, 0.3)',
+                                    width: 1
                                   }
                                 }
                               },
                               animation: {
-                                duration: 1000,
-                                easing: 'easeInOutQuart'
+                                duration: 1200,
+                                easing: 'easeInOutCubic'
+                              },
+                              elements: {
+                                bar: {
+                                  borderRadius: {
+                                    topLeft: 6,
+                                    topRight: 6,
+                                    bottomLeft: 0,
+                                    bottomRight: 0
+                                  },
+                                  borderWidth: 0
+                                }
+                              },
+                              layout: {
+                                padding: {
+                                  top: 20,
+                                  bottom: 10,
+                                  left: 10,
+                                  right: 10
+                                }
                               }
                             }}
                           />
@@ -475,11 +595,22 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                             flexDirection: 'column',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            height: '100%'
+                            height: '100%',
+                            py: 4
                           }}>
-                            <CategoryIcon sx={{ fontSize: '3rem', color: 'text.disabled', mb: 2 }} />
-                            <Typography variant="body1" color="text.secondary">
-                              カテゴリデータがありません
+                            <Box sx={{
+                              p: 3,
+                              borderRadius: '50%',
+                              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                              mb: 3
+                            }}>
+                              <CategoryIcon sx={{ fontSize: '2.5rem', color: '#3b82f6' }} />
+                            </Box>
+                            <Typography variant="h6" sx={{ color: '#374151', mb: 1, fontWeight: 600 }}>
+                              データがありません
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: '#6b7280', textAlign: 'center' }}>
+                              カテゴリ分析を表示するために<br />十分なデータを収集中です
                             </Typography>
                           </Box>
                         )}
@@ -490,40 +621,78 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
 
                 <Grid item xs={12} md={6}>
                   <Card
-                    elevation={0}
+                    elevation={3}
                     sx={{
-                      borderRadius: 2,
-                      border: '1px solid rgba(0, 0, 0, 0.12)',
+                      borderRadius: 3,
                       height: '100%',
                       display: 'flex',
                       flexDirection: 'column',
-                      transition: 'all 0.3s ease',
+                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                      background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      border: '1px solid rgba(16, 185, 129, 0.08)',
+                      '&::before': {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: '3px',
+                        background: 'linear-gradient(90deg, #10b981, #059669, #34d399)',
+                        opacity: 1
+                      },
                       '&:hover': {
-                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+                        transform: 'translateY(-4px)',
+                        boxShadow: '0 20px 40px rgba(16, 185, 129, 0.15), 0 12px 24px rgba(16, 185, 129, 0.1)',
+                        border: '1px solid rgba(16, 185, 129, 0.15)',
                       }
                     }}
                   >
-                    <CardContent sx={{ p: { xs: 2, sm: 3 }, flex: 1, display: 'flex', flexDirection: 'column' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                        <MoodIcon
+                    <CardContent sx={{ p: { xs: 3, sm: 4 }, flex: 1, display: 'flex', flexDirection: 'column' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                        <Box
                           sx={{
-                            mr: 1.5,
-                            color: theme.palette.secondary.main,
-                            fontSize: '1.4rem'
-                          }}
-                        />
-                        <Typography
-                          variant="h6"
-                          sx={{
-                            fontWeight: 600,
-                            color: 'text.primary'
+                            mr: 2,
+                            p: 1.5,
+                            borderRadius: 2.5,
+                            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(34, 197, 94, 0.05))',
+                            border: '1px solid rgba(16, 185, 129, 0.2)',
+                            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.1)'
                           }}
                         >
-                          感情分布
-                        </Typography>
+                          <MoodIcon
+                            sx={{
+                              color: '#10b981',
+                              fontSize: '1.4rem'
+                            }}
+                          />
+                        </Box>
+                        <Box>
+                          <Typography
+                            variant="h6"
+                            sx={{
+                              fontWeight: 700,
+                              color: '#1e293b',
+                              fontSize: '1.2rem',
+                              mb: 0.5
+                            }}
+                          >
+                            感情分析結果
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              color: '#64748b',
+                              fontSize: '0.875rem'
+                            }}
+                          >
+                            ユーザーの感情分布
+                          </Typography>
+                        </Box>
                       </Box>
 
-                      <Divider sx={{ mb: 2 }} />
+                      <Divider sx={{ mb: 3, borderColor: 'rgba(16, 185, 129, 0.1)' }} />
 
                       <Box sx={{
                         flex: 1,
@@ -547,10 +716,17 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                             options={{
                               responsive: true,
                               maintainAspectRatio: false,
+                              interaction: {
+                                intersect: false
+                              },
                               plugins: {
                                 tooltip: {
-                                  backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                                  padding: 12,
+                                  backgroundColor: 'rgba(30, 41, 59, 0.95)',
+                                  titleColor: '#f1f5f9',
+                                  bodyColor: '#e2e8f0',
+                                  borderColor: 'rgba(59, 130, 246, 0.3)',
+                                  borderWidth: 1,
+                                  padding: 16,
                                   titleFont: {
                                     size: 14,
                                     weight: 'bold'
@@ -558,22 +734,56 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                                   bodyFont: {
                                     size: 13
                                   },
-                                  cornerRadius: 8
+                                  cornerRadius: 12,
+                                  displayColors: true,
+                                  boxPadding: 8,
+                                  usePointStyle: true,
+                                  callbacks: {
+                                    label: (context) => {
+                                      const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0);
+                                      const percentage = ((context.parsed / total) * 100).toFixed(1);
+                                      return ` ${context.label}: ${context.parsed.toLocaleString()} 件 (${percentage}%)`;
+                                    }
+                                  }
                                 },
                                 legend: {
                                   position: 'bottom',
                                   labels: {
                                     usePointStyle: true,
-                                    padding: 20,
+                                    pointStyle: 'circle',
+                                    padding: 25,
                                     font: {
-                                      size: 12
-                                    }
-                                  }
+                                      size: 14,
+                                      weight: 600,
+                                      family: "'Inter', sans-serif"
+                                    },
+                                    color: '#374151',
+                                    boxWidth: 12,
+                                    boxHeight: 12
+                                  },
+                                  align: 'center'
                                 }
                               },
                               animation: {
-                                duration: 1000,
-                                easing: 'easeInOutQuart'
+                                animateRotate: true,
+                                animateScale: true,
+                                duration: 1500,
+                                easing: 'easeInOutCubic'
+                              },
+                              elements: {
+                                arc: {
+                                  borderWidth: 4,
+                                  borderColor: '#ffffff',
+                                  hoverBorderWidth: 6
+                                }
+                              },
+                              layout: {
+                                padding: {
+                                  top: 20,
+                                  bottom: 20,
+                                  left: 20,
+                                  right: 20
+                                }
                               }
                             }}
                           />
@@ -583,11 +793,22 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                             flexDirection: 'column',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            height: '100%'
+                            height: '100%',
+                            py: 4
                           }}>
-                            <MoodIcon sx={{ fontSize: '3rem', color: 'text.disabled', mb: 2 }} />
-                            <Typography variant="body1" color="text.secondary">
-                              感情データがありません
+                            <Box sx={{
+                              p: 3,
+                              borderRadius: '50%',
+                              backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                              mb: 3
+                            }}>
+                              <MoodIcon sx={{ fontSize: '2.5rem', color: '#10b981' }} />
+                            </Box>
+                            <Typography variant="h6" sx={{ color: '#374151', mb: 1, fontWeight: 600 }}>
+                              データがありません
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: '#6b7280', textAlign: 'center' }}>
+                              感情分析を表示するために<br />十分なデータを収集中です
                             </Typography>
                           </Box>
                         )}

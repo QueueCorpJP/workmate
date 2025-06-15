@@ -419,7 +419,8 @@ async def admin_delete_user(user_id: str, current_user = Depends(get_admin_or_us
             detail="自分の身を削除することはできません"
         )
     
-    # ユーザーの存在確誁E    user_result = select_data("users", filters={"id": user_id})
+    # ユーザーの存在確認
+    user_result = select_data("users", filters={"id": user_id})
     
     if not user_result.data:
         raise HTTPException(
@@ -488,7 +489,11 @@ async def submit_url(submission: UrlSubmission, current_user = Depends(get_curre
         )
 
 @app.post("/chatbot/api/upload-knowledge")
-async def upload_knowledge(file: UploadFile = File(...), current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def upload_knowledge(
+    file: UploadFile = File(...), 
+    current_user = Depends(get_current_user), 
+    db: SupabaseConnection = Depends(get_db)
+):
     """ファイルをアップロードして知識ベースを更新"""
     try:
         # ファイル名が存在することを確認
@@ -498,11 +503,11 @@ async def upload_knowledge(file: UploadFile = File(...), current_user = Depends(
                 detail="ファイルが指定されていないか、ファイル名が無効です"
             )
             
-        # ファイル拡張子をチェック。Google Driveアップロードの場合はスキップ
-        if not file.filename.lower().endswith(('.xlsx', '.xls', '.pdf', '.txt', '.avi', '.mp4', '.webp')):
+        # ファイル拡張子をチェック
+        if not file.filename.lower().endswith(('.xlsx', '.xls', '.pdf', '.txt', '.csv', '.doc', '.docx', '.avi', '.mp4', '.webp', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif')):
             raise HTTPException(
                 status_code=400,
-                detail="無効なファイル形式です、ExcelファイルまたはPDFファイル、テキストファイルのxlsx、Exls、pdf、txtのみ対応しています"
+                detail="無効なファイル形式です。Excel、PDF、Word、CSV、テキスト、画像、動画ファイルのみ対応しています"
             )
             
         # ファイル処理実施
@@ -865,7 +870,9 @@ async def admin_get_company_employees(current_user = Depends(get_admin_or_user),
         result = await get_company_employees(current_user["id"], db, None)
         return result
     else:
-        # 通常のユーザーの場合は自刁の会社の社員のチャットのみを取得        # ユーザーの会社IDを取得        user_result = select_data("users", filters={"id": current_user["id"]})
+        # 通常のユーザーの場合は自分の会社の社員のチャットのみを取得
+        # ユーザーの会社IDを取得
+        user_result = select_data("users", filters={"id": current_user["id"]})
         user_row = user_result.data[0] if user_result.data else None
         company_id = user_row.get("company_id") if user_row else None
         
@@ -1393,7 +1400,8 @@ async def admin_update_user_status(user_id: str, request: dict, current_user = D
         new_is_unlimited = bool(request.get("is_unlimited", False))
         print(f"新しいステータス: {'本番' if new_is_unlimited else 'チェック'}")
         
-        # ユーザーの存在確誁E        user_result = select_data("users", filters={"id": user_id})
+        # ユーザーの存在確認
+        user_result = select_data("users", filters={"id": user_id})
         if not user_result.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1407,7 +1415,8 @@ async def admin_update_user_status(user_id: str, request: dict, current_user = D
         if user['role'] == 'admin':
             print(f"警告: 管理者のロール ({user['email']}) のステータス変更")
         
-        # 現在の利用制限を取得        current_limits_result = select_data("usage_limits", filters={"user_id": user_id})
+        # 現在の利用制限を取得
+        current_limits_result = select_data("usage_limits", filters={"user_id": user_id})
         if not current_limits_result or not current_limits_result.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

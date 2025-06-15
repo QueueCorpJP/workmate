@@ -39,8 +39,8 @@ def setup_gemini():
         raise ValueError("GEMINI_API_KEY環境変数が設定されていません")
     
     genai.configure(api_key=api_key)
-    # より高いクォータ制限のあるモデルを使用
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # 最新のOCR技術とより高い精度のモデルを使用
+    model = genai.GenerativeModel('gemini-2.0-flash-exp')
     return model
 
 def get_db_params():

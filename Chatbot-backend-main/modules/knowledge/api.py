@@ -5,6 +5,7 @@
 import uuid
 import logging
 import pandas as pd
+import asyncio
 from datetime import datetime
 from fastapi import HTTPException, UploadFile, File, Depends
 from io import BytesIO
@@ -18,6 +19,10 @@ from .base import knowledge_base, _update_knowledge_base, get_active_resources
 from .excel import process_excel_file
 from .pdf import process_pdf_file
 from .text import process_txt_file
+from .image import process_image_file, is_image_file
+from .csv_processor import process_csv_file, process_csv_with_gemini_ocr, is_csv_file
+from .word_processor import process_word_file, is_word_file
+from .file_detector import detect_file_type
 from .url import extract_text_from_url, process_url_content
 from ..company import DEFAULT_COMPANY_NAME
 from ..utils import _process_video_file
@@ -28,7 +33,7 @@ logger = logging.getLogger(__name__)
 # 共通のエラーメッセージ
 EMPLOYEE_UPLOAD_ERROR = "社員アカウントはドキュメントをアップロードできません。管理者にお問い合わせください。"
 LIMIT_REACHED_ERROR = "申し訳ございません。デモ版のドキュメントアップロード制限（{limit}回）に達しました。"
-INVALID_FILE_ERROR = "無効なファイル形式です。ExcelファイルまたはPDFファイル、テキストファイル（.xlsx、.xls、.pdf、.txt）のみ対応しています。"
+INVALID_FILE_ERROR = "無効なファイル形式です。Excel、PDF、Word、CSV、テキスト、画像ファイル（.xlsx、.xls、.pdf、.doc、.docx、.csv、.txt、.jpg、.png等）のみ対応しています。"
 PDF_SIZE_ERROR = "PDFファイルが大きすぎます ({size:.2f} MB)。10MB以下のファイルを使用するか、ファイルを分割してください。"
 VIDEO_SIZE_ERROR = "ビデオファイルが大きすぎます ({size:.2f} MB)。500MB以下のファイルを使用するか、ファイルを分割してください。"
 TIMEOUT_ERROR = "処理がタイムアウトしました。ファイルが大きすぎるか、複雑すぎる可能性があります。ファイルを分割するか、より小さなファイルを使用してください。"
@@ -195,8 +200,11 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
     if not file or not file.filename:
         raise HTTPException(status_code=400, detail="ファイルが指定されていないか、ファイル名が無効です。")
 
-    # ファイル拡張子をチェック
-    if not file.filename.endswith(('.xlsx', '.xls', '.pdf', '.txt', '.avi', '.mp4', '.webm')):
+    # ファイル拡張子をチェック（CSV・Word形式を追加）
+    allowed_extensions = ('.xlsx', '.xls', '.pdf', '.txt', '.csv', '.doc', '.docx',
+                         '.avi', '.mp4', '.webm', 
+                         '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp')
+    if not file.filename.endswith(allowed_extensions):
         raise HTTPException(status_code=400, detail=INVALID_FILE_ERROR)
 
     try:
@@ -210,6 +218,10 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
         # ファイルを読み込む
         try:
             contents = await file.read()
+            
+            # メモリ使用量を制御するため、処理前に少し待機
+            await asyncio.sleep(0.1)
+            
         except Exception as e:
             logger.error(f"ファイル読み込みエラー: {str(e)}")
             raise HTTPException(status_code=400, detail=f"ファイルの読み込み中にエラーが発生しました: {str(e)}")
@@ -220,8 +232,13 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
         if len(contents) == 0:
             raise HTTPException(status_code=400, detail="ファイルが空です。有効なファイルをアップロードしてください。")
         
-        # ファイル形式に応じた処理
-        file_extension = file.filename.split('.')[-1].lower()
+        # ファイル形式を検知
+        file_info = detect_file_type(file.filename, contents)
+        file_extension = file_info['extension']
+        detected_type = file_info['file_type']
+        recommended_processor = file_info['processor']
+        
+        logger.info(f"ファイル形式検知結果: {detected_type} (プロセッサー: {recommended_processor}, 信頼度: {file_info['confidence']})")
         
         # データフレームとセクションを初期化
         df = None
@@ -230,8 +247,8 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
         page_count = 1
         
         try:
-            # ファイル形式に応じた処理関数を呼び出す
-            if file_extension in ['xlsx', 'xls']:
+            # 検知されたファイル形式に基づいて処理を実行
+            if detected_type == 'excel' or file_extension in ['xlsx', 'xls']:
                 logger.info(f"Excelファイル処理開始: {file.filename}")
                 df, sections, extracted_text = process_excel_file(contents, file.filename)
                 
@@ -243,7 +260,83 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                 except:
                     page_count = 1
                     
-            elif file_extension == 'pdf':
+            elif detected_type == 'csv' or is_csv_file(file.filename):
+                logger.info(f"CSVファイル処理開始: {file.filename}")
+                # CSVファイルサイズ制限（50MB）
+                if file_size_mb > 50:
+                    raise HTTPException(status_code=400, detail=f"CSVファイルが大きすぎます ({file_size_mb:.2f} MB)。50MB以下のファイルを使用してください。")
+                
+                try:
+                    # まずGoogle Sheets APIを使用してCSVを処理
+                    logger.info("Google Sheets APIを使用してCSVを処理")
+                    from .csv_processor import process_csv_file_with_sheets_api
+                    df, sections, extracted_text = await process_csv_file_with_sheets_api(contents, file.filename)
+                    page_count = 1
+                except Exception as sheets_error:
+                    logger.warning(f"Google Sheets API処理失敗: {str(sheets_error)}")
+                    try:
+                        # フォールバック: Gemini OCRを使用してCSVを処理
+                        logger.info("Gemini OCRを使用してCSVを処理（フォールバック）")
+                        df, sections, extracted_text = await process_csv_with_gemini_ocr(contents, file.filename)
+                        page_count = 1
+                    except Exception as csv_error:
+                        logger.error(f"CSV処理エラー: {str(csv_error)}")
+                        # 最終フォールバック: 従来の処理
+                        from .csv_processor import process_csv_file
+                        df, sections, extracted_text = process_csv_file(contents, file.filename)
+                        page_count = 1
+
+            elif detected_type == 'word' or is_word_file(file.filename):
+                logger.info(f"Wordファイル処理開始: {file.filename}")
+                # Wordファイルサイズ制限（20MB）
+                if file_size_mb > 20:
+                    raise HTTPException(status_code=400, detail=f"Wordファイルが大きすぎます ({file_size_mb:.2f} MB)。20MB以下のファイルを使用してください。")
+                
+                try:
+                    # Word処理前に少し待機（メモリ負荷軽減）
+                    await asyncio.sleep(0.2)
+                    df, sections, extracted_text = await process_word_file(contents, file.filename)
+                    page_count = 1
+                except Exception as word_error:
+                    logger.error(f"Word処理エラー: {str(word_error)}")
+                    # Word処理が失敗した場合のフォールバック
+                    df = pd.DataFrame({
+                        'section': ["Word処理エラー"],
+                        'content': [f"Wordファイル処理中にエラーが発生しました: {str(word_error)}"],
+                        'source': ['Word'],
+                        'file': [file.filename],
+                        'url': [None]
+                    })
+                    sections = {"Word処理エラー": f"Wordファイル処理中にエラーが発生しました: {str(word_error)}"}
+                    extracted_text = f"=== ファイル: {file.filename} ===\n\n=== Word処理エラー ===\nWordファイル処理中にエラーが発生しました: {str(word_error)}\n\n"
+                    page_count = 1
+
+            elif detected_type == 'image' or is_image_file(file.filename):
+                logger.info(f"画像ファイル処理開始: {file.filename}")
+                # 画像ファイルサイズ制限（10MB）
+                if file_size_mb > 10:
+                    raise HTTPException(status_code=400, detail=f"画像ファイルが大きすぎます ({file_size_mb:.2f} MB)。10MB以下のファイルを使用してください。")
+                
+                try:
+                    # 画像処理前に少し待機（メモリ負荷軽減）
+                    await asyncio.sleep(0.2)
+                    df, sections, extracted_text = await process_image_file(contents, file.filename)
+                    page_count = 1
+                except Exception as img_error:
+                    logger.error(f"画像処理エラー: {str(img_error)}")
+                    # 画像処理が失敗した場合のフォールバック
+                    df = pd.DataFrame({
+                        'section': ["画像処理エラー"],
+                        'content': [f"画像ファイル処理中にエラーが発生しました: {str(img_error)}"],
+                        'source': ['画像'],
+                        'file': [file.filename],
+                        'url': [None]
+                    })
+                    sections = {"画像処理エラー": f"画像ファイル処理中にエラーが発生しました: {str(img_error)}"}
+                    extracted_text = f"=== ファイル: {file.filename} ===\n\n=== 画像処理エラー ===\n画像ファイル処理中にエラーが発生しました: {str(img_error)}\n\n"
+                    page_count = 1
+                    
+            elif detected_type == 'pdf' or file_extension == 'pdf':
                 logger.info(f"PDFファイル処理開始: {file.filename}")
                 
                 # PDFファイルが大きすぎる場合はエラーを返す
@@ -255,6 +348,13 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                     pdf_file = BytesIO(contents)
                     pdf_reader = PyPDF2.PdfReader(pdf_file)
                     page_count = len(pdf_reader.pages)
+                    
+                    logger.info(f"PDFページ数: {page_count}")
+                    
+                    # ページ数が多い場合は処理前に警告
+                    if page_count > 8:
+                        logger.info(f"大きなPDFファイル（{page_count}ページ）を分割処理します")
+                        await asyncio.sleep(0.5)  # 処理前の待機
                     
                     # PDFファイルを処理
                     df, sections, extracted_text = await process_pdf_file(contents, file.filename)
@@ -273,11 +373,11 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                     sections = {"エラー": f"PDFファイル処理中にエラーが発生しました: {str(pdf_ex)}"}
                     extracted_text = f"=== ファイル: {file.filename} ===\n\n=== エラー ===\nPDFファイル処理中にエラーが発生しました: {str(pdf_ex)}\n\n"
                     
-            elif file_extension == 'txt':
+            elif detected_type == 'text' or file_extension == 'txt':
                 logger.info(f"テキストファイル処理開始: {file.filename}")
                 df, sections, extracted_text = process_txt_file(contents, file.filename)
                 
-            elif file_extension in ['avi', 'mp4', 'webm']:
+            elif detected_type == 'video' or file_extension in ['avi', 'mp4', 'webm']:
                 if file_size_mb > 500:
                     raise HTTPException(status_code=400, detail=VIDEO_SIZE_ERROR.format(size=file_size_mb))
                 
@@ -301,7 +401,11 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
             error_type = {
                 'xlsx': 'Excel', 'xls': 'Excel',
                 'pdf': 'PDF',
-                'txt': 'テキスト'
+                'txt': 'テキスト',
+                'csv': 'CSV',
+                'doc': 'Word', 'docx': 'Word',
+                'jpg': '画像', 'jpeg': '画像', 'png': '画像', 'gif': '画像',
+                'bmp': '画像', 'tiff': '画像', 'tif': '画像', 'webp': '画像'
             }.get(file_extension, 'ファイル')
             
             logger.error(f"{error_type}ファイル処理エラー: {str(e)}", exc_info=True)
@@ -386,7 +490,11 @@ async def get_uploaded_resources():
                 'xlsx': 'Excel', 'xls': 'Excel',
                 'pdf': 'PDF',
                 'txt': 'テキスト',
-                'avi': 'Video', 'mp4': 'Video', 'webm': 'Video'
+                'csv': 'CSV',
+                'doc': 'Word', 'docx': 'Word',
+                'avi': 'Video', 'mp4': 'Video', 'webm': 'Video',
+                'jpg': '画像', 'jpeg': '画像', 'png': '画像', 'gif': '画像', 
+                'bmp': '画像', 'tiff': '画像', 'tif': '画像', 'webp': '画像'
             }.get(extension, "その他")
         
         resources.append({

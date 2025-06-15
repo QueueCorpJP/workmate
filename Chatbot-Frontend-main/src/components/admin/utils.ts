@@ -18,7 +18,7 @@ export const formatDate = (dateString: string): string => {
 };
 
 /**
- * Generate chart data for category distribution
+ * Generate chart data for category distribution with enhanced styling
  * @param categories - Object with category names as keys and counts as values
  * @param colors - Array of color strings
  * @returns Chart.js data object
@@ -38,21 +38,52 @@ export const getCategoryChartData = (
   const labels = Object.keys(categoriesRecord);
   const data = Object.values(categoriesRecord);
 
+  // Professional business color palette
+  const professionalColors = [
+    '#3b82f6',  // Blue - Primary business color
+    '#10b981',  // Emerald - Success/Growth
+    '#f59e0b',  // Amber - Warning/Attention
+    '#ef4444',  // Red - Issues/Urgent
+    '#8b5cf6',  // Violet - Innovation
+    '#06b6d4',  // Cyan - Information
+    '#84cc16',  // Lime - Positive trends
+    '#f97316',  // Orange - Medium priority
+    '#ec4899',  // Pink - Special categories
+    '#6b7280'   // Gray - Neutral/Other
+  ];
+
+  // Solid colors for borders and hover states
+  const solidColors = [
+    '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+    '#06b6d4', '#84cc16', '#f97316', '#ec4899', '#6b7280'
+  ];
+
+  const borderColors = solidColors.map(color => color + 'CC'); // Add transparency
+  const hoverColors = solidColors.map(color => color + 'EE'); // Lighter transparency
+
   return {
     labels,
     datasets: [
       {
         label: 'カテゴリ分布',
         data,
-        backgroundColor: colors.slice(0, labels.length),
-        borderWidth: 1
+        backgroundColor: professionalColors.slice(0, labels.length),
+        borderColor: '#ffffff',
+        borderWidth: 2,
+        hoverBackgroundColor: hoverColors.slice(0, labels.length),
+        hoverBorderColor: '#ffffff',
+        hoverBorderWidth: 3,
+        borderRadius: 8,
+        borderSkipped: false,
+        // Chart.js 3.x doesn't support shadow directly
+        // Instead, we'll use the updated styling in the component
       }
     ]
   };
 };
 
 /**
- * Generate chart data for sentiment distribution
+ * Generate chart data for sentiment distribution with neutral consolidation
  * @param sentiments - Object with sentiment names as keys and counts as values
  * @param colors - Object with sentiment names as keys and color strings as values
  * @returns Chart.js data object
@@ -69,8 +100,49 @@ export const getSentimentChartData = (
       }, {} as Record<string, number>)
     : sentiments;
 
-  const labels = Object.keys(sentimentsRecord);
-  const data = Object.values(sentimentsRecord);
+  // Consolidate neutral sentiments (combine english and japanese variants)
+  const consolidatedSentiments: Record<string, number> = {};
+  let neutralCount = 0;
+
+  Object.entries(sentimentsRecord).forEach(([sentiment, count]) => {
+    const lowerSentiment = sentiment.toLowerCase();
+    if (lowerSentiment === 'neutral' || lowerSentiment === 'ニュートラル' || sentiment === '中立') {
+      neutralCount += count;
+    } else if (lowerSentiment === 'positive' || lowerSentiment === 'ポジティブ' || sentiment === '肯定的') {
+      consolidatedSentiments['ポジティブ'] = (consolidatedSentiments['ポジティブ'] || 0) + count;
+    } else if (lowerSentiment === 'negative' || lowerSentiment === 'ネガティブ' || sentiment === '否定的') {
+      consolidatedSentiments['ネガティブ'] = (consolidatedSentiments['ネガティブ'] || 0) + count;
+    } else {
+      consolidatedSentiments[sentiment] = count;
+    }
+  });
+
+  if (neutralCount > 0) {
+    consolidatedSentiments['ニュートラル'] = neutralCount;
+  }
+
+  const labels = Object.keys(consolidatedSentiments);
+  const data = Object.values(consolidatedSentiments);
+
+  // Professional business colors for sentiment analysis
+  const professionalSentimentColors: Record<string, string> = {
+    'ポジティブ': '#10b981',   // Emerald - Positive sentiment
+    'ネガティブ': '#ef4444',   // Red - Negative sentiment
+    'ニュートラル': '#6b7280', // Gray - Neutral sentiment
+    'positive': '#10b981',
+    'negative': '#ef4444',
+    'neutral': '#6b7280'
+  };
+
+  // Lighter colors for hover states
+  const hoverSentimentColors: Record<string, string> = {
+    'ポジティブ': '#34d399',   // Lighter emerald
+    'ネガティブ': '#f87171',   // Lighter red
+    'ニュートラル': '#9ca3af', // Lighter gray
+    'positive': '#34d399',
+    'negative': '#f87171',
+    'neutral': '#9ca3af'
+  };
 
   return {
     labels,
@@ -78,8 +150,17 @@ export const getSentimentChartData = (
       {
         label: '感情分布',
         data,
-        backgroundColor: labels.map(label => colors[label] || 'rgba(199, 199, 199, 0.6)'),
-        borderWidth: 1
+        backgroundColor: labels.map(label => 
+          professionalSentimentColors[label] || colors[label] || '#6b7280'
+        ),
+        borderColor: '#ffffff',
+        borderWidth: 4,
+        hoverBackgroundColor: labels.map(label => 
+          hoverSentimentColors[label] || colors[label] || '#9ca3af'
+        ),
+        hoverBorderColor: '#ffffff',
+        hoverBorderWidth: 6,
+        // Chart.js 3.x styling handled in component
       }
     ]
   };

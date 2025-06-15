@@ -1,9 +1,7 @@
 module.exports = {
   apps: [{
     name: 'chatbot-backend',
-    script: 'main.py',
-    interpreter: './venv/bin/python',
-    interpreter_args: '-m uvicorn',
+    script: './venv/bin/uvicorn',
     args: 'main:app --host 0.0.0.0 --port 8083',
     cwd: '/home/ec2-user/workmate/Chatbot-backend-main',
     instances: 1,

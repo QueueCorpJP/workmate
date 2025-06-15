@@ -300,6 +300,35 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                       {group.companyId}
                     </Typography>
                   </Box>
+
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      アカウント作成日
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      {new Date(group.president.created_at).toLocaleDateString('ja-JP')}
+                    </Typography>
+                  </Box>
+
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      メッセージ数
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      {group.president.message_count || 0}回
+                    </Typography>
+                  </Box>
+
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      最終アクティビティ
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      {group.president.last_activity 
+                        ? new Date(group.president.last_activity).toLocaleDateString('ja-JP')
+                        : '活動なし'}
+                    </Typography>
+                  </Box>
                   
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
                     <Chip
@@ -314,6 +343,33 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                       </Typography>
                     </Box>
                   </Box>
+
+                  <Box sx={{ mt: 2, display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                    <Tooltip title={`${group.president.usage_limits?.is_unlimited ? 'デモ版' : '本番版'}に切り替え`}>
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleDemo(group.president);
+                        }}
+                        color="primary"
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="プラン変更履歴を表示">
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenPlanHistory(group.president);
+                        }}
+                        color="primary"
+                      >
+                        <HistoryIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
                 </CardContent>
               </Card>
             </Grid>
@@ -326,6 +382,8 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
   const handleToggleDemo = async (employee: CompanyEmployee) => {
     // admin権限チェック
     if (!isAdmin) {
+      console.log("Admin権限がありません", { user, isAdmin, isQueueTechAdmin });
+      alert("管理者権限がありません");
       return;
     }
     
@@ -333,14 +391,29 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
       // is_unlimitedの逆の値を設定（現在がfalse(デモ版)ならtrue(本番版)に、現在がtrue(本番版)ならfalse(デモ版)に）
       const newIsUnlimited = !employee.usage_limits?.is_unlimited;
       
+      console.log("デモ/本番切り替え開始", {
+        employeeId: employee.id,
+        employeeEmail: employee.email,
+        currentStatus: employee.usage_limits?.is_unlimited ? "本番版" : "デモ版",
+        newStatus: newIsUnlimited ? "本番版" : "デモ版",
+        currentUser: user?.email,
+        isAdmin,
+        isQueueTechAdmin
+      });
+      
       const response = await api.post(`/admin/update-user-status/${employee.id}`, {
         is_unlimited: newIsUnlimited
       });
       
+      console.log("切り替え成功", response.data);
+      alert(`${employee.email}を${newIsUnlimited ? "本番版" : "デモ版"}に切り替えました`);
+      
       // 社員一覧を再読み込み
       onRefreshCompanyEmployees();
     } catch (error: any) {
-      // エラーハンドリングは必要に応じて追加
+      console.error("デモ/本番切り替えエラー", error);
+      const errorMessage = error.response?.data?.detail || error.message || "切り替えに失敗しました";
+      alert(`エラー: ${errorMessage}`);
     }
   };
 
@@ -598,16 +671,20 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                   >
                     役割
                   </TableCell>
-                  <TableCell
-                    sx={{ fontWeight: "bold", color: "primary.contrastText" }}
-                  >
-                    デモ版
-                  </TableCell>
-                  <TableCell
-                    sx={{ fontWeight: "bold", color: "primary.contrastText" }}
-                  >
-                    プラン履歴
-                  </TableCell>
+                  {isAdmin && (
+                    <>
+                      <TableCell
+                        sx={{ fontWeight: "bold", color: "primary.contrastText" }}
+                      >
+                        デモ版
+                      </TableCell>
+                      <TableCell
+                        sx={{ fontWeight: "bold", color: "primary.contrastText" }}
+                      >
+                        プラン履歴
+                      </TableCell>
+                    </>
+                  )}
                   <TableCell
                     sx={{ fontWeight: "bold", color: "primary.contrastText" }}
                   >
@@ -698,69 +775,57 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                         variant="outlined"
                       />
                     </TableCell>
-                    <TableCell>
-                      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        {isAdmin ? (
-                          <Tooltip title={`クリックで${!employee.usage_limits?.is_unlimited ? '本番版' : 'デモ版'}に切り替え`}>
-                            <Checkbox
-                              checked={!employee.usage_limits?.is_unlimited}
-                              onChange={() => handleToggleDemo(employee)}
-                              size="small"
-                              sx={{
-                                color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
-                                '&.Mui-checked': {
+                    {isAdmin && (
+                      <>
+                        <TableCell>
+                          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <Tooltip title={`クリックで${!employee.usage_limits?.is_unlimited ? '本番版' : 'デモ版'}に切り替え`}>
+                              <Checkbox
+                                checked={!employee.usage_limits?.is_unlimited}
+                                onChange={() => handleToggleDemo(employee)}
+                                size="small"
+                                sx={{
                                   color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
-                                }
-                              }}
-                            />
-                          </Tooltip>
-                        ) : (
-                          <Tooltip title="管理者のみプラン変更可能">
-                            <Checkbox
-                              checked={!employee.usage_limits?.is_unlimited}
-                              disabled={true}
-                              size="small"
-                              sx={{
+                                  '&.Mui-checked': {
+                                    color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
+                                  }
+                                }}
+                              />
+                            </Tooltip>
+                            <Typography 
+                              variant="caption" 
+                              sx={{ 
+                                ml: 0.5, 
                                 color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
-                                '&.Mui-checked': {
-                                  color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
-                                }
+                                fontWeight: 500
                               }}
-                            />
+                            >
+                              {!employee.usage_limits?.is_unlimited ? "デモ版" : "本番版"}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Tooltip title="プラン変更履歴を表示">
+                            <IconButton
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenPlanHistory(employee);
+                              }}
+                              sx={{
+                                color: "primary.main",
+                                "&:hover": {
+                                  bgcolor: "primary.light",
+                                  color: "primary.dark",
+                                },
+                              }}
+                            >
+                              <TimelineIcon fontSize="small" />
+                            </IconButton>
                           </Tooltip>
-                        )}
-                        <Typography 
-                          variant="caption" 
-                          sx={{ 
-                            ml: 0.5, 
-                            color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
-                            fontWeight: 500
-                          }}
-                        >
-                          {!employee.usage_limits?.is_unlimited ? "デモ版" : "本番版"}
-                        </Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      <Tooltip title="プラン変更履歴を表示">
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenPlanHistory(employee);
-                          }}
-                          sx={{
-                            color: "primary.main",
-                            "&:hover": {
-                              bgcolor: "primary.light",
-                              color: "primary.dark",
-                            },
-                          }}
-                        >
-                          <TimelineIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </TableCell>
+                        </TableCell>
+                      </>
+                    )}
                     <TableCell>{formatDate(employee.created_at)}</TableCell>
                     <TableCell>{employee.message_count}</TableCell>
                     <TableCell>
@@ -1191,20 +1256,24 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                       color={selectedCompanyAdmin.usage_limits?.is_unlimited ? "success" : "warning"}
                       size="small"
                     />
-                    <IconButton
-                      size="small"
-                      onClick={() => handleToggleDemo(selectedCompanyAdmin)}
-                      color="primary"
-                    >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleOpenPlanHistory(selectedCompanyAdmin)}
-                      color="primary"
-                    >
-                      <HistoryIcon fontSize="small" />
-                    </IconButton>
+                    <Tooltip title={`${selectedCompanyAdmin.usage_limits?.is_unlimited ? 'デモ版' : '本番版'}に切り替え`}>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleToggleDemo(selectedCompanyAdmin)}
+                        color="primary"
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="プラン変更履歴を表示">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleOpenPlanHistory(selectedCompanyAdmin)}
+                        color="primary"
+                      >
+                        <HistoryIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                   </Box>
                 </Box>
               </Paper>
@@ -1239,6 +1308,37 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                             </Box>
                           </Box>
                           
+                          <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                              <Typography variant="caption" color="text.secondary">メッセージ数:</Typography>
+                              <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                                {employee.message_count || 0}回
+                              </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                              <Typography variant="caption" color="text.secondary">作成日:</Typography>
+                              <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                                {new Date(employee.created_at).toLocaleDateString('ja-JP')}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                              <Typography variant="caption" color="text.secondary">最終利用:</Typography>
+                              <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                                {employee.last_activity 
+                                  ? new Date(employee.last_activity).toLocaleDateString('ja-JP')
+                                  : '活動なし'}
+                              </Typography>
+                            </Box>
+                            {!employee.usage_limits?.is_unlimited && (
+                              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <Typography variant="caption" color="text.secondary">利用制限:</Typography>
+                                <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                                  {employee.usage_limits?.questions_used || 0}/{employee.usage_limits?.questions_limit || 0}
+                                </Typography>
+                              </Box>
+                            )}
+                          </Box>
+                          
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <Chip
                               label={employee.usage_limits?.is_unlimited ? "本番版" : "デモ版"}
@@ -1246,18 +1346,22 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                               size="small"
                             />
                             <Box sx={{ display: 'flex', gap: 1 }}>
-                              <IconButton
-                                size="small"
-                                onClick={() => handleToggleDemo(employee)}
-                              >
-                                <EditIcon fontSize="small" />
-                              </IconButton>
-                              <IconButton
-                                size="small"
-                                onClick={() => handleOpenPlanHistory(employee)}
-                              >
-                                <HistoryIcon fontSize="small" />
-                              </IconButton>
+                              <Tooltip title={`${employee.usage_limits?.is_unlimited ? 'デモ版' : '本番版'}に切り替え`}>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleToggleDemo(employee)}
+                                >
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="プラン変更履歴を表示">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleOpenPlanHistory(employee)}
+                                >
+                                  <HistoryIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
                             </Box>
                           </Box>
                         </CardContent>

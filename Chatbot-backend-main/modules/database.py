@@ -1162,27 +1162,27 @@ def update_company_users_status(user_id: str, new_is_unlimited: bool, db: Supaba
             print("✗ ユーザーに会社IDが設定されていません")
             return 0
         
-        # userロールの変更のみemployeeロールに反映
-        if user_role != "user":
-            print(f"✗ {user_role}ロールの変更はemployeeロールに反映されません（userロールのみ対象）")
+        # 管理者による変更の場合は、同じ会社の全ユーザー（user, employee）を同期
+        print("✓ 同じ会社の全ユーザー（user, employee）に変更を反映します")
+        
+        # 同じ会社のuser/employeeロールユーザーを取得（自分は除く）
+        company_users_result = select_data("users", 
+                                         columns="id, email, name, role", 
+                                         filters={"company_id": company_id})
+        
+        # 自分以外で、user/employeeロールのユーザーのみをフィルタ
+        all_company_users = company_users_result.data if company_users_result and company_users_result.data else []
+        company_users = [u for u in all_company_users 
+                        if u.get('id') != user_id and u.get('role') in ['user', 'employee']]
+        
+        if not company_users:
+            print("✗ 同じ会社に同期対象のユーザーが見つかりません")
             return 0
         
-        print("✓ userロールの変更を同じ会社のemployeeロールに反映します")
+        print(f"✓ 同期対象のユーザー: {len(company_users)}人")
         
-        # 同じ会社のemployeeロールユーザーを取得
-        company_employees_result = select_data("users", 
-                                             columns="id, email, name, role", 
-                                             filters={"company_id": company_id, "role": "employee"})
-        
-        if not company_employees_result or not company_employees_result.data:
-            print("✗ 同じ会社にemployeeロールのユーザーが見つかりません")
-            return 0
-        
-        employee_users = company_employees_result.data
-        print(f"✓ 同期対象のemployeeユーザー: {len(employee_users)}人")
-        
-        for employee in employee_users:
-            print(f"  - {employee.get('email')} ({employee.get('name')})")
+        for user in company_users:
+            print(f"  - {user.get('email')} ({user.get('name')}) - {user.get('role')}")
         
         # 新しい制限値を計算
         if new_is_unlimited:
@@ -1195,20 +1195,20 @@ def update_company_users_status(user_id: str, new_is_unlimited: bool, db: Supaba
         updated_count = 0
         failed_updates = []
         
-        # 各employeeユーザーのステータスを更新
-        for employee in employee_users:
-            employee_id = employee.get("id")
-            employee_email = employee.get("email")
-            employee_name = employee.get("name")
+        # 各ユーザーのステータスを更新
+        for company_user in company_users:
+            company_user_id = company_user.get("id")
+            company_user_email = company_user.get("email")
+            company_user_name = company_user.get("name")
             
-            if not employee_id:
+            if not company_user_id:
                 continue
             
             try:
-                print(f"--- {employee_email} の同期処理開始 ---")
+                print(f"--- {company_user_email} の同期処理開始 ---")
                 
                 # 現在の利用制限を取得
-                current_limits_result = select_data("usage_limits", filters={"user_id": employee_id})
+                current_limits_result = select_data("usage_limits", filters={"user_id": company_user_id})
                 
                 if current_limits_result and current_limits_result.data:
                     current_limits = current_limits_result.data[0]
@@ -1240,7 +1240,7 @@ def update_company_users_status(user_id: str, new_is_unlimited: bool, db: Supaba
                         updated_count += 1
                         print(f"✓ usage_limitsレコード作成完了: {'本番版' if new_is_unlimited else 'デモ版'}")
                     else:
-                        failed_updates.append(employee_email)
+                        failed_updates.append(company_user_email)
                         print(f"✗ usage_limitsレコード作成失敗")
                     continue
                 
@@ -1268,23 +1268,23 @@ def update_company_users_status(user_id: str, new_is_unlimited: bool, db: Supaba
                     "questions_used": adjusted_questions_used,
                     "document_uploads_limit": new_uploads_limit,
                     "document_uploads_used": adjusted_uploads_used
-                }, "user_id", employee_id)
+                }, "user_id", company_user_id)
                 
                 if update_result:
                     updated_count += 1
-                    print(f"✓ employeeユーザー同期完了: {employee_email}")
+                    print(f"✓ ユーザー同期完了: {company_user_email}")
                     print(f"  ステータス変更: {'デモ版' if current_is_unlimited else '本番版'} → {'本番版' if new_is_unlimited else 'デモ版'}")
                     print(f"  新しい制限: 質問={new_questions_limit}({adjusted_questions_used}使用済み), アップロード={new_uploads_limit}({adjusted_uploads_used}使用済み)")
                 else:
-                    failed_updates.append(employee_email)
-                    print(f"✗ employeeユーザー同期失敗: {employee_email}")
+                    failed_updates.append(company_user_email)
+                    print(f"✗ ユーザー同期失敗: {company_user_email}")
                     
             except Exception as e:
-                failed_updates.append(employee_email)
-                print(f"✗ employeeユーザー同期エラー: {employee_email} - {str(e)}")
+                failed_updates.append(company_user_email)
+                print(f"✗ ユーザー同期エラー: {company_user_email} - {str(e)}")
         
         print(f"=== 会社レベル同期処理完了 ===")
-        print(f"同期成功: {updated_count}個のemployeeアカウント")
+        print(f"同期成功: {updated_count}個のアカウント")
         if failed_updates:
             print(f"同期失敗: {len(failed_updates)}個 - {failed_updates}")
         

@@ -11,8 +11,8 @@ from ..database import ensure_string
 # Geminiモデルをセットアップ
 model = setup_gemini()
 
-async def ocr_with_gemini(images, instruction):
-    """Geminiを使用して画像からテキストを抽出する"""
+async def ocr_with_gemini(images, instruction, chunk_size=8):
+    """Geminiを使用して画像からテキストを抽出する（8ページずつ分割処理）"""
     prompt_base = f"""
     {instruction}
     This is a page from a PDF document. Extract all text content while preserving the structure.
@@ -39,13 +39,40 @@ async def ocr_with_gemini(images, instruction):
                 return f"\n\n[Error processing page {idx + 1}]: {str(e)}\n"
 
         try:
+            # 処理速度を制御するため少し待機
+            await asyncio.sleep(0.5)
             return await asyncio.to_thread(sync_call)
         except Exception as e:
             print(f"Async error processing page {idx + 1}: {str(e)}")
             return f"\n\n[Error processing page {idx + 1}]: {str(e)}\n"
 
-    tasks = [process_page(idx, img) for idx, img in enumerate(images)]
-    results = await asyncio.gather(*tasks)
+    # ページ数が多い場合は分割処理
+    if len(images) > chunk_size:
+        print(f"大きなPDFファイル検出: {len(images)}ページ。{chunk_size}ページずつ分割して処理します。")
+        all_results = []
+        
+        for i in range(0, len(images), chunk_size):
+            chunk_images = images[i:i + chunk_size]
+            chunk_start = i + 1
+            chunk_end = min(i + chunk_size, len(images))
+            
+            print(f"PDFページ {chunk_start}-{chunk_end} を処理中...")
+            
+            # チャンクごとにタスクを作成して実行
+            tasks = [process_page(i + idx, img) for idx, img in enumerate(chunk_images)]
+            chunk_results = await asyncio.gather(*tasks)
+            all_results.extend(chunk_results)
+            
+            # チャンク間で少し待機（APIレート制限対策）
+            if i + chunk_size < len(images):
+                print(f"次のチャンク処理前に待機中...")
+                await asyncio.sleep(2.0)
+        
+        results = all_results
+    else:
+        # 通常処理（8ページ以下）
+        tasks = [process_page(idx, img) for idx, img in enumerate(images)]
+        results = await asyncio.gather(*tasks)
 
     # Combine results and ensure it's a string
     combined_text = ""

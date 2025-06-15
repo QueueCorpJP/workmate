@@ -534,10 +534,12 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
             </Card>
           </Grid>
 
-          {/* プラン履歴セクション */}
-          <Grid item xs={12}>
-            <PlanHistorySection />
-          </Grid>
+          {/* プラン履歴セクション - 特別管理者のみ */}
+          {isSpecialAdmin && (
+            <Grid item xs={12}>
+              <PlanHistorySection />
+            </Grid>
+          )}
         </Grid>
       </Box>
     </Fade>

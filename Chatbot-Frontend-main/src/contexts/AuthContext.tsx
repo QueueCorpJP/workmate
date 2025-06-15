@@ -70,7 +70,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const parsedUser = JSON.parse(storedUser);
       setUser(parsedUser);
       setIsAuthenticated(true);
-      setIsAdmin(parsedUser.role === "admin");
+      setIsAdmin(parsedUser.role === "admin" || 
+        (parsedUser.email && ["queue@queuefood.co.jp", "queue@queueu-tech.jp"].includes(parsedUser.email)));
       setIsEmployee(parsedUser.role === "employee");
 
       // 利用制限情報を設定
@@ -103,7 +104,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const userData = response.data;
       setUser(userData);
       setIsAuthenticated(true);
-      setIsAdmin(userData.role === "admin");
+      setIsAdmin(userData.role === "admin" || 
+        (userData.email && ["queue@queuefood.co.jp", "queue@queueu-tech.jp"].includes(userData.email)));
       setIsEmployee(userData.role === "employee");
 
       // 利用制限情報を設定
@@ -219,7 +221,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const userData = response.data;
       setUser(userData);
       setIsAuthenticated(true);
-      setIsAdmin(userData.role === "admin");
+      setIsAdmin(userData.role === "admin" || 
+        (userData.email && ["queue@queuefood.co.jp", "queue@queueu-tech.jp"].includes(userData.email)));
       setIsEmployee(userData.role === "employee");
 
       // 利用制限情報を設定

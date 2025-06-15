@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button, Typography, Box, Alert } from '@mui/material';
 import { Cloud } from '@mui/icons-material';
 import { CONFIG, validateConfig } from '../config/constants';
+import { GoogleAuthStorage } from '../utils/googleAuthStorage';
 
 interface GoogleDriveAuthProps {
   onAuthSuccess: (accessToken: string) => void;
@@ -30,8 +31,24 @@ export const GoogleDriveAuth: React.FC<GoogleDriveAuthProps> = ({
   const [gapiLoaded, setGapiLoaded] = useState(false);
 
   useEffect(() => {
+    // 既存の認証状態をチェック
+    checkExistingAuth();
     loadGoogleAPI();
   }, []);
+
+  const checkExistingAuth = () => {
+    const existingToken = GoogleAuthStorage.getAccessToken();
+    if (existingToken) {
+      console.log('既存の認証状態を発見しました');
+      setIsAuthenticated(true);
+      onAuthSuccess(existingToken);
+      
+      // トークンの有効期限をチェック
+      if (GoogleAuthStorage.willExpireSoon(10)) { // 10分前に警告
+        console.log('トークンの有効期限が近づいています');
+      }
+    }
+  };
 
   const loadGoogleAPI = async () => {
     try {
@@ -128,6 +145,15 @@ export const GoogleDriveAuth: React.FC<GoogleDriveAuthProps> = ({
             }
           } else {
             console.log('Google認証成功');
+            
+            // 認証データを保存
+            GoogleAuthStorage.setAuthData({
+              access_token: response.access_token,
+              expires_in: response.expires_in || 3600, // デフォルト1時間
+              token_type: response.token_type,
+              scope: response.scope
+            });
+            
             setIsAuthenticated(true);
             onAuthSuccess(response.access_token);
           }
@@ -145,7 +171,8 @@ export const GoogleDriveAuth: React.FC<GoogleDriveAuthProps> = ({
 
   const handleSignOut = async () => {
     try {
-      // 新しいAPIではローカル状態のみリセット
+      // 保存された認証データを削除
+      GoogleAuthStorage.clearAuthData();
       setIsAuthenticated(false);
       console.log('サインアウト完了');
     } catch (error) {
