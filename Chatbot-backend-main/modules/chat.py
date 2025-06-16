@@ -171,8 +171,8 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db), c
         safe_print(f"アクティブなソース: {active_sources}")
         active_knowledge_text = await get_active_resources_content_by_ids(active_sources, db)
         
-        # 知識ベースのサイズを制限（最大50万文字）
-        MAX_KNOWLEDGE_SIZE = 500000
+        # 知識ベースのサイズを制限（トークン制限対応のため100万文字に設定）
+        MAX_KNOWLEDGE_SIZE = 1000000
         if active_knowledge_text and len(active_knowledge_text) > MAX_KNOWLEDGE_SIZE:
             safe_print(f"⚠️ 知識ベースが大きすぎます ({len(active_knowledge_text)} 文字)。{MAX_KNOWLEDGE_SIZE} 文字に制限します。")
             active_knowledge_text = active_knowledge_text[:MAX_KNOWLEDGE_SIZE] + "\n\n[注意: 知識ベースが大きいため、一部のみ表示しています]"
@@ -236,7 +236,7 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db), c
                         FROM chat_history
                         WHERE employee_id = %s
                         ORDER BY timestamp DESC
-                        LIMIT 3
+                        LIMIT 2
                         """,
                         (message.user_id,)
                     )
@@ -258,11 +258,11 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db), c
                     user_msg = msg.get('user_message', '') or ''
                     bot_msg = msg.get('bot_response', '') or ''
                     
-                    # 各メッセージを200文字に制限
-                    if len(user_msg) > 200:
-                        user_msg = user_msg[:200] + "..."
-                    if len(bot_msg) > 200:
-                        bot_msg = bot_msg[:200] + "..."
+                    # 各メッセージを100文字に制限（トークン削減のため）
+                    if len(user_msg) > 100:
+                        user_msg = user_msg[:100] + "..."
+                    if len(bot_msg) > 100:
+                        bot_msg = bot_msg[:100] + "..."
                     
                     conversation_history += f"ユーザー: {user_msg}\n"
                     conversation_history += f"アシスタント: {bot_msg}\n\n"
@@ -302,8 +302,8 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db), c
         {message_text}
         """
 
-        # プロンプトサイズの最終チェック
-        MAX_PROMPT_SIZE = 800000  # 80万文字制限
+        # プロンプトサイズの最終チェック（トークン制限対応）
+        MAX_PROMPT_SIZE = 200000  # 20万文字制限
         if len(prompt) > MAX_PROMPT_SIZE:
             safe_print(f"⚠️ プロンプトが大きすぎます ({len(prompt)} 文字)。知識ベースをさらに制限します。")
             # 知識ベースをさらに制限
