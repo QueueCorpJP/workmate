@@ -183,7 +183,7 @@ async def process_chat(message: ChatMessage, db: Connection = Depends(get_db), c
             # トークン使用量を計算してチャット履歴を保存（エラーケース）
             from modules.token_counter import TokenUsageTracker
             
-            # ユーザーの会社IDを取得（チャット履歴保存用）
+            # ユーザーの会社IDを取得（チャット履歴保存用） 
             from supabase_adapter import select_data
             user_result = select_data("users", filters={"id": message.user_id}) if hasattr(message, 'user_id') and message.user_id else None
             chat_company_id = user_result.data[0].get("company_id") if user_result and user_result.data else None

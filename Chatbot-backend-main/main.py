@@ -1727,21 +1727,26 @@ async def get_company_token_usage(current_user = Depends(get_current_user), db: 
     try:
         print(f"company-token-usageエンド�Eイントが呼び出されました - ユーザー: {current_user['email']}")
         
-        # ユーザーの会社IDを取得        from supabase_adapter import select_data
+        # ユーザーの会社IDを取得
+        from supabase_adapter import select_data
         user_result = select_data("users", columns="company_id", filters={"id": current_user["id"]})
         company_id = None
         if user_result and user_result.data:
             company_id = user_result.data[0].get("company_id")
         
-        # 実際の会社ユーザー数を取得        company_users_count = 1  # チェックォルト（デフォルト）        company_name = "あなたの会社"
+        # 実際の会社ユーザー数を取得
+        company_users_count = 1  # デフォルト
+        company_name = "あなたの会社"
         
         if company_id:
-            # 同じ会社のユーザー数をカウント            company_users_result = select_data("users", columns="id, name", filters={"company_id": company_id})
+            # 同じ会社のユーザー数をカウント
+            company_users_result = select_data("users", columns="id, name", filters={"company_id": company_id})
             if company_users_result and company_users_result.data:
                 company_users_count = len(company_users_result.data)
                 print(f"会社ID {company_id} のユーザー数: {company_users_count}人")
             
-            # 会社名を取得            company_result = select_data("companies", columns="name", filters={"id": company_id})
+            # 会社名を取得
+            company_result = select_data("companies", columns="name", filters={"id": company_id})
             if company_result and company_result.data:
                 company_name = company_result.data[0].get("name", "あなたの会社")
         
@@ -1759,8 +1764,9 @@ async def get_company_token_usage(current_user = Depends(get_current_user), db: 
                 
                 tracker = TokenUsageTracker(db)
                 
-                # 現在の月を取得                current_month = datetime.datetime.now().strftime('%Y-%m')
-                print(f"🔍 現在の朁E {current_month}")
+                # 現在の月を取得
+                current_month = datetime.datetime.now().strftime('%Y-%m')
+                print(f"🔍 現在の月: {current_month}")
                 
                 usage_data = tracker.get_company_monthly_usage(company_id, current_month)
                 
@@ -1772,8 +1778,9 @@ async def get_company_token_usage(current_user = Depends(get_current_user), db: 
                     total_cost_usd = usage_data.get("total_cost_usd", 0.0)
                     print(f"会社ID {company_id} の実際のトークン使用量 {total_tokens_used:,} tokens")
                 else:
-                    print("⚠の今月のトークン使用量データない- 全期間で確認します")
-                    # 全期間のチャットを取得                    usage_data_all = tracker.get_company_monthly_usage(company_id, "ALL")
+                    print("⚠️ 今月のトークン使用量データがない - 全期間で確認します")
+                    # 全期間のチャットを取得
+                    usage_data_all = tracker.get_company_monthly_usage(company_id, "ALL")
                     if usage_data_all and usage_data_all.get("total_tokens", 0) > 0:
                         total_tokens_used = usage_data_all.get("total_tokens", 0)
                         total_input_tokens = usage_data_all.get("total_input_tokens", 0) 
@@ -1782,13 +1789,14 @@ async def get_company_token_usage(current_user = Depends(get_current_user), db: 
                         total_cost_usd = usage_data_all.get("total_cost_usd", 0.0)
                         print(f"全期間での会社ID {company_id} のトークン使用量 {total_tokens_used:,} tokens")
                     else:
-                        print("⚠の全期間でもトークン使用量データない")
+                        print("⚠️ 全期間でもトークン使用量データがない")
             else:
-                print("⚠の会社IDない- 個人ユーザーのトークン使用量現在未対忁")
+                print("⚠️ 会社IDがない - 個人ユーザーのトークン使用量は現在未対応")
         except Exception as e:
-            print(f"⚠ トークン使用量取得エラー: {e} - モデルチャットを使用します")
+            print(f"⚠️ トークン使用量取得エラー: {e} - ダミーデータを使用します")
         
-        # 基本設定        basic_plan_limit = 25000000  # 25M tokens
+        # 基本設定
+        basic_plan_limit = 25000000  # 25M tokens
         usage_percentage = (total_tokens_used / basic_plan_limit * 100) if basic_plan_limit > 0 else 0
         remaining_tokens = max(0, basic_plan_limit - total_tokens_used)
         
@@ -1803,7 +1811,7 @@ async def get_company_token_usage(current_user = Depends(get_current_user), db: 
         from modules.token_counter import calculate_japanese_pricing
         pricing_info = calculate_japanese_pricing(total_tokens_used)
         
-        # 実際のチャットを返す
+        # 実際のデータを返す
         data = {
             "total_tokens_used": total_tokens_used,
             "total_input_tokens": total_input_tokens,
@@ -1828,7 +1836,7 @@ async def get_company_token_usage(current_user = Depends(get_current_user), db: 
             "company_name": company_name
         }
         
-        print(f"実際のチャットを返却します company_users_count={company_users_count}, total_tokens={total_tokens_used:,}, company_name={company_name}")
+        print(f"実際のデータを返却します company_users_count={company_users_count}, total_tokens={total_tokens_used:,}, company_name={company_name}")
         return data
         
     except Exception as e:
@@ -1902,7 +1910,8 @@ async def simulate_token_cost(request: dict, current_user = Depends(get_current_
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"料金シミュレーション中にエラーが発生しました: {str(e)}")
 
-# Google Drive連携エンドポイント@app.post("/chatbot/api/upload-from-drive")
+# Google Drive連携エンドポイント
+@app.post("/chatbot/api/upload-from-drive")
 async def upload_from_google_drive(
     file_id: str = Form(...),
     access_token: str = Form(...),
