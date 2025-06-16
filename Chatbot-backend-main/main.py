@@ -1934,18 +1934,21 @@ async def upload_from_google_drive(
                 detail=f"サポートされているファイル形式ではありません: {mime_type}"
             )
         
-        # ファイルメタチのタ取得        file_metadata = await drive_handler.get_file_metadata(file_id, access_token)
+        # ファイルメタデータ取得
+        file_metadata = await drive_handler.get_file_metadata(file_id, access_token)
         if not file_metadata:
             raise HTTPException(status_code=400, detail="ファイルが見つかりません")
         
-        # ファイルサイズチェック。0MB制限！E        file_size = int(file_metadata.get('size', 0))
+        # ファイルサイズチェック。10MB制限
+        file_size = int(file_metadata.get('size', 0))
         if file_size > 10 * 1024 * 1024:
             raise HTTPException(
                 status_code=400, 
-                detail=f"ファイルサイズが大きすぎます({file_size / (1024*1024):.1f}MB)、0MB以下のファイルをご利用ください"
+                detail=f"ファイルサイズが大きすぎます({file_size / (1024*1024):.1f}MB)、10MB以下のファイルをご利用ください"
             )
         
-        # ファイルダウンロート        print(f"Google Driveからファイルダウンロード中: {file_name}")
+        # ファイルダウンロード
+        print(f"Google Driveからファイルダウンロード中: {file_name}")
         file_content = await drive_handler.download_file(file_id, access_token, mime_type)
         if not file_content:
             raise HTTPException(status_code=400, detail="ファイルのダウンロードに失敗しました")
