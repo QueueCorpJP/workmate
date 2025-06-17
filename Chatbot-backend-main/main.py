@@ -265,29 +265,34 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
         if existing_user_result.data:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="このメールアドレスは既に登録されています。"
+                detail="このメールアドレスは既に登録されています"
             )
+        
+        # new_company_created変数を初期化
+        new_company_created = False
         
         # 特別な管理者のueue@queueu-tech.jpの、またadminロールの場合はuserロールのみ作成可能
         is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
         is_admin = current_user["role"] == "admin"
         
         if is_special_admin or is_admin:
-            print(f"管理者の権限でユーザー作成: 特別管理者�E{is_special_admin}, admin={is_admin}")
+            print(f"管理者の権限でユーザー作成: 特別管理者＝{is_special_admin}, admin={is_admin}")
             
             # adminロールは常にuserロールのアカウントのみ作成可能
             role = "user"
             
-            # 会社IDの指定E            company_id = None
+            # 会社IDの指定
+            company_id = None
             company_name = ""
             
             if hasattr(user_data, "company_name") and user_data.company_name:
-                # 会社名が指定されてい場合、新しい会社を作成
+                # 会社名が指定されている場合、新しい会社を作成
                 from modules.database import create_company
                 company_id = create_company(user_data.company_name, db)
                 company_name = user_data.company_name
-                print(f"特別管理者がより新しい会社 '{user_data.company_name}' が作成されました (ID: {company_id})")
-                # 新しい会社作成なので作成者の会社IDは継承しない                new_company_created = True
+                print(f"特別管理者により新しい会社 '{user_data.company_name}' が作成されました (ID: {company_id})")
+                # 新しい会社作成なので作成者の会社IDは継承しない
+                new_company_created = True
             elif hasattr(user_data, "company_id") and user_data.company_id:
                 # 指定された会社IDが存在するかチェック
                 company_result = select_data("companies", filters={"id": user_data.company_id})
@@ -318,7 +323,7 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                         print(f"作成者の会社ID {company_id} を使用します")
                     new_company_created = False
             
-            # 特別管理者が社長ユーザーを作成する場合、会社IDが指定されていければ新しい独立した会社を作成
+            # 特別管理者が社長ユーザーを作成する場合、会社IDが指定されていなければ新しい独立した会社を作成
             if is_special_admin and company_id is None:
                 # 特別管理者が会社ID未指定で社長ユーザー作成 →新しい独立した会社を作成
                 creator_id_to_pass = None
@@ -326,12 +331,12 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
             elif is_special_admin and new_company_created:
                 # 特別管理者が新しい会社名を指定して会社作成 →新しい独立した会社
                 creator_id_to_pass = None
-                print("特別管理者がよる新会社作成: 作成者の会社IDは継承しません")
+                print("特別管理者による新会社作成: 作成者の会社IDは継承しません")
             else:
                 # その他の場合は作成者の会社IDを継承
                 creator_id_to_pass = current_user["id"]
             
-            # create_user関数を直接呼び出す（管理者が作成するアカウントは作成者のステータスをを継承           
+            # create_user関数を直接呼び出す（管理者が作成するアカウントは作成者のステータスを継承）
             user_id = create_user(
                 email=user_data.email,
                 password=user_data.password,
@@ -339,7 +344,7 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                 role=role,
                 company_id=company_id,
                 db=db,
-                creator_user_id=creator_id_to_pass  # 新しい会社作成時�ENone
+                creator_user_id=creator_id_to_pass  # 新しい会社作成時はNone
             )
             
             return {
@@ -351,7 +356,8 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                 "created_at": datetime.datetime.now().isoformat()
             }
         else:
-            # userロールの場合のみ社員アカウント作成可能、employeeロールは作成権限なぁE            if current_user["role"] == "employee":
+            # userロールの場合のみ社員アカウント作成可能、employeeロールは作成権限なし
+            if current_user["role"] == "employee":
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="社員アカウントにはユーザー作成権限がありません"

@@ -130,6 +130,7 @@ const AdminPanel: React.FC = () => {
   const [companies, setCompanies] = useState<any[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
   const [isCompaniesLoading, setIsCompaniesLoading] = useState(false);
+  const [newCompanyName, setNewCompanyName] = useState<string>("");
 
   const navigate = useNavigate();
   const theme = useTheme();
@@ -431,8 +432,12 @@ const AdminPanel: React.FC = () => {
         role: role,
       };
 
-      // 特別管理者の場合は会社IDを含める
-      if (isSpecialAdmin && selectedCompanyId) {
+      // 特別管理者で会社名が入力されている場合
+      if (isSpecialAdmin && newCompanyName && newCompanyName.trim()) {
+        requestData.company_name = newCompanyName.trim();
+      }
+      // 特別管理者で既存の会社IDが選択されている場合
+      else if (isSpecialAdmin && selectedCompanyId) {
         requestData.company_id = selectedCompanyId;
       }
 
@@ -444,6 +449,7 @@ const AdminPanel: React.FC = () => {
       setNewUserEmail("");
       setNewUserPassword("");
       setSelectedCompanyId("");
+      setNewCompanyName("");
     } catch (error: any) {
       console.error("アカウント作成エラー:", error);
       if (error.response?.data?.detail) {
@@ -1185,6 +1191,8 @@ const AdminPanel: React.FC = () => {
                   onSelectedCompanyIdChange={setSelectedCompanyId}
                   isCompaniesLoading={isCompaniesLoading}
                   user={user}
+                  newCompanyName={newCompanyName}
+                  onNewCompanyNameChange={setNewCompanyName}
                 />
               )}
             </Box>
