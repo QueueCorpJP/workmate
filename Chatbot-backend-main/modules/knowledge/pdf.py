@@ -1,17 +1,44 @@
 """
 PDFファイル処理モジュール
-PDFファイルの読み込みと処理を行います
+PDFファイルの読み込みと処理を行います（文字化け対応強化版）
 """
 import pandas as pd
 import PyPDF2
 from io import BytesIO
 import re
 import traceback
+import asyncio
+import logging
+import tempfile
+import os
 from .ocr import ocr_pdf_to_text_from_bytes
 from ..database import ensure_string
 
+logger = logging.getLogger(__name__)
+
 def check_text_corruption(text: str) -> bool:
-    """テキストが文字化けしているかどうかを判定する"""
+    """テキストが文字化けしているかどうかを判定する（強化版）"""
+    if not text or len(text.strip()) == 0:
+        return True
+    
+    # CSV処理の文字化け検出機能を利用
+    from .csv_processor import detect_mojibake_in_text
+    
+    # 既存の検出結果
+    legacy_corruption = _check_legacy_corruption(text)
+    
+    # CSV処理の高度な文字化け検出
+    advanced_corruption = detect_mojibake_in_text(text)
+    
+    # どちらかで文字化けが検出された場合
+    if legacy_corruption or advanced_corruption:
+        logger.info(f"PDF文字化け検出: legacy={legacy_corruption}, advanced={advanced_corruption}")
+        return True
+    
+    return False
+
+def _check_legacy_corruption(text: str) -> bool:
+    """従来のPDF文字化け検出ロジック"""
     if not text or len(text.strip()) == 0:
         return True
     
@@ -160,8 +187,54 @@ async def process_pdf_file(contents, filename):
         # 初期データを作成（OCRが必要でない場合のみ）
         all_data = []
         
+        # 文字化けが検出された場合のみGemini文字抽出を実行
+        if len(corrupted_pages) > 0 or (all_text and check_text_corruption(all_text)):
+            logger.info(f"PDF文字化け検出 (ページ: {corrupted_pages}) - Gemini文字抽出を実行: {filename}")
+            
+            # Gemini文字抽出を実行
+            gemini_result = await process_pdf_with_gemini(contents, filename)
+            if gemini_result:
+                logger.info("Gemini文字抽出が成功しました")
+                return gemini_result
+            
+            logger.warning("Gemini文字抽出失敗 - 古いOCR処理にフォールバック")
+            
+            # Gemini文字抽出が失敗した場合は古いOCR処理を試行
+            try:
+                print(f"文字化けを検出しました。OCRを使用してテキストを抽出します...")
+                ocr_text = await ocr_pdf_to_text_from_bytes(contents)
+                
+                if ocr_text:
+                    # OCR結果をセクションに分割
+                    ocr_sections_list = split_ocr_text_into_sections(ocr_text, filename)
+                    
+                    # データフレームを作成
+                    result_df = pd.DataFrame(ocr_sections_list) if ocr_sections_list else pd.DataFrame({
+                        'section': ["OCR結果"],
+                        'content': [ensure_string(ocr_text)],
+                        'source': ['PDF (OCR)'],
+                        'file': [filename],
+                        'url': [None]
+                    })
+                    
+                    # セクション辞書を作成
+                    ocr_sections = {item['section']: item['content'] for item in ocr_sections_list} if ocr_sections_list else {"OCR結果": ensure_string(ocr_text)}
+                    
+                    # 抽出テキストを作成
+                    ocr_extracted_text = f"=== ファイル: {filename} (OCR処理) ===\n\n"
+                    for section_name, content in ocr_sections.items():
+                        ocr_extracted_text += f"=== {section_name} ===\n{content}\n\n"
+                    
+                    return result_df, ocr_sections, ocr_extracted_text
+                else:
+                    raise Exception("OCRからテキストを抽出できませんでした")
+            except Exception as ocr_error:
+                logger.error(f"OCR処理失敗: {str(ocr_error)}")
+                # OCR失敗時は通常のテキスト抽出処理を続行
+                pass
+        
+        # Gemini処理が失敗した場合、通常のテキスト抽出を試行
         # 文字化けページがない場合のみ、通常のテキスト処理を行う
-        # ただし、all_text全体も文字化けチェックを通過する必要がある
         if len(corrupted_pages) == 0 and all_text and not check_text_corruption(all_text):
             # テキストをセクションに分割
             # 見出しパターン
@@ -211,99 +284,16 @@ async def process_pdf_file(contents, filename):
                     })
         else:
             print("文字化けまたは問題のあるページが検出されたため、通常のテキスト処理をスキップします")
-            # 文字化けが検出された場合は、all_data、sections、all_textをクリアしてOCR処理を確実に実行させる
-            all_data = []
-            sections = {}
-            all_text = ""
         
-        # Check if we need to use OCR (no text, corrupted text, or corrupted pages)
-        needs_ocr = not all_text or check_text_corruption(all_text) or len(corrupted_pages) > 0
-        
-        if needs_ocr:
-            if not all_text and len(corrupted_pages) > 0:
-                print(f"文字化けページ検出: {len(corrupted_pages)}/{len(pdf_reader.pages)} ページでOCRを使用します")
-            elif not all_text:
-                print("テキストが抽出できないため、OCRを使用します")
-            else:
-                print("抽出されたテキストが文字化けしているため、OCRを使用します")
-                print(f"文字化けテキスト例: {all_text[:100]}...")
-                
-            try:
-                print("Gemini OCRでPDF全体を処理中...")
-                ocr_result = await ocr_pdf_to_text_from_bytes(contents)
-                # Ensure all_text is a string
-                ocr_text = ensure_string(ocr_result)
-                print(f"OCRによるテキスト抽出完了: {len(ocr_text)} 文字")
-                
-                # 文字化けしたデータを完全にクリアして、OCR結果のみを保存
-                all_data = []
-                sections = {}
-                all_text = ""
-                extracted_text = f"=== ファイル: {filename} ===\n\n"
-                
-                if ocr_text and ocr_text.strip():
-                    print("OCR結果でデータを完全に再構築中...")
-                    # OCR結果を適切にセクション分けする
-                    ocr_sections = split_ocr_text_into_sections(ocr_text, filename)
-                    all_data = ocr_sections  # 文字化けデータは含めず、OCR結果のみ
-                    
-                    # OCR結果でセクションと抽出テキストを構築
-                    for section in ocr_sections:
-                        section_name = section['section']
-                        section_content = section['content']
-                        sections[section_name] = section_content
-                        extracted_text += f"=== {section_name} ===\n{section_content}\n\n"
-                    
-                    # all_textもOCR結果で更新
-                    all_text = ocr_text
-                    
-                    print(f"OCR結果保存完了: {len(all_data)} セクション")
-                else:
-                    print("OCR結果が空でした")
-                    # OCRが失敗した場合の最小限のデータ
-                    all_data = [{
-                        'section': "OCR処理結果",
-                        'content': "OCRでテキストを抽出できませんでした",
-                        'source': 'PDF',
-                        'file': filename,
-                        'url': None
-                    }]
-                    sections = {"OCR処理結果": "OCRでテキストを抽出できませんでした"}
-                    all_text = "OCRでテキストを抽出できませんでした"
-                    extracted_text += "=== OCR処理結果 ===\nOCRでテキストを抽出できませんでした\n\n"
-                    
-            except Exception as ocr_error:
-                print(f"OCRエラー: {str(ocr_error)}")
-                # OCRエラーの場合も文字化けデータは含めない
-                error_message = f"OCRエラー: {str(ocr_error)}"
-                all_data = [{
-                    'section': "OCRエラー",
-                    'content': error_message,
-                    'source': 'PDF',
-                    'file': filename,
-                    'url': None
-                }]
-                sections = {"OCRエラー": error_message}
-                all_text = error_message
-                extracted_text = f"=== ファイル: {filename} ===\n\n=== OCRエラー ===\n{error_message}\n\n"
-            
-            result_df = pd.DataFrame(all_data) if all_data else pd.DataFrame({
-                'section': ["一般情報"],
-                'content': [str(all_text or "")],  # Ensure content is a string
-                'source': ['PDF'],
-                'file': [filename],
-                'url': [None]
-            })
-            # OCR処理の場合はextracted_textは既に構築済みなので追加しない
-        else: 
-            # データフレームを作成
-            result_df = pd.DataFrame(all_data) if all_data else pd.DataFrame({
-                'section': ["一般情報"],
-                'content': [str(all_text)],  # Ensure content is a string
-                'source': ['PDF'],
-                'file': [filename],
-                'url': [None]
-            })
+        # Gemini処理失敗後の最終フォールバック: 従来のテキスト抽出のみ 
+        # データフレームを作成
+        result_df = pd.DataFrame(all_data) if all_data else pd.DataFrame({
+            'section': ["エラー"],
+            'content': ["PDFからテキストを抽出できませんでした"],
+            'source': ['PDF'],
+            'file': [filename],
+            'url': [None]
+        })
         
         # すべての列の値を文字列に変換
         for col in result_df.columns:
@@ -325,4 +315,194 @@ async def process_pdf_file(contents, filename):
         empty_sections = {"エラー": f"PDFファイル処理中にエラーが発生しました: {str(e)}"}
         error_text = f"=== ファイル: {filename} ===\n\n=== エラー ===\nPDFファイル処理中にエラーが発生しました: {str(e)}\n\n"
         
-        return empty_df, empty_sections, error_text 
+        return empty_df, empty_sections, error_text
+
+async def process_pdf_with_gemini(contents: bytes, filename: str):
+    """Gemini生ファイル処理を使用してPDFから文字を抽出する"""
+    try:
+        from ..config import setup_gemini
+        
+        logger.info(f"PDFファイル処理開始（Gemini文字抽出使用）: {filename}")
+        
+        # Geminiモデルをセットアップ
+        model = setup_gemini()
+        if not model:
+            logger.error("Geminiモデルの初期化に失敗")
+            return None
+        
+        # 生のPDFファイルを一時ファイルとして保存
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_file:
+            tmp_file.write(contents)
+            tmp_file_path = tmp_file.name
+        
+        # Gemini用プロンプト（PDF文字抽出特化）
+        prompt = """
+        このPDFファイルからテキストを正確に抽出してください。
+        
+        **重要な指示：**
+        1. PDFファイルを直接解析し、すべてのテキストを正確に抽出してください
+        2. 文字化け文字（「?」「縺」「繧」「讒」「(cid:」など）が見つかった場合は、文脈から推測して正しい日本語に復元してください
+        3. PDFの構造（見出し、段落、表、リストなど）を正確に保持してください
+        4. ページ番号や章構成があれば適切に識別してください
+        5. 図表のキャプションや注釈も含めて抽出してください
+        6. 表がある場合は、行と列の構造を保持してください
+
+        **PDF特有の文字化けパターン復元例：**
+        - (cid:XXX) → 対応する文字に復元
+        - 縺ゅ→縺 → あと
+        - 迺ｾ遶 → 環境  
+        - 荳?蟋 → 会社
+        - 繧ｳ繝ｳ繝斐Η繝ｼ繧ｿ → コンピュータ
+
+        **出力形式：**
+        元のPDF構造を保った形で、抽出されたテキストを出力してください。
+        各ページや章節が分かるように見出しを付けてください。
+        復元できない文字化けは [文字化け] と明記してください。
+        """
+        
+        def sync_gemini_call():
+            try:
+                # PDFをページごとに画像に変換してGeminiで処理
+                from PIL import Image
+                import io
+                import fitz  # PyMuPDF
+                
+                logger.info("PyMuPDFを使用してPDFを画像に変換")
+                doc = fitz.open(tmp_file_path)
+                all_text = ""
+                
+                # 各ページを画像として処理
+                for page_num in range(min(len(doc), 10)):  # 最大10ページまで
+                    try:
+                        page = doc[page_num]
+                        # ページを画像に変換
+                        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 高解像度
+                        img_data = pix.tobytes("png")
+                        
+                        # PILイメージとして読み込み
+                        img = Image.open(io.BytesIO(img_data))
+                        
+                        # ページ専用のプロンプト
+                        page_prompt = f"{prompt}\n\nこれはPDFの{page_num + 1}ページ目です。"
+                        
+                        # Geminiで画像を解析
+                        response = model.generate_content([page_prompt, img])
+                        page_text = response.text if response.text else ""
+                        
+                        if page_text:
+                            all_text += f"\n\n=== ページ {page_num + 1} ===\n{page_text}"
+                        
+                        logger.info(f"ページ {page_num + 1} の処理完了: {len(page_text)}文字")
+                        
+                    except Exception as page_error:
+                        logger.error(f"ページ {page_num + 1} の処理エラー: {str(page_error)}")
+                        all_text += f"\n\n=== ページ {page_num + 1} (エラー) ===\n[ページ処理エラー: {str(page_error)}]"
+                
+                doc.close()
+                return all_text if all_text else ""
+                    
+            except Exception as e:
+                logger.error(f"Gemini PDF処理エラー: {str(e)}")
+                return ""
+            finally:
+                # 一時ファイルを削除
+                try:
+                    if os.path.exists(tmp_file_path):
+                        os.unlink(tmp_file_path)
+                except:
+                    pass
+        
+        extracted_text = await asyncio.to_thread(sync_gemini_call)
+        
+        if not extracted_text:
+            logger.warning("Gemini文字抽出からテキストを取得できませんでした")
+            return None
+        
+        logger.info(f"Gemini文字抽出結果（最初の500文字）: {extracted_text[:500]}...")
+        
+        # 抽出したテキストからDataFrameを作成
+        sections = {}
+        all_data = []
+        
+        # テキストをページや章節でセクション分割
+        # ページパターンや見出しパターンを検出
+        section_patterns = [
+            r'^(?:ページ\s*\d+|Page\s*\d+|\d+\s*ページ)',  # ページ番号
+            r'^(?:第\s*\d+\s*[章節]|Chapter\s*\d+|\d+[\.\s]*[章節])',  # 章節
+            r'^(?:■|●|▲|◆|【[^】]*】|\d+[\.\)]\s*)',  # 見出し記号
+        ]
+        
+        current_section = "復元されたPDFテキスト"
+        current_content = []
+        
+        for line in extracted_text.split("\n"):
+            line = ensure_string(line).strip()
+            if not line:
+                continue
+            
+            # セクション区切りかどうかを判定
+            is_section_break = False
+            for pattern in section_patterns:
+                if re.search(pattern, line):
+                    is_section_break = True
+                    break
+            
+            if is_section_break:
+                # 前のセクションを保存
+                if current_content:
+                    content_text = "\n".join([ensure_string(item) for item in current_content])
+                    sections[ensure_string(current_section)] = content_text
+                    all_data.append({
+                        'section': ensure_string(current_section),
+                        'content': content_text,
+                        'source': 'PDF (Gemini文字抽出)',
+                        'file': filename,
+                        'url': None
+                    })
+                
+                # 新しいセクションを開始
+                current_section = ensure_string(line)
+                current_content = []
+            else:
+                current_content.append(ensure_string(line))
+        
+        # 最後のセクションを保存
+        if current_content:
+            content_text = "\n".join([ensure_string(item) for item in current_content])
+            sections[ensure_string(current_section)] = content_text
+            all_data.append({
+                'section': ensure_string(current_section),
+                'content': content_text,
+                'source': 'PDF (Gemini文字抽出)',
+                'file': filename,
+                'url': None
+            })
+        
+        # データフレームが空の場合の対応
+        if not all_data:
+            all_data.append({
+                'section': "抽出されたPDFテキスト",
+                'content': ensure_string(extracted_text),
+                'source': 'PDF (Gemini文字抽出)',
+                'file': filename,
+                'url': None
+            })
+            sections["抽出されたPDFテキスト"] = ensure_string(extracted_text)
+        
+        result_df = pd.DataFrame(all_data)
+        
+        # すべての列の値を文字列に変換
+        for col in result_df.columns:
+            result_df[col] = result_df[col].apply(ensure_string)
+        
+        # 完全なテキスト情報
+        full_text = f"=== ファイル: {filename} (Gemini PDF文字抽出) ===\n\n"
+        for section_name, content in sections.items():
+            full_text += f"=== {section_name} ===\n{content}\n\n"
+        
+        logger.info(f"PDFファイル処理完了（Gemini文字抽出）: {len(result_df)} セクション")
+        return result_df, sections, full_text
+        
+    except Exception as e:
+        logger.error(f"GeminiPDFファイル処理エラー: {str(e)}")
+        return None 

@@ -530,6 +530,108 @@ async def upload_knowledge(
             detail=f"ファイルのアップロード中にエラーが発生しました: {str(e)}"
         )
 
+@app.post("/chatbot/api/upload-multiple-knowledge")
+async def upload_multiple_knowledge(
+    files: List[UploadFile] = File(...), 
+    current_user = Depends(get_current_user), 
+    db: SupabaseConnection = Depends(get_db)
+):
+    """複数ファイルを順次アップロードして知識ベースを更新（サーバー負荷軽減）"""
+    try:
+        if not files:
+            raise HTTPException(
+                status_code=400,
+                detail="ファイルが指定されていません"
+            )
+        
+        # 最大ファイル数制限
+        max_files = 10
+        if len(files) > max_files:
+            raise HTTPException(
+                status_code=400,
+                detail=f"一度にアップロードできるファイル数は{max_files}個までです"
+            )
+        
+        results = []
+        processed_count = 0
+        
+        for i, file in enumerate(files):
+            try:
+                # ファイル名チェック
+                if not file or not file.filename:
+                    logger.warning(f"ファイル{i+1}: ファイル名が無効です")
+                    results.append({
+                        "file_index": i + 1,
+                        "filename": "不明",
+                        "status": "error",
+                        "message": "ファイル名が無効です"
+                    })
+                    continue
+                
+                # ファイル拡張子チェック
+                if not file.filename.lower().endswith(('.xlsx', '.xls', '.pdf', '.txt', '.csv', '.doc', '.docx', '.avi', '.mp4', '.webp', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif')):
+                    logger.warning(f"ファイル{i+1}: 無効なファイル形式: {file.filename}")
+                    results.append({
+                        "file_index": i + 1,
+                        "filename": file.filename,
+                        "status": "error",
+                        "message": "無効なファイル形式です"
+                    })
+                    continue
+                
+                logger.info(f"複数ファイル処理 {i+1}/{len(files)}: {file.filename}")
+                
+                # ファイル処理前の遅延（サーバー負荷軽減）
+                if i > 0:  # 最初のファイル以外は遅延
+                    delay_seconds = min(2.0 + (i * 0.5), 10.0)  # 2秒から最大10秒まで
+                    logger.info(f"サーバー負荷軽減のため{delay_seconds}秒待機")
+                    await asyncio.sleep(delay_seconds)
+                
+                # ファイル処理実行
+                result = await process_file(file, current_user["id"], None, db)
+                processed_count += 1
+                
+                results.append({
+                    "file_index": i + 1,
+                    "filename": file.filename,
+                    "status": "success",
+                    "message": "正常に処理されました",
+                    "details": result
+                })
+                
+                logger.info(f"ファイル処理完了 {i+1}/{len(files)}: {file.filename}")
+                
+            except Exception as file_error:
+                logger.error(f"ファイル処理エラー {i+1}/{len(files)}: {file.filename} - {str(file_error)}")
+                results.append({
+                    "file_index": i + 1,
+                    "filename": file.filename if file and file.filename else "不明",
+                    "status": "error",
+                    "message": f"処理中にエラーが発生しました: {str(file_error)}"
+                })
+        
+        # 処理結果のサマリー
+        success_count = sum(1 for r in results if r["status"] == "success")
+        error_count = len(results) - success_count
+        
+        return {
+            "total_files": len(files),
+            "success_count": success_count,
+            "error_count": error_count,
+            "processed_count": processed_count,
+            "results": results,
+            "message": f"複数ファイル処理完了: {success_count}個成功, {error_count}個失敗"
+        }
+        
+    except Exception as e:
+        logger.error(f"複数ファイルアップロードエラー: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        raise HTTPException(
+            status_code=500,
+            detail=f"複数ファイルのアップロード中にエラーが発生しました: {str(e)}"
+        )
+
 # 知識ベース情報を取得するエンドポイント
 @app.get("/chatbot/api/knowledge-base")
 async def get_knowledge_base(current_user = Depends(get_current_user)):

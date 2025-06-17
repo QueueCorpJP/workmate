@@ -36,7 +36,7 @@ except ImportError:
     logger.warning("Google Sheets APIライブラリが見つかりません。pip install google-api-python-clientを実行してください。")
 
 def detect_csv_encoding(content: bytes) -> str:
-    """CSVファイルの文字エンコーディングを検出する"""
+    """CSVファイルの文字エンコーディングを検出する（文字化け判定強化版）"""
     try:
         # chardetが利用可能な場合は使用
         if CHARDET_AVAILABLE:
@@ -46,14 +46,20 @@ def detect_csv_encoding(content: bytes) -> str:
             
             print(f"検出されたエンコーディング: {encoding} (信頼度: {confidence:.2f})")
             
-            # 信頼度が低い場合は一般的なエンコーディングを試行
-            if confidence < 0.7:
+            # 文字化け判定を実行
+            mojibake_detected = detect_mojibake_in_content(content, encoding)
+            
+            # 文字化けが検出された場合、または信頼度が低い場合は一般的なエンコーディングを試行
+            if mojibake_detected or confidence < 0.7:
+                print(f"文字化けまたは低信頼度検出。代替エンコーディングを試行します")
                 common_encodings = ['utf-8', 'shift_jis', 'cp932', 'euc-jp', 'iso-2022-jp']
                 for enc in common_encodings:
                     try:
-                        content.decode(enc)
-                        print(f"フォールバックエンコーディング使用: {enc}")
-                        return enc
+                        decoded_text = content.decode(enc)
+                        # 各エンコーディングで文字化けチェック
+                        if not detect_mojibake_in_text(decoded_text):
+                            print(f"文字化けのないエンコーディング発見: {enc}")
+                            return enc
                     except UnicodeDecodeError:
                         continue
             
@@ -64,9 +70,11 @@ def detect_csv_encoding(content: bytes) -> str:
             common_encodings = ['utf-8', 'shift_jis', 'cp932', 'euc-jp', 'iso-2022-jp', 'latin-1']
             for enc in common_encodings:
                 try:
-                    content.decode(enc)
-                    print(f"検出されたエンコーディング: {enc}")
-                    return enc
+                    decoded_text = content.decode(enc)
+                    # 文字化けチェック
+                    if not detect_mojibake_in_text(decoded_text):
+                        print(f"文字化けのないエンコーディング発見: {enc}")
+                        return enc
                 except UnicodeDecodeError:
                     continue
             
@@ -77,6 +85,89 @@ def detect_csv_encoding(content: bytes) -> str:
     except Exception as e:
         print(f"エンコーディング検出エラー: {str(e)}")
         return 'utf-8'
+
+def detect_mojibake_in_content(content: bytes, encoding: str) -> bool:
+    """バイトコンテンツを指定エンコーディングでデコードして文字化けを検出"""
+    try:
+        decoded_text = content.decode(encoding, errors='ignore')
+        return detect_mojibake_in_text(decoded_text)
+    except Exception:
+        return True  # デコードできない場合は文字化けとして扱う
+
+def detect_mojibake_in_text(text: str) -> bool:
+    """テキストの文字化けを検出する（強化版）"""
+    try:
+        # 実際の文字化けパターンのみに限定
+        mojibake_patterns = [
+            r'\?{5,}',  # 5個以上の連続する?記号
+            r'[\uFFFD]{3,}',  # 3個以上の置換文字の連続
+            # 明確な日本語文字化けパターンのみ
+            r'繧\x92繧\x93',  # よくある文字化けパターン
+            r'縺\x84縺\x86',  # 
+            r'讒\x81讒\x82',  # 
+            r'繝\x81繝\x82',  # 
+            r'縺ゅ→縺',  # あと → 縺ゅ→縺
+            r'迺ｾ遶',  # 環境 → 迺ｾ遶
+            r'荳\?蟋',  # 会社 → 荳?蟋
+            r'繧ｳ繝ｳ繝斐Η繝ｼ繧ｿ',  # コンピュータ
+            r'\(cid:\d+\)',  # PDFのCIDエラー
+        ]
+        
+        import re
+        for pattern in mojibake_patterns:
+            if re.search(pattern, text):
+                return True
+        
+        # 文字の統計的分析
+        if len(text) > 50:  # 十分な長さのテキストでのみ分析
+            # 制御文字の割合チェック（条件を厳しく）
+            control_chars = sum(1 for c in text if ord(c) < 32 and c not in '\n\r\t')
+            control_ratio = control_chars / len(text)
+            if control_ratio > 0.15:  # 15%以上が制御文字（条件を緩和）
+                return True
+            
+            # 非ASCII文字の連続パターンチェック
+            non_ascii_sequence_count = 0
+            in_sequence = False
+            for c in text:
+                if ord(c) > 127:
+                    if not in_sequence:
+                        non_ascii_sequence_count += 1
+                        in_sequence = True
+                else:
+                    in_sequence = False
+            
+            # 異常に多い非ASCII文字列の断片がある場合（条件を緩和）
+            # 日本語テキストでは非ASCII文字が多いのは正常なので、条件を厳しくする
+            if non_ascii_sequence_count > len(text) / 3:
+                return True
+        
+        # タイトル行だけでなく、全体的な文字化けを検出
+        lines = text.split('\n')
+        mojibake_lines = 0
+        
+        for line in lines[:10]:  # 最初の10行をチェック
+            if line.strip():
+                # 行ごとに文字化けパターンをチェック
+                line_has_mojibake = False
+                for pattern in mojibake_patterns:
+                    if re.search(pattern, line):
+                        line_has_mojibake = True
+                        break
+                
+                if line_has_mojibake:
+                    mojibake_lines += 1
+        
+        # 複数行で文字化けが検出された場合（条件を厳しく）
+        # 少なくとも3行以上で文字化けが検出された場合のみ文字化けと判定
+        if mojibake_lines >= 3:
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"文字化け検出エラー: {str(e)}")
+        return False
 
 def detect_csv_delimiter(content_str: str) -> str:
     """CSVファイルの区切り文字を検出する"""
@@ -299,13 +390,13 @@ async def extract_text_from_google_sheets(spreadsheet_id: str, access_token: str
         return None, f"Google Sheetsテキスト抽出中にエラーが発生しました: {str(e)}"
 
 async def process_csv_with_gemini_ocr(contents: bytes, filename: str):
-    """Gemini OCRを使用してCSVファイルを処理する"""
+    """Gemini OCRを使用してCSVファイルを処理する（生ファイル直接送信版）"""
     try:
         from ..config import setup_gemini
-        from PIL import Image, ImageDraw, ImageFont
-        import io
+        import tempfile
+        import os
         
-        logger.info(f"CSVファイル処理開始（Gemini OCR使用）: {filename}")
+        logger.info(f"CSVファイル処理開始（Gemini生ファイル解析使用）: {filename}")
         
         # Geminiモデルをセットアップ
         model = setup_gemini()
@@ -313,88 +404,100 @@ async def process_csv_with_gemini_ocr(contents: bytes, filename: str):
             logger.error("Geminiモデルの初期化に失敗")
             return process_csv_file(contents, filename)
         
-        # CSVコンテンツをテキストとして読み込み
+        # 生のCSVファイルを一時ファイルとして保存
         try:
-            # エンコーディングを検出
-            encoding = detect_csv_encoding(contents)
-            content_str = contents.decode(encoding, errors='ignore')
+            with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as tmp_file:
+                tmp_file.write(contents)
+                tmp_file_path = tmp_file.name
+            
+            # Geminiに生ファイルを直接送信
+            logger.info("生のCSVファイルをGeminiに送信して文字化け復元を実行")
+            
         except Exception as e:
-            logger.error(f"CSV読み込みエラー: {str(e)}")
+            logger.error(f"一時ファイル作成エラー: {str(e)}")
             return process_csv_file(contents, filename)
         
-        # CSVテキストを画像に変換
-        def create_csv_image(csv_text: str) -> Image.Image:
-            lines = csv_text.split('\n')[:50]  # 最初の50行まで
-            
-            # 画像サイズを計算
-            font_size = 12
+        # 生ファイルをGeminiに送信するためのファイルオブジェクトを作成
+        def upload_file_to_gemini():
             try:
-                font = ImageFont.load_default()
-            except:
-                font = None
-            
-            max_width = 0
-            line_height = font_size + 4
-            
-            # 最大幅を計算
-            for line in lines:
-                if font:
-                    bbox = font.getbbox(line)
-                    width = bbox[2] - bbox[0]
-                else:
-                    width = len(line) * 8  # 概算
-                max_width = max(max_width, width)
-            
-            # 画像を作成
-            img_width = min(max_width + 40, 1200)  # 最大幅制限
-            img_height = len(lines) * line_height + 40
-            
-            image = Image.new('RGB', (img_width, img_height), 'white')
-            draw = ImageDraw.Draw(image)
-            
-            # テキストを描画
-            y = 20
-            for line in lines:
-                if line.strip():  # 空行をスキップ
-                    draw.text((20, y), line, fill='black', font=font)
-                y += line_height
-            
-            return image
+                import google.generativeai as genai
+                
+                # ファイルをGeminiにアップロード
+                uploaded_file = genai.upload_file(tmp_file_path)
+                logger.info(f"Geminiにファイルアップロード完了: {uploaded_file.name}")
+                return uploaded_file
+            except Exception as e:
+                logger.error(f"Geminiファイルアップロードエラー: {str(e)}")
+                return None
         
-        # CSVを画像に変換
-        csv_image = create_csv_image(content_str)
-        
-        # Gemini OCRでテキスト抽出
+        # 生ファイル用のプロンプト（文字化け対応特化）
         prompt = """
-        このCSVデータの内容を正確に抽出してください。以下の形式で出力してください：
+        このCSVファイルには文字化けしたデータが含まれている可能性があります。
+        ファイルの内容を正確に読み取り、文字化けがあれば適切に復元してください。
 
-        1. 表の構造を理解して、カラム名とデータを識別
-        2. 各行のデータを正確に抽出
-        3. 数値データと文字列データを区別
-        4. 空のセルは空白として扱う
+        **重要な指示：**
+        1. ファイルの正しいエンコーディングを自動判定して読み取ってください
+        2. 文字化け文字が見つかった場合は、文脈から推測して正しい日本語に復元してください
+        3. CSVの区切り文字（カンマ、セミコロン、タブ等）を正確に識別してください
+        4. 表の構造（ヘッダー行、データ行）を正確に識別してください
+        5. 数値データは文字化けしにくいので正確に抽出してください
 
-        出力形式：
+        **出力形式：**
+        以下の形式で復元されたCSVデータを出力してください：
+        
         ヘッダー行: [カラム1, カラム2, カラム3, ...]
         データ行1: [値1, 値2, 値3, ...]
         データ行2: [値1, 値2, 値3, ...]
         ...
 
-        特に日本語の文字化けに注意して、正確に読み取ってください。
+        **文字化け復元の例：**
+        - 縺ゅ→縺 → あと
+        - 迺ｾ遶 → 環境  
+        - 荳?蟋 → 会社
+        - 繧ｳ繝ｳ繝斐Η繝ｼ繧ｿ → コンピュータ
+
+        復元できない文字化けは [文字化け] と明記してください。
         """
         
         def sync_gemini_call():
             try:
-                response = model.generate_content([prompt, csv_image])
+                # ファイルをGeminiにアップロード
+                uploaded_file = upload_file_to_gemini()
+                if not uploaded_file:
+                    return ""
+                
+                # アップロードされたファイルを使ってコンテンツ生成
+                response = model.generate_content([prompt, uploaded_file])
+                
+                # ファイル処理後にクリーンアップ
+                try:
+                    import google.generativeai as genai
+                    genai.delete_file(uploaded_file.name)
+                    logger.info("Geminiアップロードファイルを削除しました")
+                except:
+                    pass
+                
                 return response.text if response.text else ""
             except Exception as e:
-                logger.error(f"Gemini OCR呼び出しエラー: {str(e)}")
+                logger.error(f"Gemini生ファイル処理エラー: {str(e)}")
                 return ""
+            finally:
+                # 一時ファイルを削除
+                try:
+                    if os.path.exists(tmp_file_path):
+                        os.unlink(tmp_file_path)
+                        logger.info("一時ファイルを削除しました")
+                except:
+                    pass
         
         extracted_text = await asyncio.to_thread(sync_gemini_call)
         
         if not extracted_text:
-            logger.warning("Gemini OCRからテキストを抽出できませんでした")
+            logger.warning("Gemini生ファイル処理からテキストを抽出できませんでした")
             return process_csv_file(contents, filename)
+        
+        logger.info(f"Gemini生ファイル処理結果（最初の500文字）: {extracted_text[:500]}...")
+        logger.info("文字化け検出によりGemini生ファイル処理を使用して処理しました")
         
         # 抽出したテキストからDataFrameを作成
         df = parse_gemini_csv_output(extracted_text, filename)
@@ -603,63 +706,76 @@ async def process_csv_file_with_sheets_api(contents: bytes, filename: str, acces
 def process_csv_file(contents: bytes, filename: str):
     """従来のCSVファイル処理（フォールバック用）"""
     try:
-        print(f"CSVファイル処理開始: {filename}")
+        logger.info(f"CSVファイル処理開始: {filename}, サイズ: {len(contents)}バイト")
         
         # ライブラリ不足の警告（ただし処理は継続）
         if not CHARDET_AVAILABLE:
-            print("警告: chardetライブラリが不足しています。エンコーディング検出精度が低下する可能性があります。")
+            logger.warning("chardetライブラリが不足しています。エンコーディング検出精度が低下する可能性があります。")
         
         # エンコーディングを検出
+        logger.info("エンコーディング検出開始")
         encoding = detect_csv_encoding(contents)
+        logger.info(f"検出されたエンコーディング: {encoding}")
         
         # バイトデータを文字列に変換
         try:
             content_str = contents.decode(encoding)
+            logger.info(f"ファイルデコード成功: {len(content_str)}文字")
         except UnicodeDecodeError as e:
-            print(f"エンコーディングエラー ({encoding}): {str(e)}")
+            logger.error(f"エンコーディングエラー ({encoding}): {str(e)}")
             # フォールバック: エラーを無視して読み込み
             content_str = contents.decode(encoding, errors='ignore')
+            logger.info(f"フォールバックデコード完了: {len(content_str)}文字")
         
         # 区切り文字を検出
+        logger.info("区切り文字検出開始")
         delimiter = detect_csv_delimiter(content_str)
+        logger.info(f"検出された区切り文字: '{delimiter}'")
         
         # CSVを読み込み
         try:
+            logger.info("pandas CSVリーダーでの読み込み開始")
             # pandasでCSVを読み込み
             csv_file = StringIO(content_str)
             df = pd.read_csv(csv_file, delimiter=delimiter, encoding=None)
+            logger.info(f"pandas読み込み成功: 初期行数={len(df)}, 列数={len(df.columns)}")
             
             # 空の行を削除
             df = df.dropna(how='all')
+            logger.info(f"空行削除後: {len(df)} 行")
             
             # カラム名を文字列に変換
             df.columns = [ensure_string(col) for col in df.columns]
             
-            print(f"CSV読み込み完了: {len(df)} 行, {len(df.columns)} 列")
-            print(f"カラム名: {list(df.columns)}")
+            logger.info(f"CSV読み込み完了: {len(df)} 行, {len(df.columns)} 列")
+            logger.info(f"カラム名: {list(df.columns)}")
             
         except Exception as pandas_error:
-            print(f"pandas読み込みエラー: {str(pandas_error)}")
+            logger.error(f"pandas読み込みエラー: {str(pandas_error)}")
             # フォールバック: 標準ライブラリのcsvモジュールを使用
             try:
+                logger.info("標準CSVモジュールでの読み込み開始")
                 csv_file = StringIO(content_str)
                 reader = csv.DictReader(csv_file, delimiter=delimiter)
                 rows = list(reader)
+                logger.info(f"CSV辞書リーダー読み込み: {len(rows)} 行")
                 
                 if rows:
                     df = pd.DataFrame(rows)
                     # 空の行を削除
                     df = df.dropna(how='all')
-                    print(f"csvモジュールでの読み込み完了: {len(df)} 行")
+                    logger.info(f"csvモジュールでの読み込み完了: {len(df)} 行")
                 else:
+                    logger.error("CSVファイルにデータが含まれていません")
                     raise ValueError("CSVファイルにデータが含まれていません")
                     
             except Exception as csv_error:
-                print(f"csvモジュール読み込みエラー: {str(csv_error)}")
+                logger.error(f"csvモジュール読み込みエラー: {str(csv_error)}")
                 raise ValueError(f"CSVファイルの読み込みに失敗しました: {str(csv_error)}")
         
         # データの検証
         if df.empty:
+            logger.error("CSVデータフレームが空です")
             raise ValueError("CSVファイルにデータが含まれていません")
         
         # セクション情報を作成
@@ -734,12 +850,12 @@ def process_csv_file(contents: bytes, filename: str):
         for col in result_df.columns:
             result_df[col] = result_df[col].apply(ensure_string)
         
-        print(f"CSV処理完了: {len(result_df)} レコード")
+        logger.info(f"CSV処理完了: {len(result_df)} レコード, sections: {len(sections)}, extracted_text: {len(extracted_text)}文字")
         return result_df, sections, extracted_text
         
     except Exception as e:
-        print(f"CSVファイル処理エラー: {str(e)}")
-        print(traceback.format_exc())
+        logger.error(f"CSVファイル処理エラー: {str(e)}")
+        logger.error(traceback.format_exc())
         
         # エラーが発生しても最低限のデータを返す
         error_message = f"CSVファイル処理中にエラーが発生しました: {str(e)}"

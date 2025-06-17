@@ -11,6 +11,7 @@ import os
 from playwright.async_api import async_playwright
 import fitz
 import tempfile
+import asyncio
 from .database import ensure_string
 
 load_dotenv()
@@ -61,6 +62,54 @@ def get_proxies():
     if HTTPS_PROXY:
         proxies['https'] = HTTPS_PROXY
     return proxies if proxies else None
+
+async def _check_and_throttle_url_request(url: str):
+    """URLリクエスト前のサイズ推定とスロットリング"""
+    try:
+        # 大きなデータが予想されるURLパターンをチェック
+        large_data_indicators = [
+            'drive.google.com',  # Google Drive
+            'dropbox.com',       # Dropbox
+            'onedrive.live.com', # OneDrive
+            'mega.nz',           # Mega
+            'archive.org',       # Internet Archive
+            'youtube.com',       # YouTube (動画)
+            'vimeo.com',         # Vimeo
+            'slideshare.net',    # SlideShare
+            'scribd.com',        # Scribd
+            '.pdf',              # PDF files
+            'docs.google.com',   # Google Docs
+            'sheets.google.com', # Google Sheets
+        ]
+        
+        url_lower = url.lower()
+        
+        # 大きなデータの可能性があるURLの場合は事前に遅延
+        for indicator in large_data_indicators:
+            if indicator in url_lower:
+                delay_seconds = 2.0
+                print(f"大きなデータの可能性があるURL検出: {indicator} - {delay_seconds}秒待機")
+                await asyncio.sleep(delay_seconds)
+                break
+        
+        # 特に大きなファイルが予想される場合の追加遅延
+        high_risk_indicators = [
+            'drive.google.com/file/d/',  # Google Drive直接ファイル
+            'dropbox.com/s/',            # Dropbox共有ファイル
+            '.pdf',                      # PDF
+            'archive.org/download/',     # Archive.orgダウンロード
+        ]
+        
+        for indicator in high_risk_indicators:
+            if indicator in url_lower:
+                additional_delay = 3.0
+                print(f"高リスクURL検出: {indicator} - 追加{additional_delay}秒待機")
+                await asyncio.sleep(additional_delay)
+                break
+                
+    except Exception as e:
+        print(f"URL事前チェックエラー: {str(e)}")
+        # エラーが発生しても処理は続行
 
 # Function to extract video ID from a full YouTube URL
 def get_video_id(youtube_url):
@@ -169,6 +218,9 @@ def transcribe_youtube_video(youtube_url: str) -> str:
 
 async def extract_text_from_html(url: str) -> str:
     try:
+        # 大きなデータの可能性をチェック
+        await _check_and_throttle_url_request(url)
+        
         playwright = await async_playwright().start()
         
         # プロキシ設定を取得
@@ -196,10 +248,19 @@ async def extract_text_from_html(url: str) -> str:
         
         browser = await playwright.chromium.launch(**launch_options)
         page = await browser.new_page()
+        
+        # ページサイズによる待機時間調整
         await page.goto(url, timeout=45000, wait_until="domcontentloaded")
         await page.wait_for_timeout(3000)
 
         html = await page.content()
+        
+        # HTMLサイズをチェックしてスロットリング
+        html_size_mb = len(html.encode('utf-8')) / (1024 * 1024)
+        if html_size_mb > 5:  # 5MB以上の場合
+            print(f"大きなHTMLデータ検出 ({html_size_mb:.2f}MB) - サーバー負荷軽減のため待機")
+            await asyncio.sleep(min(html_size_mb * 0.5, 10))  # 最大10秒
+        
         await browser.close()
         await playwright.stop() 
         
@@ -234,11 +295,33 @@ async def extract_text_from_html(url: str) -> str:
 
 async def extract_text_from_pdf(url: str) -> str:
     try:
+        # 大きなデータの可能性をチェック
+        await _check_and_throttle_url_request(url)
+        
         # プロキシ設定を取得
         proxies = get_proxies()
+        
+        # HEADリクエストでファイルサイズを事前チェック
+        try:
+            head_response = requests.head(url, proxies=proxies, timeout=10)
+            content_length = head_response.headers.get('content-length')
+            if content_length:
+                file_size_mb = int(content_length) / (1024 * 1024)
+                if file_size_mb > 20:  # 20MB以上の場合
+                    print(f"大きなPDFファイル検出 ({file_size_mb:.2f}MB) - サーバー負荷軽減のため待機")
+                    await asyncio.sleep(min(file_size_mb * 0.3, 15))  # 最大15秒
+        except:
+            pass  # HEADリクエストが失敗してもダウンロードは続行
+        
         response = requests.get(url, proxies=proxies, timeout=30)
         if response.status_code != 200:
             raise Exception(f"Failed to download PDF: {url}")
+        
+        # ダウンロード後のファイルサイズチェック
+        pdf_size_mb = len(response.content) / (1024 * 1024)
+        if pdf_size_mb > 10:  # 10MB以上の場合
+            print(f"大きなPDFデータ検出 ({pdf_size_mb:.2f}MB) - 処理前待機")
+            await asyncio.sleep(min(pdf_size_mb * 0.2, 8))  # 最大8秒
 
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             tmp.write(response.content)
@@ -247,8 +330,12 @@ async def extract_text_from_pdf(url: str) -> str:
         try:
             text = ""
             with fitz.open(tmp_path) as doc:
-                for page in doc:
+                page_count = len(doc)
+                for i, page in enumerate(doc):
                     text += page.get_text()
+                    # 大きなPDFの場合、ページ処理間に待機
+                    if page_count > 50 and i % 10 == 9:  # 50ページ以上で10ページごと
+                        await asyncio.sleep(0.5)
         finally:
             os.remove(tmp_path)  # Clean up the file after reading
 

@@ -1,10 +1,32 @@
 """
 Excelファイル処理モジュール
-Excelファイルの読み込みと処理を行います
+Excelファイル(.xlsx、.xls)の読み込みと処理を行います
 """
 import pandas as pd
 from io import BytesIO
 import traceback
+import logging
+
+# ロガーの設定
+logger = logging.getLogger(__name__)
+
+# .xls形式のサポートのためのライブラリチェック
+try:
+    import xlrd
+    XLRD_AVAILABLE = True
+    logger.info("xlrdライブラリが利用可能です（.xlsファイルサポート）")
+except ImportError:
+    XLRD_AVAILABLE = False
+    logger.warning("xlrdライブラリが見つかりません。.xlsファイルのサポートが制限されます。pip install xlrdを実行してください。")
+
+# .xlsx形式のサポートのためのライブラリチェック
+try:
+    import openpyxl
+    OPENPYXL_AVAILABLE = True
+    logger.info("openpyxlライブラリが利用可能です（.xlsxファイルサポート）")
+except ImportError:
+    OPENPYXL_AVAILABLE = False
+    logger.warning("openpyxlライブラリが見つかりません。.xlsxファイルのサポートが制限されます。pip install openpyxlを実行してください。")
 
 def process_excel_file(contents, filename):
     """Excelファイルを処理してデータフレーム、セクション、テキストを返す"""
@@ -12,8 +34,32 @@ def process_excel_file(contents, filename):
         # BytesIOオブジェクトを作成
         excel_file = BytesIO(contents)
         
-        # Excelファイルを読み込む
-        df_dict = pd.read_excel(excel_file, sheet_name=None)
+        # ファイル拡張子を確認してエンジンを選択
+        file_extension = filename.lower().split('.')[-1]
+        engine = None
+        
+        if file_extension == 'xls':
+            if XLRD_AVAILABLE:
+                engine = 'xlrd'
+                logger.info(f"xlsファイル {filename} をxlrdエンジンで処理します")
+            else:
+                logger.error(f"xlsファイル {filename} の処理にはxlrdライブラリが必要です")
+                raise ImportError("xlsファイルの処理にはxlrdライブラリが必要です。pip install xlrdを実行してください。")
+        elif file_extension == 'xlsx':
+            if OPENPYXL_AVAILABLE:
+                engine = 'openpyxl'
+                logger.info(f"xlsxファイル {filename} をopenpyxlエンジンで処理します")
+            else:
+                logger.error(f"xlsxファイル {filename} の処理にはopenpyxlライブラリが必要です")
+                raise ImportError("xlsxファイルの処理にはopenpyxlライブラリが必要です。pip install openpyxlを実行してください。")
+        else:
+            logger.warning(f"サポートされていないファイル形式: {file_extension}。xlsまたはxlsxファイルをサポートしています。")
+        
+        # Excelファイルを読み込む（エンジンを指定）
+        if engine:
+            df_dict = pd.read_excel(excel_file, sheet_name=None, engine=engine)
+        else:
+            df_dict = pd.read_excel(excel_file, sheet_name=None)
         
         # 全シートのデータを結合
         all_data = []

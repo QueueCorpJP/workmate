@@ -261,30 +261,75 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                     page_count = 1
                     
             elif detected_type == 'csv' or is_csv_file(file.filename):
-                logger.info(f"CSVファイル処理開始: {file.filename}")
+                logger.info(f"CSVファイル処理開始: {file.filename}, サイズ: {file_size_mb:.2f}MB")
                 # CSVファイルサイズ制限（50MB）
                 if file_size_mb > 50:
                     raise HTTPException(status_code=400, detail=f"CSVファイルが大きすぎます ({file_size_mb:.2f} MB)。50MB以下のファイルを使用してください。")
                 
-                try:
-                    # まずGoogle Sheets APIを使用してCSVを処理
-                    logger.info("Google Sheets APIを使用してCSVを処理")
-                    from .csv_processor import process_csv_file_with_sheets_api
-                    df, sections, extracted_text = await process_csv_file_with_sheets_api(contents, file.filename)
-                    page_count = 1
-                except Exception as sheets_error:
-                    logger.warning(f"Google Sheets API処理失敗: {str(sheets_error)}")
+                # 文字化け検出でGemini OCR優先処理を決定
+                from .csv_processor import detect_csv_encoding, detect_mojibake_in_content
+                logger.info("CSV文字エンコーディング検出開始")
+                detected_encoding = detect_csv_encoding(contents)
+                logger.info(f"検出されたエンコーディング: {detected_encoding}")
+                has_mojibake = detect_mojibake_in_content(contents, detected_encoding)
+                logger.info(f"文字化け検出結果: {has_mojibake}")
+                
+                if has_mojibake:
+                    logger.info("文字化け検出 - Gemini OCRを優先使用")
                     try:
-                        # フォールバック: Gemini OCRを使用してCSVを処理
-                        logger.info("Gemini OCRを使用してCSVを処理（フォールバック）")
+                        # 文字化け検出時: Gemini OCRを最初に試行
+                        logger.info("文字化け対応: Gemini OCRを使用してCSVを処理")
                         df, sections, extracted_text = await process_csv_with_gemini_ocr(contents, file.filename)
+                        logger.info(f"Gemini OCR処理成功: {len(df) if df is not None else 0} 行")
                         page_count = 1
-                    except Exception as csv_error:
-                        logger.error(f"CSV処理エラー: {str(csv_error)}")
-                        # 最終フォールバック: 従来の処理
-                        from .csv_processor import process_csv_file
-                        df, sections, extracted_text = process_csv_file(contents, file.filename)
+                    except Exception as ocr_error:
+                        logger.error(f"Gemini OCR処理失敗: {str(ocr_error)}")
+                        try:
+                            # OCR失敗時: Google Sheets APIを試行
+                            logger.info("OCR失敗 - Google Sheets APIを試行")
+                            from .csv_processor import process_csv_file_with_sheets_api
+                            df, sections, extracted_text = await process_csv_file_with_sheets_api(contents, file.filename)
+                            logger.info(f"Google Sheets API処理成功: {len(df) if df is not None else 0} 行")
+                            page_count = 1
+                        except Exception as sheets_error:
+                            logger.error(f"Google Sheets API処理失敗: {str(sheets_error)}")
+                            # 最終フォールバック: 従来の処理
+                            logger.info("最終フォールバック: 従来のCSV処理")
+                            from .csv_processor import process_csv_file
+                            df, sections, extracted_text = process_csv_file(contents, file.filename)
+                            logger.info(f"従来のCSV処理結果: {len(df) if df is not None else 0} 行")
+                            page_count = 1
+                else:
+                    logger.info("文字化けなし - 通常のCSV処理フロー")
+                    try:
+                        # 通常処理: Google Sheets APIを使用してCSVを処理
+                        logger.info("Google Sheets APIを使用してCSVを処理")
+                        from .csv_processor import process_csv_file_with_sheets_api
+                        df, sections, extracted_text = await process_csv_file_with_sheets_api(contents, file.filename)
+                        logger.info(f"Google Sheets API処理成功: {len(df) if df is not None else 0} 行")
                         page_count = 1
+                    except Exception as sheets_error:
+                        logger.error(f"Google Sheets API処理失敗: {str(sheets_error)}")
+                        try:
+                            # フォールバック: Gemini OCRを使用してCSVを処理
+                            logger.info("Gemini OCRを使用してCSVを処理（フォールバック）")
+                            df, sections, extracted_text = await process_csv_with_gemini_ocr(contents, file.filename)
+                            logger.info(f"Gemini OCR処理成功: {len(df) if df is not None else 0} 行")
+                            page_count = 1
+                        except Exception as csv_error:
+                            logger.error(f"CSV処理エラー: {str(csv_error)}")
+                            # 最終フォールバック: 従来の処理
+                            logger.info("最終フォールバック実行: 従来のCSV処理")
+                            from .csv_processor import process_csv_file
+                            df, sections, extracted_text = process_csv_file(contents, file.filename)
+                            logger.info(f"従来のCSV処理結果: {len(df) if df is not None else 0} 行")
+                            page_count = 1
+                
+                # CSV処理結果の検証
+                logger.info(f"CSV処理完了後の検証: df={df is not None}, sections={len(sections) if sections else 0}, extracted_text={len(extracted_text) if extracted_text else 0}")
+                if df is None or df.empty:
+                    logger.error("CSVファイルから有効なデータを抽出できませんでした")
+                    raise HTTPException(status_code=400, detail="CSVファイルから有効なデータを抽出できませんでした。ファイルの形式をご確認ください。")
 
             elif detected_type == 'word' or is_word_file(file.filename):
                 logger.info(f"Wordファイル処理開始: {file.filename}")
@@ -375,7 +420,7 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                     
             elif detected_type == 'text' or file_extension == 'txt':
                 logger.info(f"テキストファイル処理開始: {file.filename}")
-                df, sections, extracted_text = process_txt_file(contents, file.filename)
+                df, sections, extracted_text = await process_txt_file(contents, file.filename)
                 
             elif detected_type == 'video' or file_extension in ['avi', 'mp4', 'webm']:
                 if file_size_mb > 500:
@@ -444,7 +489,10 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
             db.commit()
         
         # レスポンスを準備して返す
-        return _prepare_response(df, sections, file.filename, remaining_uploads, limit_reached)
+        logger.info(f"最終レスポンス準備: df={len(df) if df is not None else 0}行, sections={len(sections)}, filename={file.filename}")
+        response = _prepare_response(df, sections, file.filename, remaining_uploads, limit_reached)
+        logger.info(f"レスポンス準備完了: total_rows={response.get('total_rows', 0)}, preview_rows={len(response.get('preview', []))}")
+        return response
     except HTTPException:
         raise
     except Exception as e:
