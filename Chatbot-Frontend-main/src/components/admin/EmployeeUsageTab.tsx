@@ -762,7 +762,7 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                             ? "管理者"
                             : employee.role === "employee"
                             ? "社員"
-                            : "ユーザー"
+                            : "管理者"
                         }
                         size="small"
                         color={
@@ -770,7 +770,7 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                             ? "primary"
                             : employee.role === "employee"
                             ? "secondary"
-                            : "default"
+                            : "primary"
                         }
                         variant="outlined"
                       />
