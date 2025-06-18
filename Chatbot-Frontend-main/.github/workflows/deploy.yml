@@ -49,7 +49,7 @@ jobs:
         host: ${{ secrets.AWS_HOST }}
         username: ${{ secrets.AWS_USERNAME }}
         key: ${{ secrets.AWS_PRIVATE_KEY }}
-        source: "nginx/nginx.conf,nginx/conf.d/workmatechat.com.conf"
+        source: "nginx/"
         target: "/tmp/"
         
     - name: Apply nginx configuration
