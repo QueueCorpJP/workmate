@@ -207,12 +207,17 @@ const AdminPanel: React.FC = () => {
           setChatHistory(response.data.data);
         }
         
-        // ページネーション情報を保存
+        // ページネーション情報を保存 (新しい構造に対応)
+        const pagination = response.data.pagination || {};
+        const newOffset = loadMore ? 
+          (chatPagination.offset + response.data.data.length) : 
+          (pagination.offset || response.data.offset || 0) + response.data.data.length;
+        
         setChatPagination({
-          total_count: response.data.total_count,
-          limit: response.data.limit,
-          offset: response.data.offset + response.data.data.length,
-          has_more: response.data.has_more
+          total_count: pagination.total_count || response.data.total_count || 0,
+          limit: pagination.limit || response.data.limit || 30,
+          offset: newOffset,
+          has_more: pagination.has_more !== undefined ? pagination.has_more : response.data.has_more || false
         });
         
       } else if (Array.isArray(response.data)) {
