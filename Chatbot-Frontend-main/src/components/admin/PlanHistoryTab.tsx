@@ -651,7 +651,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
         }}
       >
         <Typography variant="h5" sx={{ fontWeight: 600 }}>
-          {isQueueTechAdmin ? "利用状況分析・プラン履歴" : "プラン変更履歴"}
+          {isAdmin ? "利用状況分析・プラン履歴" : "プラン変更履歴"}
         </Typography>
         <Button
           variant="outlined"
