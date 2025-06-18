@@ -67,6 +67,12 @@ const AdminPanel: React.FC = () => {
 
   // Data states
   const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
+  const [chatPagination, setChatPagination] = useState({
+    total_count: 0,
+    limit: 30,
+    offset: 0,
+    has_more: false
+  });
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [employeeUsage, setEmployeeUsage] = useState<EmployeeUsageItem[]>([]);
   const [companyEmployees, setCompanyEmployees] = useState<CompanyEmployee[]>(
@@ -155,37 +161,84 @@ const AdminPanel: React.FC = () => {
     fetchEmployeeUsage();
   }, []);
 
-  // チャット履歴の取得
-  const fetchChatHistory = async () => {
+  // チャット履歴の取得（ページネーション対応）
+  const fetchChatHistory = async (loadMore: boolean = false) => {
     setIsLoading(true);
     try {
       console.log("チャット履歴を取得中...");
-      // 特別な管理者でない場合は、ユーザーIDをクエリパラメータとして渡す
       const storedUser = localStorage.getItem("user");
       const userId = storedUser ? JSON.parse(storedUser).id : null;
-      const url = isSpecialAdmin
+      
+      // ページネーションパラメータ
+      const limit = 30;
+      const offset = loadMore ? chatHistory.length : 0;
+      
+      const baseUrl = isSpecialAdmin
         ? `${import.meta.env.VITE_API_URL}/admin/chat-history`
-        : `${import.meta.env.VITE_API_URL}/admin/chat-history?user_id=${userId}`;
+        : `${import.meta.env.VITE_API_URL}/admin/chat-history`;
+      
+      const params = new URLSearchParams({
+        limit: limit.toString(),
+        offset: offset.toString()
+      });
+      
+      if (!isSpecialAdmin && userId) {
+        params.append('user_id', userId);
+      }
+      
+      const url = `${baseUrl}?${params.toString()}`;
+      
       const response = await api.get(url, {
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Content-Type': 'application/json'
         }
       });
+      
       console.log("チャット履歴取得結果:", response.data);
-      // レスポンスが配列でない場合は、空の配列を設定
-      if (Array.isArray(response.data)) {
+      
+      // 新しいレスポンス形式に対応
+      if (response.data && response.data.data && Array.isArray(response.data.data)) {
+        if (loadMore) {
+          // 既存のデータに追加
+          setChatHistory(prev => [...prev, ...response.data.data]);
+        } else {
+          // 新しいデータで置き換え
+          setChatHistory(response.data.data);
+        }
+        
+        // ページネーション情報を保存
+        setChatPagination({
+          total_count: response.data.total_count,
+          limit: response.data.limit,
+          offset: response.data.offset + response.data.data.length,
+          has_more: response.data.has_more
+        });
+        
+      } else if (Array.isArray(response.data)) {
+        // 後方互換性のため古い形式にも対応
         setChatHistory(response.data);
+        setChatPagination({
+          total_count: response.data.length,
+          limit: response.data.length,
+          offset: response.data.length,
+          has_more: false
+        });
       } else {
         console.error(
-          "チャット履歴のレスポンスが配列ではありません:",
+          "チャット履歴のレスポンスが想定される形式ではありません:",
           response.data
         );
         setChatHistory([]);
+        setChatPagination({
+          total_count: 0,
+          limit: 30,
+          offset: 0,
+          has_more: false
+        });
       }
     } catch (error) {
       console.error("チャット履歴の取得に失敗しました:", error);
-      // エラーメッセージを表示
       alert(
         "チャット履歴の取得に失敗しました。バックエンドサーバーが起動しているか確認してください。"
       );
@@ -1085,7 +1138,10 @@ const AdminPanel: React.FC = () => {
                 <ChatHistoryTab
                   chatHistory={chatHistory}
                   isLoading={isLoading}
-                  onRefresh={fetchChatHistory}
+                  onRefresh={() => fetchChatHistory(false)}
+                  onLoadMore={() => fetchChatHistory(true)}
+                  hasMore={chatPagination.has_more}
+                  totalCount={chatPagination.total_count}
                 />
               )}
 

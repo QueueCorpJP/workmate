@@ -26,12 +26,18 @@ interface ChatHistoryTabProps {
   chatHistory: ChatHistoryItem[];
   isLoading: boolean;
   onRefresh: () => void;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  totalCount?: number;
 }
 
 const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({
   chatHistory,
   isLoading,
   onRefresh,
+  onLoadMore,
+  hasMore = false,
+  totalCount = 0,
 }) => {
   const theme = useTheme();
 
@@ -122,7 +128,7 @@ const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({
         }}
       >
         <Typography variant="h5" sx={{ fontWeight: 600 }}>
-          チャット履歴
+          チャット履歴 {totalCount > 0 && `(${chatHistory.length}/${totalCount}件)`}
         </Typography>
         <Box sx={{ display: "flex", gap: 1 }}>
         <Button
@@ -203,6 +209,20 @@ const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({
             </TableBody>
           </Table>
         </TableContainer>
+      )}
+      
+      {/* もっと読み込むボタン */}
+      {chatHistory.length > 0 && hasMore && onLoadMore && (
+        <Box sx={{ mt: 2, display: "flex", justifyContent: "center" }}>
+          <Button
+            variant="outlined"
+            onClick={onLoadMore}
+            disabled={isLoading}
+            sx={{ minWidth: 200 }}
+          >
+            {isLoading ? "読み込み中..." : "もっと読み込む"}
+          </Button>
+        </Box>
       )}
     </>
   );

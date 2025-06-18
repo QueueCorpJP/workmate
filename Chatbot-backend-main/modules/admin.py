@@ -169,6 +169,60 @@ def get_chat_history(user_id: str = None, db = None):
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"チャット履歴取得中にエラーが発生しました: {str(e)}")
 
+def get_chat_history_paginated(user_id: str = None, db = None, limit: int = 30, offset: int = 0):
+    """ページネーション対応のチャット履歴を取得する"""
+    print(f"ページネーション対応チャット履歴取得APIが呼び出されました (user_id: {user_id}, limit: {limit}, offset: {offset})")
+    try:
+        from supabase_adapter import select_data
+        
+        # 全件数を取得するためのクエリ
+        if user_id:
+            print(f"ユーザーID {user_id} でフィルタリングします")
+            # 特定のユーザーの履歴を取得
+            count_result = select_data("chat_history", columns="id", filters={"employee_id": user_id})
+            result = select_data("chat_history", filters={"employee_id": user_id}, order="timestamp desc", limit=limit, offset=offset)
+        else:
+            print("全ユーザーのチャット履歴を取得します")
+            # 全履歴を取得
+            count_result = select_data("chat_history", columns="id")
+            result = select_data("chat_history", order="timestamp desc", limit=limit, offset=offset)
+        
+        # 全件数を取得
+        total_count = len(count_result.data) if count_result and count_result.data else 0
+        
+        if not result or not result.data:
+            print("チャット履歴が見つかりませんでした")
+            return [], total_count
+        
+        chat_history = result.data
+        print(f"チャット履歴取得結果: {len(chat_history)}件 (全体: {total_count}件)")
+        
+        # データ形式を統一
+        formatted_history = []
+        for chat in chat_history:
+            item = {
+                "id": chat.get("id", ""),
+                "user_message": chat.get("user_message", ""),
+                "bot_response": chat.get("bot_response", ""),
+                "timestamp": chat.get("timestamp", ""),
+                "category": chat.get("category", ""),
+                "sentiment": chat.get("sentiment", ""),
+                "employee_id": chat.get("employee_id", ""),
+                "employee_name": chat.get("employee_name", ""),
+                "source_document": chat.get("source_document", ""),
+                "source_page": chat.get("source_page", "")
+            }
+            formatted_history.append(item)
+        
+        print(f"チャット履歴変換結果: {len(formatted_history)}件")
+        return formatted_history, total_count
+        
+    except Exception as e:
+        print(f"チャット履歴取得エラー: {e}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"チャット履歴取得中にエラーが発生しました: {str(e)}")
+
 async def get_company_employees(user_id: str = None, db: Connection = Depends(get_db), company_id: str = None):
     """会社の社員情報を取得する"""
     try:

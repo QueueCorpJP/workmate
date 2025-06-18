@@ -30,7 +30,7 @@ from modules.knowledge import process_url, process_file, get_knowledge_base_info
 from modules.knowledge.google_drive import GoogleDriveHandler
 from modules.chat import process_chat, set_model as set_chat_model
 from modules.admin import (
-    get_chat_history, analyze_chats, get_employee_details,
+    get_chat_history, get_chat_history_paginated, analyze_chats, get_employee_details,
     get_employee_usage, get_uploaded_resources, toggle_resource_active,
     get_company_employees, set_model as set_admin_model, delete_resource
 )
@@ -663,19 +663,32 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
     
     return await process_chat(message, db, current_user)
 
-# チャット履歴を取得するエンドポイント
-@app.get("/chatbot/api/admin/chat-history", response_model=List[ChatHistoryItem])
-async def admin_get_chat_history(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
-    """チャット履歴を取得する"""
+# チャット履歴を取得するエンドポイント（ページネーション対応）
+@app.get("/chatbot/api/admin/chat-history")
+async def admin_get_chat_history(
+    limit: int = 30,
+    offset: int = 0,
+    current_user = Depends(get_admin_or_user), 
+    db: SupabaseConnection = Depends(get_db)
+):
+    """チャット履歴を取得する（ページネーション対応）"""
     # 現在のユーザーIDを渡して、そのユーザーのチャットのみを取得
     # 特別な管理者のqueue@queueu-tech.jpの場合は全ユーザーのチャットを取得できるようにする
     if current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False):
         # 特別な管理者の場合は全ユーザーのチャットを取得
-        return get_chat_history(None, db)
+        chat_history, total_count = get_chat_history_paginated(None, db, limit, offset)
     else:
         # 通常のユーザーの場合は自分のチャットのみを取得
         user_id = current_user["id"]
-        return get_chat_history(user_id, db)
+        chat_history, total_count = get_chat_history_paginated(user_id, db, limit, offset)
+    
+    return {
+        "data": chat_history,
+        "total_count": total_count,
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + limit < total_count
+    }
 
 # チャット履歴分析エンドポイント
 @app.get("/chatbot/api/admin/analyze-chats")
