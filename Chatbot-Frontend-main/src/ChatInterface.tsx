@@ -57,6 +57,7 @@ import api from "./api";
 import DemoLimits from "./components/DemoLimits";
 import SourceCitation from "./components/SourceCitation";
 import ApplicationForm from "./components/ApplicationForm";
+import MarkdownRenderer from "./components/MarkdownRenderer";
 import { useTheme } from "@mui/material/styles";
 import { useMediaQuery } from "@mui/material";
 import { isValidURL } from './components/admin/utils';
@@ -244,17 +245,7 @@ function ChatInterface() {
     fontSize: { xs: "0.85rem", sm: "0.95rem" },
   };
 
-  // ユーザーメッセージ段落用のスタイル
-  const userParagraphStyles = {
-    ...paragraphStyles,
-    color: "white",
-  };
 
-  // ボットメッセージ段落用のスタイル
-  const botParagraphStyles = {
-    ...paragraphStyles,
-    color: "text.primary",
-  };
 
   // チャット入力エリアのスタイルを改善 - モバイル対応を強化
   const chatInputContainerStyles = {
@@ -1030,35 +1021,10 @@ function ChatInterface() {
             key={index}
             sx={message.isUser ? userMessageStyles : botMessageStyles}
           >
-            <Typography component="div">
-              {message.text.split("\n\n").map((paragraph, pIndex) => {
-                const isLastParagraph =
-                  pIndex === message.text.split("\n\n").length - 1;
-                return (
-                  <Typography
-                    key={pIndex}
-                    component="p"
-                    sx={{
-                      ...(message.isUser
-                        ? userParagraphStyles
-                        : botParagraphStyles),
-                      mb: isLastParagraph ? 0 : 1.5,
-                    }}
-                  >
-                    {paragraph.split("\n").map((line, lIndex) => {
-                      const isLastLine =
-                        lIndex === paragraph.split("\n").length - 1;
-                      return (
-                        <React.Fragment key={lIndex}>
-                          {line}
-                          {!isLastLine && <br />}
-                        </React.Fragment>
-                      );
-                    })}
-                  </Typography>
-                );
-              })}
-            </Typography>
+            <MarkdownRenderer 
+              content={message.text} 
+              isUser={message.isUser}
+            />
             {message.source && <SourceCitation source={message.source} />}
           </Box>
         ))
