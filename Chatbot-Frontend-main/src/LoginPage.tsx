@@ -501,7 +501,7 @@ function LoginPage() {
                   },
                 }}
               >
-                お問い合わせ
+                お問い合わせ対応
               </Link>
             </Box>
           </Paper>
