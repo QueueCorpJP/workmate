@@ -1390,19 +1390,23 @@ async def csv_test_endpoint():
 @app.get("/chatbot/api/admin/chat-history/csv")
 async def download_chat_history_csv(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """チャット履歴をCSV形式でダウンロードする"""
+    import io
+    import csv
+    
     try:
-        print(f"CSVダウンロード開始- ユーザー: {current_user['email']}")
+        print(f"CSVダウンロード開始 - ユーザー: {current_user['email']}")
         
-        # 権限チェック。ser、employeeロールも許可の        is_admin = current_user["role"] == "admin"
+        # 権限チェック
+        is_admin = current_user["role"] == "admin"
         is_user = current_user["role"] == "user"
         is_employee = current_user["role"] == "employee"
-        is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
+        is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"]
         
         # チャット履歴を直接Supabaseから取得
         try:
             if is_special_admin or is_admin:
-                # 管理者の特別管理者の場合は全ユーザーのチャットを取得
-                print("管理者の特別管理者として全ユーザーのチャット履歴を取得")
+                # 管理者の場合は全ユーザーのチャットを取得
+                print("管理者として全ユーザーのチャット履歴を取得")
                 from supabase_adapter import select_data
                 result = select_data("chat_history", columns="*")
                 chat_history = result.data if result and result.data else []
@@ -1410,30 +1414,42 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
                 # userまたはemployeeロールの場合は自分の会社のチャットのみを取得
                 print(f"{current_user['role']}ロールとして自分の会社のチャット履歴を取得")
                 from supabase_adapter import select_data
+                
                 # まずユーザーの会社IDを取得
                 user_result = select_data("users", filters={"id": current_user["id"]})
                 if user_result and user_result.data:
                     user_data = user_result.data[0]
-                    company_name = user_data.get("company_name")
-                    if company_name:
-                        # 同じ会社のユーザーIDリストを取得                        company_users_result = select_data("users", filters={"company_name": company_name})
+                    company_id = user_data.get("company_id")
+                    
+                    if company_id:
+                        # 同じ会社のユーザーIDリストを取得
+                        company_users_result = select_data("users", filters={"company_id": company_id})
                         if company_users_result and company_users_result.data:
                             company_user_ids = [user["id"] for user in company_users_result.data]
-                            # 会社のユーザーのチャット履歴を取得                            result = select_data("chat_history", filters={"employee_id": f"in.({','.join(company_user_ids)})"})
-                            chat_history = result.data if result and result.data else []
+                            # 会社のユーザーのチャット履歴を取得
+                            if company_user_ids:
+                                # 各ユーザーのチャット履歴を取得して結合
+                                chat_history = []
+                                for user_id in company_user_ids:
+                                    result = select_data("chat_history", filters={"employee_id": user_id})
+                                    if result and result.data:
+                                        chat_history.extend(result.data)
+                            else:
+                                chat_history = []
                         else:
                             chat_history = []
                     else:
-                        # 会社名がない場合は自刁のチャットのみ
+                        # 会社IDがない場合は自分のチャットのみ
                         result = select_data("chat_history", filters={"employee_id": current_user["id"]})
                         chat_history = result.data if result and result.data else []
                 else:
                     chat_history = []
             else:
-                # その他のユーザーの場合は自分のチャットのみを取得                user_id = current_user["id"]
+                # その他のユーザーの場合は自分のチャットのみを取得
+                user_id = current_user["id"]
                 print(f"通常ユーザーとして個人のチャット履歴を取得 {user_id}")
                 from supabase_adapter import select_data
-                result = select_data("chat_history", columns="*", filters={"employee_id": user_id})
+                result = select_data("chat_history", filters={"employee_id": user_id})
                 chat_history = result.data if result and result.data else []
         except Exception as e:
             print(f"チャット履歴取得エラー: {e}")
@@ -1474,16 +1490,18 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
                 chat.get("source_page", "")
             ])
         
-        # CSVファイルを取得        csv_content = csv_data.getvalue()
+        # CSVファイルを取得
+        csv_content = csv_data.getvalue()
         csv_data.close()
         
-        # UTF-8 BOM付きでエンコード！Excelでの化け防止の        csv_bytes = '\ufeff' + csv_content
+        # UTF-8 BOM付きでエンコード（Excelでの文字化け防止）
+        csv_bytes = '\ufeff' + csv_content
         
         # ファイル名に日時を含める
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"chat_history_{timestamp}.csv"
         
-        print(f"CSVファイル成完了 {filename}")
+        print(f"CSVファイル生成完了 {filename}")
         
         # StreamingResponseでCSVファイルとして返す
         return StreamingResponse(
