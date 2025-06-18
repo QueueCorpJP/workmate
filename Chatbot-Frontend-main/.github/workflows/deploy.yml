@@ -1,4 +1,4 @@
-name: Deploy Frontend to AWS EC2
+name: Deploy Frontend and Nginx to AWS
 
 on:
   push:
@@ -18,16 +18,12 @@ jobs:
       with:
         node-version: '18'
         cache: 'npm'
-        cache-dependency-path: 'Chatbot-Frontend-main/package-lock.json'
         
     - name: Install dependencies
-      run: |
-        cd Chatbot-Frontend-main
-        npm ci
+      run: npm ci
         
     - name: Create .env file
       run: |
-        cd Chatbot-Frontend-main
         cat > .env << 'EOF'
         GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
         COMPANY_NAME="NTT AT"
@@ -42,30 +38,45 @@ jobs:
         EOF
         
     - name: Build application
-      run: |
-        cd Chatbot-Frontend-main
-        npm run build
+      run: npm run build
         
     - name: Create deployment archive
-      run: |
-        cd Chatbot-Frontend-main
-        tar -czf ../frontend-dist.tar.gz dist/
+      run: tar -czf frontend-dist.tar.gz dist/
         
-    - name: Deploy to AWS EC2
+    - name: Deploy nginx configuration
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.AWS_HOST }}
+        username: ${{ secrets.AWS_USERNAME }}
+        key: ${{ secrets.AWS_PRIVATE_KEY }}
+        source: "nginx/nginx.conf,nginx/conf.d/workmatechat.com.conf"
+        target: "/tmp/"
+        
+    - name: Apply nginx configuration
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.AWS_HOST }}
         username: ${{ secrets.AWS_USERNAME }}
         key: ${{ secrets.AWS_PRIVATE_KEY }}
         script: |
-          # バックアップ作成
-          sudo cp -r /home/ec2-user/Chatbot-Frontend-main/dist /home/ec2-user/Chatbot-Frontend-main/dist.backup.$(date +%Y%m%d_%H%M%S) || true
+          # nginxバックアップ作成
+          sudo cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.backup.$(date +%Y%m%d_%H%M%S) || true
+          sudo cp /etc/nginx/conf.d/workmatechat.com.conf /etc/nginx/conf.d/workmatechat.com.conf.backup.$(date +%Y%m%d_%H%M%S) || true
           
-          # 新しいdistディレクトリを準備
-          rm -rf /home/ec2-user/frontend-dist-new
-          mkdir -p /home/ec2-user/frontend-dist-new
+          # 新しい設定を適用
+          sudo cp /tmp/nginx/nginx.conf /etc/nginx/nginx.conf
+          sudo cp /tmp/nginx/conf.d/workmatechat.com.conf /etc/nginx/conf.d/workmatechat.com.conf
           
-    - name: Copy files to server
+          # 設定をテスト
+          sudo nginx -t
+          
+          # nginxをリロード
+          sudo systemctl reload nginx
+          
+          # 一時ファイル削除
+          rm -rf /tmp/nginx
+        
+    - name: Deploy frontend files
       uses: appleboy/scp-action@v0.1.7
       with:
         host: ${{ secrets.AWS_HOST }}
@@ -74,26 +85,22 @@ jobs:
         source: "frontend-dist.tar.gz"
         target: "/home/ec2-user/"
         
-    - name: Extract and restart
+    - name: Extract and deploy frontend
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.AWS_HOST }}
         username: ${{ secrets.AWS_USERNAME }}
         key: ${{ secrets.AWS_PRIVATE_KEY }}
         script: |
-          # ファイル展開
-          cd /home/ec2-user
-          tar -xzf frontend-dist.tar.gz -C frontend-dist-new
+          # フロントエンドバックアップ作成
+          sudo cp -r /var/www/html /var/www/html.backup.$(date +%Y%m%d_%H%M%S) || true
           
-          # アトミックな置換
-          rm -rf /home/ec2-user/Chatbot-Frontend-main/dist
-          mv /home/ec2-user/frontend-dist-new/dist /home/ec2-user/Chatbot-Frontend-main/
+          # ファイル展開と配置
+          cd /home/ec2-user
+          tar -xzf frontend-dist.tar.gz
+          sudo cp -r dist/* /var/www/html/
           
           # クリーンアップ
-          rm -rf /home/ec2-user/frontend-dist-new
-          rm -f /home/ec2-user/frontend-dist.tar.gz
-          
-          # PM2再起動
-          pm2 restart chatbot-frontend || pm2 start /home/ec2-user/Chatbot-Frontend-main/dist --name chatbot-frontend
+          rm -rf dist frontend-dist.tar.gz
           
           echo "✅ デプロイ完了" 
