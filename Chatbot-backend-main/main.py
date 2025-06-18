@@ -513,7 +513,7 @@ async def submit_url(submission: UrlSubmission, current_user = Depends(get_curre
 
 @app.post("/chatbot/api/upload-knowledge")
 async def upload_knowledge(
-    file: UploadFile = File(...), 
+    file: UploadFile = File(..., description="アップロードするファイル（最大100MB）"), 
     current_user = Depends(get_current_user), 
     db: SupabaseConnection = Depends(get_db)
 ):
@@ -525,6 +525,20 @@ async def upload_knowledge(
                 status_code=400,
                 detail="ファイルが指定されていないか、ファイル名が無効です"
             )
+        
+        # ファイルサイズをチェック（100MB = 100 * 1024 * 1024 bytes）
+        MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+        file_content = await file.read()
+        file_size = len(file_content)
+        
+        if file_size > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"ファイルサイズが制限を超えています。最大100MBまで対応しています。（現在のファイルサイズ: {file_size / (1024*1024):.1f}MB）"
+            )
+        
+        # ファイルポインタを先頭に戻す
+        await file.seek(0)
             
         # ファイル拡張子をチェック
         if not file.filename.lower().endswith(('.xlsx', '.xls', '.pdf', '.txt', '.csv', '.doc', '.docx', '.avi', '.mp4', '.webp', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif')):

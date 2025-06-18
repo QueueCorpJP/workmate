@@ -322,34 +322,35 @@ function ChatInterface() {
     disabled: isEmployee, // employeeアカウントではドラッグ&ドロップを無効化
     onDrop: async (acceptedFiles) => {
       if (acceptedFiles.length > 0) {
+        const file = acceptedFiles[0];
+        
+        // ファイルサイズをチェック（100MB制限）
+        const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+        if (file.size > MAX_FILE_SIZE) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              text: `エラー: ファイル「${file.name}」はサイズ制限（100MB）を超えています。現在のファイルサイズ: ${(file.size / (1024 * 1024)).toFixed(1)}MB。より小さなファイルを選択してください。`,
+              isUser: false,
+            },
+          ]);
+          return; // 処理を停止
+        }
+        
         setIsUploading(true);
         setUploadProgress("ファイルを準備中...");
         const formData = new FormData();
-        const file = acceptedFiles[0];
         // Ensure the file is properly appended with the correct field name expected by FastAPI
         formData.append("file", file, file.name);
 
         try {
-          console.log("ファイルアップロード開始:", file.name);
+          console.log("ファイルアップロード開始:", file.name, `サイズ: ${(file.size / (1024 * 1024)).toFixed(1)}MB`);
 
           // ファイル拡張子を取得
-          const fileExt = acceptedFiles[0].name.split(".").pop()?.toLowerCase();
+          const fileExt = file.name.split(".").pop()?.toLowerCase();
 
           // PDFファイルの場合はOCR処理の可能性があることをユーザーに通知
           if (fileExt === "pdf") {
-            const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-            const file = acceptedFiles[0];
-            if (file.size > MAX_FILE_SIZE) {
-              setMessages((prev) => [
-                ...prev,
-                {
-                  text: `エラー: ファイル「${file.name}」はサイズ制限（10MB）を超えています。別のファイルを選択してください。`,
-                  isUser: false,
-                },
-              ]);
-              return; // Stop processing
-            }
-
             setUploadProgress(
               "PDFファイルを処理中... OCR処理が必要な場合は時間がかかることがあります"
             );
@@ -364,7 +365,7 @@ function ChatInterface() {
               return [
                 ...filteredMessages,
                 {
-                  text: `PDFファイル「${acceptedFiles[0].name}」を処理中です。OCR処理が必要な場合は完了までに時間がかかることがあります。図形やグラフなども認識して処理します。しばらくお待ちください...`,
+                  text: `PDFファイル「${file.name}」を処理中です。OCR処理が必要な場合は完了までに時間がかかることがあります。図形やグラフなども認識して処理します。しばらくお待ちください...`,
                   isUser: false,
                 },
               ];
@@ -445,6 +446,9 @@ function ChatInterface() {
           } else if (error.response?.status === 408) {
             errorMessage =
               "処理がタイムアウトしました。ファイルが大きすぎるか、複雑すぎる可能性があります。ファイルを分割するか、より小さなファイルを使用してください。";
+          } else if (error.response?.status === 413) {
+            errorMessage = 
+              "ファイルサイズが制限を超えています。最大100MBまで対応しています。ファイルを圧縮するか、分割してから再度お試しください。";
           } else if (
             error.response?.status === 400 &&
             error.response?.data?.detail?.includes("大きすぎます")
