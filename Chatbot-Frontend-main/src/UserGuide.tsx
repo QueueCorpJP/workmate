@@ -60,8 +60,8 @@ const UserGuide: React.FC = () => {
     {
       title: "管理パネル",
       icon: <AdminPanelSettingsIcon sx={{ color: 'primary.main', fontSize: '2.5rem' }} />,
-      description: "管理者はチャット履歴の分析、ユーザー管理、リソース管理などの機能を使用できます。",
-      example: "よくある質問の傾向分析、社員の利用状況確認、新規ユーザー追加"
+      description: "管理者はチャット履歴の分析、管理者管理、リソース管理などの機能を使用できます。",
+      example: "よくある質問の傾向分析、社員の利用状況確認、新規管理者追加"
     },
     {
       title: "情報ソースの確認",
@@ -74,7 +74,7 @@ const UserGuide: React.FC = () => {
   const steps = [
     {
       label: 'ログイン',
-      description: 'メールアドレスとパスワードでログインします。新規ユーザーは管理者から招待を受けてください。',
+      description: 'メールアドレスとパスワードでログインします。新規管理者は管理者から招待を受けてください。',
     },
     {
       label: '質問入力',

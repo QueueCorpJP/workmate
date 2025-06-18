@@ -363,8 +363,8 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
         <Tabs value={currentTab} onChange={handleTabChange} sx={{ mb: 3 }}>
           <Tab label="プラン履歴" icon={<HistoryIcon />} />
           <Tab label="会社別利用期間" icon={<BusinessIcon />} />
-          <Tab label="ユーザー別利用期間" icon={<PeopleIcon />} />
-          <Tab label="アクティブユーザー" icon={<AnalyticsIcon />} />
+          <Tab label="管理者別利用期間" icon={<PeopleIcon />} />
+          <Tab label="アクティブ管理者" icon={<AnalyticsIcon />} />
           <Tab label="プラン継続性分析" icon={<TrendingUpIcon />} />
         </Tabs>
 
@@ -379,7 +379,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                   <TableHead>
                     <TableRow sx={{ bgcolor: 'grey.50' }}>
                       <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>会社名</Typography></TableCell>
-                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>ユーザー数</Typography></TableCell>
+                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>管理者数</Typography></TableCell>
                       <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>利用期間</Typography></TableCell>
                       <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>開始日</Typography></TableCell>
                     </TableRow>
@@ -426,13 +426,13 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
           <Card>
             <CardContent>
               <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-                ユーザー別累計利用期間
+                管理者別累計利用期間
               </Typography>
               <TableContainer>
                 <Table>
                   <TableHead>
                     <TableRow sx={{ bgcolor: 'grey.50' }}>
-                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>ユーザー</Typography></TableCell>
+                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>管理者</Typography></TableCell>
                       <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>会社</Typography></TableCell>
                       <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>利用期間</Typography></TableCell>
                       <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>開始日</Typography></TableCell>
@@ -484,7 +484,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
               <Card>
                 <CardContent>
                   <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-                    アクティブユーザー概要
+                    アクティブ管理者概要
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                     {analyticsData.active_users.analysis_period}
@@ -496,7 +496,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                         {analyticsData.active_users.total_active_users}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        アクティブユーザー
+                        アクティブ管理者
                       </Typography>
                     </Box>
                   </Box>
@@ -507,7 +507,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
               <Card>
                 <CardContent>
                   <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-                    会社別アクティブユーザー
+                    会社別アクティブ管理者
                   </Typography>
                   <List>
                     {Object.entries(analyticsData.active_users.active_users_by_company).map(([company, count]) => (
@@ -580,13 +580,13 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                   </Typography>
                   <Stack spacing={2}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Typography variant="body2">デモ版ユーザー</Typography>
+                      <Typography variant="body2">デモ版管理者</Typography>
                       <Typography variant="body2" sx={{ fontWeight: 600, color: 'warning.main' }}>
                         {analyticsData.plan_continuity.plan_retention.demo_users}名
                       </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Typography variant="body2">本番版ユーザー</Typography>
+                      <Typography variant="body2">本番版管理者</Typography>
                       <Typography variant="body2" sx={{ fontWeight: 600, color: 'success.main' }}>
                         {analyticsData.plan_continuity.plan_retention.production_users}名
                       </Typography>
@@ -683,7 +683,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                   <TableHead>
                     <TableRow sx={{ bgcolor: 'grey.50' }}>
                       <TableCell></TableCell>
-                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>ユーザー</Typography></TableCell>
+                      <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>管理者</Typography></TableCell>
                       <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>現在のプラン</Typography></TableCell>
                       <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>変更回数</Typography></TableCell>
                       <TableCell><Typography variant="subtitle2" sx={{ fontWeight: 600 }}>最終変更日</Typography></TableCell>
@@ -715,7 +715,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                             <TableCell>
                               <Box>
                                 <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                  {user.user_name || "ユーザー"}
+                                  {user.user_name || "管理者"}
                                 </Typography>
                                 {user.user_email && (
                                   <Typography variant="caption" color="text.secondary">
@@ -856,7 +856,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                   </Box>
                   <Box>
                     <Typography variant="body2" color="text.secondary">
-                      対象ユーザー数
+                      対象管理者数
                     </Typography>
                     <Typography variant="h5" sx={{ fontWeight: 600 }}>
                       {stats.totalUsers}
@@ -929,7 +929,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                       </Box>
                       <Box>
                         <Typography variant="body2" color="text.secondary">
-                          ユーザーあたり平均変更回数
+                          管理者あたり平均変更回数
                         </Typography>
                         <Typography variant="h6" sx={{ fontWeight: 600 }}>
                           {(stats.totalChanges / stats.totalUsers).toFixed(1)}回

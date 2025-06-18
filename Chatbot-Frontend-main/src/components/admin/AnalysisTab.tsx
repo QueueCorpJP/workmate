@@ -20,12 +20,12 @@ import {
   useTheme,
   useMediaQuery,
   alpha,
-  Tabs,
-  Tab,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  CircularProgress
+  // Tabs,
+  // Tab,
+  // Accordion,
+  // AccordionSummary,
+  // AccordionDetails,
+  // CircularProgress
 } from '@mui/material';
 import { Bar, Pie } from 'react-chartjs-2';
 import { AnalysisResult, categoryColors, sentimentColors } from './types';
@@ -39,10 +39,10 @@ import LiveHelpIcon from '@mui/icons-material/LiveHelp';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ChatIcon from '@mui/icons-material/Chat';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import BusinessIcon from '@mui/icons-material/Business';
+// import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+// import BusinessIcon from '@mui/icons-material/Business';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
-import api from '../../api';
+// import api from '../../api';
 
 interface AnalysisTabProps {
   analysis: AnalysisResult | null;
@@ -50,30 +50,30 @@ interface AnalysisTabProps {
   onRefresh: () => void;
 }
 
-// 短縮されたビジネス分析プロンプト
-const BUSINESS_ANALYSIS_PROMPT = `あなたは業務改善コンサルタントです。チャットボットの利用データから、実行可能なビジネス改善提案を行ってください。
-
-以下の6項目で分析し、各項目は300文字以内で簡潔に回答してください：
-
-【1. 頻出トピック分析】
-最多質問パターンと業務課題を特定し、標準化の機会を示してください。
-
-【2. 効率化機会】  
-繰り返し質問から自動化可能な業務を特定し、ROIの高い改善案を提案してください。
-
-【3. フラストレーション要因】
-ネガティブ感情の原因と未解決問題のパターンを分析し、優先改善点を明示してください。
-
-【4. システム改善案】
-機能追加・改善の具体提案とユーザーニーズの優先順位を示してください。
-
-【5. 情報共有課題】
-部門間の情報ギャップとドキュメント化が必要な領域を特定してください。
-
-【6. 実行計画】
-短期（1-3ヶ月）・中期（3-6ヶ月）・長期（6ヶ月-1年）の改善提案を投資対効果と共に提示してください。
-
-データに基づく具体的な数値を使用し、実装可能な提案を心がけてください。`;
+// 短縮されたビジネス分析プロンプト（一時的にコメントアウト）
+// const BUSINESS_ANALYSIS_PROMPT = `あなたは業務改善コンサルタントです。チャットボットの利用データから、実行可能なビジネス改善提案を行ってください。
+// 
+// 以下の6項目で分析し、各項目は300文字以内で簡潔に回答してください：
+// 
+// 【1. 頻出トピック分析】
+// 最多質問パターンと業務課題を特定し、標準化の機会を示してください。
+// 
+// 【2. 効率化機会】  
+// 繰り返し質問から自動化可能な業務を特定し、ROIの高い改善案を提案してください。
+// 
+// 【3. フラストレーション要因】
+// ネガティブ感情の原因と未解決問題のパターンを分析し、優先改善点を明示してください。
+// 
+// 【4. システム改善案】
+// 機能追加・改善の具体提案と管理者ニーズの優先順位を示してください。
+// 
+// 【5. 情報共有課題】
+// 部門間の情報ギャップとドキュメント化が必要な領域を特定してください。
+// 
+// 【6. 実行計画】
+// 短期（1-3ヶ月）・中期（3-6ヶ月）・長期（6ヶ月-1年）の改善提案を投資対効果と共に提示してください。
+// 
+// データに基づく具体的な数値を使用し、実装可能な提案を心がけてください。`;
 
 const AnalysisTab: React.FC<AnalysisTabProps> = ({
   analysis,
@@ -84,100 +84,100 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'md'));
 
-  // 分析モード (標準/ビジネス)
-  const [analysisMode, setAnalysisMode] = useState<string>('standard');
+  // 分析モード (標準/ビジネス)（一時的にコメントアウト）
+  // const [analysisMode, setAnalysisMode] = useState<string>('standard');
 
-  // ビジネス分析の読み込み状態
-  const [isBusinessAnalysisLoading, setIsBusinessAnalysisLoading] = useState<boolean>(false);
+  // ビジネス分析の読み込み状態（一時的にコメントアウト）
+  // const [isBusinessAnalysisLoading, setIsBusinessAnalysisLoading] = useState<boolean>(false);
 
-  // 詳細なビジネス分析を取得する関数
-  const fetchBusinessAnalysis = async () => {
-    if (!analysis) return;
+  // 詳細なビジネス分析を取得する関数（一時的にコメントアウト）
+  // const fetchBusinessAnalysis = async () => {
+  //   if (!analysis) return;
+  // 
+  //   // 既にビジネス分析が完了している場合はスキップ
+  //   if (analysis.business_analysis_completed) {
+  //     setAnalysisMode('business');
+  //     return;
+  //   }
+  // 
+  //   try {
+  //     setIsBusinessAnalysisLoading(true);
+  //     console.log('高精度ビジネス詳細分析を開始...');
+  // 
+  //     // バックエンドAPIに詳細分析をリクエスト
+  //     const response = await api.post('/admin/detailed-analysis', {
+  //       prompt: BUSINESS_ANALYSIS_PROMPT
+  //     });
+  // 
+  //     console.log('ビジネス詳細分析レスポンス:', response.data);
+  // 
+  //     // レスポンスから詳細分析結果とメタデータを取得
+  //     if (response.data && response.data.detailed_analysis) {
+  //       const {
+  //         detailed_topic_analysis,
+  //         efficiency_opportunities,
+  //         frustration_points,
+  //         improvement_suggestions,
+  //         communication_gaps,
+  //         specific_recommendations
+  //       } = response.data.detailed_analysis;
+  // 
+  //       // 分析メタデータも取得
+  //       const metadata = response.data.analysis_metadata || {};
+  // 
+  //       // 分析結果を既存の分析データにマージ
+  //       Object.assign(analysis, {
+  //         detailed_topic_analysis,
+  //         efficiency_opportunities,
+  //         frustration_points,
+  //         improvement_suggestions,
+  //         communication_gaps,
+  //         specific_recommendations,
+  //         business_analysis_completed: true,
+  //         analysis_metadata: metadata
+  //       });
+  // 
+  //       console.log('高精度ビジネス詳細分析結果をマージ完了');
+  //       console.log('分析品質スコア:', metadata.data_quality_score || 'N/A');
+  //       console.log('分析対象会話数:', metadata.total_conversations || 'N/A');
+  //     } else {
+  //       console.error('詳細分析レスポンスの形式が不正です:', response.data);
+  //       throw new Error('詳細分析レスポンスの形式が不正です');
+  //     }
+  // 
+  //     // ビジネス分析モードに切り替え
+  //     setAnalysisMode('business');
+  //   } catch (error: any) {
+  //     console.error('詳細ビジネス分析の取得エラー:', error);
+  //     
+  //     // より詳細なエラーメッセージ
+  //     let errorMessage = '高精度ビジネス詳細分析の取得中にエラーが発生しました。';
+  //     if (error.response) {
+  //       if (error.response.status === 500) {
+  //         errorMessage += '\nサーバーエラーが発生しました。Geminiモデルが初期化されていない可能性があります。';
+  //       } else if (error.response.status === 401) {
+  //         errorMessage += '\n認証エラーです。ログインし直してください。';
+  //       } else {
+  //         errorMessage += `\nエラーコード: ${error.response.status}`;
+  //       }
+  //     } else if (error.request) {
+  //       errorMessage += '\nサーバーに接続できませんでした。';
+  //     }
+  //     
+  //     alert(errorMessage);
+  //   } finally {
+  //     setIsBusinessAnalysisLoading(false);
+  //   }
+  // };
 
-    // 既にビジネス分析が完了している場合はスキップ
-    if (analysis.business_analysis_completed) {
-      setAnalysisMode('business');
-      return;
-    }
-
-    try {
-      setIsBusinessAnalysisLoading(true);
-      console.log('高精度ビジネス詳細分析を開始...');
-
-      // バックエンドAPIに詳細分析をリクエスト
-      const response = await api.post('/admin/detailed-analysis', {
-        prompt: BUSINESS_ANALYSIS_PROMPT
-      });
-
-      console.log('ビジネス詳細分析レスポンス:', response.data);
-
-      // レスポンスから詳細分析結果とメタデータを取得
-      if (response.data && response.data.detailed_analysis) {
-        const {
-          detailed_topic_analysis,
-          efficiency_opportunities,
-          frustration_points,
-          improvement_suggestions,
-          communication_gaps,
-          specific_recommendations
-        } = response.data.detailed_analysis;
-
-        // 分析メタデータも取得
-        const metadata = response.data.analysis_metadata || {};
-
-        // 分析結果を既存の分析データにマージ
-        Object.assign(analysis, {
-          detailed_topic_analysis,
-          efficiency_opportunities,
-          frustration_points,
-          improvement_suggestions,
-          communication_gaps,
-          specific_recommendations,
-          business_analysis_completed: true,
-          analysis_metadata: metadata
-        });
-
-        console.log('高精度ビジネス詳細分析結果をマージ完了');
-        console.log('分析品質スコア:', metadata.data_quality_score || 'N/A');
-        console.log('分析対象会話数:', metadata.total_conversations || 'N/A');
-      } else {
-        console.error('詳細分析レスポンスの形式が不正です:', response.data);
-        throw new Error('詳細分析レスポンスの形式が不正です');
-      }
-
-      // ビジネス分析モードに切り替え
-      setAnalysisMode('business');
-    } catch (error: any) {
-      console.error('詳細ビジネス分析の取得エラー:', error);
-      
-      // より詳細なエラーメッセージ
-      let errorMessage = '高精度ビジネス詳細分析の取得中にエラーが発生しました。';
-      if (error.response) {
-        if (error.response.status === 500) {
-          errorMessage += '\nサーバーエラーが発生しました。Geminiモデルが初期化されていない可能性があります。';
-        } else if (error.response.status === 401) {
-          errorMessage += '\n認証エラーです。ログインし直してください。';
-        } else {
-          errorMessage += `\nエラーコード: ${error.response.status}`;
-        }
-      } else if (error.request) {
-        errorMessage += '\nサーバーに接続できませんでした。';
-      }
-      
-      alert(errorMessage);
-    } finally {
-      setIsBusinessAnalysisLoading(false);
-    }
-  };
-
-  // タブの変更ハンドラ
-  const handleTabChange = (_event: React.SyntheticEvent, newValue: string) => {
-    if (newValue === 'business' && !analysis?.business_analysis_completed) {
-      fetchBusinessAnalysis();
-    } else {
-      setAnalysisMode(newValue);
-    }
-  };
+  // タブの変更ハンドラ（一時的にコメントアウト）
+  // const handleTabChange = (_event: React.SyntheticEvent, newValue: string) => {
+  //   if (newValue === 'business' && !analysis?.business_analysis_completed) {
+  //     fetchBusinessAnalysis();
+  //   } else {
+  //     setAnalysisMode(newValue);
+  //   }
+  // };
 
   return (
     <Fade in={true} timeout={400}>
@@ -272,8 +272,8 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
           </Box>
         </Box>
 
-        {/* 分析モード切り替えタブ */}
-        {analysis && (
+        {/* 分析モード切り替えタブ（一時的にコメントアウト） */}
+        {/* {analysis && (
           <Box sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
             <Tabs
               value={analysisMode}
@@ -296,13 +296,13 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
               />
             </Tabs>
           </Box>
-        )}
+        )} */}
 
         {isLoading ? (
           <LoadingIndicator />
         ) : !analysis ? (
           <EmptyState message="分析データがありません" />
-        ) : isBusinessAnalysisLoading ? (
+        ) /* : isBusinessAnalysisLoading ? (
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 8 }}>
             <CircularProgress size={60} sx={{ mb: 3 }} />
             <Typography variant="h6" color="text.secondary">
@@ -312,10 +312,10 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
               チャットデータの分析にはしばらく時間がかかる場合があります
             </Typography>
           </Box>
-        ) : (
+        ) */ : (
           <Grid container spacing={3}>
             {/* 標準分析モード */}
-            {analysisMode === 'standard' ? (
+            {/* {analysisMode === 'standard' ? ( */}
               <>
                 {/* AI洞察カード */}
                 <Grid item xs={12}>
@@ -687,7 +687,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                               fontSize: '0.875rem'
                             }}
                           >
-                            ユーザーの感情分布
+                            管理者の感情分布
                           </Typography>
                         </Box>
                       </Box>
@@ -939,8 +939,8 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                   </Card>
                 </Grid>
               </>
-            ) : (
-              // ビジネス詳細分析モード
+            {/* ビジネス詳細分析モード（一時的にコメントアウト） */}
+            {/* ) : (
               <Grid item xs={12}>
                 <Card
                   elevation={0}
@@ -986,7 +986,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                     </Box>
                     <Divider sx={{ mb: 2 }} />
 
-                    {/* ビジネス分析セクション */}
+                    ビジネス分析セクション
                     {[
                       { title: '1. 頻出トピック/質問とその傾向分析', content: analysis.detailed_topic_analysis },
                       { title: '2. 業務効率化の機会', content: analysis.efficiency_opportunities },
@@ -1043,7 +1043,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                   </CardContent>
                 </Card>
               </Grid>
-            )}
+            ) */}
           </Grid>
         )}
       </Box>

@@ -517,29 +517,26 @@ const AdminPanel: React.FC = () => {
 
   // ユーザー削除
   const handleDeleteUser = async (userId: string, userEmail: string) => {
-    if (!confirm(`ユーザー ${userEmail} を削除してもよろしいですか？`)) {
+    if (!confirm(`管理者 ${userEmail} を削除してもよろしいですか？`)) {
       return;
     }
 
-    setIsUserDeleting(true);
-    setUserDeleteError(null);
-    setUserDeleteSuccess(null);
-
+    setUserDeleteError("");
+    setUserDeleteSuccess("");
+    
     try {
-      console.log(`ユーザー ${userId} を削除中...`);
-      const response = await api.delete(`${import.meta.env.VITE_API_URL}/admin/delete-user/${userId}`);
-      console.log("ユーザー削除結果:", response.data);
-      setUserDeleteSuccess(`ユーザー ${userEmail} を削除しました`);
-
-      // 会社詳細情報を再取得
-      fetchCompanyDetails();
+      console.log(`管理者 ${userId} を削除中...`);
+      const response = await api.delete(`/admin/users/${userId}`);
+      console.log("管理者削除結果:", response.data);
+      setUserDeleteSuccess(`管理者 ${userEmail} を削除しました`);
+      
+      // 削除後にユーザーリストを更新
+      await fetchEmployeeUsage();
     } catch (error: any) {
-      console.error("ユーザー削除に失敗しました:", error);
+      console.error("管理者削除に失敗しました:", error);
       setUserDeleteError(
-        error.response?.data?.detail || "ユーザー削除に失敗しました"
+        error.response?.data?.detail || "管理者削除に失敗しました"
       );
-    } finally {
-      setIsUserDeleting(false);
     }
   };
 
@@ -857,21 +854,13 @@ const AdminPanel: React.FC = () => {
                 管理パネル
               </Typography>
               <Chip
-                label={isUserRole ? "一般ユーザー" : "管理者"}
+                icon={<PersonAddIcon />}
+                label={isUserRole ? "一般管理者" : "管理者"}
                 size="small"
+                color={isUserRole ? "default" : "primary"}
                 sx={{
-                  ml: { xs: 1, sm: 2 },
                   fontWeight: 600,
-                  fontSize: "0.7rem",
-                  backgroundColor: isUserRole
-                    ? "rgba(255, 255, 255, 0.25)"
-                    : "rgba(255, 255, 255, 0.25)",
-                  color: "white",
-                  border: "1px solid rgba(255, 255, 255, 0.3)",
-                  height: { xs: 22, sm: 24 },
-                  px: 0.5,
-                  display: { xs: "none", sm: "flex" },
-                  flexShrink: 0,
+                  borderRadius: 2
                 }}
               />
             </Box>

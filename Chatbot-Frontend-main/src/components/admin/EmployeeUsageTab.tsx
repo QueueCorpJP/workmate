@@ -427,7 +427,7 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
       const response = await api.get("/plan-history");
       
       if (response.data && response.data.history) {
-        // 選択されたユーザーの履歴のみフィルタリング
+        // 選択された管理者の履歴のみフィルタリング
         const userHistory = response.data.history.filter(
           (item: PlanHistoryItem) => item.user_id === employee.id
         );
@@ -1094,7 +1094,7 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
             <Box sx={{ textAlign: "center", py: 4 }}>
               <HistoryIcon sx={{ fontSize: 48, color: "text.secondary", mb: 2 }} />
               <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
-                プラン変更履歴がありません
+                この管理者のプラン変更はまだ記録されていません。
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 このユーザーのプラン変更はまだ記録されていません。

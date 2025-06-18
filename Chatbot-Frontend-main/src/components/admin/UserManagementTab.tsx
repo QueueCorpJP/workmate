@@ -157,7 +157,7 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
             color="text.secondary"
             sx={{ maxWidth: "400px" }}
           >
-            社員アカウントにはユーザー作成権限がありません。<br />
+            社員アカウントには管理者作成権限がありません。<br />
             管理者にお問い合わせください。
           </Typography>
         </Box>
@@ -192,7 +192,7 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
                 color: "text.primary",
               }}
             >
-              ユーザー管理
+              管理者管理
             </Typography>
           </Box>
 
@@ -774,7 +774,7 @@ const PlanHistorySection: React.FC = () => {
                 <TableHead>
                   <TableRow sx={{ bgcolor: 'grey.50' }}>
                     <TableCell></TableCell>
-                    <TableCell><Typography variant="caption" sx={{ fontWeight: 600 }}>ユーザー</Typography></TableCell>
+                    <TableCell><Typography variant="caption" sx={{ fontWeight: 600 }}>管理者</Typography></TableCell>
                     <TableCell><Typography variant="caption" sx={{ fontWeight: 600 }}>現在のプラン</Typography></TableCell>
                     <TableCell><Typography variant="caption" sx={{ fontWeight: 600 }}>変更回数</Typography></TableCell>
                     <TableCell><Typography variant="caption" sx={{ fontWeight: 600 }}>最終変更日</Typography></TableCell>
@@ -806,7 +806,7 @@ const PlanHistorySection: React.FC = () => {
                           <TableCell>
                             <Box>
                               <Typography variant="caption" sx={{ fontWeight: 500 }}>
-                                {user.user_name || "ユーザー"}
+                                {user.user_name || "管理者"}
                               </Typography>
                               {user.user_email && (
                                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>

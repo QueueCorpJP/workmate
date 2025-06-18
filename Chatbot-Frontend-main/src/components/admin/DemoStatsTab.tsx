@@ -258,7 +258,7 @@ const DemoStatsTab: React.FC<DemoStatsTabProps> = ({
                             color="text.secondary"
                             sx={{ mb: 0.5, fontSize: "0.75rem" }}
                           >
-                            総ユーザー数
+                            総管理者数
                           </Typography>
                           <Typography
                             variant="h6"
@@ -317,7 +317,7 @@ const DemoStatsTab: React.FC<DemoStatsTabProps> = ({
                             color="text.secondary"
                             sx={{ mb: 0.5, fontSize: "0.75rem" }}
                           >
-                            アクティブユーザー
+                            アクティブ管理者
                           </Typography>
                           <Typography
                             variant="h6"
@@ -520,7 +520,7 @@ const DemoStatsTab: React.FC<DemoStatsTabProps> = ({
                                 variant="body2"
                                 sx={{ fontWeight: 500 }}
                               >
-                                アクティブユーザー率
+                                アクティブ管理者率
                               </Typography>
                             </Box>
                           </TableCell>
@@ -578,7 +578,7 @@ const DemoStatsTab: React.FC<DemoStatsTabProps> = ({
                                 variant="body2"
                                 sx={{ fontWeight: 500 }}
                               >
-                                ユーザーあたりの質問数
+                                管理者あたりの質問数
                               </Typography>
                             </Box>
                           </TableCell>
@@ -678,7 +678,7 @@ const DemoStatsTab: React.FC<DemoStatsTabProps> = ({
                                 variant="body2"
                                 sx={{ fontWeight: 500 }}
                               >
-                                総ユーザー数
+                                総管理者数
                               </Typography>
                             </Box>
                           </TableCell>
@@ -720,7 +720,7 @@ const DemoStatsTab: React.FC<DemoStatsTabProps> = ({
                                 variant="body2"
                                 sx={{ fontWeight: 500 }}
                               >
-                                アクティブユーザー数
+                                アクティブ管理者数
                               </Typography>
                             </Box>
                           </TableCell>
@@ -846,7 +846,7 @@ const DemoStatsTab: React.FC<DemoStatsTabProps> = ({
                                 variant="body2"
                                 sx={{ fontWeight: 500 }}
                               >
-                                制限に達したユーザー数
+                                制限に達した管理者数
                               </Typography>
                             </Box>
                           </TableCell>

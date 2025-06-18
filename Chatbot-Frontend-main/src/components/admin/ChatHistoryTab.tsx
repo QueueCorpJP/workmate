@@ -166,7 +166,7 @@ const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({
             <TableHead>
               <TableRow sx={{ bgcolor: "background.default" }}>
                 <TableCell>日時</TableCell>
-                <TableCell>ユーザーの質問</TableCell>
+                <TableCell>管理者の質問</TableCell>
                 <TableCell>ボットの回答</TableCell>
                 <TableCell>カテゴリ</TableCell>
                 <TableCell>感情</TableCell>
