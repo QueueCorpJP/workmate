@@ -4,7 +4,7 @@ import axios from "axios";
 // Use local backend server by default
 const API_URL = import.meta.env.VITE_API_URL || 
   (import.meta.env.PROD ? 
-    `${window.location.origin}/chatbot/api` : 
+    "https://workmatechat.com/chatbot/api" : 
     "http://localhost:8083/chatbot/api");
 
 console.log("API URL:", API_URL);

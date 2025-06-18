@@ -117,10 +117,27 @@ if os.getenv("ALLOW_ALL_ORIGINS", "false").lower() == "true":
 # CORSミドルウェアを最初に追加して優先度を上げる
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # すべてのオリジンを許可
+    allow_origins=[
+        "https://workmatechat.com",
+        "https://www.workmatechat.com",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173"
+    ],  # 明示的にオリジンを指定
     allow_credentials=True,  # クレデンシャルを含むリクエストを許可
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # 明示的なHTTPメソッドを指定
-    allow_headers=["*"],  # すべてのヘッダーを許可
+    allow_headers=[
+        "Accept",
+        "Accept-Language",
+        "Content-Language",
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Origin",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers"
+    ],  # 必要なヘッダーを明示的に指定
     expose_headers=["*"],  # レスポンスヘッダーを公開
     max_age=86400,  # プリフライトリクエストのキャッシュ時間（秒）
 )
@@ -1419,6 +1436,19 @@ async def get_plan_history_endpoint(current_user = Depends(get_current_user), db
 async def simple_test():
     """認証なしの簡単なテスト"""
     return {"message": "Backend is working!", "timestamp": datetime.datetime.now().isoformat()}
+
+# CORSプリフライトリクエスト対応
+@app.options("/chatbot/api/{path:path}")
+async def options_handler(path: str):
+    """すべてのパスに対するOPTIONSリクエストを処理"""
+    return JSONResponse(
+        content={"message": "OK"},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+        }
+    )
 
 # テスト用CSVエンドポイント
 @app.get("/chatbot/api/admin/csv-test")
