@@ -139,8 +139,8 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [currentTab, setCurrentTab] = useState(0);
   
-  // queue@queueu-tech.jp用の特別表示判定
-  const isQueueTechAdmin = user?.email === "queue@queueu-tech.jp";
+  // 管理者用の特別表示判定
+  const isAdmin = user?.role === "admin" || user?.email === "queue@queueu-tech.jp" || user?.email === "queue@queuefood.co.jp";
 
   const fetchPlanHistory = async () => {
     setIsLoading(true);
@@ -155,8 +155,8 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
           setUserPlanHistories(response.data.data.users);
         }
         
-        // queue@queueu-tech.jp用の分析データを設定
-        if (isQueueTechAdmin && response.data.data.analytics) {
+        // 管理者用の分析データを設定
+        if (isAdmin && response.data.data.analytics) {
           setAnalyticsData(response.data.data.analytics);
         }
       } else {
@@ -663,11 +663,11 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
         </Button>
       </Box>
 
-      {/* queue@queueu-tech.jp用の分析表示 */}
-      {isQueueTechAdmin && analyticsData && renderAnalytics()}
+              {/* 管理者用の分析表示 */}
+        {isAdmin && analyticsData && renderAnalytics()}
 
-      {/* 通常のプラン履歴表示（queue@queueu-tech.jpの場合はタブ0の時のみ） */}
-      {(!isQueueTechAdmin || currentTab === 0) && (
+        {/* 通常のプラン履歴表示（管理者の場合はタブ0の時のみ） */}
+              {(!isAdmin || currentTab === 0) && (
         <Box>
           {/* プラン履歴テーブル */}
           {userPlanHistories.length === 0 ? (
@@ -834,8 +834,8 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
         </Box>
       )}
 
-      {/* 統計情報（queue@queueu-tech.jpでは非表示） */}
-      {(userPlanHistories.length > 0 && !isQueueTechAdmin) && (
+      {/* 基本統計情報（管理者でない場合のみ表示） */}
+      {(userPlanHistories.length > 0 && !isAdmin) && (
         <Paper sx={{ mt: 3, p: 2 }}>
           <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
             統計情報

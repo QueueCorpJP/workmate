@@ -1330,11 +1330,25 @@ async def get_plan_history_endpoint(current_user = Depends(get_current_user), db
             else:
                 plan_stats[current_plan] = 1
         
-        # queue@queueu-tech.jp用の追加分析
+        # 詳細な分析データを取得
         additional_analytics = {}
-        if current_user["email"] == "queue@queueu-tech.jp":
-            from modules.analytics import get_usage_analytics
-            additional_analytics = get_usage_analytics(db)
+        if current_user["role"] in ["admin"] or current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"]:
+            from modules.analytics import (
+                get_usage_analytics, 
+                get_company_usage_periods, 
+                get_user_usage_periods, 
+                get_active_users,
+                get_plan_continuity_analysis
+            )
+            
+            # 全分析データを取得
+            additional_analytics = {
+                "usage_analytics": get_usage_analytics(db),
+                "company_usage_periods": get_company_usage_periods(db),
+                "user_usage_periods": get_user_usage_periods(db),
+                "active_users": get_active_users(db),
+                "plan_continuity": get_plan_continuity_analysis(db)
+            }
         
         return {
             "success": True,

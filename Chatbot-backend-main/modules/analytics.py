@@ -33,15 +33,23 @@ def get_usage_analytics(db) -> Dict[str, Any]:
 def get_company_usage_periods(db) -> List[Dict[str, Any]]:
     """会社単位の累計利用期間を計算"""
     try:
-        # 全ユーザーを取得
-        users_result = select_data("users", columns="id,email,company_name,created_at")
+        # 全ユーザーと会社情報を取得
+        users_result = select_data("users", columns="id,email,company_id,created_at")
         if not users_result or not users_result.data:
             return []
+        
+        # 全会社情報を取得
+        companies_result = select_data("companies", columns="id,name")
+        company_name_map = {}
+        if companies_result and companies_result.data:
+            for company in companies_result.data:
+                company_name_map[company["id"]] = company["name"]
         
         # 会社ごとにグループ化
         companies = {}
         for user in users_result.data:
-            company_name = user.get("company_name") or user.get("email", "").split("@")[1]
+            company_id = user.get("company_id")
+            company_name = company_name_map.get(company_id) or user.get("email", "").split("@")[1] if "@" in user.get("email", "") else "不明"
             if company_name not in companies:
                 companies[company_name] = {
                     "company_name": company_name,
@@ -79,21 +87,30 @@ def get_user_usage_periods(db) -> List[Dict[str, Any]]:
     """ユーザー単位の累計利用期間を計算"""
     try:
         # 全ユーザーを取得
-        users_result = select_data("users", columns="id,email,name,company_name,created_at")
+        users_result = select_data("users", columns="id,email,name,company_id,created_at")
         if not users_result or not users_result.data:
             return []
+        
+        # 全会社情報を取得
+        companies_result = select_data("companies", columns="id,name")
+        company_name_map = {}
+        if companies_result and companies_result.data:
+            for company in companies_result.data:
+                company_name_map[company["id"]] = company["name"]
         
         user_analytics = []
         for user in users_result.data:
             if user.get("created_at"):
                 start_date = datetime.fromisoformat(user["created_at"].replace('Z', '+00:00'))
                 usage_days = (datetime.now() - start_date).days
+                company_id = user.get("company_id")
+                company_name = company_name_map.get(company_id) or user.get("email", "").split("@")[1] if "@" in user.get("email", "") else "不明"
                 
                 user_analytics.append({
                     "user_id": user["id"],
                     "email": user["email"],
                     "name": user.get("name", ""),
-                    "company_name": user.get("company_name", ""),
+                    "company_name": company_name,
                     "usage_days": usage_days,
                     "start_date": user["created_at"],
                     "usage_months": round(usage_days / 30.44, 1)
@@ -141,11 +158,19 @@ def get_active_users(db) -> Dict[str, Any]:
                 active_users[user_id]["chat_count"] += 1
         
         # ユーザー情報を取得して会社別に分類
-        users_result = select_data("users", columns="id,email,company_name")
+        users_result = select_data("users", columns="id,email,company_id")
+        companies_result = select_data("companies", columns="id,name")
+        company_name_map = {}
+        if companies_result and companies_result.data:
+            for company in companies_result.data:
+                company_name_map[company["id"]] = company["name"]
+        
         user_company_map = {}
         if users_result and users_result.data:
             for user in users_result.data:
-                user_company_map[user["id"]] = user.get("company_name") or user.get("email", "").split("@")[1]
+                company_id = user.get("company_id")
+                company_name = company_name_map.get(company_id) or user.get("email", "").split("@")[1] if "@" in user.get("email", "") else "不明"
+                user_company_map[user["id"]] = company_name
         
         # 会社別アクティブユーザー数を計算
         active_by_company = {}
