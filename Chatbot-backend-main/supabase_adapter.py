@@ -93,9 +93,9 @@ def delete_data(table, match_column, match_value):
     """Delete data from a table"""
     return supabase.table(table).delete().eq(match_column, match_value).execute()
 
-def select_data(table, columns="*", filters=None):
-    """Select data from a table with optional filters"""
-    print(f"Selecting data from table: {table}, columns: {columns}, filters: {filters}")
+def select_data(table, columns="*", filters=None, order=None, limit=None, offset=None):
+    """Select data from a table with optional filters, ordering, and pagination"""
+    print(f"Selecting data from table: {table}, columns: {columns}, filters: {filters}, order: {order}, limit: {limit}, offset: {offset}")
     
     # Check if this is a COUNT query
     if isinstance(columns, str) and "COUNT" in columns.upper():
@@ -160,9 +160,35 @@ def select_data(table, columns="*", filters=None):
             print(f"Adding filter: {column} = {value}")
             query = query.eq(column, value)
     
+    # Add ordering if specified
+    if order:
+        print(f"Adding order: {order}")
+        if " desc" in order.lower():
+            column_name = order.replace(" desc", "").strip()
+            query = query.order(column_name, desc=True)
+        elif " asc" in order.lower():
+            column_name = order.replace(" asc", "").strip()
+            query = query.order(column_name, desc=False)
+        else:
+            query = query.order(order, desc=False)
+    
+    # Add limit and offset using range method
+    if offset is not None or limit is not None:
+        start = offset or 0
+        if limit is not None:
+            # range(start, end) where end is inclusive
+            end = start + limit - 1
+            print(f"Adding range: {start} to {end}")
+            query = query.range(start, end)
+        else:
+            # If no limit specified but offset is given, get a reasonable amount
+            print(f"Adding range from offset: {start}")
+            query = query.range(start, start + 999)
+    
     # Execute the query and return the result
     try:
         print(f"Executing Supabase query for table: {table}")
+        print(f"Query details: columns={columns}, filters={filters}, order={order}, limit={limit}, offset={offset}")
         result = query.execute()
         print(f"Query result for table {table}: {len(result.data) if result.data else 0} rows")
         
@@ -194,6 +220,7 @@ def select_data(table, columns="*", filters=None):
         return result
     except Exception as e:
         print(f"Error executing Supabase query for table {table}: {e}")
+        print(f"Query parameters - columns: {columns}, filters: {filters}, order: {order}, limit: {limit}, offset: {offset}")
         import traceback
         print(traceback.format_exc())
         

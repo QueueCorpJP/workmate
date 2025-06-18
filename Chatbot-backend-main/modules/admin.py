@@ -180,12 +180,12 @@ def get_chat_history_paginated(user_id: str = None, db = None, limit: int = 30, 
             print(f"ユーザーID {user_id} でフィルタリングします")
             # 特定のユーザーの履歴を取得
             count_result = select_data("chat_history", columns="id", filters={"employee_id": user_id})
-            result = select_data("chat_history", filters={"employee_id": user_id}, order="timestamp desc", limit=limit, offset=offset)
+            result = select_data("chat_history", columns="*", filters={"employee_id": user_id}, order="timestamp desc", limit=limit, offset=offset)
         else:
             print("全ユーザーのチャット履歴を取得します")
             # 全履歴を取得
             count_result = select_data("chat_history", columns="id")
-            result = select_data("chat_history", order="timestamp desc", limit=limit, offset=offset)
+            result = select_data("chat_history", columns="*", order="timestamp desc", limit=limit, offset=offset)
         
         # 全件数を取得
         total_count = len(count_result.data) if count_result and count_result.data else 0

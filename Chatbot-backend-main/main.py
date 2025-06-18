@@ -674,20 +674,47 @@ async def admin_get_chat_history(
     """チャット履歴を取得する（ページネーション対応）"""
     # 現在のユーザーIDを渡して、そのユーザーのチャットのみを取得
     # 特別な管理者のqueue@queueu-tech.jpの場合は全ユーザーのチャットを取得できるようにする
-    if current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False):
-        # 特別な管理者の場合は全ユーザーのチャットを取得
-        chat_history, total_count = get_chat_history_paginated(None, db, limit, offset)
-    else:
-        # 通常のユーザーの場合は自分のチャットのみを取得
-        user_id = current_user["id"]
-        chat_history, total_count = get_chat_history_paginated(user_id, db, limit, offset)
+    try:
+        if current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False):
+            # 特別な管理者の場合は全ユーザーのチャットを取得
+            chat_history, total_count = get_chat_history_paginated(None, db, limit, offset)
+        else:
+            # 通常のユーザーの場合は自分のチャットのみを取得
+            user_id = current_user["id"]
+            chat_history, total_count = get_chat_history_paginated(user_id, db, limit, offset)
+    except Exception as e:
+        print(f"ページネーション機能でエラーが発生: {e}")
+        import traceback
+        print(traceback.format_exc())
+        
+        # フォールバック: 古い方法でデータを取得
+        if current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False):
+            chat_history = get_chat_history(None, db)
+        else:
+            user_id = current_user["id"]
+            chat_history = get_chat_history(user_id, db)
+        
+        # ページネーション風に制限
+        total_count = len(chat_history)
+        start_idx = offset
+        end_idx = min(offset + limit, total_count)
+        chat_history = chat_history[start_idx:end_idx]
+        
+        # has_moreを計算
+        has_more = (offset + limit) < total_count
+    
+    # has_moreを計算（try文内で成功した場合の処理）
+    if 'has_more' not in locals():
+        has_more = (offset + limit) < total_count
     
     return {
         "data": chat_history,
-        "total_count": total_count,
-        "limit": limit,
-        "offset": offset,
-        "has_more": offset + limit < total_count
+        "pagination": {
+            "total_count": total_count,
+            "has_more": has_more,
+            "limit": limit,
+            "offset": offset
+        }
     }
 
 # チャット履歴分析エンドポイント
