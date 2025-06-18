@@ -438,7 +438,7 @@ print("SUPABASE_KEY:", os.getenv("SUPABASE_KEY"))
 # APIキーの有効性確認
 import google.generativeai as genai
 genai.configure(api_key="your_api_key")
-model = genai.GenerativeModel('gemini-2.0-flash-exp')
+model = genai.GenerativeModel('gemini-2.5-flash')
 ```
 
 #### 5. ファイルアップロードエラー
