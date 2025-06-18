@@ -59,15 +59,31 @@ jobs:
         username: ${{ secrets.AWS_USERNAME }}
         key: ${{ secrets.AWS_PRIVATE_KEY }}
         script: |
+          # デバッグ: ファイル存在確認
+          echo "=== Checking /tmp/nginx/ contents ==="
+          ls -la /tmp/nginx/ || exit 1
+          ls -la /tmp/nginx/conf.d/ || exit 1
+          
+          echo "=== Checking file contents ==="
+          cat /tmp/nginx/conf.d/workmatechat.com.conf || exit 1
+          
           # 新しい設定を適用
-          sudo cp /tmp/nginx/nginx.conf /etc/nginx/nginx.conf
-          sudo cp /tmp/nginx/conf.d/workmatechat.com.conf /etc/nginx/conf.d/workmatechat.com.conf
+          echo "=== Copying nginx.conf ==="
+          sudo cp /tmp/nginx/nginx.conf /etc/nginx/nginx.conf || exit 1
+          
+          echo "=== Copying workmatechat.com.conf ==="
+          sudo cp /tmp/nginx/conf.d/workmatechat.com.conf /etc/nginx/conf.d/workmatechat.com.conf || exit 1
           
           # 設定をテスト
-          sudo nginx -t
+          echo "=== Testing nginx configuration ==="
+          sudo nginx -t || exit 1
           
           # nginxをリロード
-          sudo systemctl reload nginx
+          echo "=== Reloading nginx ==="
+          sudo systemctl reload nginx || exit 1
+          
+          echo "=== Verification ==="
+          sudo cat /etc/nginx/conf.d/workmatechat.com.conf | grep "変更！" || exit 1
           
           # 一時ファイル削除
           rm -rf /tmp/nginx
