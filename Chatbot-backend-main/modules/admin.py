@@ -95,21 +95,21 @@ async def refresh_knowledge_base():
                                     service_account_file=service_account_file
                                 )
                                 
-                                                                 # データリストを直接使用（DataFrameを使用しない）
-                                 if not data_list:
-                                     data_list = [{
-                                         'section': "データなし",
-                                         'content': "Excelファイルに有効なデータが見つかりませんでした",
-                                         'source': 'Excel (Google Sheets)',
-                                         'file': file_name,
-                                         'url': None
-                                     }]
-                                 
-                                 # データベース保存用にDataFrameに変換
-                                 import pandas as pd
-                                 df = pd.DataFrame(data_list)
-                                 
-                                 print(f"Excel処理完了（Google Sheets API使用）: {len(data_list)} レコード")
+                                # データリストを直接使用（DataFrameを使用しない）
+                                if not data_list:
+                                    data_list = [{
+                                        'section': "データなし",
+                                        'content': "Excelファイルに有効なデータが見つかりませんでした",
+                                        'source': 'Excel (Google Sheets)',
+                                        'file': file_name,
+                                        'url': None
+                                    }]
+                                
+                                # データベース保存用にDataFrameに変換
+                                import pandas as pd
+                                df = pd.DataFrame(data_list)
+                                
+                                print(f"Excel処理完了（Google Sheets API使用）: {len(data_list)} レコード")
                                 
                             except Exception as e:
                                 print(f"Google Sheets API処理エラー、従来の処理にフォールバック: {str(e)}")
