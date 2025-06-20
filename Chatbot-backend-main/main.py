@@ -35,7 +35,7 @@ from modules.admin import (
     get_company_employees, set_model as set_admin_model, delete_resource
 )
 from modules.company import get_company_name, set_company_name
-from modules.auth import get_current_user, get_current_admin, register_new_user, get_admin_or_user, get_company_admin
+from modules.auth import get_current_user, get_current_admin, register_new_user, get_admin_or_user, get_company_admin, get_user_with_delete_permission, get_user_creation_permission
 from modules.resource import get_uploaded_resources_by_company_id, toggle_resource_active_by_id, remove_resource_by_id
 import json
 from modules.validation import validate_login_input, validate_user_input
@@ -115,34 +115,13 @@ if os.getenv("ALLOW_ALL_ORIGINS", "false").lower() == "true":
     origins.append("*")
 
 # CORSミドルウェアを最初に追加して優先度を上げる
+# 開発環境では全てのオリジンを許可
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://workmatechat.com",
-        "https://www.workmatechat.com",
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://localhost:3025",
-        "http://localhost:8083",
-        "http://localhost:8085",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:8083",
-        "http://127.0.0.1:8085"
-    ],  # 明示的にオリジンを指定（開発用ポートを追加）
-    allow_credentials=True,  # クレデンシャルを含むリクエストを許可
+    allow_origins=["*"],  # 開発環境では全てのオリジンを許可
+    allow_credentials=False,  # allow_origins=["*"]の場合はFalseにする必要がある
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # 明示的なHTTPメソッドを指定
-    allow_headers=[
-        "Accept",
-        "Accept-Language",
-        "Content-Language",
-        "Content-Type",
-        "Authorization",
-        "X-Requested-With",
-        "Origin",
-        "Access-Control-Request-Method",
-        "Access-Control-Request-Headers"
-    ],  # 必要なヘッダーを明示的に指定
+    allow_headers=["*"],  # 全てのヘッダーを許可
     expose_headers=["*"],  # レスポンスヘッダーを公開
     max_age=86400,  # プリフライトリクエストのキャッシュ時間（秒）
 )
@@ -250,7 +229,7 @@ async def register(user_data: UserRegister, db: SupabaseConnection = Depends(get
         )
 
 @app.post("/chatbot/api/admin/register-user", response_model=UserResponse)
-async def admin_register_user(user_data: AdminUserCreate, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
+async def admin_register_user(user_data: AdminUserCreate, current_user = Depends(get_user_creation_permission), db: SupabaseConnection = Depends(get_db)):
     """管理者による新規ユーザー登録"""
     try:
         # 入力値バリデーション
@@ -293,15 +272,31 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
         # new_company_created変数を初期化
         new_company_created = False
         
-        # 特別な管理者のueue@queueu-tech.jpの、またadminロールの場合はuserロールのみ作成可能
+        # 権限チェックと作成可能なロールの決定
         is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
         is_admin = current_user["role"] == "admin"
+        is_admin_user = current_user["role"] == "admin_user"
+        is_user = current_user["role"] == "user"
         
-        if is_special_admin or is_admin:
-            print(f"管理者の権限でユーザー作成: 特別管理者＝{is_special_admin}, admin={is_admin}")
-            
-            # adminロールは常にuserロールのアカウントのみ作成可能
+        if is_special_admin:
+            # 特別管理者はadmin_userのみ作成可能
+            print("特別管理者の権限でadmin_userアカウント作成")
+            role = "admin_user"
+        elif is_admin or is_admin_user:
+            # admin、admin_userはuserロールのみ作成可能
+            print(f"管理者の権限でユーザー作成: admin={is_admin}, admin_user={is_admin_user}")
             role = "user"
+        elif is_user:
+            # userはemployeeのみ作成可能
+            print("userの権限でemployeeアカウント作成")
+            role = "employee"
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="ユーザー作成権限がありません"
+            )
+        
+        if is_special_admin or is_admin or is_admin_user:
             
             # 会社IDの指定
             company_id = None
@@ -378,43 +373,36 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                 "created_at": datetime.datetime.now().isoformat()
             }
         else:
-            # userロールの場合のみ社員アカウント作成可能、employeeロールは作成権限なし
-            if current_user["role"] == "employee":
+            # userロールの場合は社員アカウントとして登録
+            # 現在のユーザーの会社IDを取得して新しいユーザーに設定
+            company_id = current_user.get("company_id")
+            
+            # 会社IDがない場合はエラー
+            if not company_id:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="社員アカウントにはユーザー作成権限がありません"
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="会社IDが設定されていません。管理者にお問い合わせください。"
                 )
             
-        # userロールの場合は社員アカウントとして登録の管理者画面にアクセスできない
-        # 現在のユーザーの会社IDを取得して新しいユーザーに設定
-        company_id = current_user.get("company_id")
-        
-        # 会社IDがない場合はエラー
-        if not company_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="会社IDが設定されていません。管理者にお問い合わせください。"
+            # create_user関数を直接呼び出して会社IDを設定し作成者のステータスを継承
+            user_id = create_user(
+                email=user_data.email,
+                password=user_data.password,
+                name=name,
+                role=role,  # "employee"
+                company_id=company_id,
+                db=db,
+                creator_user_id=current_user["id"]  # 作成者IDを渡す
             )
         
-        # create_user関数を直接呼び出して会社IDを設定し作成者のステータスを継承
-        user_id = create_user(
-            email=user_data.email,
-            password=user_data.password,
-            name=name,
-            role="employee",
-            company_id=company_id,
-            db=db,
-            creator_user_id=current_user["id"]  # 作成者IDを渡す
-        )
-        
-        return {
-            "id": user_id,
-            "email": user_data.email,
-            "name": name,
-            "role": "employee",
-            "company_name": "",
-            "created_at": datetime.datetime.now().isoformat()
-        }
+            return {
+                "id": user_id,
+                "email": user_data.email,
+                "name": name,
+                "role": role,
+                "company_name": "",
+                "created_at": datetime.datetime.now().isoformat()
+            }
     except HTTPException as e:
         # HTTPExceptionはそのまま再送
         account_type = "ユーザーアカウント" if (current_user["email"] == "queue@queueu-tech.jp" or current_user["role"] == "admin") else "社員アカウント"
@@ -431,14 +419,13 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
         )
 
 @app.delete("/chatbot/api/admin/delete-user/{user_id}", response_model=dict)
-async def admin_delete_user(user_id: str, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
+async def admin_delete_user(user_id: str, current_user = Depends(get_user_with_delete_permission), db: SupabaseConnection = Depends(get_db)):
     """管理者によるユーザー削除"""
-    # 特別な管理者queue@queueu-tech.jpのみがユーザーを削除できる
-    if current_user["email"] != "queue@queueu-tech.jp" or not current_user.get("is_special_admin", False):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="この操作には特別な管理者の権限が必要です"
-        )
+    # 権限チェック
+    is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
+    is_admin = current_user["role"] == "admin"
+    is_admin_user = current_user["role"] == "admin_user"
+    is_user = current_user["role"] == "user"
     
     # 自分の身は削除できない   
     if user_id == current_user["id"]:
@@ -456,14 +443,63 @@ async def admin_delete_user(user_id: str, current_user = Depends(get_admin_or_us
             detail="指定されたユーザーが見つかりません"
         )
     
-    user = user_result.data[0]
+    target_user = user_result.data[0]
+    
+    # 削除権限のチェック
+    if is_special_admin:
+        # 特別管理者は全員削除可能
+        pass
+    elif is_admin:
+        # adminロールは全員削除可能
+        pass
+    elif is_admin_user:
+        # admin_userロールは同じ会社のuserとemployeeを削除可能
+        if target_user.get("role") not in ["user", "employee"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="userまたはemployeeアカウントのみ削除できます"
+            )
+        
+        # 同じ会社かチェック
+        current_company_id = current_user.get("company_id")
+        target_company_id = target_user.get("company_id")
+        
+        if not current_company_id or current_company_id != target_company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="同じ会社のユーザーのみ削除できます"
+            )
+    elif is_user:
+        # userロールは同じ会社の社員のみ削除可能
+        if target_user.get("role") not in ["employee"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="社員アカウントのみ削除できます"
+            )
+        
+        # 同じ会社かチェック
+        current_company_id = current_user.get("company_id")
+        target_company_id = target_user.get("company_id")
+        
+        if not current_company_id or current_company_id != target_company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="同じ会社の社員のみ削除できます"
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="この操作には管理者の権限が必要です"
+        )
     
     # ユーザーの削除
+    from supabase_adapter import delete_data
     delete_data("usage_limits", "user_id", user_id)
     delete_data("document_sources", "uploaded_by", user_id)
+    delete_data("chat_history", "employee_id", user_id)  # チャット履歴も削除
     delete_data("users", "id", user_id)
     
-    return {"message": f"ユーザー {user['email']} を削除しました", "deleted_user_id": user_id}
+    return {"message": f"ユーザー {target_user['email']} を削除しました", "deleted_user_id": user_id}
 
 @app.get("/chatbot/api/admin/users", response_model=List[UserResponse])
 async def admin_get_users(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
@@ -1457,17 +1493,7 @@ async def simple_test():
     return {"message": "Backend is working!", "timestamp": datetime.datetime.now().isoformat()}
 
 # CORSプリフライトリクエスト対応
-@app.options("/chatbot/api/{path:path}")
-async def options_handler(path: str):
-    """すべてのパスに対するOPTIONSリクエストを処理"""
-    return JSONResponse(
-        content={"message": "OK"},
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
-        }
-    )
+# OPTIONSハンドラーは削除 - CORSミドルウェアに処理を任せる
 
 # テスト用CSVエンドポイント
 @app.get("/chatbot/api/admin/csv-test")
@@ -1608,15 +1634,16 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
 @app.post("/chatbot/api/admin/update-user-status/{user_id}", response_model=dict)
 async def admin_update_user_status(user_id: str, request: dict, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """管理者の操作によるユーザーステータス変更。Adminのみ実行可能"""
-    # adminロールまたは特別な管理者のみが実行可能
+    # adminロール、admin_userロール、または特別な管理者のみが実行可能
     is_admin = current_user["role"] == "admin"
+    is_admin_user = current_user["role"] == "admin_user"
     is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
     
     print(f"=== ユーザーステータス変更権限チェック ===")
-    print(f"操作者 {current_user['email']} (管理者: {is_admin}, 特別管理者: {is_special_admin})")
+    print(f"操作者 {current_user['email']} (管理者: {is_admin}, admin_user: {is_admin_user}, 特別管理者: {is_special_admin})")
     
-    # 権限チェック - adminまたは特別管理者のみ
-    if not (is_admin or is_special_admin):
+    # 権限チェック - admin、admin_user、または特別管理者のみ
+    if not (is_admin or is_admin_user or is_special_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="この操作には管理者の権限が必要です。一般ユーザーは自分のプラン変更を行うことはできません"
@@ -1793,11 +1820,12 @@ async def admin_get_companies(current_user = Depends(get_admin_or_user), db: Sup
 @app.post("/chatbot/api/admin/fix-company-status/{company_id}", response_model=dict)
 async def admin_fix_company_status(company_id: str, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """会社内のユーザーステータス不整合を修正する"""
-    # adminロールまたは特別な管理者のみが実行可能
+    # adminロール、admin_userロール、または特別な管理者のみが実行可能
     is_admin = current_user["role"] == "admin"
+    is_admin_user = current_user["role"] == "admin_user"
     is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
     
-    if not (is_admin or is_special_admin):
+    if not (is_admin or is_admin_user or is_special_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="この操作には管理者の権限が必要です"
@@ -1823,11 +1851,12 @@ async def admin_fix_company_status(company_id: str, current_user = Depends(get_a
 @app.post("/chatbot/api/admin/ensure-database-integrity", response_model=dict)
 async def admin_ensure_database_integrity(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """データベース整合性をチェックして修正する"""
-    # adminロールまたは特別な管理者のみが実行可能
+    # adminロール、admin_userロール、または特別な管理者のみが実行可能
     is_admin = current_user["role"] == "admin"
+    is_admin_user = current_user["role"] == "admin_user"
     is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
     
-    if not (is_admin or is_special_admin):
+    if not (is_admin or is_admin_user or is_special_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="この操作には管理者の権限が必要です"
@@ -1862,9 +1891,10 @@ async def admin_get_applications(status: str = None, current_user = Depends(get_
         
         # 管理者の権限チェック
         is_admin = current_user["role"] == "admin"
+        is_admin_user = current_user["role"] == "admin_user"
         is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
         
-        if not (is_admin or is_special_admin):
+        if not (is_admin or is_admin_user or is_special_admin):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="この操作には管理者の権限が必要です"
@@ -1903,9 +1933,10 @@ async def admin_update_application_status(
         
         # 管理者の権限チェック
         is_admin = current_user["role"] == "admin"
+        is_admin_user = current_user["role"] == "admin_user"
         is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
         
-        if not (is_admin or is_special_admin):
+        if not (is_admin or is_admin_user or is_special_admin):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="この操作には管理者の権限が必要です"

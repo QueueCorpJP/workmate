@@ -132,6 +132,15 @@ const AdminPanel: React.FC = () => {
   >(null);
   const [showEmployeeCreateForm, setShowEmployeeCreateForm] = useState(false);
 
+  // Employee deletion states
+  const [isEmployeeDeleting, setIsEmployeeDeleting] = useState(false);
+  const [employeeDeleteError, setEmployeeDeleteError] = useState<string | null>(
+    null
+  );
+  const [employeeDeleteSuccess, setEmployeeDeleteSuccess] = useState<
+    string | null
+  >(null);
+
   // Company selection states (for admin user creation)
   const [companies, setCompanies] = useState<any[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
@@ -151,7 +160,7 @@ const AdminPanel: React.FC = () => {
     const storedUser = localStorage.getItem("user");
     if (storedUser) {
       const user = JSON.parse(storedUser);
-      if (user && (user.email === "queue@queuefood.co.jp" || user.role === "admin")) {
+      if (user && (user.email === "queue@queuefood.co.jp" || user.email === "queue@queueu-tech.jp" || user.role === "admin")) {
         setIsSpecialAdmin(true);
       }
     }
@@ -702,6 +711,31 @@ const AdminPanel: React.FC = () => {
     setDetailsDialogOpen(false);
   };
 
+  // 社員削除ハンドラー
+  const handleDeleteEmployee = async (userId: string, userEmail: string) => {
+    setIsEmployeeDeleting(true);
+    setEmployeeDeleteError(null);
+    setEmployeeDeleteSuccess(null);
+
+    try {
+      console.log(`社員 ${userId} を削除中...`);
+      const response = await api.delete(`/admin/delete-user/${userId}`);
+      console.log("社員削除結果:", response.data);
+      setEmployeeDeleteSuccess(`社員 ${userEmail} を削除しました`);
+      
+      // 削除後に社員リストを更新
+      await fetchCompanyEmployees(true);
+      await fetchEmployeeUsage(true);
+    } catch (error: any) {
+      console.error("社員削除に失敗しました:", error);
+      setEmployeeDeleteError(
+        error.response?.data?.detail || "社員削除に失敗しました"
+      );
+    } finally {
+      setIsEmployeeDeleting(false);
+    }
+  };
+
   // タブのアイコンとラベルを定義（色分け用のスタイルを追加）
   const tabDefinitions = [
     {
@@ -1190,6 +1224,10 @@ const AdminPanel: React.FC = () => {
                   employeeCreateError={employeeCreateError}
                   employeeCreateSuccess={employeeCreateSuccess}
                   onCreateEmployee={handleCreateEmployee}
+                  onDeleteEmployee={handleDeleteEmployee}
+                  isEmployeeDeleting={isEmployeeDeleting}
+                  employeeDeleteError={employeeDeleteError}
+                  employeeDeleteSuccess={employeeDeleteSuccess}
                 />
               )}
 

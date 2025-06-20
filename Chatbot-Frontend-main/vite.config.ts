@@ -9,7 +9,7 @@ export default defineConfig({
     host: "0.0.0.0",
     proxy: {
       "/chatbot/api": {
-        target: `http://localhost:${process.env.VITE_BACKEND_PORT || 8083}`,
+        target: `http://localhost:${process.env.VITE_BACKEND_PORT || 8085}`,
         changeOrigin: true,
         secure: false,
       },

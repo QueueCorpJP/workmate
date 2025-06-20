@@ -30,6 +30,7 @@ def get_current_admin(user = Depends(get_current_user)):
             detail="この操作には管理者権限が必要です",
         )
     return user
+
 def get_admin_or_user(user = Depends(get_current_user)):
     """現在のユーザーを取得します（管理者でなくても可）"""
     # 特定のメールアドレスを持つユーザーは特別な権限を持つ
@@ -60,15 +61,51 @@ def get_company_admin(user = Depends(get_current_user)):
             detail="会社に所属していないユーザーは会社管理機能にアクセスできません",
         )
     
-    # 社員アカウントは管理機能にアクセスできない
+    # 社員アカウントは管理機能にアクセスできない（admin_userは管理機能にアクセス可能）
     if user["role"] == "employee":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="社員アカウントは管理機能にアクセスできません",
         )
     
-    # 会社の管理者として扱う
+    # admin_user、admin、userは会社の管理者として扱う
     return user
+
+def get_user_with_delete_permission(user = Depends(get_current_user)):
+    """削除権限を持つユーザーを取得します（admin_user, admin, 特別管理者）"""
+    # 特定のメールアドレスを持つユーザーは特別な権限を持つ
+    if user["email"] == "queue@queueu-tech.jp":
+        user["is_special_admin"] = True
+    else:
+        user["is_special_admin"] = False
+    
+    # admin_user、admin、特別管理者のみ削除権限を持つ
+    if user["role"] not in ["admin", "admin_user"] and not user.get("is_special_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="この操作には管理者権限が必要です",
+        )
+    return user
+
+def get_user_creation_permission(user = Depends(get_current_user)):
+    """ユーザー作成権限を持つユーザーを取得します"""
+    # 特定のメールアドレスを持つユーザーは特別な権限を持つ
+    if user["email"] == "queue@queueu-tech.jp":
+        user["is_special_admin"] = True
+    else:
+        user["is_special_admin"] = False
+    
+    # 特別管理者はadmin_userのみ作成可能
+    # admin_userはuserを作成可能
+    # userはemployeeを作成可能
+    # employeeは作成権限なし
+    if user["role"] not in ["admin", "admin_user", "user"] and not user.get("is_special_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="この操作にはユーザー作成権限が必要です",
+        )
+    return user
+
 def register_new_user(email: str, password: str, name: str, role: str = "user", db: Connection = Depends(get_db)):
     """新しいユーザーを登録します"""
     if check_user_exists(email, db):

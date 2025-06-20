@@ -70,7 +70,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const parsedUser = JSON.parse(storedUser);
       setUser(parsedUser);
       setIsAuthenticated(true);
-      setIsAdmin(parsedUser.role === "admin" || 
+      setIsAdmin(parsedUser.role === "admin" || parsedUser.role === "admin_user" || 
         (parsedUser.email && ["queue@queuefood.co.jp", "queue@queueu-tech.jp"].includes(parsedUser.email)));
       setIsEmployee(parsedUser.role === "employee");
 

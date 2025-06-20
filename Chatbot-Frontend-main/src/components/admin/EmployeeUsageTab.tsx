@@ -42,6 +42,7 @@ import TimelineIcon from "@mui/icons-material/Timeline";
 import CloseIcon from "@mui/icons-material/Close";
 import BusinessIcon from "@mui/icons-material/Business";
 import PeopleIcon from "@mui/icons-material/People";
+import DeleteIcon from "@mui/icons-material/Delete";
 import { EmployeeUsageItem, CompanyEmployee, categoryColors } from "./types";
 import LoadingIndicator from "./LoadingIndicator";
 import EmptyState from "./EmptyState";
@@ -74,6 +75,10 @@ interface EmployeeUsageTabProps {
   employeeCreateError: string | null;
   employeeCreateSuccess: string | null;
   onCreateEmployee: (role: string) => void;
+  onDeleteEmployee?: (userId: string, userEmail: string) => void;
+  isEmployeeDeleting?: boolean;
+  employeeDeleteError?: string | null;
+  employeeDeleteSuccess?: string | null;
 }
 
 interface PlanHistoryItem {
@@ -110,11 +115,19 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
   employeeCreateError,
   employeeCreateSuccess,
   onCreateEmployee,
+  onDeleteEmployee,
+  isEmployeeDeleting = false,
+  employeeDeleteError,
+  employeeDeleteSuccess,
 }) => {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin" || 
     (user?.email && ["queue@queuefood.co.jp", "queue@queueu-tech.jp"].includes(user.email));
+  const isAdminUser = user?.role === "admin_user";
   const isQueueTechAdmin = user?.email === "queue@queueu-tech.jp";
+  
+  // 削除ボタンを表示する権限（admin_userのみ）
+  const canShowDeleteButton = isAdminUser || isQueueTechAdmin;
   
 
   
@@ -276,7 +289,15 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                         {group.president.name || group.president.email.split('@')[0]}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        社長・管理者
+                        {group.president.email === "queue@queueu-tech.jp" 
+                          ? "運営者" 
+                          : group.president.role === "admin_user" 
+                          ? "社長" 
+                          : group.president.role === "user" 
+                          ? "管理者" 
+                          : group.president.role === "admin" 
+                          ? "管理者" 
+                          : "社員"}
                       </Typography>
                     </Box>
                   </Box>
@@ -415,6 +436,18 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
       const errorMessage = error.response?.data?.detail || error.message || "切り替えに失敗しました";
       alert(`エラー: ${errorMessage}`);
     }
+  };
+
+  // 社員削除ハンドラー
+  const handleDeleteEmployee = async (employee: CompanyEmployee) => {
+    if (!onDeleteEmployee) return;
+    
+    // 確認ダイアログ
+    if (!confirm(`社員 ${employee.name || employee.email} を削除してもよろしいですか？\n\nこの操作は取り消せません。`)) {
+      return;
+    }
+    
+    onDeleteEmployee(employee.id, employee.email);
   };
 
   // プラン履歴ダイアログを開く
@@ -643,6 +676,19 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
           </Button>
         </Box>
 
+        {/* 削除成功・エラーメッセージ */}
+        {employeeDeleteError && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {employeeDeleteError}
+          </Alert>
+        )}
+
+        {employeeDeleteSuccess && (
+          <Alert severity="success" sx={{ mb: 2 }}>
+            {employeeDeleteSuccess}
+          </Alert>
+        )}
+
         {isCompanyEmployeesLoading ? (
           <LoadingIndicator />
         ) : companyEmployees.length === 0 ? (
@@ -705,6 +751,13 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                   >
                     利用制限
                   </TableCell>
+                  {canShowDeleteButton && (
+                    <TableCell
+                      sx={{ fontWeight: "bold", color: "primary.contrastText" }}
+                    >
+                      操作
+                    </TableCell>
+                  )}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -758,19 +811,31 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                     <TableCell>
                       <Chip
                         label={
-                          employee.role === "admin"
+                          employee.email === "queue@queueu-tech.jp"
+                            ? "運営者"
+                            : employee.role === "admin_user"
+                            ? "社長"
+                            : employee.role === "user"
                             ? "管理者"
                             : employee.role === "employee"
                             ? "社員"
-                            : "管理者"
+                            : employee.role === "admin"
+                            ? "管理者"
+                            : "社員"
                         }
                         size="small"
                         color={
-                          employee.role === "admin"
+                          employee.email === "queue@queueu-tech.jp"
+                            ? "error"
+                            : employee.role === "admin_user"
+                            ? "warning"
+                            : employee.role === "user"
                             ? "primary"
                             : employee.role === "employee"
                             ? "secondary"
-                            : "primary"
+                            : employee.role === "admin"
+                            ? "primary"
+                            : "secondary"
                         }
                         variant="outlined"
                       />
@@ -856,6 +921,31 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                         </Box>
                       )}
                     </TableCell>
+                    {canShowDeleteButton && (
+                      <TableCell>
+                        {(employee.role === "employee" || employee.role === "user") && onDeleteEmployee && (
+                          <Tooltip title={employee.role === "employee" ? "社員を削除" : "管理者を削除"}>
+                            <IconButton
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteEmployee(employee);
+                              }}
+                              disabled={isEmployeeDeleting}
+                              sx={{
+                                color: "error.main",
+                                "&:hover": {
+                                  bgcolor: "error.light",
+                                  color: "error.dark",
+                                },
+                              }}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
