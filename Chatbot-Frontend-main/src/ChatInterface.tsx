@@ -31,20 +31,14 @@ import {
   InputLabel,
   OutlinedInput,
   FormHelperText,
-  Tabs,
-  Tab,
   Alert,
   Snackbar,
   Menu,
   MenuItem,
   Tooltip,
 } from "@mui/material";
-import { useDropzone } from "react-dropzone";
-import CloudUploadIcon from "@mui/icons-material/CloudUpload";
-import { Cloud } from "@mui/icons-material";
 import SendIcon from "@mui/icons-material/Send";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import LinkIcon from "@mui/icons-material/Link";
 import LogoutIcon from "@mui/icons-material/Logout";
 import SettingsIcon from "@mui/icons-material/Settings";
 import BusinessIcon from "@mui/icons-material/Business";
@@ -60,10 +54,6 @@ import ApplicationForm from "./components/ApplicationForm";
 import MarkdownRenderer from "./components/MarkdownRenderer";
 import { useTheme } from "@mui/material/styles";
 import { useMediaQuery } from "@mui/material";
-import { isValidURL } from './components/admin/utils';
-import { GoogleDriveAuth } from './components/GoogleDriveAuth';
-import { GoogleDriveFilePicker } from './components/GoogleDriveFilePicker';
-import { GoogleAuthStorage } from './utils/googleAuthStorage';
 
 interface Message {
   text: string;
@@ -71,19 +61,7 @@ interface Message {
   source?: string;
 }
 
-interface SourceInfo {
-  name: string;
-  type: string;
-  timestamp: string;
-  active: boolean;
-}
 
-interface KnowledgeBaseData {
-  columns: string[];
-  preview: Record<string, any>[];
-  total_rows?: number;
-  sources?: (string | SourceInfo)[];
-}
 
 function ChatInterface() {
   const {
@@ -94,7 +72,6 @@ function ChatInterface() {
     remainingQuestions,
     isUnlimited,
     updateRemainingQuestions,
-    updateRemainingUploads,
     refreshUserData,
   } = useAuth();
   const { companyName, setCompanyName } = useCompany();
@@ -106,25 +83,10 @@ function ChatInterface() {
   });
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<string>("");
-  const [isSubmittingUrl, setIsSubmittingUrl] = useState(false);
-  const [urlInput, setUrlInput] = useState("");
-  const [uploadTab, setUploadTab] = useState(-1);
-  const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBaseData | null>(
-    null
-  );
-  const [selectedSources, setSelectedSources] = useState<string[]>([]);
+
   const [showLimitReachedAlert, setShowLimitReachedAlert] =
     useState<boolean>(false);
-  // 従来の社員情報関連の状態（後方互換性のため）
-  const [employeeId, setEmployeeId] = useState<string>(() => {
-    return user?.id || localStorage.getItem("employeeId") || "";
-  });
-  const [employeeName, setEmployeeName] = useState<string>(() => {
-    return user?.name || localStorage.getItem("employeeName") || "";
-  });
-  const [showEmployeeModal, setShowEmployeeModal] = useState<boolean>(false);
+
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
   const navigate = useNavigate();
   const theme = useTheme();
@@ -136,14 +98,6 @@ function ChatInterface() {
   const [url, setUrl] = useState("");
   const [applicationOpen, setApplicationOpen] = useState(false);
   const [upgradeSuccess, setUpgradeSuccess] = useState(false);
-  
-  // Google Drive関連のstate
-  const [driveAccessToken, setDriveAccessToken] = useState<string>(() => {
-    // 初期化時に保存された認証状態を復元
-    return GoogleAuthStorage.getAccessToken() || '';
-  });
-  const [drivePickerOpen, setDrivePickerOpen] = useState(false);
-  const [driveAuthError, setDriveAuthError] = useState<string>('');
 
   // メッセージエリアのスタイルを改善 - モバイル対応を強化
   const messageContainerStyles = {
@@ -245,8 +199,6 @@ function ChatInterface() {
     fontSize: { xs: "0.85rem", sm: "0.95rem" },
   };
 
-
-
   // チャット入力エリアのスタイルを改善 - モバイル対応を強化
   const chatInputContainerStyles = {
     position: "fixed",
@@ -287,290 +239,7 @@ function ChatInterface() {
     }
   }, [user?.id]);
 
-  useEffect(() => {
-    // 初期ロード時に知識ベースの状態を確認
-    fetchKnowledgeBase();
-  }, []);
 
-  const fetchKnowledgeBase = async () => {
-    try {
-      const response = await api.get(`/knowledge-base`);
-      if (response.data.columns) {
-        setKnowledgeBase({
-          ...response.data,
-          preview: response.data.preview || [],
-          columns: response.data.columns || [],
-        });
-      }
-    } catch (error) {
-      console.error("知識ベースの取得に失敗しました:", error);
-    }
-  };
-
-  const { getRootProps, getInputProps } = useDropzone({
-    accept: {
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [
-        ".xlsx",
-      ],
-      "application/vnd.ms-excel": [".xls"],
-      "application/pdf": [".pdf"],
-      "video/x-msvideo": [".avi"], // AVI
-      "video/mp4": [".mp4"], // MP4
-      "video/webm": [".webm"], // WebM
-    },
-    maxFiles: 1,
-    disabled: isEmployee, // employeeアカウントではドラッグ&ドロップを無効化
-    onDrop: async (acceptedFiles) => {
-      if (acceptedFiles.length > 0) {
-        const file = acceptedFiles[0];
-        
-        // ファイルサイズをチェック（100MB制限）
-        const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
-        if (file.size > MAX_FILE_SIZE) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              text: `エラー: ファイル「${file.name}」はサイズ制限（100MB）を超えています。現在のファイルサイズ: ${(file.size / (1024 * 1024)).toFixed(1)}MB。より小さなファイルを選択してください。`,
-              isUser: false,
-            },
-          ]);
-          return; // 処理を停止
-        }
-        
-        setIsUploading(true);
-        setUploadProgress("ファイルを準備中...");
-        const formData = new FormData();
-        // Ensure the file is properly appended with the correct field name expected by FastAPI
-        formData.append("file", file, file.name);
-
-        try {
-          console.log("ファイルアップロード開始:", file.name, `サイズ: ${(file.size / (1024 * 1024)).toFixed(1)}MB`);
-
-          // ファイル拡張子を取得
-          const fileExt = file.name.split(".").pop()?.toLowerCase();
-
-          // PDFファイルの場合はOCR処理の可能性があることをユーザーに通知
-          if (fileExt === "pdf") {
-            setUploadProgress(
-              "PDFファイルを処理中... OCR処理が必要な場合は時間がかかることがあります"
-            );
-
-            // 既存のエラーメッセージを削除して処理中メッセージを追加
-            setMessages((prev) => {
-              const filteredMessages = prev.filter(
-                (msg) =>
-                  !msg.text.startsWith("エラー:") &&
-                  !msg.text.includes("処理中")
-              );
-              return [
-                ...filteredMessages,
-                {
-                  text: `PDFファイル「${file.name}」を処理中です。OCR処理が必要な場合は完了までに時間がかかることがあります。図形やグラフなども認識して処理します。しばらくお待ちください...`,
-                  isUser: false,
-                },
-              ];
-            });
-          } else {
-            setUploadProgress(
-              `${fileExt?.toUpperCase() || ""}ファイルを処理中...`
-            );
-          }
-
-          // アップロードリクエストを送信
-          const response = await api.post(`/upload-knowledge`, formData);
-          console.log("アップロード成功:", response.data);
-          setKnowledgeBase({
-            ...response.data,
-            preview: response.data.preview || [],
-            columns: response.data.columns || [],
-          });
-
-          // 残りアップロード回数を更新
-          if (!isUnlimited && response.data.remaining_uploads !== undefined) {
-            updateRemainingUploads(response.data.remaining_uploads);
-          }
-
-          // 既存のエラーメッセージと処理中メッセージを削除
-          setMessages((prev) =>
-            prev.filter(
-              (msg) =>
-                !msg.text.startsWith("エラー:") && !msg.text.includes("処理中")
-            )
-          );
-
-          setMessages((prev) => [
-            ...prev,
-            {
-              text: `${companyName}の情報が正常に更新されました。`,
-              isUser: false,
-            },
-          ]);
-        } catch (error: any) {
-          console.error("アップロードエラー:", error.response || error);
-
-          // エラーメッセージの取得
-          let errorMessage = "ファイルのアップロードに失敗しました。";
-          if (error.response?.data?.detail) {
-            errorMessage = error.response.data.detail;
-            
-            // 特定のエラーメッセージの場合はユーザーフレンドリーなメッセージに変更
-            if (errorMessage.includes("データ型エラー")) {
-              errorMessage = "ファイルの処理中にエラーが発生しました。別のファイルを試すか、管理者にお問い合わせください。";
-            } else if (errorMessage.includes("'int' object has no attribute 'strip'")) {
-              errorMessage = "ファイルの処理中にエラーが発生しました。別のファイルを試すか、管理者にお問い合わせください。";
-            }
-          } else if (error.message) {
-            errorMessage = error.message;
-          }
-
-          // タイムアウトエラーの場合は特別なメッセージを表示
-          if (error.code === "ECONNABORTED") {
-            errorMessage =
-              "リクエストがタイムアウトしました。PDFまたは動画ファイルが大きすぎるか、処理に時間がかかっている可能性があります。ファイルを分割・圧縮するか、テキスト抽出済みのPDFや短く編集した動画をご利用ください。";
-            // "リクエストがタイムアウトしました。PDFファイルが大きすぎるか、OCR処理に時間がかかっています。ファイルを分割するか、テキスト抽出済みのPDFを使用してください。";
-          } else if (error.response?.status === 502) {
-            return setMessages((prev) => {
-              const filteredMessages = prev.filter(
-                (msg) =>
-                  !msg.text.startsWith("エラー:") &&
-                  !msg.text.includes("処理中")
-              );
-              return [
-                ...filteredMessages,
-                {
-                  text: `${companyName}の情報が正常に更新されました。`,
-                  isUser: false,
-                },
-              ];
-            });
-          } else if (error.response?.status === 408) {
-            errorMessage =
-              "処理がタイムアウトしました。ファイルが大きすぎるか、複雑すぎる可能性があります。ファイルを分割するか、より小さなファイルを使用してください。";
-          } else if (error.response?.status === 413) {
-            errorMessage = 
-              "ファイルサイズが制限を超えています。最大100MBまで対応しています。ファイルを圧縮するか、分割してから再度お試しください。";
-          } else if (
-            error.response?.status === 400 &&
-            error.response?.data?.detail?.includes("大きすぎます")
-          ) {
-            errorMessage = error.response.data.detail;
-            // ファイルサイズが大きすぎる場合のガイダンスを追加
-            errorMessage +=
-              " 大きなPDFファイルは、Adobe Acrobatなどのツールでページごとに分割してから、個別にアップロードしてください。";
-          }
-
-          // 既存のエラーメッセージと処理中メッセージを削除して新しいメッセージを追加
-          setMessages((prev) => {
-            const filteredMessages = prev.filter(
-              (msg) =>
-                !msg.text.startsWith("エラー:") && !msg.text.includes("処理中")
-            );
-            return [
-              ...filteredMessages,
-              {
-                text: `エラー: ${errorMessage}`,
-                isUser: false,
-              },
-            ];
-          });
-        } finally {
-          setIsUploading(false);
-          setUploadProgress("");
-          setUploadTab(-1);
-        }
-      }
-    },
-  });
-
-  // 社員情報を保存
-  const saveEmployeeInfo = useCallback((id: string, name: string) => {
-    setEmployeeId(id);
-    setEmployeeName(name);
-    localStorage.setItem("employeeId", id);
-    localStorage.setItem("employeeName", name);
-    setShowEmployeeModal(false);
-  }, []);
-
-  // URLを送信する関数
-  const handleSubmitUrl = async () => {
-    if (!urlInput.trim()) return;
-
-    setIsSubmittingUrl(true);
-    try {
-      const response = await api.post(`/submit-url`, {
-        url: urlInput.trim(),
-      });
-
-      console.log("URL送信成功:", response.data);
-      setKnowledgeBase({
-        ...response.data,
-        preview: response.data.preview || [],
-        columns: response.data.columns || [],
-      });
-
-      // 残りアップロード回数を更新
-      if (!isUnlimited && response.data.remaining_uploads !== undefined) {
-        updateRemainingUploads(response.data.remaining_uploads);
-      }
-
-      // 既存のエラーメッセージを削除
-      setMessages((prev) =>
-        prev.filter((msg) => !msg.text.startsWith("エラー:"))
-      );
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          text: `${urlInput} からの情報が正常に取得されました。`,
-          isUser: false,
-        },
-      ]);
-
-    } catch (error: any) {
-      console.error("URL送信エラー:", error.response || error);
-
-      // エラーメッセージの取得
-      let errorMessage = "URLの処理に失敗しました。";
-      if (error.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
-        
-        // 特定のエラーメッセージの場合はユーザーフレンドリーなメッセージに変更
-        if (errorMessage.includes("データ型エラー")) {
-          errorMessage = "URLの処理中にエラーが発生しました。別のURLを試すか、管理者にお問い合わせください。";
-        } else if (errorMessage.includes("'int' object has no attribute 'strip'")) {
-          errorMessage = "URLの処理中にエラーが発生しました。別のURLを試すか、管理者にお問い合わせください。";
-        }
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-
-      // 既存のエラーメッセージを削除して新しいメッセージを追加
-      setMessages((prev) => {
-        const filteredMessages = prev.filter(
-          (msg) => !msg.text.startsWith("エラー:")
-        );
-        return [
-          ...filteredMessages,
-          {
-            text: `エラー: ${errorMessage}`,
-            isUser: false,
-          },
-        ];
-      });
-    } finally {
-      setIsSubmittingUrl(false);
-      startTransition(() => {
-        // 入力をクリア
-        setUrlInput("");
-        setUploadTab(-1);
-      })
-    }
-  };
-
-  // タブ変更ハンドラ
-  const handleTabChange = (_: React.SyntheticEvent, newValue: number) => {
-    setUploadTab(newValue);
-  };
 
   const handleSend = async () => {
     if (!input.trim()) return;
@@ -704,101 +373,6 @@ function ChatInterface() {
 
   const handleCloseApplication = () => {
     setApplicationOpen(false);
-  };
-
-  // Google Drive関連のハンドラー
-  const handleDriveAuthSuccess = (accessToken: string) => {
-    setDriveAccessToken(accessToken);
-    setDriveAuthError('');
-    console.log('Google Drive認証成功');
-  };
-
-  const handleDriveAuthError = (error: string) => {
-    setDriveAuthError(error);
-    console.error('Google Drive認証エラー:', error);
-  };
-
-  // トークンの有効期限をチェックするeffect
-  useEffect(() => {
-    if (!driveAccessToken) return;
-
-    const checkTokenExpiry = () => {
-      if (GoogleAuthStorage.willExpireSoon(5)) { // 5分前に警告
-        console.log('Google Driveトークンの有効期限が近づいています');
-        setDriveAuthError('認証の有効期限が近づいています。再度認証してください。');
-        // トークンを無効化してユーザーに再認証を促す
-        setDriveAccessToken('');
-        GoogleAuthStorage.clearAuthData();
-      }
-    };
-
-    // 1分ごとにチェック
-    const interval = setInterval(checkTokenExpiry, 60000);
-    
-    // 初回チェック
-    checkTokenExpiry();
-
-    return () => clearInterval(interval);
-  }, [driveAccessToken]);
-
-  const handleDriveFileSelect = async (file: any) => {
-    try {
-      setIsUploading(true);
-      setUploadProgress("Google Driveからファイルを取得中...");
-
-      console.log('選択されたファイル:', file);
-
-      // Google Driveファイルをサーバーに送信
-      const formData = new FormData();
-      formData.append('file_id', file.id);
-      formData.append('access_token', driveAccessToken);
-      formData.append('file_name', file.name);
-      formData.append('mime_type', file.mimeType);
-
-      setUploadProgress("ファイルを処理中...");
-
-      const response = await api.post('/upload-from-drive', formData);
-      
-      console.log("Google Driveアップロード成功:", response.data);
-      setKnowledgeBase({
-        ...response.data,
-        preview: response.data.preview || [],
-        columns: response.data.columns || [],
-      });
-
-      // 残りアップロード回数を更新
-      if (!isUnlimited && response.data.remaining_uploads !== undefined) {
-        updateRemainingUploads(response.data.remaining_uploads);
-      }
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          text: `Google Driveから「${file.name}」が正常に読み込まれました。`,
-          isUser: false,
-        },
-      ]);
-
-      setDrivePickerOpen(false);
-    } catch (error: any) {
-      console.error("Google Driveアップロードエラー:", error);
-      
-      let errorMessage = "Google Driveからのファイル読み込みに失敗しました。";
-      if (error.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
-      }
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          text: `エラー: ${errorMessage}`,
-          isUser: false,
-        },
-      ]);
-    } finally {
-      setIsUploading(false);
-      setUploadProgress("");
-    }
   };
 
   // AppBarコンポーネントのスタイル修正 - メニューボタン追加
@@ -1048,375 +622,6 @@ function ChatInterface() {
           flexDirection: "column",
         }}
       >
-        {/* アップロードボタン部分 - employeeアカウントでは非表示 */}
-        {!isEmployee && (
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "center",
-              gap: { xs: 1, sm: 1.5 },
-              mb: { xs: 0.7, sm: 0.8 },
-              mx: "auto",
-            }}
-          >
-            <Button
-              variant="outlined"
-              color="primary"
-              onClick={() => setUploadTab(0)}
-              startIcon={
-                <CloudUploadIcon
-                  sx={{ fontSize: { xs: "0.65rem", sm: "0.7rem" } }}
-                />
-              }
-              size="small"
-              sx={{
-                py: { xs: 0.2, sm: 0.2 },
-                px: { xs: 0.7, sm: 0.8 },
-                minHeight: 0,
-                minWidth: 0,
-                height: { xs: "22px", sm: "24px" },
-                borderRadius: "12px",
-                fontWeight: 500,
-                fontSize: { xs: "0.6rem", sm: "0.65rem" },
-                textTransform: "none",
-                backgroundColor: "rgba(255, 255, 255, 0.9)",
-                backdropFilter: "blur(8px)",
-                borderColor: "rgba(37, 99, 235, 0.15)",
-                color: "#3b82f6",
-                boxShadow: "0 1px 2px rgba(37, 99, 235, 0.03)",
-                "&:hover": {
-                  borderColor: "rgba(37, 99, 235, 0.3)",
-                  backgroundColor: "rgba(237, 242, 255, 0.8)",
-                  transform: "translateY(-1px)",
-                  boxShadow: "0 2px 4px rgba(37, 99, 235, 0.08)",
-                },
-                transition: "all 0.2s ease",
-              }}
-            >
-              ファイル
-            </Button>
-            <Button
-              variant="outlined"
-              color="primary"
-              onClick={() => setUploadTab(1)}
-              startIcon={
-                <LinkIcon sx={{ fontSize: { xs: "0.65rem", sm: "0.7rem" } }} />
-              }
-              size="small"
-              sx={{
-                py: { xs: 0.2, sm: 0.2 },
-                px: { xs: 0.7, sm: 0.8 },
-                minHeight: 0,
-                minWidth: 0,
-                height: { xs: "22px", sm: "24px" },
-                borderRadius: "12px",
-                fontWeight: 500,
-                fontSize: { xs: "0.6rem", sm: "0.65rem" },
-                textTransform: "none",
-                backgroundColor: "rgba(255, 255, 255, 0.9)",
-                backdropFilter: "blur(8px)",
-                borderColor: "rgba(37, 99, 235, 0.15)",
-                color: "#3b82f6",
-                boxShadow: "0 1px 2px rgba(37, 99, 235, 0.03)",
-                "&:hover": {
-                  borderColor: "rgba(37, 99, 235, 0.3)",
-                  backgroundColor: "rgba(237, 242, 255, 0.8)",
-                  transform: "translateY(-1px)",
-                  boxShadow: "0 2px 4px rgba(37, 99, 235, 0.08)",
-                },
-                transition: "all 0.2s ease",
-              }}
-            >
-              URL
-            </Button>
-            <Button
-              variant="outlined"
-              color="primary"
-              onClick={() => setUploadTab(2)}
-              startIcon={
-                <Cloud sx={{ fontSize: { xs: "0.65rem", sm: "0.7rem" } }} />
-              }
-              size="small"
-              sx={{
-                py: { xs: 0.2, sm: 0.2 },
-                px: { xs: 0.7, sm: 0.8 },
-                minHeight: 0,
-                minWidth: 0,
-                height: { xs: "22px", sm: "24px" },
-                borderRadius: "12px",
-                fontWeight: 500,
-                fontSize: { xs: "0.6rem", sm: "0.65rem" },
-                textTransform: "none",
-                backgroundColor: "rgba(255, 255, 255, 0.9)",
-                backdropFilter: "blur(8px)",
-                borderColor: "rgba(37, 99, 235, 0.15)",
-                color: "#3b82f6",
-                boxShadow: "0 1px 2px rgba(37, 99, 235, 0.03)",
-                "&:hover": {
-                  borderColor: "rgba(37, 99, 235, 0.3)",
-                  backgroundColor: "rgba(237, 242, 255, 0.8)",
-                  transform: "translateY(-1px)",
-                  boxShadow: "0 2px 4px rgba(37, 99, 235, 0.08)",
-                },
-                transition: "all 0.2s ease",
-              }}
-            >
-              Drive
-            </Button>
-          </Box>
-        )}
-
-        {/* employeeアカウント向けのメッセージ */}
-        {isEmployee && (
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "center",
-              mb: { xs: 0.7, sm: 0.8 },
-              mx: "auto",
-            }}
-          >
-            <Alert
-              severity="info"
-              sx={{
-                fontSize: { xs: "0.7rem", sm: "0.8rem" },
-                py: 0.5,
-                px: 1.5,
-                borderRadius: "12px",
-                backgroundColor: "rgba(33, 150, 243, 0.08)",
-                border: "1px solid rgba(33, 150, 243, 0.15)",
-                "& .MuiAlert-icon": {
-                  fontSize: { xs: "0.8rem", sm: "1rem" },
-                },
-              }}
-            >
-              ファイルアップロードは管理者のみ利用できます
-            </Alert>
-          </Box>
-        )}
-
-        {/* アップロード・URL送信モーダル */}
-        <Dialog
-          open={uploadTab !== -1}
-          onClose={() => setUploadTab(-1)}
-          PaperProps={{
-            sx: {
-              borderRadius: 3,
-              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.1)",
-              maxWidth: "500px",
-              width: "100%",
-            },
-          }}
-        >
-          <DialogTitle
-            sx={{
-              pb: 1,
-              pt: 2.5,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <Typography
-              component="div"
-              variant="h6"
-              sx={{ fontWeight: 700, color: "primary.main" }}
-            >
-              {uploadTab === 0 ? "ファイルをアップロード" : uploadTab === 1 ? "URLを送信" : "Google Drive"}
-            </Typography>
-            <IconButton
-              onClick={() => setUploadTab(-1)}
-              sx={{
-                color: "text.secondary",
-                "&:hover": { color: "primary.main" },
-              }}
-            >
-              <span aria-hidden="true" style={{ fontSize: "1.2rem" }}>
-                &times;
-              </span>
-            </IconButton>
-          </DialogTitle>
-          <DialogContent sx={{ py: 2 }}>
-            {uploadTab === 0 && (
-              <Box>
-                <Box
-                  {...getRootProps()}
-                  sx={{
-                    border: "2px dashed rgba(37, 99, 235, 0.3)",
-                    borderRadius: "16px",
-                    p: { xs: 2, sm: 3.5 }, // モバイルでパディングを小さく
-                    mb: 2,
-                    textAlign: "center",
-                    cursor: "pointer",
-                    transition: "all 0.2s ease",
-                    backgroundColor: "rgba(237, 242, 255, 0.5)",
-                    "&:hover": {
-                      borderColor: "primary.main",
-                      backgroundColor: "rgba(237, 242, 255, 0.8)",
-                      transform: "translateY(-2px)",
-                      boxShadow: "0 4px 12px rgba(37, 99, 235, 0.15)",
-                    },
-                  }}
-                >
-                  <input {...getInputProps()} />
-                  <CloudUploadIcon
-                    color="primary"
-                    sx={{
-                      fontSize: { xs: "2.5rem", sm: "3.5rem" },
-                      mb: 2,
-                      opacity: 0.9,
-                    }} // モバイルでアイコンを小さく
-                  />
-                  <Typography
-                    variant="body1"
-                    sx={{ fontWeight: 600, mb: 1, color: "primary.main" }}
-                  >
-                    ファイルをドロップまたはクリックして選択
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Excel(.xlsx, .xls) または PDF(.pdf) ファイル
-                  </Typography>
-                </Box>
-                {(isUploading || uploadProgress) && (
-                  <Box sx={{ textAlign: "center", my: 2 }}>
-                    {isUploading ? (
-                      <CircularProgress size={32} sx={{ mb: 1.5 }} />
-                    ) : null}
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      sx={{ fontWeight: 500 }}
-                    >
-                      {uploadProgress}
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-            )}
-
-            {uploadTab === 1 && (
-              <Box>
-                <TextField
-                  fullWidth
-                  placeholder="https://example.com/document.pdf"
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  variant="outlined"
-                  sx={{
-                    mb: 3,
-                    mt: 1,
-                    "& .MuiOutlinedInput-root": {
-                      borderRadius: "12px",
-                      "& fieldset": {
-                        borderColor: "rgba(37, 99, 235, 0.2)",
-                        borderWidth: "1.5px",
-                      },
-                      "&:hover fieldset": {
-                        borderColor: "rgba(37, 99, 235, 0.4)",
-                      },
-                      "&.Mui-focused fieldset": {
-                        borderColor: "primary.main",
-                        borderWidth: "2px",
-                      },
-                    },
-                  }}
-                  InputProps={{
-                    startAdornment: (
-                      <LinkIcon color="primary" sx={{ mr: 1, opacity: 0.7 }} />
-                    ),
-                  }}
-                />
-                <Button
-                  variant="contained"
-                  color="primary"
-                  disabled={!isValidURL(urlInput.trim()) || isSubmittingUrl}
-                  onClick={handleSubmitUrl}
-                  fullWidth
-                  sx={{
-                    py: 1.2,
-                    borderRadius: "12px",
-                    fontWeight: 600,
-                    textTransform: "none",
-                    boxShadow: "0 2px 10px rgba(37, 99, 235, 0.2)",
-                    background:
-                      "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)",
-                    "&:hover": {
-                      boxShadow: "0 4px 14px rgba(37, 99, 235, 0.3)",
-                      background:
-                        "linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)",
-                    },
-                    transition: "all 0.2s ease",
-                  }}
-                >
-                  {isSubmittingUrl ? (
-                    <CircularProgress size={24} color="inherit" />
-                  ) : (
-                    "URLを送信"
-                  )}
-                </Button>
-              </Box>
-            )}
-
-            {uploadTab === 2 && (
-              <Box>
-                <GoogleDriveAuth
-                  onAuthSuccess={handleDriveAuthSuccess}
-                  onAuthError={handleDriveAuthError}
-                />
-                
-                {driveAuthError && (
-                  <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
-                    {driveAuthError}
-                  </Alert>
-                )}
-
-                {driveAccessToken && (
-                  <Box>
-                    <Button
-                      variant="contained"
-                      color="primary"
-                      onClick={() => setDrivePickerOpen(true)}
-                      fullWidth
-                      sx={{
-                        py: 1.5,
-                        borderRadius: "12px",
-                        fontWeight: 600,
-                        textTransform: "none",
-                        boxShadow: "0 2px 10px rgba(37, 99, 235, 0.2)",
-                        background:
-                          "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)",
-                        "&:hover": {
-                          boxShadow: "0 4px 14px rgba(37, 99, 235, 0.3)",
-                          background:
-                            "linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)",
-                        },
-                        transition: "all 0.2s ease",
-                      }}
-                    >
-                      Google Driveからファイルを選択
-                    </Button>
-                  </Box>
-                )}
-
-                {(isUploading || uploadProgress) && (
-                  <Box sx={{ textAlign: "center", my: 2 }}>
-                    {isUploading ? (
-                      <CircularProgress size={32} sx={{ mb: 1.5 }} />
-                    ) : null}
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      sx={{ fontWeight: 500 }}
-                    >
-                      {uploadProgress}
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-            )}
-          </DialogContent>
-        </Dialog>
-
         {/* 入力フィールド */}
         <Box
           sx={{
@@ -1729,14 +934,6 @@ function ChatInterface() {
       <ApplicationForm
         open={applicationOpen}
         onClose={handleCloseApplication}
-      />
-
-      {/* Google DriveファイルピッカーDialog */}
-      <GoogleDriveFilePicker
-        open={drivePickerOpen}
-        onClose={() => setDrivePickerOpen(false)}
-        onFileSelect={handleDriveFileSelect}
-        accessToken={driveAccessToken}
       />
     </Box>
   );
