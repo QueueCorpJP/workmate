@@ -17,6 +17,7 @@ from .company import DEFAULT_COMPANY_NAME
 from .knowledge_base import knowledge_base
 from .knowledge.url import extract_text_from_url
 from .knowledge.excel import process_excel_file
+from .knowledge.excel_sheets_processor import process_excel_file_with_sheets_api, is_excel_file
 from .knowledge.pdf import process_pdf_file
 from .knowledge.text import process_txt_file
 from supabase_adapter import select_data, insert_data, update_data, delete_data
@@ -82,7 +83,38 @@ async def refresh_knowledge_base():
                             content = f.read()
                             
                         if file_name.endswith(".xlsx") or file_name.endswith(".xls"):
-                            df, sections, extracted_text = process_excel_file(content, file_name)
+                            try:
+                                # Google Sheets APIを使用してExcelファイルを処理
+                                # 管理者機能では環境変数からサービスアカウントを使用
+                                service_account_file = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE')
+                                
+                                data_list, sections, extracted_text = await process_excel_file_with_sheets_api(
+                                    content, 
+                                    file_name, 
+                                    access_token=None,  # 管理者機能ではサービスアカウントを優先
+                                    service_account_file=service_account_file
+                                )
+                                
+                                                                 # データリストを直接使用（DataFrameを使用しない）
+                                 if not data_list:
+                                     data_list = [{
+                                         'section': "データなし",
+                                         'content': "Excelファイルに有効なデータが見つかりませんでした",
+                                         'source': 'Excel (Google Sheets)',
+                                         'file': file_name,
+                                         'url': None
+                                     }]
+                                 
+                                 # データベース保存用にDataFrameに変換
+                                 import pandas as pd
+                                 df = pd.DataFrame(data_list)
+                                 
+                                 print(f"Excel処理完了（Google Sheets API使用）: {len(data_list)} レコード")
+                                
+                            except Exception as e:
+                                print(f"Google Sheets API処理エラー、従来の処理にフォールバック: {str(e)}")
+                                # フォールバック：従来のpandas処理
+                                df, sections, extracted_text = process_excel_file(content, file_name)
                         elif file_name.endswith(".pdf"):
                             df, sections, extracted_text = await process_pdf_file(content, file_name)
                         elif file_name.endswith(".txt"):

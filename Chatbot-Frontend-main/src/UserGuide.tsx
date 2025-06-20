@@ -52,16 +52,16 @@ const UserGuide: React.FC = () => {
       example: "「今月の営業目標について教えて」「休暇申請の手続きはどうすればいい？」"
     },
     {
-      title: "データのアップロード",
+      title: "管理画面でのリソース管理",
       icon: <CloudUploadIcon sx={{ color: 'primary.main', fontSize: '2.5rem' }} />,
-      description: "Excel、PDF、Wordなどのファイルをアップロードして、AIがデータを分析・理解します。",
-      example: "社内規定書、マニュアル、報告書など様々な文書に対応"
+      description: "管理者は管理画面のリソースタブで、Excel、PDF、Word、URLなどのファイルをアップロードして、AIがデータを分析・理解します。",
+      example: "社内規定書、マニュアル、報告書、Google Driveファイルなど様々な文書に対応"
     },
     {
       title: "管理パネル",
       icon: <AdminPanelSettingsIcon sx={{ color: 'primary.main', fontSize: '2.5rem' }} />,
-      description: "管理者はチャット履歴の分析、管理者管理、リソース管理などの機能を使用できます。",
-      example: "よくある質問の傾向分析、社員の利用状況確認、新規管理者追加"
+      description: "管理者（運営者・社長・管理者）は管理画面でチャット履歴の分析、ユーザー管理、リソース管理などの機能を使用できます。リソースタブでファイルアップロードも可能です。",
+      example: "リソースタブでPDF/Excel/Word文書をアップロード、Google Driveファイルの追加、URL情報の取得、社員の利用状況確認"
     },
     {
       title: "情報ソースの確認",
@@ -74,23 +74,23 @@ const UserGuide: React.FC = () => {
   const steps = [
     {
       label: 'ログイン',
-      description: 'メールアドレスとパスワードでログインします。新規管理者は管理者から招待を受けてください。',
+      description: 'メールアドレスとパスワードでログインします。新規ユーザーは管理者から招待を受けてください。権限は運営者→社長→管理者→社員の4段階です。',
     },
     {
       label: '質問入力',
-      description: '画面下部の入力フィールドに質問を入力します。自然な言葉で質問できます。',
+      description: '画面下部の入力フィールドに質問を入力します。自然な言葉で質問できます。Viteによる高速レスポンスで快適に操作できます。',
     },
     {
       label: '回答の確認',
-      description: 'AIが会社のデータベースから情報を検索し、最適な回答を提供します。情報源も表示されます。',
+      description: 'AIが会社のデータベースから情報を検索し、最適な回答を提供します。情報源も表示され、信頼性の高い回答を得られます。',
     },
     {
-      label: 'データのアップロード（管理者）',
-      description: '管理者は会社の資料やデータをアップロードして、AIの知識を拡張できます。',
+      label: 'リソースのアップロード（管理者）',
+      description: '管理者は管理画面のリソースタブで会社の資料やデータをアップロードできます。PDF、Excel、Word、Google Drive、URLに対応しています。',
     },
     {
       label: '分析と管理（管理者）',
-      description: '管理パネルでチャット履歴の分析、よくある質問のパターン、リソース管理などが可能です。',
+      description: '管理パネルでチャット履歴の分析、よくある質問のパターン、ユーザー管理、リソース管理などが可能です。会社ごとの利用状況も確認できます。',
     },
   ];
 
@@ -99,7 +99,10 @@ const UserGuide: React.FC = () => {
     "複数の質問は分けて入力すると、それぞれに詳しく回答します",
     "情報ソースが表示されない場合は、AIが一般的な知識から回答しています",
     "特定の文書について質問する場合は、文書名を含めるとより正確です",
-    "管理者は定期的にデータを更新して、AIの知識を最新に保ちましょう"
+    "管理者は管理画面のリソースタブで定期的にデータを更新して、AIの知識を最新に保ちましょう",
+    "権限は運営者→社長→管理者→社員の順で階層になっています",
+    "このアプリはViteで構築されており、高速で効率的な動作を実現しています",
+    "ファイルアップロードは管理者のみが管理画面から行えるセキュアな設計です"
   ];
 
   return (
@@ -230,30 +233,52 @@ const UserGuide: React.FC = () => {
               fontWeight: 400,
             }}
           >
-            ワークメイトAIは、会社の情報を簡単に質問・検索できるAIアシスタントです。
+            ワークメイトAIは、Viteで構築された高速なWebアプリケーションです。
+            会社の情報を簡単に質問・検索できるAIアシスタントとして、
             自然な会話形式で質問するだけで、必要な情報を素早く見つけることができます。
           </Typography>
           
-          <Button
-            variant="contained"
-            color="primary"
-            size="large"
-            onClick={handleBackToChat}
+          <Box
             sx={{
-              borderRadius: 2,
-              px: 4,
-              py: 1.2,
-              fontWeight: 600,
-              boxShadow: '0 4px 14px rgba(37, 99, 235, 0.25)',
-              background: 'linear-gradient(to right, #2563eb, #3b82f6)',
-              '&:hover': {
-                boxShadow: '0 6px 20px rgba(37, 99, 235, 0.35)',
-                background: 'linear-gradient(to right, #1d4ed8, #2563eb)',
-              },
+              display: 'flex',
+              flexDirection: { xs: 'column', sm: 'row' },
+              gap: 2,
+              alignItems: 'center',
+              mb: 2
             }}
           >
-            チャットを始める
-          </Button>
+            <Button
+              variant="contained"
+              color="primary"
+              size="large"
+              onClick={handleBackToChat}
+              sx={{
+                borderRadius: 2,
+                px: 4,
+                py: 1.2,
+                fontWeight: 600,
+                boxShadow: '0 4px 14px rgba(37, 99, 235, 0.25)',
+                background: 'linear-gradient(to right, #2563eb, #3b82f6)',
+                '&:hover': {
+                  boxShadow: '0 6px 20px rgba(37, 99, 235, 0.35)',
+                  background: 'linear-gradient(to right, #1d4ed8, #2563eb)',
+                },
+              }}
+            >
+              チャットを始める
+            </Button>
+            
+            <Typography
+              variant="caption"
+              sx={{
+                color: 'text.secondary',
+                fontStyle: 'italic',
+                textAlign: 'center'
+              }}
+            >
+              ⚡ Viteによる高速レスポンス対応
+            </Typography>
+          </Box>
         </Paper>
 
         {/* 主な機能セクション */}
@@ -490,6 +515,83 @@ const UserGuide: React.FC = () => {
                 </Box>
               </Grid>
             ))}
+          </Grid>
+        </Paper>
+
+        {/* Vite技術情報セクション */}
+        <Paper
+          elevation={0}
+          sx={{
+            p: { xs: 3, sm: 4 },
+            mb: 4,
+            borderRadius: 3,
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.05)',
+            border: '1px solid rgba(37, 99, 235, 0.1)',
+            background: 'linear-gradient(to right, rgba(37, 99, 235, 0.03), rgba(37, 99, 235, 0.01))',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+            <Box
+              sx={{
+                mr: 2,
+                p: 1.5,
+                borderRadius: '50%',
+                backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+            >
+              <Typography variant="h5" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                ⚡
+              </Typography>
+            </Box>
+            <Typography variant="h5" component="h2" sx={{ fontWeight: 700 }}>
+              Vite技術による高速化
+            </Typography>
+          </Box>
+
+          <Grid container spacing={3}>
+            <Grid item xs={12} md={6}>
+              <Box sx={{ p: 2, borderRadius: 2, backgroundColor: 'white', border: '1px solid rgba(37, 99, 235, 0.08)' }}>
+                <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: 'primary.main' }}>
+                  🚀 高速な開発サーバー
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  ESModulesを活用したネイティブESMによる高速な起動とホットリロード機能で、開発効率が大幅に向上しています。
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Box sx={{ p: 2, borderRadius: 2, backgroundColor: 'white', border: '1px solid rgba(37, 99, 235, 0.08)' }}>
+                <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: 'primary.main' }}>
+                  📦 最適化されたビルド
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Rollupベースの本番ビルドにより、最小限のバンドルサイズと最適なパフォーマンスを実現しています。
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Box sx={{ p: 2, borderRadius: 2, backgroundColor: 'white', border: '1px solid rgba(37, 99, 235, 0.08)' }}>
+                <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: 'primary.main' }}>
+                  🔧 TypeScript統合
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  TypeScriptのネイティブサポートにより、型安全性を保ちながら高速なトランスパイルを実現しています。
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Box sx={{ p: 2, borderRadius: 2, backgroundColor: 'white', border: '1px solid rgba(37, 99, 235, 0.08)' }}>
+                <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: 'primary.main' }}>
+                  🎯 モダンブラウザ対応
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  最新のWeb標準に準拠し、モダンブラウザでの最適なパフォーマンスを提供しています。
+                </Typography>
+              </Box>
+            </Grid>
           </Grid>
         </Paper>
       </Container>

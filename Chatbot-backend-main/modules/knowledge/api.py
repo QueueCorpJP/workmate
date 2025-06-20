@@ -17,6 +17,7 @@ from ..database import get_db, update_usage_count, ensure_string
 from ..auth import check_usage_limits
 from .base import knowledge_base, _update_knowledge_base, get_active_resources
 from .excel import process_excel_file
+from .excel_sheets_processor import process_excel_file_with_sheets_api, is_excel_file
 from .pdf import process_pdf_file
 from .text import process_txt_file
 from .image import process_image_file, is_image_file
@@ -26,6 +27,7 @@ from .file_detector import detect_file_type
 from .url import extract_text_from_url, process_url_content
 from ..company import DEFAULT_COMPANY_NAME
 from ..utils import _process_video_file
+import os
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
@@ -148,6 +150,44 @@ def _prepare_response(
         "limit_reached": limit_reached
     }
 
+def _prepare_response_from_list(
+    data_list: List[Dict], 
+    sections: Dict[str, str], 
+    source_name: str, 
+    remaining_uploads: Optional[int] = None, 
+    limit_reached: bool = False
+) -> Dict[str, Any]:
+    """データリストからレスポンスデータを準備する"""
+    active_sources = get_active_resources()
+    
+    preview_data = []
+    total_rows = len(data_list) if data_list else 0
+    
+    if data_list:
+        # 最初の5件をプレビューとして取得
+        preview_data = data_list[:5]
+        # 値を適切に処理
+        preview_data = [{k: (None if v is None else str(v)) for k, v in record.items()} for record in preview_data]
+    
+    # 列名を抽出
+    columns = []
+    if data_list:
+        # 最初のレコードから列名を取得
+        columns = list(data_list[0].keys())
+    
+    return {
+        "message": f"{DEFAULT_COMPANY_NAME}の情報が正常に更新されました（{source_name}）",
+        "columns": columns,
+        "preview": preview_data,
+        "total_rows": total_rows,
+        "sections": list(sections.keys()),
+        "file" if not source_name.startswith(('http://', 'https://')) else "url": source_name,
+        "sources": knowledge_base.sources,
+        "active_sources": active_sources,
+        "remaining_uploads": remaining_uploads,
+        "limit_reached": limit_reached
+    }
+
 async def process_url(url: str, user_id: str = None, company_id: str = None, db: Connection = None):
     """URLを処理して知識ベースを更新する"""
     try:
@@ -250,15 +290,52 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
             # 検知されたファイル形式に基づいて処理を実行
             if detected_type == 'excel' or file_extension in ['xlsx', 'xls']:
                 logger.info(f"Excelファイル処理開始: {file.filename}")
-                df, sections, extracted_text = process_excel_file(contents, file.filename)
                 
-                # Excelファイルのシート数を取得
                 try:
-                    excel_file = BytesIO(contents)
-                    df_dict = pd.read_excel(excel_file, sheet_name=None)
-                    page_count = len(df_dict)
-                except:
-                    page_count = 1
+                    # Google Sheets APIを使用してExcelファイルを処理
+                    # OAuth2トークンを優先的に使用
+                    access_token = getattr(request.state, 'google_access_token', None)
+                    service_account_file = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE')
+                    
+                    data_list, sections, extracted_text = await process_excel_file_with_sheets_api(
+                        contents, 
+                        file.filename, 
+                        access_token, 
+                        service_account_file
+                    )
+                    
+                    # データリストを直接使用（DataFrameを使用しない）
+                    if not data_list:
+                        data_list = [{
+                            'section': "データなし",
+                            'content': "Excelファイルに有効なデータが見つかりませんでした",
+                            'source': 'Excel (Google Sheets)',
+                            'file': file.filename,
+                            'url': None
+                        }]
+                    
+                    # ページ数を推定（シート数に基づく）
+                    sheet_count = len(set(item.get('metadata', {}).get('sheet_name', 'Sheet1') for item in data_list))
+                    page_count = max(1, sheet_count)
+                    
+                    logger.info(f"Excel処理完了（Google Sheets API使用）: {len(data_list)} レコード, {page_count} シート")
+                    
+                    # データベース保存用にデータを準備
+                    df = None  # DataFrameは使用しない
+                    
+                except Exception as e:
+                    logger.warning(f"Google Sheets API処理エラー、従来の処理にフォールバック: {str(e)}")
+                    # フォールバック：従来のpandas処理
+                    df, sections, extracted_text = process_excel_file(contents, file.filename)
+                    data_list = None  # 従来処理の場合はDataFrameを使用
+                    
+                    # Excelファイルのシート数を取得
+                    try:
+                        excel_file = BytesIO(contents)
+                        df_dict = pd.read_excel(excel_file, sheet_name=None)
+                        page_count = len(df_dict)
+                    except:
+                        page_count = 1
                     
             elif detected_type == 'csv' or is_csv_file(file.filename):
                 logger.info(f"CSVファイル処理開始: {file.filename}, サイズ: {file_size_mb:.2f}MB")
@@ -462,7 +539,12 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                 raise HTTPException(status_code=500, detail=f"{error_type}ファイルの処理中にエラーが発生しました: {str(e)}")
         
         # 知識ベースを更新（ファイルデータとして保存）
-        if df is not None and not df.empty:
+        if 'data_list' in locals() and data_list:
+            # 新しいGoogle Sheets API処理の場合：data_listを直接使用
+            from .base import _update_knowledge_base_from_list
+            _update_knowledge_base_from_list(data_list, extracted_text, is_file=True, source_name=file.filename, company_id=company_id)
+        elif df is not None and not df.empty:
+            # 従来のpandas処理の場合：DataFrameを使用
             # ファイル列が存在することを確認
             if 'file' not in df.columns:
                 df['file'] = file.filename
@@ -489,8 +571,15 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
             db.commit()
         
         # レスポンスを準備して返す
-        logger.info(f"最終レスポンス準備: df={len(df) if df is not None else 0}行, sections={len(sections)}, filename={file.filename}")
-        response = _prepare_response(df, sections, file.filename, remaining_uploads, limit_reached)
+        if 'data_list' in locals() and data_list:
+            # 新しいGoogle Sheets API処理の場合
+            logger.info(f"最終レスポンス準備: data_list={len(data_list)}レコード, sections={len(sections)}, filename={file.filename}")
+            response = _prepare_response_from_list(data_list, sections, file.filename, remaining_uploads, limit_reached)
+        else:
+            # 従来のpandas処理の場合
+            logger.info(f"最終レスポンス準備: df={len(df) if df is not None else 0}行, sections={len(sections)}, filename={file.filename}")
+            response = _prepare_response(df, sections, file.filename, remaining_uploads, limit_reached)
+        
         logger.info(f"レスポンス準備完了: total_rows={response.get('total_rows', 0)}, preview_rows={len(response.get('preview', []))}")
         return response
     except HTTPException:

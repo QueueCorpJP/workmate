@@ -189,51 +189,63 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
 
   const passwordStrength = getPasswordStrength(newEmployeePassword);
 
-  // 社長ごとに社員をグループ化する関数（queue@queueu-tech.jp用）
-  const groupEmployeesByPresident = () => {
-    console.log("=== 社長別グループ化開始 ===");
+  // 会社ごとに社員をグループ化する関数（queue@queueu-tech.jp用）
+  const groupEmployeesByCompany = () => {
+    console.log("=== 会社別グループ化開始 ===");
     console.log("全社員データ:", companyEmployees);
     
-    // まず社長（userロール）を抽出
-    const presidents = companyEmployees.filter(employee => 
-      employee.role === 'user' || employee.role === 'admin'
-    );
+    // 会社ごとにグループ化
+    const companyGroups = new Map<string, CompanyEmployee[]>();
     
-    console.log("社長一覧:", presidents);
-    
-    // 各社長に対して、同じ会社の社員を紐づける
-    const result = presidents.map(president => {
-      // 社長の会社IDを取得（emailドメインを使用）
-      const presidentCompanyId = president.email.split('@')[1];
+    companyEmployees.forEach(employee => {
+      // queue@queueu-tech.jpは除外
+      if (employee.email === "queue@queueu-tech.jp") return;
       
-      // 同じ会社の社員（employeeロール）を検索
-      const employees = companyEmployees.filter(employee => {
-        if (employee.role !== 'employee') return false;
-        
-        const employeeCompanyId = employee.email.split('@')[1];
-        return employeeCompanyId === presidentCompanyId;
-      });
+      const companyDomain = employee.email.split('@')[1];
+      
+      if (!companyGroups.has(companyDomain)) {
+        companyGroups.set(companyDomain, []);
+      }
+      
+      companyGroups.get(companyDomain)!.push(employee);
+    });
+    
+    // 各会社のデータを整理
+    const result = Array.from(companyGroups.entries()).map(([companyDomain, employees]) => {
+      // 管理者（admin_user, user, admin）を探す
+      const admins = employees.filter(emp => 
+        emp.role === 'admin_user' || emp.role === 'user' || emp.role === 'admin'
+      );
+      
+      // 社員（employee）を探す
+      const regularEmployees = employees.filter(emp => emp.role === 'employee');
+      
+      // 代表管理者を決定（admin_user > user > admin の優先順位）
+      const primaryAdmin = admins.find(emp => emp.role === 'admin_user') ||
+                          admins.find(emp => emp.role === 'user') ||
+                          admins.find(emp => emp.role === 'admin') ||
+                          employees[0]; // フォールバック
       
       return {
-        president,
-        employees,
-        companyId: presidentCompanyId
+        companyDomain,
+        primaryAdmin,
+        allAdmins: admins,
+        employees: regularEmployees,
+        allMembers: employees,
+        totalMembers: employees.length,
+        isUnlimited: primaryAdmin?.usage_limits?.is_unlimited || false
       };
     });
     
+    console.log("会社別グループ化結果:", result);
     return result;
   };
 
-  // 社長カードをクリックした時の処理
-  const handlePresidentClick = (president: CompanyEmployee) => {
-    const groupedData = groupEmployeesByPresident();
-    const presidentData = groupedData.find(group => group.president.id === president.id);
-    
-    if (presidentData) {
-      setSelectedCompanyAdmin(president);
-      setSelectedCompanyEmployees(presidentData.employees);
+  // 会社カードをクリックした時の処理
+  const handleCompanyClick = (companyData: any) => {
+    setSelectedCompanyAdmin(companyData.primaryAdmin);
+    setSelectedCompanyEmployees(companyData.allMembers);
       setEmployeeDialogOpen(true);
-    }
   };
 
   // 社員ダイアログを閉じる
@@ -243,14 +255,14 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
     setSelectedCompanyEmployees([]);
   };
 
-  // queue@queueu-tech.jp用の社長カード表示
-  const renderPresidentCards = () => {
-    const groupedData = groupEmployeesByPresident();
+  // queue@queueu-tech.jp用の会社カード表示
+  const renderCompanyCards = () => {
+    const groupedData = groupEmployeesByCompany();
     
     if (groupedData.length === 0) {
       return (
         <EmptyState
-          message="社長データがありません"
+          message="会社データがありません"
           icon="custom"
           customIcon={<BusinessIcon />}
         />
@@ -260,11 +272,11 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
     return (
       <Box>
         <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
-          社長一覧
+          会社一覧
         </Typography>
         <Grid container spacing={3}>
-          {groupedData.map((group, index) => (
-            <Grid item xs={12} sm={6} md={4} key={group.president.id}>
+          {groupedData.map((companyData, index) => (
+            <Grid item xs={12} sm={6} md={4} key={companyData.companyDomain}>
               <Card
                 sx={{
                   cursor: 'pointer',
@@ -277,27 +289,19 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                   border: '2px solid rgba(0,0,0,0.08)',
                   borderRadius: 3,
                 }}
-                onClick={() => handlePresidentClick(group.president)}
+                onClick={() => handleCompanyClick(companyData)}
               >
                 <CardContent sx={{ p: 3 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                     <Avatar sx={{ bgcolor: 'primary.main', width: 56, height: 56, mr: 2 }}>
-                      {(group.president.name || group.president.email).charAt(0).toUpperCase()}
+                      <BusinessIcon />
                     </Avatar>
                     <Box sx={{ flexGrow: 1 }}>
                       <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
-                        {group.president.name || group.president.email.split('@')[0]}
+                        {companyData.companyDomain}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        {group.president.email === "queue@queueu-tech.jp" 
-                          ? "運営者" 
-                          : group.president.role === "admin_user" 
-                          ? "社長" 
-                          : group.president.role === "user" 
-                          ? "管理者" 
-                          : group.president.role === "admin" 
-                          ? "管理者" 
-                          : "社員"}
+                        会社ドメイン
                       </Typography>
                     </Box>
                   </Box>
@@ -306,72 +310,94 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                   
                   <Box sx={{ mb: 2 }}>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      メールアドレス
+                      代表管理者
                     </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Avatar sx={{ width: 24, height: 24, fontSize: '0.8rem' }}>
+                        {(companyData.primaryAdmin.name || companyData.primaryAdmin.email).charAt(0).toUpperCase()}
+                      </Avatar>
                     <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      {group.president.email}
+                        {companyData.primaryAdmin.name || companyData.primaryAdmin.email.split('@')[0]}
                     </Typography>
+                      <Chip
+                        label={
+                          companyData.primaryAdmin.role === "admin_user"
+                            ? "社長"
+                            : companyData.primaryAdmin.role === "user"
+                            ? "管理者"
+                            : companyData.primaryAdmin.role === "admin"
+                            ? "管理者"
+                            : "社員"
+                        }
+                        size="small"
+                        color={
+                          companyData.primaryAdmin.role === "admin_user"
+                            ? "warning"
+                            : companyData.primaryAdmin.role === "user"
+                            ? "primary"
+                            : companyData.primaryAdmin.role === "admin"
+                            ? "primary"
+                            : "secondary"
+                        }
+                        variant="outlined"
+                      />
                   </Box>
-                  
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      会社ドメイン
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      {group.companyId}
-                    </Typography>
                   </Box>
 
                   <Box sx={{ mb: 2 }}>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      アカウント作成日
+                      アカウント構成
                     </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      {new Date(group.president.created_at).toLocaleDateString('ja-JP')}
-                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                      {companyData.allAdmins.length > 0 && (
+                        <Chip
+                          label={`管理者 ${companyData.allAdmins.length}名`}
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                        />
+                      )}
+                      {companyData.employees.length > 0 && (
+                        <Chip
+                          label={`社員 ${companyData.employees.length}名`}
+                          size="small"
+                          color="secondary"
+                          variant="outlined"
+                        />
+                      )}
+                  </Box>
                   </Box>
 
                   <Box sx={{ mb: 2 }}>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      メッセージ数
+                      作成日
                     </Typography>
                     <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      {group.president.message_count || 0}回
-                    </Typography>
-                  </Box>
-
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      最終アクティビティ
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      {group.president.last_activity 
-                        ? new Date(group.president.last_activity).toLocaleDateString('ja-JP')
-                        : '活動なし'}
+                      {new Date(companyData.primaryAdmin.created_at).toLocaleDateString('ja-JP')}
                     </Typography>
                   </Box>
                   
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
                     <Chip
-                      label={group.president.usage_limits?.is_unlimited ? "本番版" : "デモ版"}
-                      color={group.president.usage_limits?.is_unlimited ? "success" : "warning"}
+                      label={companyData.isUnlimited ? "本番版" : "デモ版"}
+                      color={companyData.isUnlimited ? "success" : "warning"}
                       size="small"
                     />
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <PeopleIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                       <Typography variant="body2" color="text.secondary">
-                        社員 {group.employees.length}名
+                        全 {companyData.totalMembers}名
                       </Typography>
                     </Box>
                   </Box>
 
                   <Box sx={{ mt: 2, display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-                    <Tooltip title={`${group.president.usage_limits?.is_unlimited ? 'デモ版' : '本番版'}に切り替え`}>
+                    <Tooltip title={`${companyData.isUnlimited ? 'デモ版' : '本番版'}に切り替え`}>
                       <IconButton
                         size="small"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleToggleDemo(group.president);
+                          handleToggleDemo(companyData.primaryAdmin);
                         }}
                         color="primary"
                       >
@@ -383,7 +409,7 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                         size="small"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleOpenPlanHistory(group.president);
+                          handleOpenPlanHistory(companyData.primaryAdmin);
                         }}
                         color="primary"
                       >
@@ -695,7 +721,7 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
           <EmptyState message="社員データがありません" />
         ) : isQueueTechAdmin ? (
           // queue@queueu-tech.jp専用表示
-          renderPresidentCards()
+          renderCompanyCards()
         ) : (
           // 通常のテーブル表示
           <TableContainer component={Paper} elevation={2} sx={{ mb: 4 }}>
@@ -1323,34 +1349,132 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
         <DialogContent sx={{ pt: 1 }}>
           {selectedCompanyAdmin && (
             <>
-              {/* 管理者情報 */}
+              {/* 会社情報 */}
               <Paper sx={{ p: 2, mb: 3, bgcolor: 'rgba(25, 118, 210, 0.04)' }}>
                 <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: 'primary.main' }}>
-                  管理者アカウント
+                  会社情報
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <Avatar sx={{ bgcolor: 'primary.main' }}>
-                    {(selectedCompanyAdmin.name || selectedCompanyAdmin.email).charAt(0).toUpperCase()}
+                    <BusinessIcon />
                   </Avatar>
                   <Box sx={{ flexGrow: 1 }}>
                     <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                      {selectedCompanyAdmin.name || selectedCompanyAdmin.email}
+                      {selectedCompanyAdmin.email.split('@')[1]}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      {selectedCompanyAdmin.email}
+                      全 {selectedCompanyEmployees.length}名のアカウント
                     </Typography>
                   </Box>
-                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                     <Chip
                       label={selectedCompanyAdmin.usage_limits?.is_unlimited ? "本番版" : "デモ版"}
                       color={selectedCompanyAdmin.usage_limits?.is_unlimited ? "success" : "warning"}
                       size="small"
                     />
-                    <Tooltip title={`${selectedCompanyAdmin.usage_limits?.is_unlimited ? 'デモ版' : '本番版'}に切り替え`}>
+                </Box>
+              </Paper>
+
+              {/* 管理者一覧 */}
+              {(() => {
+                const admins = selectedCompanyEmployees.filter(emp => 
+                  emp.role === 'admin_user' || emp.role === 'user' || emp.role === 'admin'
+                );
+                
+                return admins.length > 0 && (
+                  <>
+                    <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
+                      管理者アカウント ({admins.length}名)
+                    </Typography>
+                    <Grid container spacing={2} sx={{ mb: 3 }}>
+                      {admins.map((admin) => (
+                        <Grid item xs={12} sm={6} key={admin.id}>
+                          <Card sx={{ 
+                            transition: 'all 0.2s',
+                            '&:hover': { 
+                              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                            },
+                            border: '1px solid rgba(25, 118, 210, 0.2)'
+                          }}>
+                            <CardContent sx={{ p: 2 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                                <Avatar sx={{ width: 40, height: 40, bgcolor: 'primary.main' }}>
+                                  {(admin.name || admin.email).charAt(0).toUpperCase()}
+                                </Avatar>
+                                <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                                  <Typography variant="body1" sx={{ fontWeight: 600 }} noWrap>
+                                    {admin.name || admin.email.split('@')[0]}
+                                  </Typography>
+                                  <Typography variant="body2" color="text.secondary" noWrap>
+                                    {admin.email}
+                                  </Typography>
+                                  <Chip
+                                    label={
+                                      admin.role === "admin_user"
+                                        ? "社長"
+                                        : admin.role === "user"
+                                        ? "管理者"
+                                        : admin.role === "admin"
+                                        ? "管理者"
+                                        : "社員"
+                                    }
+                                    size="small"
+                                    color={
+                                      admin.role === "admin_user"
+                                        ? "warning"
+                                        : admin.role === "user"
+                                        ? "primary"
+                                        : admin.role === "admin"
+                                        ? "primary"
+                                        : "secondary"
+                                    }
+                                    variant="outlined"
+                                    sx={{ mt: 0.5 }}
+                                  />
+                                </Box>
+                              </Box>
+                              
+                              <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                  <Typography variant="caption" color="text.secondary">メッセージ数:</Typography>
+                                  <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                                    {admin.message_count || 0}回
+                                  </Typography>
+                                </Box>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                  <Typography variant="caption" color="text.secondary">作成日:</Typography>
+                                  <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                                    {new Date(admin.created_at).toLocaleDateString('ja-JP')}
+                                  </Typography>
+                                </Box>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                  <Typography variant="caption" color="text.secondary">最終利用:</Typography>
+                                  <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                                    {admin.last_activity 
+                                      ? new Date(admin.last_activity).toLocaleDateString('ja-JP')
+                                      : '活動なし'}
+                                  </Typography>
+                                </Box>
+                                {!admin.usage_limits?.is_unlimited && (
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <Typography variant="caption" color="text.secondary">利用制限:</Typography>
+                                    <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                                      {admin.usage_limits?.questions_used || 0}/{admin.usage_limits?.questions_limit || 0}
+                                    </Typography>
+                                  </Box>
+                                )}
+                              </Box>
+                              
+                              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Chip
+                                  label={admin.usage_limits?.is_unlimited ? "本番版" : "デモ版"}
+                                  color={admin.usage_limits?.is_unlimited ? "success" : "warning"}
+                                  size="small"
+                                />
+                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                  <Tooltip title={`${admin.usage_limits?.is_unlimited ? 'デモ版' : '本番版'}に切り替え`}>
                       <IconButton
                         size="small"
-                        onClick={() => handleToggleDemo(selectedCompanyAdmin)}
-                        color="primary"
+                                      onClick={() => handleToggleDemo(admin)}
                       >
                         <EditIcon fontSize="small" />
                       </IconButton>
@@ -1358,24 +1482,35 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                     <Tooltip title="プラン変更履歴を表示">
                       <IconButton
                         size="small"
-                        onClick={() => handleOpenPlanHistory(selectedCompanyAdmin)}
-                        color="primary"
+                                      onClick={() => handleOpenPlanHistory(admin)}
                       >
                         <HistoryIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
                   </Box>
                 </Box>
-              </Paper>
+                            </CardContent>
+                          </Card>
+                        </Grid>
+                      ))}
+                    </Grid>
+                  </>
+                );
+              })()}
 
               {/* 社員一覧 */}
+              {(() => {
+                const employees = selectedCompanyEmployees.filter(emp => emp.role === 'employee');
+                
+                return (
+                  <>
               <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
-                社員アカウント ({selectedCompanyEmployees.length}名)
+                      社員アカウント ({employees.length}名)
               </Typography>
               
-              {selectedCompanyEmployees.length > 0 ? (
+                    {employees.length > 0 ? (
                 <Grid container spacing={2}>
-                  {selectedCompanyEmployees.map((employee) => (
+                        {employees.map((employee) => (
                     <Grid item xs={12} sm={6} key={employee.id}>
                       <Card sx={{ 
                         transition: 'all 0.2s',
@@ -1390,11 +1525,18 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                             </Avatar>
                             <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                               <Typography variant="body1" sx={{ fontWeight: 600 }} noWrap>
-                                {employee.name || employee.email}
+                                      {employee.name || employee.email.split('@')[0]}
                               </Typography>
                               <Typography variant="body2" color="text.secondary" noWrap>
                                 {employee.email}
                               </Typography>
+                                    <Chip
+                                      label="社員"
+                                      size="small"
+                                      color="secondary"
+                                      variant="outlined"
+                                      sx={{ mt: 0.5 }}
+                                    />
                             </Box>
                           </Box>
                           
@@ -1470,6 +1612,9 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                   </Typography>
                 </Box>
               )}
+                  </>
+                );
+              })()}
             </>
           )}
         </DialogContent>

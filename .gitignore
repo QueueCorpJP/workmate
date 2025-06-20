@@ -18,7 +18,20 @@ credentials.txt
 client_secret.json
 service-account.json
 
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Build outputs
+dist/
+build/
+.next/
+
 # その他
 .DS_Store
 Thumbs.db
-*.log 
+*.log
+bun.lockb 

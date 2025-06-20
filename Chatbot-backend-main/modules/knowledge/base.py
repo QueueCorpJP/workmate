@@ -157,4 +157,33 @@ def get_knowledge_base_info():
         "sources": sources_info,
         "data_size": len(knowledge_base.data) if knowledge_base.data is not None else 0,
         "columns": knowledge_base.columns if knowledge_base.data is not None else []
-    } 
+    }
+
+def _update_knowledge_base_from_list(data_list, text, is_file=True, source_name=None, company_id=None):
+    """データリストから知識ベースを更新する関数（DataFrameを使用しない）"""
+    try:
+        # データリストをDataFrameに変換
+        if data_list:
+            # 必要な列が存在することを確認
+            for item in data_list:
+                if 'file' not in item and source_name:
+                    item['file'] = source_name
+                
+                # すべての値を文字列に変換（NULL値はそのまま保持）
+                for key, value in item.items():
+                    if value is not None:
+                        item[key] = ensure_string(value)
+            
+            # DataFrameに変換
+            df = pd.DataFrame(data_list)
+            
+            # 従来の関数を呼び出し
+            _update_knowledge_base(df, text, is_file, source_name, company_id)
+            
+            logger.info(f"データリストから知識ベース更新完了: {len(data_list)} レコード")
+        else:
+            logger.warning("空のデータリストが提供されました")
+            
+    except Exception as e:
+        logger.error(f"データリストからの知識ベース更新エラー: {str(e)}")
+        raise 

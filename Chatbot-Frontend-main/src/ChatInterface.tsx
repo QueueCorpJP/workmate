@@ -542,6 +542,86 @@ function ChatInterface() {
   );
 
   // メッセージエリアのレンダリング部分
+  // ローディングアニメーションコンポーネント
+  const TypingAnimation = () => (
+    <Box
+      sx={{
+        ...botMessageStyles,
+        display: 'flex',
+        alignItems: 'center',
+        minHeight: '60px',
+        animation: 'fadeIn 0.3s ease-out',
+        background: 'linear-gradient(135deg, #FFFFFF, #F8FAFC)',
+        border: '1px solid rgba(37, 99, 235, 0.12)',
+        position: 'relative',
+        overflow: 'hidden',
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: 0,
+          left: '-100%',
+          width: '100%',
+          height: '100%',
+          background: 'linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.05), transparent)',
+          animation: 'shimmer 3s infinite',
+        },
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, position: 'relative', zIndex: 1 }}>
+        <Box
+          sx={{
+            width: 24,
+            height: 24,
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #2563eb, #3b82f6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            animation: 'pulse 2s infinite',
+          }}
+        >
+          <ChatIcon sx={{ color: 'white', fontSize: '0.8rem' }} />
+        </Box>
+        <Typography 
+          variant="body2" 
+          sx={{ 
+            color: 'text.secondary', 
+            fontWeight: 500,
+            fontSize: { xs: '0.8rem', sm: '0.85rem' },
+          }}
+        >
+          AIが回答を考えています
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 0.4, ml: 0.5 }}>
+          {[0, 1, 2].map((index) => (
+            <Box
+              key={index}
+              sx={{
+                width: { xs: 6, sm: 8 },
+                height: { xs: 6, sm: 8 },
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, #2563eb, #3b82f6)',
+                animation: `typingDot 1.4s infinite ease-in-out`,
+                animationDelay: `${index * 0.16}s`,
+                boxShadow: '0 1px 3px rgba(37, 99, 235, 0.3)',
+                '@keyframes typingDot': {
+                  '0%, 80%, 100%': {
+                    transform: 'scale(0.6)',
+                    opacity: 0.4,
+                  },
+                  '40%': {
+                    transform: 'scale(1.1)',
+                    opacity: 1,
+                  },
+                },
+              }}
+            />
+          ))}
+        </Box>
+      </Box>
+    </Box>
+  );
+
   const renderChatMessages = () => (
     <Box sx={{
       ...messageContainerStyles,
@@ -550,7 +630,7 @@ function ChatInterface() {
       WebkitOverflowScrolling: 'touch', // iOSのスムーススクロール対応
       overscrollBehavior: 'contain', // スクロールの慣性を制御
     }}>
-      {messages.length === 0 ? (
+      {messages.length === 0 && !isLoading ? (
         <Box
           sx={{
             display: "flex",
@@ -594,18 +674,21 @@ function ChatInterface() {
           </Typography>
         </Box>
       ) : (
-        messages.map((message, index) => (
-          <Box
-            key={index}
-            sx={message.isUser ? userMessageStyles : botMessageStyles}
-          >
-            <MarkdownRenderer 
-              content={message.text} 
-              isUser={message.isUser}
-            />
-            {message.source && <SourceCitation source={message.source} />}
-          </Box>
-        ))
+        <>
+          {messages.map((message, index) => (
+            <Box
+              key={index}
+              sx={message.isUser ? userMessageStyles : botMessageStyles}
+            >
+              <MarkdownRenderer 
+                content={message.text} 
+                isUser={message.isUser}
+              />
+              {message.source && <SourceCitation source={message.source} />}
+            </Box>
+          ))}
+          {isLoading && <TypingAnimation />}
+        </>
       )}
       <div ref={messagesEndRef} />
     </Box>
@@ -639,7 +722,7 @@ function ChatInterface() {
         >
           <TextField
             fullWidth
-            placeholder="質問を入力してください..."
+            placeholder={isLoading ? "AIが回答を準備中..." : "質問を入力してください..."}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={(e) => {
@@ -655,13 +738,31 @@ function ChatInterface() {
             sx={{
               "& .MuiOutlinedInput-root": {
                 borderRadius: { xs: "20px", sm: "24px" },
-                backgroundColor: "rgba(255, 255, 255, 0.95)",
-                boxShadow: "0 2px 6px rgba(37, 99, 235, 0.04)",
+                backgroundColor: isLoading 
+                  ? "rgba(37, 99, 235, 0.02)" 
+                  : "rgba(255, 255, 255, 0.95)",
+                boxShadow: isLoading 
+                  ? "0 2px 6px rgba(37, 99, 235, 0.08)" 
+                  : "0 2px 6px rgba(37, 99, 235, 0.04)",
                 pr: { xs: 3.2, sm: 3.5 },
                 transition: "all 0.3s ease",
                 maxHeight: { xs: "42px", sm: "44px", md: "46px" },
                 overflowY: "hidden",
-                border: "1px solid rgba(37, 99, 235, 0.08)",
+                border: isLoading 
+                  ? "1px solid rgba(37, 99, 235, 0.15)" 
+                  : "1px solid rgba(37, 99, 235, 0.08)",
+                position: "relative",
+                overflow: "hidden",
+                "&::before": isLoading ? {
+                  content: '""',
+                  position: "absolute",
+                  top: 0,
+                  left: "-100%",
+                  width: "100%",
+                  height: "100%",
+                  background: "linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.1), transparent)",
+                  animation: "shimmer 2s infinite",
+                } : {},
                 "&.Mui-focused": {
                   boxShadow: "0 3px 10px rgba(37, 99, 235, 0.08)",
                   backgroundColor: "white",
@@ -673,7 +774,13 @@ function ChatInterface() {
                 },
                 "&:hover": {
                   boxShadow: "0 3px 8px rgba(37, 99, 235, 0.06)",
-                  backgroundColor: "white",
+                  backgroundColor: isLoading ? "rgba(37, 99, 235, 0.02)" : "white",
+                },
+                "&.Mui-disabled": {
+                  backgroundColor: "rgba(37, 99, 235, 0.02)",
+                  "& .MuiOutlinedInput-notchedOutline": {
+                    borderColor: "rgba(37, 99, 235, 0.1)",
+                  },
                 },
               },
               "& .MuiOutlinedInput-input": {
@@ -684,6 +791,14 @@ function ChatInterface() {
                 minHeight: { xs: "18px", sm: "20px", md: "22px" },
                 maxHeight: { xs: "18px", sm: "20px", md: "22px" },
                 overflowY: "hidden",
+                "&.Mui-disabled": {
+                  color: "rgba(0, 0, 0, 0.4)",
+                  WebkitTextFillColor: "rgba(0, 0, 0, 0.4)",
+                },
+                "&::placeholder": {
+                  opacity: isLoading ? 0.7 : 1,
+                  transition: "opacity 0.3s ease",
+                },
               },
               "& .MuiOutlinedInput-notchedOutline": {
                 borderColor: "rgba(37, 99, 235, 0.06)",

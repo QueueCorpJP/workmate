@@ -1,11 +1,28 @@
 """
-Excelファイル処理モジュール
+⚠️ 非推奨モジュール ⚠️
+このモジュールは非推奨です。新しいGoogle Sheets API処理については excel_sheets_processor.py を使用してください。
+
+Excelファイル処理モジュール（pandas使用 - 非推奨）
 Excelファイル(.xlsx、.xls)の読み込みと処理を行います
+
+新しい実装では以下の利点があります：
+- pandasに依存しない
+- Google Drive APIでファイル変換
+- Google Sheets APIで綺麗なデータ抽出
+- より正確なフォーマット処理
 """
 import pandas as pd
 from io import BytesIO
 import traceback
 import logging
+import warnings
+
+# 非推奨警告
+warnings.warn(
+    "excel.py は非推奨です。excel_sheets_processor.py を使用してください。",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
@@ -29,7 +46,14 @@ except ImportError:
     logger.warning("openpyxlライブラリが見つかりません。.xlsxファイルのサポートが制限されます。pip install openpyxlを実行してください。")
 
 def process_excel_file(contents, filename):
-    """Excelファイルを処理してデータフレーム、セクション、テキストを返す"""
+    """
+    ⚠️ 非推奨関数 ⚠️
+    この関数は非推奨です。excel_sheets_processor.process_excel_file_with_sheets_api() を使用してください。
+    
+    Excelファイルを処理してデータフレーム、セクション、テキストを返す
+    """
+    logger.warning("⚠️ process_excel_file() は非推奨です。excel_sheets_processor.process_excel_file_with_sheets_api() を使用してください。")
+    
     try:
         # BytesIOオブジェクトを作成
         excel_file = BytesIO(contents)

@@ -123,4 +123,76 @@
   .hljs-tag .hljs-attr {
     color: #b5cea8;
   }
+}
+
+/* Chat loading animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes typingDot {
+  0%, 80%, 100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Loading input field styles */
+.loading-input {
+  background: linear-gradient(
+    90deg,
+    rgba(37, 99, 235, 0.05) 0%,
+    rgba(37, 99, 235, 0.1) 50%,
+    rgba(37, 99, 235, 0.05) 100%
+  );
+  background-size: 200px 100%;
+  animation: shimmer 2s infinite linear;
+}
+
+/* Smooth transitions */
+.chat-message {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Mobile-specific animations */
+@media (max-width: 600px) {
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(5px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 } 
