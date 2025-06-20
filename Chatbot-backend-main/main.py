@@ -122,9 +122,14 @@ app.add_middleware(
         "https://www.workmatechat.com",
         "http://localhost:3000",
         "http://localhost:5173",
+        "http://localhost:3025",
+        "http://localhost:8083",
+        "http://localhost:8085",
         "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173"
-    ],  # 明示的にオリジンを指定
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:8083",
+        "http://127.0.0.1:8085"
+    ],  # 明示的にオリジンを指定（開発用ポートを追加）
     allow_credentials=True,  # クレデンシャルを含むリクエストを許可
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # 明示的なHTTPメソッドを指定
     allow_headers=[
