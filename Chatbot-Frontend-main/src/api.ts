@@ -1,11 +1,10 @@
 import axios from "axios";
 
 // 環境変数からAPIのURL取得
-// Use local backend server by default
 const API_URL = import.meta.env.VITE_API_URL || 
   (import.meta.env.PROD ? 
     "https://workmatechat.com/chatbot/api" : 
-    "http://localhost:8085/chatbot/api");
+    `http://localhost:${import.meta.env.VITE_BACKEND_PORT || 8085}/chatbot/api`);
 
 console.log("API URL:", API_URL);
 console.log("Environment:", import.meta.env.MODE);
