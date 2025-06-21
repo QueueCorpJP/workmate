@@ -20,6 +20,13 @@ import {
   StepContent,
   useTheme,
   useMediaQuery,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
@@ -33,585 +40,389 @@ import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
 import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import PersonIcon from '@mui/icons-material/Person';
+import GroupIcon from '@mui/icons-material/Group';
+import BusinessIcon from '@mui/icons-material/Business';
+import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
 
 const UserGuide: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'md'));
 
   const handleBackToChat = () => {
     navigate('/');
   };
 
-  const featureCards = [
+  const userRoles = [
     {
-      title: "簡単な質問回答",
-      icon: <QuestionAnswerIcon sx={{ color: 'primary.main', fontSize: '2.5rem' }} />,
-      description: "必要な情報を自然な対話形式で質問するだけで、会社のデータから最適な回答を提供します。",
-      example: "「今月の営業目標について教えて」「休暇申請の手続きはどうすればいい？」"
+      title: "運営者",
+      icon: <SupervisorAccountIcon sx={{ color: '#d32f2f' }} />,
+      description: "システム全体の管理、全ての機能へのアクセス権限",
+      permissions: ["全社データの閲覧", "全ユーザーの管理", "システム設定の変更", "全リソースの管理"]
     },
     {
-      title: "管理画面でのリソース管理",
-      icon: <CloudUploadIcon sx={{ color: 'primary.main', fontSize: '2.5rem' }} />,
-      description: "管理者は管理画面のリソースタブで、Excel、PDF、Word、URLなどのファイルをアップロードして、AIがデータを分析・理解します。",
-      example: "社内規定書、マニュアル、報告書、Google Driveファイルなど様々な文書に対応"
+      title: "社長",
+      icon: <BusinessIcon sx={{ color: '#ed6c02' }} />,
+      description: "会社全体のデータ管理、重要な意思決定に関わる機能",
+      permissions: ["会社データの閲覧", "部門間の分析", "重要文書の管理", "社員の利用状況確認"]
     },
     {
-      title: "管理パネル",
-      icon: <AdminPanelSettingsIcon sx={{ color: 'primary.main', fontSize: '2.5rem' }} />,
-      description: "管理者（運営者・社長・管理者）は管理画面でチャット履歴の分析、ユーザー管理、リソース管理などの機能を使用できます。リソースタブでファイルアップロードも可能です。",
-      example: "リソースタブでPDF/Excel/Word文書をアップロード、Google Driveファイルの追加、URL情報の取得、社員の利用状況確認"
+      title: "管理者",
+      icon: <GroupIcon sx={{ color: '#2e7d32' }} />,
+      description: "部門内のデータ管理、チームメンバーの管理",
+      permissions: ["部門データの管理", "チームメンバーの招待", "リソースのアップロード", "チャット履歴の分析"]
     },
     {
-      title: "情報ソースの確認",
-      icon: <InfoIcon sx={{ color: 'primary.main', fontSize: '2.5rem' }} />,
-      description: "AIが提供する情報のソースを確認でき、信頼性の高い回答を得られます。",
-      example: "回答の下に表示されるソース情報をクリックして詳細を確認できます"
+      title: "社員",
+      icon: <PersonIcon sx={{ color: '#1976d2' }} />,
+      description: "日常業務での質問、情報検索",
+      permissions: ["チャット機能の利用", "会社情報の検索", "業務に関する質問", "承認された文書の閲覧"]
     }
   ];
 
-  const steps = [
+  const mainFeatures = [
     {
-      label: 'ログイン',
-      description: 'メールアドレスとパスワードでログインします。新規ユーザーは管理者から招待を受けてください。権限は運営者→社長→管理者→社員の4段階です。',
+      title: "AIチャット機能",
+      icon: <ChatIcon sx={{ color: '#1976d2', fontSize: '2rem' }} />,
+      description: "会社の情報を自然な対話で質問できます",
+      details: [
+        "業務に関する質問を普通の会話のように入力",
+        "社内規定、マニュアル、報告書から自動で回答を生成",
+        "24時間いつでも利用可能",
+        "質問回数の制限あり（プランにより異なる）"
+      ]
     },
     {
-      label: '質問入力',
-      description: '画面下部の入力フィールドに質問を入力します。自然な言葉で質問できます。Viteによる高速レスポンスで快適に操作できます。',
+      title: "文書管理システム",
+      icon: <CloudUploadIcon sx={{ color: '#2e7d32', fontSize: '2rem' }} />,
+      description: "様々な形式の文書をAIが理解できる形で保存",
+      details: [
+        "PDF、Excel、Word、PowerPointファイルに対応",
+        "Google Driveとの連携",
+        "ウェブページの情報取得",
+        "文書の有効/無効の切り替え"
+      ]
     },
     {
-      label: '回答の確認',
-      description: 'AIが会社のデータベースから情報を検索し、最適な回答を提供します。情報源も表示され、信頼性の高い回答を得られます。',
+      title: "管理画面",
+      icon: <AdminPanelSettingsIcon sx={{ color: '#ed6c02', fontSize: '2rem' }} />,
+      description: "チーム管理と分析機能",
+      details: [
+        "チャット履歴の確認と分析",
+        "よくある質問の把握",
+        "社員の利用状況確認",
+        "新しいメンバーの招待"
+      ]
     },
     {
-      label: 'リソースのアップロード（管理者）',
-      description: '管理者は管理画面のリソースタブで会社の資料やデータをアップロードできます。PDF、Excel、Word、Google Drive、URLに対応しています。',
+      title: "情報ソース表示",
+      icon: <InfoIcon sx={{ color: '#7b1fa2', fontSize: '2rem' }} />,
+      description: "回答の根拠となった文書を明示",
+      details: [
+        "どの文書から情報を取得したかを表示",
+        "ページ番号や章の情報も含む",
+        "回答の信頼性を確認可能",
+        "元文書へのリンク機能"
+      ]
+    }
+  ];
+
+  const usageSteps = [
+    {
+      title: "ログインする",
+      description: "管理者から送られた招待メールのリンクをクリックし、パスワードを設定してログインします。"
     },
     {
-      label: '分析と管理（管理者）',
-      description: '管理パネルでチャット履歴の分析、よくある質問のパターン、ユーザー管理、リソース管理などが可能です。会社ごとの利用状況も確認できます。',
+      title: "質問を入力する",
+      description: "画面下部の入力欄に、知りたいことを自然な言葉で入力します。例：「有給休暇の申請方法を教えて」"
     },
+    {
+      title: "回答を確認する",
+      description: "AIが会社の文書から関連情報を見つけて回答します。情報源も一緒に表示されます。"
+    },
+    {
+      title: "詳細情報を確認する",
+      description: "回答の下に表示される情報源をクリックすると、元の文書や詳細情報を確認できます。"
+    }
+  ];
+
+  const commonQuestions = [
+    {
+      question: "どんな質問ができますか？",
+      answer: "社内規定、業務手順、製品情報、会社の歴史、組織図など、アップロードされた文書に関することなら何でも質問できます。"
+    },
+    {
+      question: "質問回数に制限はありますか？",
+      answer: "はい。プランによって1日あたりの質問回数が決まっています。制限に達した場合は翌日まで待つか、管理者にプラン変更を相談してください。"
+    },
+    {
+      question: "回答が間違っている場合はどうすればいいですか？",
+      answer: "情報源を確認し、元の文書に問題がないか確認してください。文書が古い場合は管理者に更新を依頼してください。"
+    },
+    {
+      question: "管理者になるにはどうすればいいですか？",
+      answer: "上位の権限を持つユーザー（社長や運営者）に権限変更を依頼してください。権限は運営者→社長→管理者→社員の順になっています。"
+    },
+    {
+      question: "スマートフォンでも使えますか？",
+      answer: "はい。スマートフォンやタブレットでも快適に利用できるよう設計されています。"
+    }
   ];
 
   const tips = [
-    "具体的に質問すると、より正確な回答が得られます",
-    "複数の質問は分けて入力すると、それぞれに詳しく回答します",
-    "情報ソースが表示されない場合は、AIが一般的な知識から回答しています",
-    "特定の文書について質問する場合は、文書名を含めるとより正確です",
-    "管理者は管理画面のリソースタブで定期的にデータを更新して、AIの知識を最新に保ちましょう",
-    "権限は運営者→社長→管理者→社員の順で階層になっています",
-    "このアプリはViteで構築されており、高速で効率的な動作を実現しています",
-    "ファイルアップロードは管理者のみが管理画面から行えるセキュアな設計です"
+    "具体的で明確な質問をすると、より正確な回答が得られます",
+    "複数の質問がある場合は、一つずつ分けて質問してください",
+    "文書名や部署名を含めると、より関連性の高い情報が見つかります",
+    "定期的に新しい文書をアップロードして、情報を最新に保ちましょう",
+    "チャット履歴は管理者が分析して、よくある質問をFAQとして整理できます"
   ];
 
   return (
-    <Box 
-      sx={{ 
-        minHeight: '100vh', 
-        display: 'flex', 
-        flexDirection: 'column',
-        backgroundColor: 'background.default',
-        backgroundImage: 'linear-gradient(to bottom, rgba(37, 99, 235, 0.02), rgba(37, 99, 235, 0.001))',
-      }}
-    >
+    <Box sx={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
       {/* ヘッダー */}
-      <AppBar 
-        position="static" 
-        color="inherit" 
-        elevation={0} 
-        sx={{ 
-          borderBottom: '1px solid rgba(0, 0, 0, 0.05)',
-          backgroundColor: 'background.paper',
-          backdropFilter: 'blur(10px)',
-        }}
-      >
-        <Toolbar sx={{ minHeight: { xs: '56px', sm: '64px' }, px: { xs: 2, sm: 3 } }}>
-          <IconButton
-            edge="start"
-            color="primary"
-            onClick={handleBackToChat}
-            sx={{ 
-              mr: 1,
-              backgroundColor: 'rgba(37, 99, 235, 0.08)',
-              '&:hover': {
-                backgroundColor: 'rgba(37, 99, 235, 0.15)',
-              },
-              transition: 'all 0.2s',
-            }}
-            aria-label="戻る"
-          >
+      <AppBar position="static" color="inherit" elevation={0} sx={{ borderBottom: '1px solid rgba(0, 0, 0, 0.08)' }}>
+        <Toolbar>
+          <IconButton edge="start" color="primary" onClick={handleBackToChat} sx={{ mr: 2 }}>
             <ArrowBackIcon />
           </IconButton>
-          <Typography 
-            variant={isMobile ? 'subtitle1' : 'h6'} 
-            component="div" 
-            sx={{ 
-              fontWeight: 600, 
-              color: 'primary.main',
-              display: 'flex',
-              alignItems: 'center'
-            }}
-          >
-            <HelpOutlineIcon sx={{ mr: 1, display: { xs: 'none', sm: 'inline' } }} />
-            使い方ガイド
+          <Typography variant="h6" component="div" sx={{ fontWeight: 600, color: 'primary.main' }}>
+            <HelpOutlineIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+            ワークメイトAI 使用書
           </Typography>
         </Toolbar>
       </AppBar>
 
-      {/* メインコンテンツ */}
-      <Container 
-        maxWidth="lg" 
-        sx={{ 
-          flexGrow: 1, 
-          py: { xs: 3, sm: 4, md: 5 },
-          px: { xs: 2, sm: 3, md: 4 }
-        }}
-      >
-        {/* ヒーローセクション */}
-        <Paper
-          elevation={0}
-          sx={{
-            p: { xs: 3, sm: 4, md: 5 },
-            mb: 4,
-            borderRadius: 3,
-            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.08)',
-            overflow: 'hidden',
-            border: '1px solid rgba(37, 99, 235, 0.1)',
-            background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
-            position: 'relative',
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              height: '4px',
-              background: 'linear-gradient(to right, #2563eb, #60a5fa)',
-            },
-            textAlign: 'center',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-          }}
-        >
-          <Avatar
-            sx={{
-              width: { xs: 60, sm: 80 },
-              height: { xs: 60, sm: 80 },
-              bgcolor: 'primary.main',
-              mb: 2,
-              boxShadow: '0 4px 20px rgba(37, 99, 235, 0.2)',
-            }}
-          >
-            <ChatIcon sx={{ fontSize: { xs: '2rem', sm: '2.5rem' } }} />
-          </Avatar>
-
-          <Typography 
-            variant={isMobile ? "h4" : "h3"} 
-            component="h1"
-            sx={{ 
-              fontWeight: 700, 
-              mb: 2,
-              background: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)',
-              backgroundClip: 'text',
-              textFillColor: 'transparent',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-            }}
-          >
-            ワークメイトAIの使い方
-          </Typography>
-          
-          <Typography 
-            variant="h6" 
-            color="text.secondary" 
-            sx={{ 
-              maxWidth: '800px',
-              mb: 3,
-              lineHeight: 1.6,
-              fontWeight: 400,
-            }}
-          >
-            ワークメイトAIは、Viteで構築された高速なWebアプリケーションです。
-            会社の情報を簡単に質問・検索できるAIアシスタントとして、
-            自然な会話形式で質問するだけで、必要な情報を素早く見つけることができます。
-          </Typography>
-          
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: { xs: 'column', sm: 'row' },
-              gap: 2,
-              alignItems: 'center',
-              mb: 2
-            }}
-          >
-            <Button
-              variant="contained"
-              color="primary"
-              size="large"
-              onClick={handleBackToChat}
-              sx={{
-                borderRadius: 2,
-                px: 4,
-                py: 1.2,
-                fontWeight: 600,
-                boxShadow: '0 4px 14px rgba(37, 99, 235, 0.25)',
-                background: 'linear-gradient(to right, #2563eb, #3b82f6)',
-                '&:hover': {
-                  boxShadow: '0 6px 20px rgba(37, 99, 235, 0.35)',
-                  background: 'linear-gradient(to right, #1d4ed8, #2563eb)',
-                },
-              }}
-            >
-              チャットを始める
-            </Button>
-            
-            <Typography
-              variant="caption"
-              sx={{
-                color: 'text.secondary',
-                fontStyle: 'italic',
-                textAlign: 'center'
-              }}
-            >
-              ⚡ Viteによる高速レスポンス対応
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        {/* 概要セクション */}
+        <Paper elevation={0} sx={{ p: 4, mb: 4, borderRadius: 2, border: '1px solid rgba(37, 99, 235, 0.1)' }}>
+          <Box textAlign="center" mb={3}>
+            <Avatar sx={{ width: 80, height: 80, mx: 'auto', mb: 2, bgcolor: 'primary.main' }}>
+              <ChatIcon sx={{ fontSize: '2.5rem' }} />
+            </Avatar>
+            <Typography variant="h4" gutterBottom fontWeight="bold" color="primary.main">
+              ワークメイトAI
+            </Typography>
+            <Typography variant="h6" color="text.secondary" sx={{ maxWidth: 600, mx: 'auto' }}>
+              社内の情報を瞬時に検索・回答する次世代AIアシスタント
             </Typography>
           </Box>
+          <Typography variant="body1" sx={{ textAlign: 'center', maxWidth: 800, mx: 'auto', lineHeight: 1.8 }}>
+            ワークメイトAIは、あなたの会社の文書や情報をAIが学習し、社員の質問に自動で回答するシステムです。
+            社内規定、マニュアル、報告書などの情報を自然な対話で検索でき、業務効率を大幅に向上させます。
+          </Typography>
         </Paper>
 
-        {/* 主な機能セクション */}
-        <Typography 
-          variant="h4" 
-          component="h2" 
-          sx={{ 
-            mb: 3, 
-            fontWeight: 700,
-            textAlign: 'center',
-            position: 'relative',
-            '&:after': {
-              content: '""',
-              position: 'absolute',
-              bottom: -10,
-              left: '50%',
-              width: 60,
-              height: 3,
-              backgroundColor: 'primary.main',
-              transform: 'translateX(-50%)',
-              borderRadius: '10px'
-            }
-          }}
-        >
-          主な機能
-        </Typography>
-
-        <Grid container spacing={3} sx={{ mb: 6 }}>
-          {featureCards.map((card, index) => (
-            <Grid item xs={12} sm={6} md={3} key={index}>
-              <Card
-                elevation={0}
-                sx={{
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  borderRadius: 3,
-                  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.06)',
-                  border: '1px solid rgba(37, 99, 235, 0.1)',
-                  overflow: 'hidden',
-                  transition: 'all 0.3s ease',
-                  '&:hover': {
-                    transform: 'translateY(-5px)',
-                    boxShadow: '0 12px 30px rgba(37, 99, 235, 0.12)',
-                  },
-                }}
-              >
-                <Box
-                  sx={{
-                    p: 3,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    textAlign: 'center',
-                  }}
-                >
-                  <Box 
-                    sx={{ 
-                      mb: 2,
-                      p: 1.5,
-                      borderRadius: '50%',
-                      backgroundColor: 'rgba(37, 99, 235, 0.08)',
-                      display: 'flex',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                    }}
-                  >
-                    {card.icon}
-                  </Box>
-                  <Typography variant="h6" component="h3" sx={{ mb: 1, fontWeight: 600 }}>
-                    {card.title}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2, flexGrow: 1 }}>
-                    {card.description}
-                  </Typography>
-                  <Box
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      backgroundColor: 'rgba(37, 99, 235, 0.04)',
-                      width: '100%',
-                      border: '1px dashed rgba(37, 99, 235, 0.2)',
-                    }}
-                  >
-                    <Typography variant="caption" sx={{ display: 'block', fontStyle: 'italic', color: 'text.secondary' }}>
-                      例:
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 500, color: 'text.primary' }}>
-                      {card.example}
-                    </Typography>
-                  </Box>
-                </Box>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
-
-        {/* 使い方ステップ */}
-        <Paper
-          elevation={0}
-          sx={{
-            p: { xs: 3, sm: 4 },
-            mb: 4,
-            borderRadius: 3,
-            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.05)',
-            border: '1px solid rgba(37, 99, 235, 0.1)',
-            background: 'white',
-          }}
-        >
-          <Typography 
-            variant="h4" 
-            component="h2" 
-            sx={{ 
-              mb: 4, 
-              fontWeight: 700,
-              textAlign: 'center',
-              position: 'relative',
-              '&:after': {
-                content: '""',
-                position: 'absolute',
-                bottom: -10,
-                left: '50%',
-                width: 60,
-                height: 3,
-                backgroundColor: 'primary.main',
-                transform: 'translateX(-50%)',
-                borderRadius: '10px'
-              }
-            }}
-          >
-            使い方ステップ
+        {/* ユーザー権限について */}
+        <Paper elevation={0} sx={{ p: 4, mb: 4, borderRadius: 2 }}>
+          <Typography variant="h5" gutterBottom fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+            <GroupIcon sx={{ mr: 1, color: 'primary.main' }} />
+            ユーザー権限について
           </Typography>
+          <Grid container spacing={3}>
+            {userRoles.map((role, index) => (
+              <Grid item xs={12} md={6} key={index}>
+                <Card sx={{ height: '100%', border: '1px solid rgba(0, 0, 0, 0.08)' }}>
+                  <CardContent>
+                    <Box display="flex" alignItems="center" mb={2}>
+                      {role.icon}
+                      <Typography variant="h6" fontWeight="bold" sx={{ ml: 1 }}>
+                        {role.title}
+                      </Typography>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary" mb={2}>
+                      {role.description}
+                    </Typography>
+                    <List dense>
+                      {role.permissions.map((permission, idx) => (
+                        <ListItem key={idx} sx={{ px: 0 }}>
+                          <ListItemIcon sx={{ minWidth: 30 }}>
+                            <CheckCircleIcon sx={{ fontSize: '1rem', color: 'success.main' }} />
+                          </ListItemIcon>
+                          <ListItemText primary={permission} />
+                        </ListItem>
+                      ))}
+                    </List>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        </Paper>
 
-          <Stepper 
-            orientation="vertical" 
-            sx={{ 
-              ml: { xs: 0, md: 4 },
-              '& .MuiStepConnector-line': {
-                borderColor: 'rgba(37, 99, 235, 0.2)',
-                borderLeftWidth: 2,
-                minHeight: 20,
-              },
-              '& .MuiStepLabel-iconContainer': {
-                bgcolor: 'primary.main',
-                borderRadius: '50%',
-                width: 36,
-                height: 36,
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                zIndex: 1,
-                boxShadow: '0 2px 10px rgba(37, 99, 235, 0.2)',
-              },
-              '& .MuiStepIcon-root': {
-                color: 'white',
-                fontSize: '1.5rem',
-              },
-              '& .MuiStepLabel-label': {
-                fontWeight: 600,
-                mt: 0.5,
-              },
-              '& .MuiStepContent-root': {
-                borderColor: 'rgba(37, 99, 235, 0.2)',
-                borderLeftWidth: 2,
-                ml: 2.25,
-                pl: 2.75,
-              }
-            }}
-          >
-            {steps.map((step, index) => (
+        {/* 主要機能 */}
+        <Paper elevation={0} sx={{ p: 4, mb: 4, borderRadius: 2 }}>
+          <Typography variant="h5" gutterBottom fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+            <SettingsIcon sx={{ mr: 1, color: 'primary.main' }} />
+            主要機能
+          </Typography>
+          <Grid container spacing={3}>
+            {mainFeatures.map((feature, index) => (
+              <Grid item xs={12} md={6} key={index}>
+                <Card sx={{ height: '100%', border: '1px solid rgba(0, 0, 0, 0.08)' }}>
+                  <CardContent>
+                    <Box display="flex" alignItems="center" mb={2}>
+                      {feature.icon}
+                      <Typography variant="h6" fontWeight="bold" sx={{ ml: 1 }}>
+                        {feature.title}
+                      </Typography>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary" mb={2}>
+                      {feature.description}
+                    </Typography>
+                    <List dense>
+                      {feature.details.map((detail, idx) => (
+                        <ListItem key={idx} sx={{ px: 0 }}>
+                          <ListItemIcon sx={{ minWidth: 30 }}>
+                            <CheckCircleIcon sx={{ fontSize: '1rem', color: 'primary.main' }} />
+                          </ListItemIcon>
+                          <ListItemText primary={detail} />
+                        </ListItem>
+                      ))}
+                    </List>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        </Paper>
+
+        {/* 使い方の手順 */}
+        <Paper elevation={0} sx={{ p: 4, mb: 4, borderRadius: 2 }}>
+          <Typography variant="h5" gutterBottom fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+            <SearchIcon sx={{ mr: 1, color: 'primary.main' }} />
+            基本的な使い方
+          </Typography>
+          <Stepper orientation="vertical">
+            {usageSteps.map((step, index) => (
               <Step key={index} active={true}>
                 <StepLabel>
-                  {step.label}
+                  <Typography variant="h6" fontWeight="bold">
+                    {step.title}
+                  </Typography>
                 </StepLabel>
                 <StepContent>
-                  <Typography>{step.description}</Typography>
-                  <Box sx={{ mb: 2, mt: 1 }} />
+                  <Typography variant="body1" sx={{ pb: 2 }}>
+                    {step.description}
+                  </Typography>
                 </StepContent>
               </Step>
             ))}
           </Stepper>
         </Paper>
 
-        {/* ヒントセクション */}
-        <Paper
-          elevation={0}
-          sx={{
-            p: { xs: 3, sm: 4 },
-            borderRadius: 3,
-            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.05)',
-            border: '1px solid rgba(37, 99, 235, 0.1)',
-            background: 'linear-gradient(to right, rgba(37, 99, 235, 0.03), rgba(37, 99, 235, 0.01))',
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-            <LightbulbIcon sx={{ color: 'primary.main', mr: 1, fontSize: '2rem' }} />
-            <Typography variant="h5" component="h2" sx={{ fontWeight: 700 }}>
-              便利なヒント
-            </Typography>
-          </Box>
+        {/* よくある質問 */}
+        <Paper elevation={0} sx={{ p: 4, mb: 4, borderRadius: 2 }}>
+          <Typography variant="h5" gutterBottom fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+            <QuestionAnswerIcon sx={{ mr: 1, color: 'primary.main' }} />
+            よくある質問
+          </Typography>
+          {commonQuestions.map((faq, index) => (
+            <Accordion key={index} sx={{ mb: 1, '&:before': { display: 'none' } }}>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="subtitle1" fontWeight="bold">
+                  {faq.question}
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
+                  {faq.answer}
+                </Typography>
+              </AccordionDetails>
+            </Accordion>
+          ))}
+        </Paper>
 
-          <Grid container spacing={2}>
+        {/* 使用のコツ */}
+        <Paper elevation={0} sx={{ p: 4, mb: 4, borderRadius: 2 }}>
+          <Typography variant="h5" gutterBottom fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+            <LightbulbIcon sx={{ mr: 1, color: 'primary.main' }} />
+            効果的な使用のコツ
+          </Typography>
+          <List>
             {tips.map((tip, index) => (
-              <Grid item xs={12} md={6} key={index}>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    p: 2,
-                    borderRadius: 2,
-                    backgroundColor: 'white',
-                    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.03)',
-                    border: '1px solid rgba(37, 99, 235, 0.08)',
-                  }}
-                >
-                  <Box
-                    sx={{
-                      mr: 2,
-                      minWidth: '28px',
-                      height: '28px',
-                      borderRadius: '50%',
-                      bgcolor: 'primary.main',
-                      color: 'white',
-                      display: 'flex',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      fontWeight: 'bold',
-                      fontSize: '0.8rem',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {index + 1}
-                  </Box>
-                  <Typography variant="body1">{tip}</Typography>
-                </Box>
-              </Grid>
+              <ListItem key={index}>
+                <ListItemIcon>
+                  <CheckCircleIcon sx={{ color: 'success.main' }} />
+                </ListItemIcon>
+                <ListItemText primary={tip} />
+              </ListItem>
             ))}
-          </Grid>
+          </List>
         </Paper>
 
-        {/* Vite技術情報セクション */}
-        <Paper
-          elevation={0}
-          sx={{
-            p: { xs: 3, sm: 4 },
-            mb: 4,
-            borderRadius: 3,
-            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.05)',
-            border: '1px solid rgba(37, 99, 235, 0.1)',
-            background: 'linear-gradient(to right, rgba(37, 99, 235, 0.03), rgba(37, 99, 235, 0.01))',
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-            <Box
-              sx={{
-                mr: 2,
-                p: 1.5,
-                borderRadius: '50%',
-                backgroundColor: 'rgba(37, 99, 235, 0.1)',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-              }}
-            >
-              <Typography variant="h5" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-                ⚡
-              </Typography>
-            </Box>
-            <Typography variant="h5" component="h2" sx={{ fontWeight: 700 }}>
-              Vite技術による高速化
-            </Typography>
-          </Box>
-
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <Box sx={{ p: 2, borderRadius: 2, backgroundColor: 'white', border: '1px solid rgba(37, 99, 235, 0.08)' }}>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: 'primary.main' }}>
-                  🚀 高速な開発サーバー
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  ESModulesを活用したネイティブESMによる高速な起動とホットリロード機能で、開発効率が大幅に向上しています。
-                </Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <Box sx={{ p: 2, borderRadius: 2, backgroundColor: 'white', border: '1px solid rgba(37, 99, 235, 0.08)' }}>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: 'primary.main' }}>
-                  📦 最適化されたビルド
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Rollupベースの本番ビルドにより、最小限のバンドルサイズと最適なパフォーマンスを実現しています。
-                </Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <Box sx={{ p: 2, borderRadius: 2, backgroundColor: 'white', border: '1px solid rgba(37, 99, 235, 0.08)' }}>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: 'primary.main' }}>
-                  🔧 TypeScript統合
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  TypeScriptのネイティブサポートにより、型安全性を保ちながら高速なトランスパイルを実現しています。
-                </Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <Box sx={{ p: 2, borderRadius: 2, backgroundColor: 'white', border: '1px solid rgba(37, 99, 235, 0.08)' }}>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: 'primary.main' }}>
-                  🎯 モダンブラウザ対応
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  最新のWeb標準に準拠し、モダンブラウザでの最適なパフォーマンスを提供しています。
-                </Typography>
-              </Box>
-            </Grid>
-          </Grid>
+        {/* 管理者向け情報 */}
+        <Paper elevation={0} sx={{ p: 4, mb: 4, borderRadius: 2, bgcolor: 'primary.50' }}>
+          <Typography variant="h5" gutterBottom fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+            <AdminPanelSettingsIcon sx={{ mr: 1, color: 'primary.main' }} />
+            管理者の方へ
+          </Typography>
+          <Typography variant="body1" sx={{ mb: 3, lineHeight: 1.8 }}>
+            管理者権限をお持ちの方は、管理画面から以下の操作が可能です：
+          </Typography>
+          <List>
+            <ListItem>
+              <ListItemIcon>
+                <CheckCircleIcon sx={{ color: 'primary.main' }} />
+              </ListItemIcon>
+              <ListItemText 
+                primary="文書のアップロード" 
+                secondary="PDF、Excel、Word、PowerPointファイルをアップロードして、AIに学習させることができます" 
+              />
+            </ListItem>
+            <ListItem>
+              <ListItemIcon>
+                <CheckCircleIcon sx={{ color: 'primary.main' }} />
+              </ListItemIcon>
+              <ListItemText 
+                primary="Google Drive連携" 
+                secondary="Google Driveのファイルを直接取り込んで、常に最新の情報を維持できます" 
+              />
+            </ListItem>
+            <ListItem>
+              <ListItemIcon>
+                <CheckCircleIcon sx={{ color: 'primary.main' }} />
+              </ListItemIcon>
+              <ListItemText 
+                primary="チャット履歴の分析" 
+                secondary="社員の質問傾向を分析し、よくある質問をFAQとして整理できます" 
+              />
+            </ListItem>
+            <ListItem>
+              <ListItemIcon>
+                <CheckCircleIcon sx={{ color: 'primary.main' }} />
+              </ListItemIcon>
+              <ListItemText 
+                primary="ユーザー管理" 
+                secondary="新しいメンバーの招待、権限の変更、利用状況の確認ができます" 
+              />
+            </ListItem>
+          </List>
         </Paper>
+
+        {/* フッター */}
+        <Box textAlign="center" sx={{ mt: 4, py: 3, borderTop: '1px solid rgba(0, 0, 0, 0.08)' }}>
+          <Button
+            variant="contained"
+            size="large"
+            onClick={handleBackToChat}
+            sx={{ 
+              borderRadius: 3,
+              px: 4,
+              py: 1.5,
+              fontWeight: 'bold',
+              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
+            }}
+          >
+            チャットを開始する
+          </Button>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+            ご不明な点がございましたら、管理者にお問い合わせください
+          </Typography>
+        </Box>
       </Container>
-
-      {/* フッター */}
-      <Box
-        component="footer"
-        sx={{
-          py: 3,
-          px: 2,
-          mt: 'auto',
-          textAlign: 'center',
-          borderTop: '1px solid rgba(0, 0, 0, 0.05)',
-          bgcolor: 'background.paper',
-        }}
-      >
-        <Typography variant="body2" color="text.secondary">
-          さらに詳しいサポートが必要な場合は、管理者にお問い合わせください。
-        </Typography>
-      </Box>
     </Box>
   );
 };

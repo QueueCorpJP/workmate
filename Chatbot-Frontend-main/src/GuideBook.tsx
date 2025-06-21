@@ -617,27 +617,7 @@ const GuideBook = () => {
             
             <Divider sx={{ my: 3 }} />
             
-            <Box sx={{ mb: 3 }}>
-              <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
-                Q: Viteを使った開発環境の特徴は？
-              </Typography>
-              <Typography variant="body1">
-                A: このアプリケーションはViteを使用して構築されており、高速な開発サーバー、効率的なホットリロード、最適化されたビルドプロセスを提供しています。TypeScript、React、Material-UIと組み合わせて、モダンで高性能なWebアプリケーションを実現しています。従来のWebpackベースの開発環境と比較して、開発サーバーの起動が大幅に高速化されています。
-              </Typography>
-            </Box>
-            
-            <Divider sx={{ my: 3 }} />
-            
-            <Box sx={{ mb: 3 }}>
-              <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
-                Q: パフォーマンスの最適化はどのように行われていますか？
-              </Typography>
-              <Typography variant="body1">
-                A: ViteのRollupベースのビルドシステムにより、本番環境では最小限のバンドルサイズを実現しています。また、ESModulesのネイティブサポート、Tree-shaking、コード分割などの最新技術を活用して、読み込み速度とランタイムパフォーマンスを最適化しています。
-              </Typography>
-            </Box>
-            
-            <Divider sx={{ my: 3 }} />
+
 
             <Box>
               <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
@@ -650,189 +630,7 @@ const GuideBook = () => {
           </Paper>
         </Box>
 
-        {/* Vite & 技術スタック紹介セクション */}
-        <Box sx={{ mb: 8 }}>
-          <Typography 
-            variant="h4" 
-            component="h2" 
-            sx={{ 
-              fontWeight: 700, 
-              mb: 4, 
-              textAlign: 'center',
-              color: theme.palette.primary.main
-            }}
-          >
-            技術スタック & パフォーマンス
-          </Typography>
-          
-          <Grid container spacing={4}>
-            <Grid item xs={12} md={6}>
-              <Paper 
-                elevation={0} 
-                sx={{ 
-                  p: 4, 
-                  height: '100%',
-                  borderRadius: 4,
-                  border: '1px solid rgba(37, 99, 235, 0.08)',
-                  background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
-                  position: 'relative',
-                  '&::before': {
-                    content: '""',
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: '4px',
-                    background: 'linear-gradient(to right, #2563eb, #60a5fa)',
-                  }
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                  <Box
-                    sx={{
-                      mr: 2,
-                      p: 1.5,
-                      borderRadius: '50%',
-                      backgroundColor: 'rgba(37, 99, 235, 0.1)',
-                      display: 'flex',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <Typography variant="h4" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-                      ⚡
-                    </Typography>
-                  </Box>
-                  <Typography variant="h5" component="h3" sx={{ fontWeight: 700 }}>
-                    Viteによる高速化
-                  </Typography>
-                </Box>
-                
-                <List>
-                  <ListItem sx={{ px: 0 }}>
-                    <ListItemIcon>
-                      <CheckCircleIcon color="primary" />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary="ESModules活用"
-                      secondary="ネイティブESMによる高速な開発サーバー起動"
-                    />
-                  </ListItem>
-                  <ListItem sx={{ px: 0 }}>
-                    <ListItemIcon>
-                      <CheckCircleIcon color="primary" />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary="ホットリロード"
-                      secondary="コード変更時の瞬時反映で開発効率向上"
-                    />
-                  </ListItem>
-                  <ListItem sx={{ px: 0 }}>
-                    <ListItemIcon>
-                      <CheckCircleIcon color="primary" />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary="最適化ビルド"
-                      secondary="Rollupベースの本番ビルドで最小バンドルサイズ"
-                    />
-                  </ListItem>
-                  <ListItem sx={{ px: 0 }}>
-                    <ListItemIcon>
-                      <CheckCircleIcon color="primary" />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary="TypeScript統合"
-                      secondary="型安全性を保ちながら高速トランスパイル"
-                    />
-                  </ListItem>
-                </List>
-              </Paper>
-            </Grid>
-            
-            <Grid item xs={12} md={6}>
-              <Paper 
-                elevation={0} 
-                sx={{ 
-                  p: 4, 
-                  height: '100%',
-                  borderRadius: 4,
-                  border: '1px solid rgba(37, 99, 235, 0.08)',
-                  background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
-                  position: 'relative',
-                  '&::before': {
-                    content: '""',
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: '4px',
-                    background: 'linear-gradient(to right, #60a5fa, #34d399)',
-                  }
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                  <Box
-                    sx={{
-                      mr: 2,
-                      p: 1.5,
-                      borderRadius: '50%',
-                      backgroundColor: 'rgba(52, 211, 153, 0.1)',
-                      display: 'flex',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#10b981' }}>
-                      🚀
-                    </Typography>
-                  </Box>
-                  <Typography variant="h5" component="h3" sx={{ fontWeight: 700 }}>
-                    モダン技術スタック
-                  </Typography>
-                </Box>
-                
-                <List>
-                  <ListItem sx={{ px: 0 }}>
-                    <ListItemIcon>
-                      <CheckCircleIcon sx={{ color: '#10b981' }} />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary="React 18 + TypeScript"
-                      secondary="最新のReact機能とTypeScriptの型安全性"
-                    />
-                  </ListItem>
-                  <ListItem sx={{ px: 0 }}>
-                    <ListItemIcon>
-                      <CheckCircleIcon sx={{ color: '#10b981' }} />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary="Material-UI v5"
-                      secondary="モダンなデザインシステムとコンポーネント"
-                    />
-                  </ListItem>
-                  <ListItem sx={{ px: 0 }}>
-                    <ListItemIcon>
-                      <CheckCircleIcon sx={{ color: '#10b981' }} />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary="Google Drive API"
-                      secondary="クラウドファイルとの安全な連携"
-                    />
-                  </ListItem>
-                  <ListItem sx={{ px: 0 }}>
-                    <ListItemIcon>
-                      <CheckCircleIcon sx={{ color: '#10b981' }} />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary="レスポンシブデザイン"
-                      secondary="デスクトップ・タブレット・モバイル対応"
-                    />
-                  </ListItem>
-                </List>
-              </Paper>
-            </Grid>
-          </Grid>
-        </Box>
+
       </Container>
       
       {/* CTA Section */}
@@ -862,7 +660,7 @@ const GuideBook = () => {
                 color: theme.palette.primary.main
               }}
             >
-              Viteパワードで高速体験を
+              ワークメイトAIで業務効率化を
             </Typography>
             <Typography
               variant="body1"
@@ -872,8 +670,8 @@ const GuideBook = () => {
                 fontSize: '1.1rem'
               }}
             >
-              Viteで構築されたワークメイトAIで、瞬時のレスポンスと快適な操作性を体験してください。
-              最新のWeb技術により、資料の分析と理解を次のレベルへと導きます。
+              ワークメイトAIで、快適な操作性と高速な回答を体験してください。
+              AIによる資料の分析と理解で、業務効率を次のレベルへと導きます。
             </Typography>
             <Button
               variant="contained"
