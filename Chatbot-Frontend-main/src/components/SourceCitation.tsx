@@ -28,20 +28,29 @@ const SourceCitation: React.FC<SourceCitationProps> = ({ source }) => {
 
   if (!source) return null;
 
+  console.log("SourceCitation受信ソース:", source);
+
   // 複数のソースを処理する（ [file1.pdf], [file2.pdf] 形式に対応）
   const parseMultipleSources = (sourceText: string) => {
+    console.log("ソース解析開始:", sourceText);
+    
     // [filename] 形式で囲まれたファイル名を抽出
     const bracketMatches = sourceText.match(/\[([^\]]+)\]/g);
     if (bracketMatches) {
-      return bracketMatches.map(match => match.slice(1, -1)); // [] を除去
+      const result = bracketMatches.map(match => match.slice(1, -1)); // [] を除去
+      console.log("ブラケット形式で解析:", result);
+      return result;
     }
     
     // カンマ区切りのソースを処理
     if (sourceText.includes(',')) {
-      return sourceText.split(',').map(s => s.trim());
+      const result = sourceText.split(',').map(s => s.trim());
+      console.log("カンマ区切りで解析:", result);
+      return result;
     }
     
     // 単一のソース
+    console.log("単一ソースとして解析:", [sourceText]);
     return [sourceText];
   };
 

@@ -267,12 +267,38 @@ function ChatInterface() {
       });
 
       // ボットの応答を追加（ソース情報付き）
+      console.log("バックエンドからのソース情報:", response.data.source);
+      console.log("レスポンス全体:", response.data);
+      
+      // レスポンステキストから情報ソース部分を分離
+      let responseText = response.data.response;
+      let sourceInfo = response.data.source || "";
+      
+      // レスポンステキストに「情報ソース:」が含まれている場合は分離
+      const sourcePattern = /(?:\n|^)\s*情報ソース[:：]\s*(.+?)(?:\n|$)/s;
+      const sourceMatch = responseText.match(sourcePattern);
+      if (sourceMatch) {
+        // レスポンステキストから抽出した情報ソースを優先使用
+        sourceInfo = sourceMatch[1].trim();
+        console.log("テキストから抽出した情報ソース:", sourceInfo);
+        // 情報ソース部分をレスポンステキストから完全に除去
+        responseText = responseText.replace(/(?:\n|^)\s*情報ソース[:：][^\n]*(?:\n|$)*/g, '').trim();
+        console.log("情報ソース除去後のテキスト:", responseText);
+      } else if (!sourceInfo && response.data.source) {
+        // バックエンドからのsourceプロパティを使用
+        sourceInfo = response.data.source;
+        console.log("バックエンドからのソース情報を使用:", sourceInfo);
+      }
+      
+      console.log("分離後のレスポンステキスト:", responseText);
+      console.log("分離後のソース情報:", sourceInfo);
+      
       setMessages((prev) => [
         ...prev,
         {
-          text: response.data.response,
+          text: responseText,
           isUser: false,
-          source: response.data.source || "",
+          source: sourceInfo,
         },
       ]);
 
@@ -685,6 +711,14 @@ function ChatInterface() {
                 isUser={message.isUser}
               />
               {message.source && <SourceCitation source={message.source} />}
+              {/* デバッグ用：常に表示 */}
+              {!message.isUser && (
+                <Box sx={{ mt: 1, p: 1, backgroundColor: '#f0f0f0', borderRadius: 1, fontSize: '0.75rem' }}>
+                  <Typography variant="caption">
+                    デバッグ - Source: "{message.source || 'なし'}"
+                  </Typography>
+                </Box>
+              )}
             </Box>
           ))}
           {isLoading && <TypingAnimation />}
