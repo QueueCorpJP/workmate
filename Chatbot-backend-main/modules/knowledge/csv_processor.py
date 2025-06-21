@@ -12,6 +12,7 @@ from io import StringIO, BytesIO
 from typing import Optional, Dict, Any, Tuple
 import asyncio
 from ..database import ensure_string
+from .unnamed_column_handler import UnnamedColumnHandler
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
@@ -747,8 +748,15 @@ def process_csv_file(contents: bytes, filename: str):
             # カラム名を文字列に変換
             df.columns = [ensure_string(col) for col in df.columns]
             
+            # ガイドの指針に基づいてUnnamedカラム問題を修正
+            handler = UnnamedColumnHandler()
+            df, modifications = handler.fix_dataframe(df, filename)
+            
+            if modifications:
+                logger.info(f"Unnamedカラム修正: {', '.join(modifications)}")
+                
             logger.info(f"CSV読み込み完了: {len(df)} 行, {len(df.columns)} 列")
-            logger.info(f"カラム名: {list(df.columns)}")
+            logger.info(f"修正後カラム名: {list(df.columns)}")
             
         except Exception as pandas_error:
             logger.error(f"pandas読み込みエラー: {str(pandas_error)}")
@@ -764,6 +772,17 @@ def process_csv_file(contents: bytes, filename: str):
                     df = pd.DataFrame(rows)
                     # 空の行を削除
                     df = df.dropna(how='all')
+                    
+                    # カラム名を文字列に変換
+                    df.columns = [ensure_string(col) for col in df.columns]
+                    
+                    # ガイドの指針に基づいてUnnamedカラム問題を修正
+                    handler = UnnamedColumnHandler()
+                    df, modifications = handler.fix_dataframe(df, filename)
+                    
+                    if modifications:
+                        logger.info(f"Unnamedカラム修正（csv）: {', '.join(modifications)}")
+                    
                     logger.info(f"csvモジュールでの読み込み完了: {len(df)} 行")
                 else:
                     logger.error("CSVファイルにデータが含まれていません")

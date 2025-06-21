@@ -11,6 +11,7 @@ from typing import Optional, Dict, Any, List, Tuple
 import aiohttp
 import aiofiles
 from ..database import ensure_string
+from .unnamed_column_handler import UnnamedColumnHandler
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
@@ -221,6 +222,34 @@ class ExcelSheetsProcessor:
                     # ヘッダー行とデータ行を分離
                     headers = values[0] if values else []
                     data_rows = values[1:] if len(values) > 1 else []
+                    
+                    # 生のデータをDataFrameに変換してUnnamedカラム修正を適用
+                    if headers and data_rows:
+                        try:
+                            # DataFrameを作成
+                            import pandas as pd
+                            df_data = []
+                            for row in data_rows:
+                                # 行の長さをヘッダーに合わせる
+                                extended_row = row + [''] * (len(headers) - len(row))
+                                df_data.append(extended_row[:len(headers)])
+                            
+                            df = pd.DataFrame(df_data, columns=headers)
+                            
+                            # Unnamedカラム修正を適用
+                            handler = UnnamedColumnHandler()
+                            df, modifications = handler.fix_dataframe(df, f"{filename}_{sheet_title}")
+                            
+                            if modifications:
+                                logger.info(f"シート '{sheet_title}' のUnnamedカラム修正: {', '.join(modifications)}")
+                            
+                            # 修正されたヘッダーとデータ行を更新
+                            headers = df.columns.tolist()
+                            data_rows = df.values.tolist()
+                            
+                        except Exception as fix_error:
+                            logger.warning(f"シート '{sheet_title}' のUnnamedカラム修正エラー: {str(fix_error)}")
+                            # エラーの場合は元のデータを使用
                     
                     # セクション情報を作成
                     section_name = f"シート: {sheet_title}"

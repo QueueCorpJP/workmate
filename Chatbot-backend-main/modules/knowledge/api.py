@@ -28,6 +28,7 @@ from .url import extract_text_from_url, process_url_content
 from ..company import DEFAULT_COMPANY_NAME
 from ..utils import _process_video_file
 import os
+from .unnamed_column_handler import UnnamedColumnHandler
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
@@ -645,3 +646,78 @@ async def get_uploaded_resources():
         "resources": resources,
         "message": f"{len(resources)}件のリソースが見つかりました"
     }
+
+async def cleanup_unnamed_columns(company_id: str = None):
+    """既存のデータベースコンテンツのUnnamedカラムをクリーンアップする"""
+    from .base import knowledge_base
+    
+    try:
+        handler = UnnamedColumnHandler()
+        updated_count = 0
+        
+        # knowledge_baseの内容を確認・修正
+        for source_name in list(knowledge_base.sources.keys()):
+            sections = knowledge_base.sources[source_name]
+            updated_sections = {}
+            
+            for section_name, content in sections.items():
+                # contentを行ごとに分割して処理
+                lines = content.split('\n')
+                updated_lines = []
+                
+                for line in lines:
+                    # テーブル形式の行を検出（|で区切られている）
+                    if '|' in line and line.count('|') >= 2:
+                        # マークダウンテーブル形式の処理
+                        parts = [part.strip() for part in line.split('|')]
+                        if parts and parts[0] == '':
+                            parts = parts[1:]  # 最初の空要素を削除
+                        if parts and parts[-1] == '':
+                            parts = parts[:-1]  # 最後の空要素を削除
+                        
+                        # unnamedパターンを修正
+                        updated_parts = []
+                        for i, part in enumerate(parts):
+                            if handler._is_unnamed_pattern(part):
+                                if i == 0 and part.strip() in ['', 'unnamed', 'Unnamed']:
+                                    # 最初のカラムが空の場合はスキップ
+                                    continue
+                                else:
+                                    # 意味のある名前に変更
+                                    updated_parts.append(f"カラム{i+1}")
+                            else:
+                                updated_parts.append(part)
+                        
+                        if updated_parts:
+                            updated_lines.append('| ' + ' | '.join(updated_parts) + ' |')
+                        else:
+                            updated_lines.append(line)
+                    else:
+                        # 通常の行はそのまま
+                        updated_lines.append(line)
+                
+                updated_content = '\n'.join(updated_lines)
+                if updated_content != content:
+                    updated_sections[section_name] = updated_content
+                    updated_count += 1
+                else:
+                    updated_sections[section_name] = content
+            
+            # 更新されたsectionsで置換
+            knowledge_base.sources[source_name] = updated_sections
+        
+        logger.info(f"データベースクリーンアップ完了: {updated_count}個のセクションを更新")
+        
+        return {
+            "success": True,
+            "updated_sections": updated_count,
+            "message": f"{updated_count}個のセクションのUnnamedカラムを修正しました"
+        }
+        
+    except Exception as e:
+        logger.error(f"データベースクリーンアップエラー: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "データベースクリーンアップ中にエラーが発生しました"
+        }

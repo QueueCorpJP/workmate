@@ -16,6 +16,7 @@ from io import BytesIO
 import traceback
 import logging
 import warnings
+from .unnamed_column_handler import UnnamedColumnHandler
 
 # 非推奨警告
 warnings.warn(
@@ -85,16 +86,25 @@ def process_excel_file(contents, filename):
         else:
             df_dict = pd.read_excel(excel_file, sheet_name=None)
         
+        # UnnamedColumnHandlerを初期化
+        handler = UnnamedColumnHandler()
+        
         # 全シートのデータを結合
         all_data = []
         sections = {}
         extracted_text = f"=== ファイル: {filename} ===\n\n"
         
         for sheet_name, sheet_df in df_dict.items():
+            # UnnamedColumnHandlerでカラムを修正
+            sheet_df, modifications = handler.fix_dataframe(sheet_df, f"{filename}:{sheet_name}")
+            
+            if modifications:
+                logger.info(f"シート '{sheet_name}' のUnnamedカラム修正: {', '.join(modifications)}")
+            
             # シート名をセクションとして追加
             section_name = f"シート: {sheet_name}"
             # DataFrameをstring形式に変換する前に、すべての値を文字列に変換
-            sheet_df_str = sheet_df.applymap(lambda x: str(x) if x is not None else "")
+            sheet_df_str = sheet_df.map(lambda x: str(x) if x is not None else "")
             sections[section_name] = sheet_df_str.to_string(index=False)
             extracted_text += f"=== {section_name} ===\n{sheet_df_str.to_string(index=False)}\n\n"
             

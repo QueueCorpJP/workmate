@@ -1157,6 +1157,24 @@ async def admin_delete_resource(resource_id: str, current_user = Depends(get_adm
     # return await delete_resource(decoded_id)
     return await remove_resource_by_id(decoded_id, db)
 
+# Unnamedカラムクリーンアップエンドポイント
+@app.post("/chatbot/api/admin/cleanup-unnamed-columns", response_model=dict)
+async def admin_cleanup_unnamed_columns(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
+    """既存データベースコンテンツのUnnamedカラムをクリーンアップ"""
+    try:
+        from modules.knowledge.api import cleanup_unnamed_columns
+        
+        # クリーンアップを実行
+        result = await cleanup_unnamed_columns()
+        
+        return result
+    except Exception as e:
+        logger.error(f"Unnamedカラムクリーンアップエラー: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unnamedカラムクリーンアップ中にエラーが発生しました: {str(e)}"
+        )
+
 # 会社名を取得するエンドポイント
 @app.get("/chatbot/api/company-name", response_model=CompanyNameResponse)
 async def api_get_company_name(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):

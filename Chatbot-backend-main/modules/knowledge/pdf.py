@@ -11,8 +11,10 @@ import asyncio
 import logging
 import tempfile
 import os
+from typing import List, Optional, Tuple
 from .ocr import ocr_pdf_to_text_from_bytes
 from ..database import ensure_string
+from .unnamed_column_handler import UnnamedColumnHandler
 
 logger = logging.getLogger(__name__)
 
@@ -97,11 +99,233 @@ def _check_legacy_corruption(text: str) -> bool:
     
     return any(strong_indicators)
 
+def extract_tables_from_text(text: str) -> List[pd.DataFrame]:
+    """テキストからテーブルを抽出してDataFrameに変換"""
+    tables = []
+    try:
+        # マークダウンテーブル形式を検出
+        lines = text.split('\n')
+        table_lines = []
+        in_table = False
+        
+        for line in lines:
+            line = line.strip()
+            if '|' in line and len(line.split('|')) >= 3:
+                # テーブル行の可能性
+                table_lines.append(line)
+                in_table = True
+            elif in_table and not line:
+                # 空行でテーブル終了
+                if len(table_lines) >= 2:  # ヘッダー + 少なくとも1行のデータ
+                    df = _parse_markdown_table(table_lines)
+                    if df is not None and not df.empty:
+                        tables.append(df)
+                table_lines = []
+                in_table = False
+            elif in_table and '|' not in line:
+                # テーブル以外の行でテーブル終了
+                if len(table_lines) >= 2:
+                    df = _parse_markdown_table(table_lines)
+                    if df is not None and not df.empty:
+                        tables.append(df)
+                table_lines = []
+                in_table = False
+        
+        # 最後のテーブルを処理
+        if table_lines and len(table_lines) >= 2:
+            df = _parse_markdown_table(table_lines)
+            if df is not None and not df.empty:
+                tables.append(df)
+        
+        # 改良された検出: 縦に並んだデータからテーブルを推測
+        if not tables:
+            tables.extend(_extract_tabular_data_from_lines(lines))
+        
+    except Exception as e:
+        logger.warning(f"テーブル抽出エラー: {str(e)}")
+    
+    return tables
+
+def _parse_markdown_table(table_lines: List[str]) -> Optional[pd.DataFrame]:
+    """マークダウンテーブル形式の行をDataFrameに変換"""
+    try:
+        if len(table_lines) < 2:
+            return None
+        
+        # ヘッダー行を抽出
+        header_line = table_lines[0]
+        headers = [cell.strip() for cell in header_line.split('|') if cell.strip()]
+        
+        # 区切り行をスキップ（---などが含まれる行）
+        data_start = 1
+        if len(table_lines) > 1 and re.search(r'[-:]+', table_lines[1]):
+            data_start = 2
+        
+        # データ行を抽出
+        data_rows = []
+        for line in table_lines[data_start:]:
+            cells = [cell.strip() for cell in line.split('|') if cell.strip() or True]
+            # 空のセルも保持しつつ、行全体が空でないことを確認
+            if any(cell.strip() for cell in cells):
+                # ヘッダー数に合わせて行を調整
+                while len(cells) < len(headers):
+                    cells.append('')
+                data_rows.append(cells[:len(headers)])
+        
+        if not data_rows:
+            return None
+        
+        df = pd.DataFrame(data_rows, columns=headers)
+        return df
+        
+    except Exception as e:
+        logger.warning(f"マークダウンテーブル解析エラー: {str(e)}")
+        return None
+
+def _extract_tabular_data_from_lines(lines: List[str]) -> List[pd.DataFrame]:
+    """行リストから表形式データを推測して抽出"""
+    tables = []
+    try:
+        # 連続する行で同じパターンの区切り文字を持つ行を探す
+        potential_tables = []
+        current_table_lines = []
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                if len(current_table_lines) >= 3:  # 最低3行でテーブルとみなす
+                    potential_tables.append(current_table_lines.copy())
+                current_table_lines = []
+                continue
+            
+            # タブ、複数スペース、コロンなどの区切り文字パターンを検出
+            separators = ['\t', '  ', ':', ',', ';']
+            found_separator = None
+            max_splits = 0
+            
+            for sep in separators:
+                splits = len(line.split(sep))
+                if splits > max_splits and splits >= 2:
+                    max_splits = splits
+                    found_separator = sep
+            
+            if found_separator and max_splits >= 2:
+                current_table_lines.append((line, found_separator, max_splits))
+            else:
+                if len(current_table_lines) >= 3:
+                    potential_tables.append(current_table_lines.copy())
+                current_table_lines = []
+        
+        # 最後のテーブルを処理
+        if len(current_table_lines) >= 3:
+            potential_tables.append(current_table_lines.copy())
+        
+        # 各候補をDataFrameに変換
+        for table_lines in potential_tables:
+            df = _convert_lines_to_dataframe(table_lines)
+            if df is not None and not df.empty and len(df.columns) >= 2:
+                tables.append(df)
+    
+    except Exception as e:
+        logger.warning(f"表形式データ抽出エラー: {str(e)}")
+    
+    return tables
+
+def _convert_lines_to_dataframe(table_lines: List[Tuple[str, str, int]]) -> Optional[pd.DataFrame]:
+    """行リストからDataFrameを作成"""
+    try:
+        if len(table_lines) < 3:
+            return None
+        
+        # 最も一般的な区切り文字を特定
+        separator_counts = {}
+        for _, sep, _ in table_lines:
+            separator_counts[sep] = separator_counts.get(sep, 0) + 1
+        
+        most_common_sep = max(separator_counts, key=separator_counts.get)
+        
+        # 同じ区切り文字を使用する行のみを使用
+        filtered_lines = []
+        for line, sep, _ in table_lines:
+            if sep == most_common_sep:
+                filtered_lines.append(line)
+        
+        if len(filtered_lines) < 3:
+            return None
+        
+        # データを分割
+        data_rows = []
+        for line in filtered_lines:
+            cells = [cell.strip() for cell in line.split(most_common_sep)]
+            data_rows.append(cells)
+        
+        # 最も多い列数を特定
+        max_cols = max(len(row) for row in data_rows)
+        if max_cols < 2:
+            return None
+        
+        # 全ての行を同じ列数に調整
+        for row in data_rows:
+            while len(row) < max_cols:
+                row.append('')
+        
+        # 最初の行をヘッダーとして使用
+        headers = data_rows[0] if data_rows else []
+        data = data_rows[1:] if len(data_rows) > 1 else []
+        
+        # ヘッダーが空の場合はデフォルト名を設定
+        for i, header in enumerate(headers):
+            if not header or header.isspace():
+                headers[i] = f'列{i+1}'
+        
+        if not data:
+            return None
+        
+        df = pd.DataFrame(data, columns=headers)
+        return df
+        
+    except Exception as e:
+        logger.warning(f"DataFrame変換エラー: {str(e)}")
+        return None
+
 def split_ocr_text_into_sections(text: str, filename: str) -> list:
-    """OCR結果のテキストを適切なセクションに分割する"""
+    """OCR結果のテキストを適切なセクションに分割し、テーブルも処理する"""
     sections = []
     
-    # ページ区切りで分割
+    # まずテーブルを抽出
+    extracted_tables = extract_tables_from_text(text)
+    
+    # テーブルが見つかった場合はUnnamedカラム修正を適用
+    if extracted_tables:
+        handler = UnnamedColumnHandler()
+        
+        for i, table_df in enumerate(extracted_tables):
+            try:
+                # テーブルのUnnamedカラム問題を修正
+                fixed_df, modifications = handler.fix_dataframe(table_df, f"{filename}_table_{i+1}")
+                
+                if modifications:
+                    logger.info(f"PDF テーブル {i+1} のUnnamedカラム修正: {', '.join(modifications)}")
+                
+                # 修正されたテーブルをセクションとして追加
+                table_sections = handler.create_clean_sections(fixed_df, filename)
+                for section in table_sections:
+                    section['section'] = f"テーブル{i+1}_{section['section']}"
+                    section['source'] = 'PDF Table'
+                sections.extend(table_sections)
+                
+            except Exception as e:
+                logger.warning(f"テーブル {i+1} の処理エラー: {str(e)}")
+                # エラーの場合はテーブルの生データを追加
+                sections.append({
+                    'section': f"テーブル{i+1}（生データ）",
+                    'content': table_df.to_string(),
+                    'source': 'PDF Table',
+                    'file': filename,
+                    'url': None
+                })
+    
+    # ページ区切りで通常のテキストを分割
     page_parts = text.split('--- Page ')
     
     for i, part in enumerate(page_parts):
