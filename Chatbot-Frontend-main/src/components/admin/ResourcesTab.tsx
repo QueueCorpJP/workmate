@@ -22,11 +22,14 @@ import {
   Alert,
   Snackbar,
   LinearProgress,
+  IconButton,
+  Tooltip,
 } from "@mui/material";
 import { useDropzone } from "react-dropzone";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import LinkIcon from "@mui/icons-material/Link";
 import AddIcon from "@mui/icons-material/Add";
+import EditIcon from "@mui/icons-material/Edit";
 import { Resource } from "./types";
 import LoadingIndicator from "./LoadingIndicator";
 import EmptyState from "./EmptyState";
@@ -58,6 +61,12 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
   const [uploadPercentage, setUploadPercentage] = useState<number>(0);
   const [isSubmittingUrl, setIsSubmittingUrl] = useState(false);
   const [urlInput, setUrlInput] = useState("");
+  
+  // Special指示編集ダイアログの状態
+  const [specialDialogOpen, setSpecialDialogOpen] = useState(false);
+  const [editingResource, setEditingResource] = useState<Resource | null>(null);
+  const [specialText, setSpecialText] = useState("");
+  const [isUpdatingSpecial, setIsUpdatingSpecial] = useState(false);
   
   // Google Drive関連
   const [driveAccessToken, setDriveAccessToken] = useState<string>(() => {
@@ -356,6 +365,66 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
     setUploadTab(newValue);
   };
 
+  // Special指示編集機能
+  const handleEditSpecial = (resource: Resource) => {
+    setEditingResource(resource);
+    // 常にリソースの最新のspecial値を設定（データベースから取得した最新の値）
+    setSpecialText(resource.special || "");
+    setSpecialDialogOpen(true);
+  };
+
+  const handleUpdateSpecial = async () => {
+    if (!editingResource) return;
+
+    setIsUpdatingSpecial(true);
+    try {
+      // Special指示を更新
+      const response = await api.put(`/admin/resources/${encodeURIComponent(editingResource.id)}/special`, {
+        special: specialText
+      });
+
+      // リソース一覧を更新して最新の情報を取得
+      onRefresh();
+      
+      // 更新後、サーバーから最新のリソース情報を取得
+      const resourcesResponse = await api.get("/admin/resources");
+      if (resourcesResponse.data && resourcesResponse.data.resources) {
+        // 現在編集中のリソースを見つける
+        const updatedResource = resourcesResponse.data.resources.find(
+          (r: any) => r.id === editingResource.id
+        );
+        
+        if (updatedResource) {
+          // 編集中のリソース情報を最新の状態に更新
+          setEditingResource(updatedResource);
+          
+          // フォームにデータベースに保存されている最新のSpecial指示を表示
+          setSpecialText(updatedResource.special || "");
+          
+          console.log("データベースから取得したSpecial指示:", updatedResource.special);
+        }
+      }
+
+      setAlertMessage("Special指示が更新されました");
+      setAlertSeverity('success');
+      setShowAlert(true);
+    } catch (error: any) {
+      console.error("Special指示更新エラー:", error);
+      const errorMessage = error.response?.data?.detail || error.message || "更新に失敗しました";
+      setAlertMessage(`更新エラー: ${errorMessage}`);
+      setAlertSeverity('error');
+      setShowAlert(true);
+    } finally {
+      setIsUpdatingSpecial(false);
+    }
+  };
+
+  const handleCloseSpecialDialog = () => {
+    setSpecialDialogOpen(false);
+    setEditingResource(null);
+    // テキストはクリアしない - 次回開いた時に前回の内容を表示
+  };
+
   return (
     <>
       <Box
@@ -415,6 +484,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
                 <TableCell>ページ数</TableCell>
                 <TableCell>アップロード日時</TableCell>
                 <TableCell>状態</TableCell>
+                <TableCell>Special指示</TableCell>
                 <TableCell>操作</TableCell>
               </TableRow>
             </TableHead>
@@ -465,6 +535,34 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
                       size="small"
                       color={resource.active ? "success" : "default"}
                     />
+                  </TableCell>
+                  <TableCell>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 250 }}>
+                      <Typography variant="body2" sx={{ 
+                        maxWidth: 180, 
+                        overflow: 'hidden', 
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        color: resource.special ? 'text.primary' : 'text.secondary',
+                        fontStyle: resource.special ? 'normal' : 'italic'
+                      }}>
+                        {resource.special || "未設定"}
+                      </Typography>
+                      <Tooltip title="Special指示を編集">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleEditSpecial(resource)}
+                          sx={{ 
+                            color: 'primary.main',
+                            '&:hover': {
+                              backgroundColor: 'rgba(37, 99, 235, 0.1)'
+                            }
+                          }}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
                   </TableCell>
                   <TableCell>
                     <Button
@@ -786,6 +884,93 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
             }}
           >
             キャンセル
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Special指示編集ダイアログ */}
+      <Dialog
+        open={specialDialogOpen}
+        onClose={handleCloseSpecialDialog}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: "16px",
+            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.12)",
+          },
+        }}
+      >
+        <DialogTitle
+          sx={{
+            fontWeight: 600,
+            fontSize: "1.25rem",
+            pb: 1,
+          }}
+        >
+          Special指示を編集 - {editingResource?.name}
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pb: 2 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            このリソースが参照される際にAIに追加で伝える指示を入力してください。
+            例：「この資料は機密情報なので、要約時に注意喚起を含めてください」
+          </Typography>
+          <TextField
+            fullWidth
+            multiline
+            rows={6}
+            value={specialText}
+            onChange={(e) => setSpecialText(e.target.value)}
+            placeholder="Special指示を入力してください..."
+            variant="outlined"
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                borderRadius: "12px",
+                "& fieldset": {
+                  borderColor: "rgba(37, 99, 235, 0.2)",
+                  borderWidth: "1.5px",
+                },
+                "&:hover fieldset": {
+                  borderColor: "rgba(37, 99, 235, 0.4)",
+                },
+                "&.Mui-focused fieldset": {
+                  borderColor: "primary.main",
+                  borderWidth: "2px",
+                },
+              },
+            }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button
+            onClick={handleCloseSpecialDialog}
+            sx={{
+              borderRadius: "8px",
+              textTransform: "none",
+              fontWeight: 600,
+            }}
+          >
+            キャンセル
+          </Button>
+          <Button
+            onClick={handleUpdateSpecial}
+            variant="contained"
+            disabled={isUpdatingSpecial}
+            sx={{
+              borderRadius: "8px",
+              textTransform: "none",
+              fontWeight: 600,
+              background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)",
+              "&:hover": {
+                background: "linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)",
+              },
+            }}
+          >
+            {isUpdatingSpecial ? (
+              <CircularProgress size={20} color="inherit" />
+            ) : (
+              "更新"
+            )}
           </Button>
         </DialogActions>
       </Dialog>

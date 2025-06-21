@@ -87,7 +87,8 @@ async def get_uploaded_resources_by_company_id(company_id: str, db: Connection, 
                 "uploaded_by": uploader_id or "",
                 "uploader_name": uploader_name,
                 "usage_count": usage_count,
-                "last_used": last_used
+                "last_used": last_used,
+                "special": source.get("special", "")
             })
         
         print(f"処理後のリソース: {len(resources)}件")

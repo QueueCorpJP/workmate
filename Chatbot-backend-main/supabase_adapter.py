@@ -25,7 +25,7 @@ def execute_query(query, params=None):
     # This is a simple wrapper around the Supabase client's rpc function
     # You can use this to execute custom SQL queries
     try:
-        print(f"Executing query: {query}")
+        # print(f"Executing query: {query}")
         result = supabase.rpc(
             "execute_sql",
             {"sql_query": query, "params": params or []}
@@ -33,25 +33,25 @@ def execute_query(query, params=None):
         
         # Ensure we always return a list-like object
         if result.data is None:
-            print("Query result is None, returning empty list")
+            # print("Query result is None, returning empty list")
             return []
             
         # If result.data is not a list (e.g., it's an integer from COUNT),
         # wrap it in a list with appropriate structure
         if not isinstance(result.data, list):
-            print(f"Query result is not a list, type: {type(result.data)}, value: {result.data}")
+            # print(f"Query result is not a list, type: {type(result.data)}, value: {result.data}")
             # For COUNT queries, format as a list with a dict containing the count
             if "COUNT(*)" in query.upper():
                 return [{"count": result.data}]
             # For other non-list results, wrap in a list
             return [result.data]
         
-        print(f"Query returned {len(result.data)} results")
+        # print(f"Query returned {len(result.data)} results")
         return result.data
     except Exception as e:
-        print(f"Execute query error: {e}")
+        # print(f"Execute query error: {e}")
         import traceback
-        print(traceback.format_exc())
+        # print(traceback.format_exc())
         return []
 
 def insert_data(table, data):
@@ -95,7 +95,7 @@ def delete_data(table, match_column, match_value):
 
 def select_data(table, columns="*", filters=None, order=None, limit=None, offset=None):
     """Select data from a table with optional filters, ordering, and pagination"""
-    print(f"Selecting data from table: {table}, columns: {columns}, filters: {filters}, order: {order}, limit: {limit}, offset: {offset}")
+    # print(f"Selecting data from table: {table}, columns: {columns}, filters: {filters}, order: {order}, limit: {limit}, offset: {offset}")
     
     # Check if this is a COUNT query
     if isinstance(columns, str) and "COUNT" in columns.upper():
@@ -114,12 +114,12 @@ def select_data(table, columns="*", filters=None, order=None, limit=None, offset
             if conditions:
                 count_query += " WHERE " + " AND ".join(conditions)
         
-        print(f"Executing COUNT query: {count_query}")
+        # print(f"Executing COUNT query: {count_query}")
         
         # Execute the COUNT query
         try:
             count_result = execute_query(count_query)
-            print(f"COUNT result: {count_result}")
+            # print(f"COUNT result: {count_result}")
             
             # Create a wrapper for the result
             class ResultWrapper:
@@ -152,17 +152,17 @@ def select_data(table, columns="*", filters=None, order=None, limit=None, offset
             return type('obj', (object,), {'data': ResultWrapper([])})
     
     # For non-COUNT queries, use the standard approach
-    print(f"Using standard approach for table: {table}")
+    # print(f"Using standard approach for table: {table}")
     query = supabase.table(table).select(columns)
     
     if filters:
         for column, value in filters.items():
-            print(f"Adding filter: {column} = {value}")
+            # print(f"Adding filter: {column} = {value}")
             query = query.eq(column, value)
     
     # Add ordering if specified
     if order:
-        print(f"Adding order: {order}")
+        # print(f"Adding order: {order}")
         if " desc" in order.lower():
             column_name = order.replace(" desc", "").strip()
             query = query.order(column_name, desc=True)
@@ -178,19 +178,19 @@ def select_data(table, columns="*", filters=None, order=None, limit=None, offset
         if limit is not None:
             # range(start, end) where end is inclusive
             end = start + limit - 1
-            print(f"Adding range: {start} to {end}")
+            # print(f"Adding range: {start} to {end}")
             query = query.range(start, end)
         else:
             # If no limit specified but offset is given, get a reasonable amount
-            print(f"Adding range from offset: {start}")
+            # print(f"Adding range from offset: {start}")
             query = query.range(start, start + 999)
     
     # Execute the query and return the result
     try:
-        print(f"Executing Supabase query for table: {table}")
-        print(f"Query details: columns={columns}, filters={filters}, order={order}, limit={limit}, offset={offset}")
+        # print(f"Executing Supabase query for table: {table}")
+        # print(f"Query details: columns={columns}, filters={filters}, order={order}, limit={limit}, offset={offset}")
         result = query.execute()
-        print(f"Query result for table {table}: {len(result.data) if result.data else 0} rows")
+        # print(f"Query result for table {table}: {len(result.data) if result.data else 0} rows")
         
         # Create a wrapper class for the result data
         class ResultWrapper:
@@ -220,7 +220,7 @@ def select_data(table, columns="*", filters=None, order=None, limit=None, offset
         return result
     except Exception as e:
         print(f"Error executing Supabase query for table {table}: {e}")
-        print(f"Query parameters - columns: {columns}, filters: {filters}, order: {order}, limit: {limit}, offset: {offset}")
+        # print(f"Query parameters - columns: {columns}, filters: {filters}, order: {order}, limit: {limit}, offset: {offset}")
         import traceback
         print(traceback.format_exc())
         

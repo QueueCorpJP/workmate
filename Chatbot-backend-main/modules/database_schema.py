@@ -50,6 +50,7 @@ SCHEMA = {
         company_id TEXT NOT NULL,
         uploaded_at TEXT NOT NULL,
         active INTEGER NOT NULL DEFAULT 1,
+        special TEXT,
         FOREIGN KEY (uploaded_by) REFERENCES users (id),
         FOREIGN KEY (company_id) REFERENCES companies (id)
     )

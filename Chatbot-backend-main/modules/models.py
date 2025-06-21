@@ -98,6 +98,11 @@ class ResourceItem(BaseModel):
     timestamp: datetime
     active: bool = True
     uploaded_by: Optional[str] = None
+    uploader_name: Optional[str] = None
+    page_count: Optional[int] = None
+    usage_count: Optional[int] = None
+    last_used: Optional[str] = None
+    special: Optional[str] = None
 
 class ResourcesResult(BaseModel):
     resources: List[ResourceItem]
@@ -107,6 +112,9 @@ class ResourceToggleResponse(BaseModel):
     name: str
     active: bool
     message: str
+
+class ResourceSpecialUpdateRequest(BaseModel):
+    special: str
 
 # デモ利用状況関連モデル
 class DemoUsageStats(BaseModel):

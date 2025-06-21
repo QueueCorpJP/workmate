@@ -22,7 +22,7 @@ from modules.models import (
     ChatMessage, ChatResponse, ChatHistoryItem, AnalysisResult,
     EmployeeUsageItem, EmployeeUsageResult, UrlSubmission,
     CompanyNameResponse, CompanyNameRequest, ResourcesResult,
-    ResourceToggleResponse, UserLogin, UserRegister, UserResponse,
+    ResourceToggleResponse, ResourceSpecialUpdateRequest, UserLogin, UserRegister, UserResponse,
     UserWithLimits, DemoUsageStats, AdminUserCreate, UpgradePlanRequest,
     UpgradePlanResponse, SubscriptionInfo
 )
@@ -205,6 +205,36 @@ async def login(credentials: UserLogin, db: SupabaseConnection = Depends(get_db)
             "is_unlimited": bool(limits["is_unlimited"])
         }
     }
+
+@app.get("/chatbot/api/auth/user", response_model=UserWithLimits)
+async def get_current_user_info(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """現在のユーザー情報を取得"""
+    try:
+        # 利用制限情報を取得
+        from modules.database import get_usage_limits
+        limits = get_usage_limits(current_user["id"], db)
+        
+        return {
+            "id": current_user["id"],
+            "email": current_user["email"],
+            "name": current_user["name"],
+            "role": current_user["role"],
+            "created_at": current_user["created_at"],
+            "company_name": current_user.get("company_name", ""),
+            "usage_limits": {
+                "document_uploads_used": limits["document_uploads_used"],
+                "document_uploads_limit": limits["document_uploads_limit"],
+                "questions_used": limits["questions_used"],
+                "questions_limit": limits["questions_limit"],
+                "is_unlimited": bool(limits["is_unlimited"])
+            }
+        }
+    except Exception as e:
+        logger.error(f"ユーザー情報取得エラー: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"ユーザー情報の取得中にエラーが発生しました: {str(e)}"
+        )
 
 @app.post("/chatbot/api/auth/register", response_model=UserResponse)
 async def register(user_data: UserRegister, db: SupabaseConnection = Depends(get_db)):
@@ -1200,6 +1230,45 @@ async def admin_delete_resource(resource_id: str, current_user = Depends(get_adm
     # return await delete_resource(decoded_id)
     return await remove_resource_by_id(decoded_id, db)
 
+@app.put("/chatbot/api/admin/resources/{resource_id:path}/special", response_model=dict)
+async def admin_update_resource_special(
+    resource_id: str, 
+    request: ResourceSpecialUpdateRequest, 
+    current_user = Depends(get_admin_or_user), 
+    db: SupabaseConnection = Depends(get_db)
+):
+    """リソースのSpecial指示を更新"""
+    try:
+        special_text = request.special
+        
+        # URLデコード
+        import urllib.parse
+        decoded_id = urllib.parse.unquote(resource_id)
+        print(f"Special指示更新リクエスト {resource_id} -> デコード後 {decoded_id}")
+        
+        # document_sourcesテーブルを更新
+        from supabase_adapter import update_data
+        result = update_data(
+            "document_sources",
+            {"special": special_text},
+            "id",
+            decoded_id
+        )
+        
+        if not result.data:
+            raise HTTPException(status_code=404, detail="リソースが見つかりません")
+        
+        return {
+            "message": "Special指示が更新されました",
+            "resource_id": decoded_id,
+            "special": special_text
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Special指示更新エラー: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Special指示の更新中にエラーが発生しました: {str(e)}")
+
 # Unnamedカラムクリーンアップエンドポイント
 @app.post("/chatbot/api/admin/cleanup-unnamed-columns", response_model=dict)
 async def admin_cleanup_unnamed_columns(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
@@ -1582,13 +1651,13 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
         try:
             if is_special_admin or is_admin:
                 # 管理者の場合は全ユーザーのチャットを取得
-                print("管理者として全ユーザーのチャット履歴を取得")
+                # print("管理者として全ユーザーのチャット履歴を取得")
                 from supabase_adapter import select_data
                 result = select_data("chat_history", columns="*")
                 chat_history = result.data if result and result.data else []
             elif is_user or is_employee:
                 # userまたはemployeeロールの場合は自分の会社のチャットのみを取得
-                print(f"{current_user['role']}ロールとして自分の会社のチャット履歴を取得")
+                # print(f"{current_user['role']}ロールとして自分の会社のチャット履歴を取得")
                 from supabase_adapter import select_data
                 
                 # まずユーザーの会社IDを取得
@@ -1623,15 +1692,15 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
             else:
                 # その他のユーザーの場合は自分のチャットのみを取得
                 user_id = current_user["id"]
-                print(f"通常ユーザーとして個人のチャット履歴を取得 {user_id}")
+                # print(f"通常ユーザーとして個人のチャット履歴を取得 {user_id}")
                 from supabase_adapter import select_data
                 result = select_data("chat_history", filters={"employee_id": user_id})
                 chat_history = result.data if result and result.data else []
         except Exception as e:
-            print(f"チャット履歴取得エラー: {e}")
+            # print(f"チャット履歴取得エラー: {e}")
             chat_history = []
         
-        print(f"取得したチャット履歴数: {len(chat_history)}")
+        # print(f"取得したチャット履歴数: {len(chat_history)}")
         
         # CSV形式に変換
         csv_data = io.StringIO()
@@ -1677,7 +1746,7 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"chat_history_{timestamp}.csv"
         
-        print(f"CSVファイル生成完了 {filename}")
+        # print(f"CSVファイル生成完了 {filename}")
         
         # StreamingResponseでCSVファイルとして返す
         return StreamingResponse(
@@ -1687,9 +1756,9 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
         )
         
     except Exception as e:
-        print(f"CSVダウンロードエラー: {e}")
+        # print(f"CSVダウンロードエラー: {e}")
         import traceback
-        print(traceback.format_exc())
+        # print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"CSVダウンロード中にエラーが発生しました: {str(e)}")
 
 @app.post("/chatbot/api/admin/update-user-status/{user_id}", response_model=dict)
@@ -2600,9 +2669,10 @@ async def list_drive_files(
 async def catch_all(full_path: str):
     print(f"catch_all handler called with path: {full_path}")
     
-    # APIエンドポイントスキップ
-    if full_path.startswith("api/") or full_path.startswith("chatbot/api/"):
-        # APIエンドポイントの場合は404を返す
+    # APIエンドポイントの場合は404を返す（より厳密なチェック）
+    # ただし、既に処理済みのAPIリクエストは除外
+    if full_path.startswith("chatbot/api/"):
+        print(f"API endpoint not found: {full_path}")
         raise HTTPException(status_code=404, detail="API endpoint not found")
     
     # SPAルーチェックング用にindex.htmlを返す

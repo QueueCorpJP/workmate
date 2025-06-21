@@ -435,7 +435,7 @@ const AdminPanel: React.FC = () => {
     setIsResourcesLoading(true);
     try {
       console.log("アップロードされたリソースを取得中...");
-      const response = await api.get(`${import.meta.env.VITE_API_URL}/admin/resources`);
+      const response = await api.get("/admin/resources");
       console.log("リソース取得結果:", response.data);
       // レスポンスが有効なオブジェクトであることを確認
       if (
@@ -468,7 +468,7 @@ const AdminPanel: React.FC = () => {
     setIsDemoStatsLoading(true);
     try {
       console.log("デモ利用状況を取得中...");
-      const response = await api.get(`${import.meta.env.VITE_API_URL}/admin/demo-stats`);
+      const response = await api.get("/admin/demo-stats");
       console.log("デモ利用状況取得結果:", response.data);
       setDemoStats(response.data);
     } catch (error) {
@@ -621,7 +621,7 @@ const AdminPanel: React.FC = () => {
 
     try {
       console.log(`新規アカウントを作成中... (ロール: ${role})`);
-      const response = await api.post(`${import.meta.env.VITE_API_URL}/admin/register-user`, {
+      const response = await api.post("/admin/register-user", {
         email: newEmployeeEmail,
         password: newEmployeePassword,
         name: newEmployeeEmail.split("@")[0], // メールアドレスの@前をデフォルト名として使用
@@ -670,8 +670,8 @@ const AdminPanel: React.FC = () => {
       const storedUser = localStorage.getItem("user");
       const userId = storedUser ? JSON.parse(storedUser).id : null;
       const url = isSpecialAdmin
-        ? `${import.meta.env.VITE_API_URL}/admin/employee-details/${employeeId}`
-        : `${import.meta.env.VITE_API_URL}/admin/employee-details/${employeeId}?user_id=${userId}`;
+        ? `/admin/employee-details/${employeeId}`
+        : `/admin/employee-details/${employeeId}?user_id=${userId}`;
       const response = await api.get(url, {
         headers: {
           'Access-Control-Allow-Origin': '*',

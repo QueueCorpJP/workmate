@@ -201,10 +201,10 @@ const UserGuide: React.FC = () => {
           <Box textAlign="center" mb={3}>
             <Avatar sx={{ width: 80, height: 80, mx: 'auto', mb: 2, bgcolor: 'primary.main' }}>
               <ChatIcon sx={{ fontSize: '2.5rem' }} />
-            </Avatar>
+          </Avatar>
             <Typography variant="h4" gutterBottom fontWeight="bold" color="primary.main">
               ワークメイトAI
-            </Typography>
+          </Typography>
             <Typography variant="h6" color="text.secondary" sx={{ maxWidth: 600, mx: 'auto' }}>
               社内の情報を瞬時に検索・回答する次世代AIアシスタント
             </Typography>
@@ -230,8 +230,8 @@ const UserGuide: React.FC = () => {
                       {role.icon}
                       <Typography variant="h6" fontWeight="bold" sx={{ ml: 1 }}>
                         {role.title}
-                      </Typography>
-                    </Box>
+        </Typography>
+                  </Box>
                     <Typography variant="body2" color="text.secondary" mb={2}>
                       {role.description}
                     </Typography>
@@ -283,10 +283,10 @@ const UserGuide: React.FC = () => {
                       ))}
                     </List>
                   </CardContent>
-                </Card>
-              </Grid>
-            ))}
-          </Grid>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
         </Paper>
 
         {/* 使い方の手順 */}
@@ -329,7 +329,7 @@ const UserGuide: React.FC = () => {
               <AccordionDetails>
                 <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
                   {faq.answer}
-                </Typography>
+            </Typography>
               </AccordionDetails>
             </Accordion>
           ))}
@@ -358,10 +358,10 @@ const UserGuide: React.FC = () => {
           <Typography variant="h5" gutterBottom fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
             <AdminPanelSettingsIcon sx={{ mr: 1, color: 'primary.main' }} />
             管理者の方へ
-          </Typography>
+              </Typography>
           <Typography variant="body1" sx={{ mb: 3, lineHeight: 1.8 }}>
             管理者権限をお持ちの方は、管理画面から以下の操作が可能です：
-          </Typography>
+            </Typography>
           <List>
             <ListItem>
               <ListItemIcon>
@@ -402,13 +402,13 @@ const UserGuide: React.FC = () => {
           </List>
         </Paper>
 
-        {/* フッター */}
+      {/* フッター */}
         <Box textAlign="center" sx={{ mt: 4, py: 3, borderTop: '1px solid rgba(0, 0, 0, 0.08)' }}>
           <Button
             variant="contained"
             size="large"
             onClick={handleBackToChat}
-            sx={{ 
+        sx={{
               borderRadius: 3,
               px: 4,
               py: 1.5,
@@ -420,8 +420,8 @@ const UserGuide: React.FC = () => {
           </Button>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
             ご不明な点がございましたら、管理者にお問い合わせください
-          </Typography>
-        </Box>
+        </Typography>
+      </Box>
       </Container>
     </Box>
   );

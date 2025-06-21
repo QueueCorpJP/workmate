@@ -157,20 +157,20 @@ def get_chat_history(user_id: str = None, db = None):
         
         # Supabaseからチャット履歴を取得
         if user_id:
-            print(f"ユーザーID {user_id} でフィルタリングします")
+            # print(f"ユーザーID {user_id} でフィルタリングします")
             # 特定のユーザーの履歴を取得
             result = select_data("chat_history", filters={"employee_id": user_id})
         else:
-            print("全ユーザーのチャット履歴を取得します")
+            # print("全ユーザーのチャット履歴を取得します")
             # 全履歴を取得
             result = select_data("chat_history")
         
         if not result or not result.data:
-            print("チャット履歴が見つかりませんでした")
+            # print("チャット履歴が見つかりませんでした")
             return []
         
         chat_history = result.data
-        print(f"チャット履歴取得結果: {len(chat_history)}件")
+        # print(f"チャット履歴取得結果: {len(chat_history)}件")
         
         # データ形式を統一
         formatted_history = []
@@ -192,7 +192,7 @@ def get_chat_history(user_id: str = None, db = None):
         # タイムスタンプで降順ソート
         formatted_history.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         
-        print(f"チャット履歴変換結果: {len(formatted_history)}件")
+        # print(f"チャット履歴変換結果: {len(formatted_history)}件")
         return formatted_history
         
     except Exception as e:
@@ -203,18 +203,18 @@ def get_chat_history(user_id: str = None, db = None):
 
 def get_chat_history_paginated(user_id: str = None, db = None, limit: int = 30, offset: int = 0):
     """ページネーション対応のチャット履歴を取得する"""
-    print(f"ページネーション対応チャット履歴取得APIが呼び出されました (user_id: {user_id}, limit: {limit}, offset: {offset})")
+    # print(f"ページネーション対応チャット履歴取得APIが呼び出されました (user_id: {user_id}, limit: {limit}, offset: {offset})")
     try:
         from supabase_adapter import select_data
         
         # 全件数を取得するためのクエリ
         if user_id:
-            print(f"ユーザーID {user_id} でフィルタリングします")
+            # print(f"ユーザーID {user_id} でフィルタリングします")
             # 特定のユーザーの履歴を取得
             count_result = select_data("chat_history", columns="id", filters={"employee_id": user_id})
             result = select_data("chat_history", columns="*", filters={"employee_id": user_id}, order="timestamp desc", limit=limit, offset=offset)
         else:
-            print("全ユーザーのチャット履歴を取得します")
+            # print("全ユーザーのチャット履歴を取得します")
             # 全履歴を取得
             count_result = select_data("chat_history", columns="id")
             result = select_data("chat_history", columns="*", order="timestamp desc", limit=limit, offset=offset)
@@ -223,11 +223,11 @@ def get_chat_history_paginated(user_id: str = None, db = None, limit: int = 30, 
         total_count = len(count_result.data) if count_result and count_result.data else 0
         
         if not result or not result.data:
-            print("チャット履歴が見つかりませんでした")
+            # print("チャット履歴が見つかりませんでした")
             return [], total_count
         
         chat_history = result.data
-        print(f"チャット履歴取得結果: {len(chat_history)}件 (全体: {total_count}件)")
+        # print(f"チャット履歴取得結果: {len(chat_history)}件 (全体: {total_count}件)")
         
         # データ形式を統一
         formatted_history = []
@@ -246,7 +246,7 @@ def get_chat_history_paginated(user_id: str = None, db = None, limit: int = 30, 
             }
             formatted_history.append(item)
         
-        print(f"チャット履歴変換結果: {len(formatted_history)}件")
+        # print(f"チャット履歴変換結果: {len(formatted_history)}件")
         return formatted_history, total_count
         
     except Exception as e:
@@ -273,7 +273,7 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
         is_admin = user_role == "admin"
         is_user = user_role == "user"
         
-        print(f"社員情報取得: user_id={user_id}, role={user_role}, is_special_admin={is_special_admin}")
+        # print(f"社員情報取得: user_id={user_id}, role={user_role}, is_special_admin={is_special_admin}")
         
         def get_employee_stats(employee_id):
             """社員の使用状況を取得する"""
@@ -330,7 +330,7 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
                     "is_demo": is_demo  # デモ版かどうかを直接返す
                 }
             except Exception as e:
-                print(f"社員ID {employee_id} の使用状況取得エラー: {e}")
+                # print(f"社員ID {employee_id} の使用状況取得エラー: {e}")
                 return {
                     "message_count": 0,
                     "last_activity": None,
@@ -349,12 +349,12 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
         
         # 特別な管理者またはadminロールの場合は全社員を取得
         if is_special_admin:
-            print("特別な管理者として全社員情報を取得します")
+            # print("特別な管理者として全社員情報を取得します")
             # まず全ユーザーを取得
             users_result = select_data("users", columns="id, name, email, role, created_at, company_id")
             
             if users_result and users_result.data:
-                print(f"全ユーザー取得結果: {len(users_result.data)}件")
+                # print(f"全ユーザー取得結果: {len(users_result.data)}件")
                 
                 # 全会社情報を取得
                 companies_result = select_data("companies", columns="id, name")
@@ -386,7 +386,7 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
             result = select_data("users", columns="id, name, email, role, created_at, company_id", filters={"company_id": company_id})
             
             if result and result.data:
-                print(f"会社の社員情報取得結果: {len(result.data)}件")
+                # print(f"会社の社員情報取得結果: {len(result.data)}件")
                 for employee in result.data:
                     # 使用状況を取得
                     stats = get_employee_stats(employee.get("id"))
@@ -396,10 +396,12 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
                     }
                     employees.append(employee_with_stats)
             else:
-                print(f"会社ID {company_id} の社員情報が取得できませんでした")
+                # print(f"会社ID {company_id} の社員情報が取得できませんでした")
+                pass
         else:
             # 他の処理（基本的にはここに来ないはず）
-            print("適切な条件が見つかりません")
+            # print("適切な条件が見つかりません")
+            pass
         
         return employees
     except Exception as e:
@@ -408,7 +410,7 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
 
 async def get_employee_usage(user_id: str = None, db: Connection = Depends(get_db), is_special_admin: bool = False):
     """社員ごとの利用状況を取得する"""
-    print(f"社員利用状況APIが呼び出されました (user_id: {user_id}, is_special_admin: {is_special_admin})")
+    # print(f"社員利用状況APIが呼び出されました (user_id: {user_id}, is_special_admin: {is_special_admin})")
     try:
         from supabase_adapter import execute_query, select_data
         
@@ -460,7 +462,7 @@ async def get_employee_usage(user_id: str = None, db: Connection = Depends(get_d
                     top_categories = []
                     recent_questions = []
             except Exception as e:
-                print(f"ユーザーID {user_id} のチャット履歴取得エラー: {e}")
+                # print(f"ユーザーID {user_id} のチャット履歴取得エラー: {e}")
                 message_count = 0
                 last_activity = None
                 top_categories = []
@@ -476,12 +478,12 @@ async def get_employee_usage(user_id: str = None, db: Connection = Depends(get_d
             }
         
         if is_special_admin:
-            print("特別な管理者として全ユーザーの利用状況を取得します")
+            # print("特別な管理者として全ユーザーの利用状況を取得します")
             
             try:
                 # まず全ユーザーを取得
                 all_users = select_data("users", columns="id, name, email, role, created_at")
-                print(f"全ユーザー取得結果: {all_users.data if all_users else 'なし'}")
+                # print(f"全ユーザー取得結果: {all_users.data if all_users else 'なし'}")
                 
                 if all_users and all_users.data:
                     # 各ユーザーのチャット履歴を取得
@@ -490,11 +492,12 @@ async def get_employee_usage(user_id: str = None, db: Connection = Depends(get_d
                         if formatted_data:
                             employee_usage.append(formatted_data)
                 
-                print(f"全ユーザーの利用状況取得結果: {len(employee_usage)}件")
+                # print(f"全ユーザーの利用状況取得結果: {len(employee_usage)}件")
                 
             except Exception as e:
-                print(f"全ユーザーの利用状況取得エラー: {e}")
+                # print(f"全ユーザーの利用状況取得エラー: {e}")
                 # エラーが発生しても処理を続行
+                pass
             
         elif user_id:
             # 会社IDを取得
@@ -503,30 +506,35 @@ async def get_employee_usage(user_id: str = None, db: Connection = Depends(get_d
                 company_result = select_data("users", columns="company_id", filters={"id": user_id})
                 if company_result and company_result.data and len(company_result.data) > 0:
                     company_id = company_result.data[0].get("company_id")
-                    print(f"会社ID {company_id} でフィルタリングします")
+                    # print(f"会社ID {company_id} でフィルタリングします")
+                else:
+                    # print(f"会社ID {company_id} の社員情報が取得できませんでした")
+                    pass
             except Exception as e:
-                print(f"会社ID取得エラー: {e}")
+                # print(f"会社ID取得エラー: {e}")
                 # エラーが発生しても処理を続行
+                pass
             
             if company_id:
-                print(f"会社ID {company_id} の社員の利用状況を取得します")
+                # print(f"会社ID {company_id} の社員の利用状況を取得します")
                 
                 try:
                     # 会社IDに基づいてユーザーIDを取得
                     users_result = select_data("users", columns="id, name", filters={"company_id": company_id})
                     
                     if users_result and users_result.data:
-                        print(f"会社の社員取得結果: {users_result.data}")
+                        # print(f"会社の社員取得結果: {users_result.data}")
                         
                         for user in users_result.data:
                             formatted_data = format_usage_data(user)
                             if formatted_data:
                                 employee_usage.append(formatted_data)
                 except Exception as e:
-                    print(f"会社の社員利用状況取得エラー: {e}")
+                    # print(f"会社の社員利用状況取得エラー: {e}")
                     # エラーが発生しても処理を続行
+                    pass
             else:
-                print(f"ユーザーID {user_id} でフィルタリングします")
+                # print(f"ユーザーID {user_id} でフィルタリングします")
                 
                 try:
                     # ユーザー情報を取得
@@ -538,8 +546,9 @@ async def get_employee_usage(user_id: str = None, db: Connection = Depends(get_d
                         if formatted_data:
                             employee_usage.append(formatted_data)
                 except Exception as e:
-                    print(f"ユーザー利用状況取得エラー: {e}")
+                    # print(f"ユーザー利用状況取得エラー: {e}")
                     # エラーが発生しても処理を続行
+                    pass
         
         # Convert the dictionaries to proper EmployeeUsageItem objects
         try:
@@ -558,7 +567,7 @@ async def get_employee_usage(user_id: str = None, db: Connection = Depends(get_d
                             # If it's already a datetime object, use it directly
                             last_activity_dt = item["last_activity"]
                     except Exception as e:
-                        print(f"日時変換エラー: {e}")
+                        # print(f"日時変換エラー: {e}")
                         # Use current time as fallback
                         last_activity_dt = datetime.now()
                 
@@ -578,7 +587,7 @@ async def get_employee_usage(user_id: str = None, db: Connection = Depends(get_d
             # Return the properly formatted result
             return {"employee_usage": formatted_items}
         except Exception as format_error:
-            print(f"データフォーマットエラー: {format_error}")
+            # print(f"データフォーマットエラー: {format_error}")
             # Return empty result as fallback
             return {"employee_usage": []}
             
@@ -779,7 +788,7 @@ async def analyze_chats(user_id: str = None, db = None, company_id: str = None):
             except Exception as e:
                 print(f"会社別データ取得エラー: {e}")
         else:
-            print("全ユーザーのチャット履歴を分析します")
+            # print("全ユーザーのチャット履歴を分析します")
             # 全ユーザーのチャット履歴を取得
             try:
                 result = select_data(

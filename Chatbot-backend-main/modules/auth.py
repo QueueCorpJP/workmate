@@ -6,12 +6,11 @@ import uuid
 import datetime
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from psycopg2.extensions import connection as Connection
-from .database import get_db, authenticate_user, create_user, get_usage_limits, check_user_exists
+from .database import get_db, authenticate_user, create_user, get_usage_limits, check_user_exists, SupabaseConnection
 
 security = HTTPBasic()
 
-def get_current_user(credentials: HTTPBasicCredentials = Depends(security), db: Connection = Depends(get_db)):
+def get_current_user(credentials: HTTPBasicCredentials = Depends(security), db: SupabaseConnection = Depends(get_db)):
     """現在のユーザーを取得します"""
     user = authenticate_user(credentials.username, credentials.password, db)
     if not user:
@@ -106,7 +105,7 @@ def get_user_creation_permission(user = Depends(get_current_user)):
         )
     return user
 
-def register_new_user(email: str, password: str, name: str, role: str = "user", db: Connection = Depends(get_db)):
+def register_new_user(email: str, password: str, name: str, role: str = "user", db: SupabaseConnection = Depends(get_db)):
     """新しいユーザーを登録します"""
     if check_user_exists(email, db):
         raise HTTPException(
@@ -125,7 +124,7 @@ def register_new_user(email: str, password: str, name: str, role: str = "user", 
         "created_at": datetime.datetime.now().isoformat()
     }
 
-def check_usage_limits(user_id: str, limit_type: str, db: Connection = Depends(get_db)):
+def check_usage_limits(user_id: str, limit_type: str, db: SupabaseConnection = Depends(get_db)):
     """利用制限をチェックします"""
     print(f"=== 利用制限チェック開始 ===")
     print(f"ユーザーID: {user_id}, 制限タイプ: {limit_type}")

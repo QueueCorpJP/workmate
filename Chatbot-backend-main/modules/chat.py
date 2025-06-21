@@ -8,7 +8,8 @@ import uuid
 import sys
 from datetime import datetime
 import logging
-# PostgreSQL関連のインポートを削除（Supabaseを使用）
+# PostgreSQL関連のインポート
+from psycopg2.extras import RealDictCursor
 from fastapi import HTTPException, Depends
 from .company import DEFAULT_COMPANY_NAME
 from .models import ChatMessage, ChatResponse
@@ -50,6 +51,103 @@ def set_model(gemini_model):
     global model
     model = gemini_model
 
+def is_casual_conversation(message_text: str) -> bool:
+    """メッセージが挨拶や一般的な会話かどうかを判定する"""
+    if not message_text:
+        return False
+    
+    message_lower = message_text.strip().lower()
+    
+    # 挨拶パターン
+    greetings = [
+        "こんにちは", "こんにちわ", "おはよう", "おはようございます", "こんばんは", "こんばんわ",
+        "よろしく", "よろしくお願いします", "はじめまして", "初めまして",
+        "hello", "hi", "hey", "good morning", "good afternoon", "good evening"
+    ]
+    
+    # お礼パターン
+    thanks = [
+        "ありがとう", "ありがとうございます", "ありがとうございました", "感謝します",
+        "thank you", "thanks", "thx"
+    ]
+    
+    # 別れの挨拶パターン
+    farewells = [
+        "さようなら", "またね", "また明日", "失礼します", "お疲れ様", "お疲れさまでした",
+        "bye", "goodbye", "see you", "good bye"
+    ]
+    
+    # 一般的な会話パターン
+    casual_phrases = [
+        "元気", "調子", "どう", "天気", "今日", "明日", "昨日", "週末", "休み",
+        "疲れた", "忙しい", "暇", "時間", "いい天気", "寒い", "暑い", "雨",
+        "how are you", "what's up", "how's it going", "nice weather", "tired", "busy"
+    ]
+    
+    # 短い質問や相槌パターン
+    short_responses = [
+        "はい", "いいえ", "そうですね", "なるほど", "そうですか", "わかりました",
+        "ok", "okay", "yes", "no", "i see", "alright"
+    ]
+    
+    # メッセージが短すぎる場合（3文字以下）は一般的な会話として扱う
+    if len(message_lower) <= 3:
+        return True
+    
+    # 各パターンをチェック
+    all_patterns = greetings + thanks + farewells + casual_phrases + short_responses
+    
+    for pattern in all_patterns:
+        if pattern in message_lower:
+            return True
+    
+    # 疑問符がなく、短いメッセージ（20文字以下）は一般的な会話として扱う
+    if len(message_text) <= 20 and "?" not in message_text and "？" not in message_text:
+        return True
+    
+    return False
+
+async def generate_casual_response(message_text: str, company_name: str) -> str:
+    """挨拶や一般的な会話に対する自然な返答を生成する"""
+    try:
+        if model is None:
+            return "こんにちは！何かお手伝いできることはありますか？"
+        
+        # 挨拶や一般的な会話専用のプロンプト
+        casual_prompt = f"""
+あなたは{company_name}の親しみやすいアシスタントです。
+ユーザーからの挨拶や一般的な会話に対して、自然で親しみやすい返答をしてください。
+
+返答の際の注意点：
+1. 親しみやすく、温かい口調で返答してください
+2. 会話を続けたい場合は、適切な質問で返してください
+3. 長すぎず、短すぎない適度な長さで返答してください
+4. 必要に応じて、お手伝いできることがあることを伝えてください
+5. 知識ベースの情報は参照せず、一般的な会話として返答してください
+
+ユーザーのメッセージ: {message_text}
+"""
+        
+        response = model.generate_content(casual_prompt)
+        
+        if response and hasattr(response, 'text') and response.text:
+            return response.text.strip()
+        else:
+            # フォールバック応答
+            message_lower = message_text.lower()
+            if any(greeting in message_lower for greeting in ["こんにちは", "こんにちわ", "hello", "hi"]):
+                return "こんにちは！お疲れ様です。何かお手伝いできることはありますか？"
+            elif any(thanks in message_lower for thanks in ["ありがとう", "thank you", "thanks"]):
+                return "どういたしまして！他にも何かお手伝いできることがあれば、お気軽にお声がけください。"
+            elif any(farewell in message_lower for farewell in ["さようなら", "またね", "bye", "goodbye"]):
+                return "お疲れ様でした！また何かありましたら、いつでもお声がけください。"
+            else:
+                return "そうですね！何かお手伝いできることがあれば、お気軽にお声がけください。"
+                
+    except Exception as e:
+        safe_print(f"一般会話応答生成エラー: {str(e)}")
+        return "こんにちは！何かお手伝いできることはありますか？"
+
 async def process_chat(message: ChatMessage, db = Depends(get_db), current_user: dict = None):
     """チャットメッセージを処理してGeminiからの応答を返す"""
     try:
@@ -70,6 +168,78 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
         
         # 最新の会社名を取得（モジュールからの直接インポートではなく、関数内で再取得）
         from .company import DEFAULT_COMPANY_NAME as current_company_name
+        
+        # 挨拶や一般的な会話かどうかを判定
+        if is_casual_conversation(message_text):
+            safe_print(f"🗣️ 一般的な会話として判定: {message_text}")
+            
+            # 一般的な会話の場合はナレッジを参照せずに返答
+            casual_response = await generate_casual_response(message_text, current_company_name)
+            
+            # チャット履歴を保存（一般会話として）
+            from modules.token_counter import TokenUsageTracker
+            
+            # ユーザーの会社IDを取得（チャット履歴保存用）
+            company_id = None
+            if message.user_id:
+                try:
+                    from supabase_adapter import select_data
+                    user_result = select_data("users", columns="company_id", filters={"id": message.user_id})
+                    if user_result.data and len(user_result.data) > 0:
+                        user_data = user_result.data[0]
+                        company_id = user_data.get('company_id')
+                except Exception as e:
+                    safe_print(f"会社ID取得エラー（一般会話）: {str(e)}")
+            
+            # トークン追跡機能を使用してチャット履歴を保存（ナレッジ参照なし）
+            tracker = TokenUsageTracker(db)
+            chat_id = tracker.save_chat_with_prompts(
+                user_message=message_text,
+                bot_response=casual_response,
+                user_id=message.user_id,
+                prompt_references=0,  # ナレッジ参照なし
+                company_id=company_id,
+                employee_id=getattr(message, 'employee_id', None),
+                employee_name=getattr(message, 'employee_name', None),
+                category="一般会話",
+                sentiment="neutral",
+                model="gemini-pro"
+            )
+            
+            # 利用制限の処理（一般会話でも質問回数にカウント）
+            remaining_questions = None
+            limit_reached = False
+            
+            if message.user_id:
+                # 質問の利用制限をチェック
+                limits_check = check_usage_limits(message.user_id, "question", db)
+                
+                if not limits_check["is_unlimited"] and not limits_check["allowed"]:
+                    response_text = f"申し訳ございません。デモ版の質問回数制限（{limits_check['limit']}回）に達しました。"
+                    return {
+                        "response": response_text,
+                        "remaining_questions": 0,
+                        "limit_reached": True
+                    }
+                
+                # 質問カウントを更新
+                if not limits_check.get("is_unlimited", False):
+                    updated_limits = update_usage_count(message.user_id, "questions_used", db)
+                    if updated_limits:
+                        remaining_questions = updated_limits["questions_limit"] - updated_limits["questions_used"]
+                        limit_reached = remaining_questions <= 0
+                    else:
+                        remaining_questions = limits_check["remaining"] - 1 if limits_check["remaining"] > 0 else 0
+                        limit_reached = remaining_questions <= 0
+            
+            safe_print(f"✅ 一般会話応答完了: {len(casual_response)} 文字")
+            
+            return {
+                "response": casual_response,
+                "source": "",  # ナレッジ参照なし
+                "remaining_questions": remaining_questions,
+                "limit_reached": limit_reached
+            }
         
         # ユーザーIDがある場合は利用制限をチェック
         remaining_questions = None
@@ -171,6 +341,24 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
             }
             for res_name in active_resource_names
         ]
+        
+        # アクティブなリソースのSpecial指示を取得
+        special_instructions = []
+        try:
+            from supabase_adapter import select_data
+            for source_id in active_sources:
+                source_result = select_data("document_sources", columns="name,special", filters={"id": source_id})
+                if source_result.data and len(source_result.data) > 0:
+                    source_data = source_result.data[0]
+                    if source_data.get('special') and source_data['special'].strip():
+                        special_instructions.append({
+                            "name": source_data.get('name', 'Unknown'),
+                            "instruction": source_data['special'].strip()
+                        })
+            safe_print(f"Special指示: {len(special_instructions)}個のリソースにSpecial指示があります")
+        except Exception as e:
+            safe_print(f"Special指示取得エラー: {str(e)}")
+            special_instructions = []
         
         # safe_print(f"知識ベースの生データ長: {len(knowledge_base.raw_text) if knowledge_base.raw_text else 0}")
         safe_print(f"アクティブなソース: {active_sources}")
@@ -281,10 +469,19 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
                     # エラーが発生した場合はその行をスキップ
                     continue
 
+        # Special指示をプロンプトに追加するための文字列を構築
+        special_instructions_text = ""
+        if special_instructions:
+            special_instructions_text = "\n\n特別な回答指示（以下のリソースを参照する際は、各リソースの指示に従ってください）：\n"
+            for idx, inst in enumerate(special_instructions, 1):
+                special_instructions_text += f"{idx}. 【{inst['name']}】: {inst['instruction']}\n"
+
         # プロンプトの作成
         prompt = f"""
         あなたは親切で丁寧な対応ができる{current_company_name}のアシスタントです。
         以下の知識ベースを参考に、ユーザーの質問に対して可能な限り具体的で役立つ回答を提供してください。
+
+        利用可能なファイル: {', '.join(active_resource_names) if active_resource_names else 'なし'}
 
         回答の際の注意点：
         1. 常に丁寧な言葉遣いを心がけ、ユーザーに対して敬意を持って接してください
@@ -293,13 +490,13 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
         4. 可能な限り具体的で実用的な情報を提供してください
         5. 知識ベースにOCRで抽出されたテキスト（PDF (OCR)と表示されている部分）が含まれている場合は、それが画像から抽出されたテキストであることを考慮してください
         6. OCRで抽出されたテキストには多少の誤りがある可能性がありますが、文脈から適切に解釈して回答してください
-        7. 知識ベースの情報を使用して回答した場合は、回答の最後に情報の出典を「情報ソース: [ドキュメント名]（[セクション名]、[ページ番号]）」の形式で必ず記載してください。複数のソースを参照した場合は、それぞれを記載してください。
+        7. 知識ベースの情報を使用して回答した場合は、回答の最後に「情報ソース: [ファイル名]」の形式で参照したファイル名を記載してください。
         8. 「こんにちは」「おはよう」などの単純な挨拶のみの場合は、情報ソースを記載しないでください。それ以外の質問には基本的に情報ソースを記載してください。
         9. 回答可能かどうかが判断できる質問に対しては、最初に「はい」または「いいえ」で簡潔に答えてから、具体的な説明や補足情報を記載してください
         10. 回答は**Markdown記法**を使用して見やすく整理してください。見出し（#、##、###）、箇条書き（-、*）、番号付きリスト（1.、2.）、強調（**太字**、*斜体*）、コードブロック（```）、表（|）、引用（>）などを適切に使用してください
         11. 手順や説明が複数ある場合は、番号付きリストや箇条書きを使用して構造化してください
         12. 重要な情報は**太字**で強調してください
-        13. コードやファイル名、設定値などは`バッククォート`で囲んでください
+        13. コードやファイル名、設定値などは`バッククォート`で囲んでください{special_instructions_text}
         
         利用可能なデータ列：
         {', '.join(knowledge_base.columns) if knowledge_base and hasattr(knowledge_base, 'columns') and knowledge_base.columns else "データ列なし"}
@@ -326,7 +523,9 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
                 # プロンプトを再構築
                 prompt = f"""
         あなたは親切で丁寧な対応ができる{current_company_name}のアシスタントです。
-        以下の知識ベースを参考に、ユーザーの質問に対して可能な限り具体的で役立つ回答を提供してください。
+        以下の知識ベースを参考に、ユーザーの質問に対って可能な限り具体的で役立つ回答を提供してください。
+
+        利用可能なファイル: {', '.join(active_resource_names) if active_resource_names else 'なし'}
 
         回答の際の注意点：
         1. 常に丁寧な言葉遣いを心がけ、ユーザーに対して敬意を持って接してください
@@ -335,13 +534,13 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
         4. 可能な限り具体的で実用的な情報を提供してください
         5. 知識ベースにOCRで抽出されたテキスト（PDF (OCR)と表示されている部分）が含まれている場合は、それが画像から抽出されたテキストであることを考慮してください
         6. OCRで抽出されたテキストには多少の誤りがある可能性がありますが、文脈から適切に解釈して回答してください
-        7. 知識ベースの情報を使用して回答した場合は、回答の最後に情報の出典を「情報ソース: [ドキュメント名]（[セクション名]、[ページ番号]）」の形式で必ず記載してください。複数のソースを参照した場合は、それぞれを記載してください。
+        7. 知識ベースの情報を使用して回答した場合は、回答の最後に「情報ソース: [ファイル名]」の形式で参照したファイル名を記載してください。
         8. 「こんにちは」「おはよう」などの単純な挨拶のみの場合は、情報ソースを記載しないでください。それ以外の質問には基本的に情報ソースを記載してください。
         9. 回答可能かどうかが判断できる質問に対しては、最初に「はい」または「いいえ」で簡潔に答えてから、具体的な説明や補足情報を記載してください
         10. 回答は**Markdown記法**を使用して見やすく整理してください。見出し（#、##、###）、箇条書き（-、*）、番号付きリスト（1.、2.）、強調（**太字**、*斜体*）、コードブロック（```）、表（|）、引用（>）などを適切に使用してください
         11. 手順や説明が複数ある場合は、番号付きリストや箇条書きを使用して構造化してください
         12. 重要な情報は**太字**で強調してください
-        13. コードやファイル名、設定値などは`バッククォート`で囲んでください
+        13. コードやファイル名、設定値などは`バッククォート`で囲んでください{special_instructions_text}
         
         知識ベース内容（アクティブなリソースのみ）：
         {active_knowledge_text}
@@ -684,6 +883,37 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
         
         safe_print(f"📊 取得した知識ベース: {len(active_knowledge_text)} 文字")
         
+        # アクティブなリソースの情報とSpecial指示を取得
+        special_instructions = []
+        active_resource_names = []
+        try:
+            from supabase_adapter import select_data
+            for source_id in active_sources:
+                source_result = select_data("document_sources", columns="name,special", filters={"id": source_id})
+                if source_result.data and len(source_result.data) > 0:
+                    source_data = source_result.data[0]
+                    source_name = source_data.get('name', 'Unknown')
+                    active_resource_names.append(source_name)
+                    
+                    if source_data.get('special') and source_data['special'].strip():
+                        special_instructions.append({
+                            "name": source_name,
+                            "instruction": source_data['special'].strip()
+                        })
+            safe_print(f"アクティブリソース: {len(active_resource_names)}個 - {active_resource_names}")
+            safe_print(f"Special指示: {len(special_instructions)}個のリソースにSpecial指示があります")
+        except Exception as e:
+            safe_print(f"リソース情報取得エラー: {str(e)}")
+            special_instructions = []
+            active_resource_names = []
+
+        # Special指示をプロンプトに追加するための文字列を構築
+        special_instructions_text = ""
+        if special_instructions:
+            special_instructions_text = "\n\n特別な回答指示（以下のリソースを参照する際は、各リソースの指示に従ってください）：\n"
+            for idx, inst in enumerate(special_instructions, 1):
+                special_instructions_text += f"{idx}. 【{inst['name']}】: {inst['instruction']}\n"
+
         # 知識ベースをチャンク化
         CHUNK_SIZE = 500000  # 50万文字
         chunks = chunk_knowledge_base(active_knowledge_text, CHUNK_SIZE)
@@ -743,13 +973,15 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
 注意: これは知識ベース全体の一部です（チャンク {i+1}/{len(chunks)}）。
 このチャンクの情報を使用して、質問に関連する情報があれば積極的に回答してください。
 
+利用可能なファイル: {', '.join(active_resource_names) if active_resource_names else 'なし'}
+
 回答の際の注意点：
 1. 常に丁寧な言葉遣いを心がけ、ユーザーに対して敬意を持って接してください
 2. 知識ベース内に質問に関連する情報があれば、部分的でも積極的に回答してください
 3. 完全に関連のない情報しかない場合のみ「このチャンクには該当情報がありません」と回答してください
 4. 可能な限り具体的で実用的な情報を提供してください
-5. 知識ベースの情報を使用して回答した場合は、回答の最末尾に「[チャンク {i+1}/{len(chunks)}より]」を記載してください
-6. 回答は**Markdown記法**を使用して見やすく整理してください
+5. 知識ベースの情報を使用して回答した場合は、回答の最後に「情報ソース: [ファイル名]」の形式で参照したファイル名を記載してください
+6. 回答は**Markdown記法**を使用して見やすく整理してください{special_instructions_text}
 
 知識ベース内容（チャンク {i+1}/{len(chunks)}）：
 {chunk}
@@ -847,10 +1079,14 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
             # 最初の有効な回答を使用（無駄な統合を避ける）
             final_response = all_responses[0]
             
-            # 処理されたチャンク数の情報を末尾に追加
-            final_response += f"\n\n---\n**処理結果**: {len(chunks)}個のチャンクのうち{successful_chunks}個から回答を取得し、最初の有効な回答を使用しました。"
+            # チャンク情報を削除し、シンプルなファイル名表示に変更
+            # [チャンク X/Y より] のような表示を削除
+            import re
+            final_response = re.sub(r'\[チャンク \d+/\d+ より\]', '', final_response)
+            final_response = final_response.strip()
+            
         else:
-            final_response = f"""申し訳ございません。{len(chunks)}個のチャンクを処理しましたが、ご質問に対する適切な回答が見つかりませんでした。
+            final_response = f"""申し訳ございません。ご質問に対する適切な回答が見つかりませんでした。
 
 別の質問方法でお試しいただくか、管理者にお問い合わせください。"""
         

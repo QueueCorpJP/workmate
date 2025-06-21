@@ -34,6 +34,7 @@ import GroupIcon from "@mui/icons-material/Group";
 import NoteAddIcon from "@mui/icons-material/NoteAdd";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
+import api from "../api";
 
 interface ApplicationFormProps {
   open: boolean;
@@ -141,18 +142,12 @@ const ApplicationForm: React.FC<ApplicationFormProps> = ({ open, onClose, onSubm
 
     try {
       // APIエンドポイントに申請データを送信
-      const response = await fetch("/chatbot/api/submit-application", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...formData,
-          applicationType: "production-upgrade"  // 本番移行申請であることを明示
-        }),
+      const response = await api.post("/submit-application", {
+        ...formData,
+        applicationType: "production-upgrade"  // 本番移行申請であることを明示
       });
 
-      if (response.ok) {
+      if (response.status === 200) {
         setSubmitSuccess(true);
         // onSubmitコールバックがあれば実行
         if (onSubmit) {

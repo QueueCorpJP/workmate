@@ -68,6 +68,7 @@ export interface Resource {
   uploader_name?: string;
   usage_count?: number;
   last_used?: string;
+  special?: string;
 }
 
 export interface DemoStats {
