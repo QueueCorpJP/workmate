@@ -20,6 +20,7 @@ import SentimentSatisfiedAltIcon from "@mui/icons-material/SentimentSatisfiedAlt
 import SentimentVeryDissatisfiedIcon from "@mui/icons-material/SentimentVeryDissatisfied";
 import SentimentNeutralIcon from "@mui/icons-material/SentimentNeutral";
 import DownloadIcon from "@mui/icons-material/Download";
+import MarkdownRenderer from "../MarkdownRenderer";
 import api from "../../api";
 
 interface ChatHistoryTabProps {
@@ -197,10 +198,9 @@ const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({
                     sx={{
                       maxWidth: "300px",
                       overflow: "hidden",
-                      textOverflow: "ellipsis",
                     }}
                   >
-                    {chat.bot_response}
+                    <MarkdownRenderer content={chat.bot_response} />
                   </TableCell>
                   <TableCell>{chat.category || "未分類"}</TableCell>
                   <TableCell>{chat.sentiment || "neutral"}</TableCell>

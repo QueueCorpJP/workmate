@@ -74,6 +74,9 @@ SCHEMA = {
         cost_usd DECIMAL(10,6) DEFAULT 0.000000,
         user_id TEXT,
         company_id TEXT,
+        prompt_references INTEGER DEFAULT 0,
+        base_cost_usd DECIMAL(10,6) DEFAULT 0.000000,
+        prompt_cost_usd DECIMAL(10,6) DEFAULT 0.000000,
         FOREIGN KEY (user_id) REFERENCES users (id),
         FOREIGN KEY (company_id) REFERENCES companies (id)
     )

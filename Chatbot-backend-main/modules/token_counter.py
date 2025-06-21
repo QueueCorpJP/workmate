@@ -36,8 +36,25 @@ class TokenCounter:
             "gpt-3.5-turbo": {
                 "input": 0.0005,   # $0.50 per 1M tokens
                 "output": 0.0015   # $1.50 per 1M tokens
+            },
+            # 新しい料金設定（基本料金）
+            "workmate-standard": {
+                "input": 0.0003,   # $0.30 per 1M tokens
+                "output": 0.0025   # $2.50 per 1M tokens
+            },
+            # Gemini料金設定
+            "gemini-pro": {
+                "input": 0.0003,   # $0.30 per 1M tokens  
+                "output": 0.0025   # $2.50 per 1M tokens
+            },
+            "gemini-1.5-pro": {
+                "input": 0.0003,   # $0.30 per 1M tokens
+                "output": 0.0025   # $2.50 per 1M tokens
             }
         }
+        
+        # プロンプト参照による追加料金（USD per reference）
+        self.prompt_reference_cost = 0.001  # $0.001 per prompt reference
     
     def count_tokens(self, text: str, model: str = "gpt-4o-mini") -> int:
         """指定されたモデルでテキストのトークン数を計算"""
@@ -86,6 +103,42 @@ class TokenCounter:
             "total_tokens": total_tokens,
             "input_cost_usd": round(input_cost, 6),
             "output_cost_usd": round(output_cost, 6),
+            "total_cost_usd": round(total_cost, 6),
+            "model_name": model
+        }
+    
+    def calculate_tokens_and_cost_with_prompts(
+        self, 
+        input_text: str, 
+        output_text: str, 
+        prompt_references: int = 0,
+        model: str = "workmate-standard"
+    ) -> Dict:
+        """入力と出力テキスト、参照プロンプト数からトークン数とコストを計算"""
+        
+        input_tokens = self.count_tokens(input_text, model)
+        output_tokens = self.count_tokens(output_text, model)
+        total_tokens = input_tokens + output_tokens
+        
+        # 基本コスト計算
+        pricing = self.pricing.get(model, self.pricing["workmate-standard"])
+        input_cost = (input_tokens / 1000) * pricing["input"]
+        output_cost = (output_tokens / 1000) * pricing["output"]
+        base_cost = input_cost + output_cost
+        
+        # プロンプト参照による追加コスト
+        prompt_cost = prompt_references * self.prompt_reference_cost
+        total_cost = base_cost + prompt_cost
+        
+        return {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            "prompt_references": prompt_references,
+            "input_cost_usd": round(input_cost, 6),
+            "output_cost_usd": round(output_cost, 6),
+            "base_cost_usd": round(base_cost, 6),
+            "prompt_cost_usd": round(prompt_cost, 6),
             "total_cost_usd": round(total_cost, 6),
             "model_name": model
         }
@@ -148,6 +201,68 @@ class TokenUsageTracker:
             
             self.db.commit()
             print(f"チャット履歴保存完了: {chat_id}, トークン数: {token_info['total_tokens']}")
+            
+            return chat_id
+            
+        except Exception as e:
+            print(f"チャット履歴保存エラー: {e}")
+            self.db.rollback()
+            raise e
+    
+    def save_chat_with_prompts(
+        self,
+        user_message: str,
+        bot_response: str,
+        user_id: str,
+        prompt_references: int = 0,
+        company_id: Optional[str] = None,
+        employee_id: Optional[str] = None,
+        employee_name: Optional[str] = None,
+        category: Optional[str] = None,
+        sentiment: Optional[str] = None,
+        source_document: Optional[str] = None,
+        source_page: Optional[str] = None,
+        model: str = "workmate-standard"
+    ) -> str:
+        """プロンプト参照数を含むチャット履歴をデータベースに保存"""
+        
+        # トークン数とコストを計算（プロンプト参照含む）
+        token_info = self.counter.calculate_tokens_and_cost_with_prompts(
+            user_message, bot_response, prompt_references, model
+        )
+        
+        # チャット履歴IDを生成
+        chat_id = str(uuid.uuid4())
+        timestamp = datetime.now().isoformat()
+        
+        # company_idがNoneの場合はデフォルト値を設定
+        if company_id is None:
+            print(f"⚠️ company_idがNullです。デフォルト値'default'を使用します。")
+            company_id = "default"
+        
+        try:
+            cursor = self.db.cursor()
+            
+            # chat_historyテーブルに保存（新しいカラムを追加）
+            cursor.execute("""
+                INSERT INTO chat_history (
+                    id, user_message, bot_response, timestamp, category, sentiment,
+                    employee_id, employee_name, source_document, source_page,
+                    input_tokens, output_tokens, total_tokens, model_name, cost_usd,
+                    user_id, company_id, prompt_references, base_cost_usd, prompt_cost_usd
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                chat_id, user_message, bot_response, timestamp, category, sentiment,
+                employee_id, employee_name, source_document, source_page,
+                token_info["input_tokens"], token_info["output_tokens"], 
+                token_info["total_tokens"], token_info["model_name"], 
+                token_info["total_cost_usd"], user_id, company_id,
+                token_info["prompt_references"], token_info["base_cost_usd"], 
+                token_info["prompt_cost_usd"]
+            ))
+            
+            self.db.commit()
+            print(f"チャット履歴保存完了: {chat_id}, トークン数: {token_info['total_tokens']}, プロンプト参照: {prompt_references}")
             
             return chat_id
             

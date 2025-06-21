@@ -28,7 +28,7 @@ from modules.models import (
 )
 from modules.knowledge import process_url, process_file, get_knowledge_base_info
 from modules.knowledge.google_drive import GoogleDriveHandler
-from modules.chat import process_chat, set_model as set_chat_model
+from modules.chat import process_chat, process_chat_chunked, set_model as set_chat_model
 from modules.admin import (
     get_chat_history, get_chat_history_paginated, analyze_chats, get_employee_details,
     get_employee_usage, get_uploaded_resources, toggle_resource_active,
@@ -719,9 +719,9 @@ async def get_knowledge_base(current_user = Depends(get_current_user)):
 # チャットエンドポイント
 @app.post("/chatbot/api/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
-    """チャットメッセージを処理してGeminiからの応答を返す"""
+    """チャットメッセージを処理してGeminiからの応答を返す（チャンク化対応）"""
     # デバッグ用：現在のユーザー情報と利用制限を出力
-    print(f"=== チャット処理開始 ===")
+    print(f"=== チャンク化チャット処理開始 ===")
     print(f"ユーザー情報: {current_user}")
     
     # 現在の利用制限を取得して表示
@@ -733,7 +733,50 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
     message.user_id = current_user["id"]
     message.employee_name = current_user["name"]
     
-    return await process_chat(message, db, current_user)
+    # チャンク化処理を使用
+    from modules.chat import process_chat_chunked
+    result = await process_chat_chunked(message, db, current_user)
+    
+    # 応答を返す
+    return ChatResponse(
+        response=result["response"],
+        source=result.get("source", ""),
+        remaining_questions=result.get("remaining_questions", 0),
+        limit_reached=result.get("limit_reached", False)
+    )
+
+@app.post("/chatbot/api/chat-chunked-info", response_model=dict)
+async def chat_chunked_info(message: ChatMessage, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """チャンク化処理の詳細情報を取得する（デバッグ用）"""
+    try:
+        # ユーザーIDを設定
+        message.user_id = current_user["id"]
+        message.employee_name = current_user["name"]
+        
+        # チャンク化処理を実行
+        from modules.chat import process_chat_chunked
+        result = await process_chat_chunked(message, db, current_user)
+        
+        # 詳細情報を返す
+        return {
+            "response": result["response"],
+            "chunks_processed": result.get("chunks_processed", 0),
+            "successful_chunks": result.get("successful_chunks", 0),
+            "remaining_questions": result.get("remaining_questions", 0),
+            "limit_reached": result.get("limit_reached", False),
+            "processing_success": True
+        }
+    except Exception as e:
+        logger.error(f"チャンク化処理エラー: {str(e)}")
+        return {
+            "response": f"エラーが発生しました: {str(e)}",
+            "chunks_processed": 0,
+            "successful_chunks": 0,
+            "remaining_questions": 0,
+            "limit_reached": False,
+            "processing_success": False,
+            "error": str(e)
+        }
 
 # チャット履歴を取得するエンドポイント（ページネーション対応）
 @app.get("/chatbot/api/admin/chat-history")
@@ -2184,6 +2227,246 @@ async def simulate_token_cost(request: dict, current_user = Depends(get_current_
         
     except Exception as e:
         print(f"料金シミュレーションエラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"料金シミュレーション中にエラーが発生しました: {str(e)}")
+
+# プロンプト参照を含む会社全体のトークン使用量と料金情報を取得するエンドポイント
+@app.get("/chatbot/api/company-token-usage-with-prompts", response_model=dict)
+async def get_company_token_usage_with_prompts(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """プロンプト参照を含む会社全体のトークン使用量と料金情報を取得する"""
+    try:
+        print(f"company-token-usage-with-promptsエンドポイントが呼び出されました - ユーザー: {current_user['email']}")
+        
+        # ユーザーの会社IDを取得
+        from supabase_adapter import select_data
+        user_result = select_data("users", columns="company_id", filters={"id": current_user["id"]})
+        company_id = None
+        if user_result and user_result.data:
+            company_id = user_result.data[0].get("company_id")
+        
+        # 実際の会社ユーザー数を取得
+        company_users_count = 1
+        company_name = "あなたの会社"
+        
+        if company_id:
+            company_users_result = select_data("users", columns="id, name", filters={"company_id": company_id})
+            if company_users_result and company_users_result.data:
+                company_users_count = len(company_users_result.data)
+            
+            company_result = select_data("companies", columns="name", filters={"id": company_id})
+            if company_result and company_result.data:
+                company_name = company_result.data[0].get("name", "あなたの会社")
+        
+        # 実際のトークン使用量とプロンプト参照数を取得
+        total_tokens_used = 0
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_conversations = 0
+        total_cost_usd = 0.0
+        prompt_references_total = 0
+        base_cost_total = 0.0
+        prompt_cost_total = 0.0
+        
+        try:
+            if company_id:
+                # 新しい料金体系でのデータを取得
+                chat_result = select_data(
+                    "chat_history", 
+                    columns="input_tokens,output_tokens,total_tokens,cost_usd,prompt_references,base_cost_usd,prompt_cost_usd",
+                    filters={"company_id": company_id}
+                )
+                
+                if chat_result and chat_result.data:
+                    chats = chat_result.data
+                    total_input_tokens = sum(chat.get('input_tokens', 0) or 0 for chat in chats)
+                    total_output_tokens = sum(chat.get('output_tokens', 0) or 0 for chat in chats)
+                    total_tokens_used = sum(chat.get('total_tokens', 0) or 0 for chat in chats)
+                    
+                    # 新しいカラムがある場合はそれを使用、ない場合は従来のcost_usdを使用
+                    has_new_columns = any(chat.get('base_cost_usd') is not None for chat in chats)
+                    
+                    if has_new_columns:
+                        print("✅ 新料金体系カラムを検出 - 正確な計算を使用")
+                        prompt_references_total = sum(chat.get('prompt_references', 0) or 0 for chat in chats)
+                        base_cost_total = sum(float(chat.get('base_cost_usd', 0) or 0) for chat in chats)
+                        prompt_cost_total = sum(float(chat.get('prompt_cost_usd', 0) or 0) for chat in chats)
+                        total_cost_usd = base_cost_total + prompt_cost_total
+                    else:
+                        print("⚠️ 新料金体系カラムなし - 既存データから推定計算")
+                        # 既存のcost_usdから推定計算
+                        total_cost_usd = sum(float(chat.get('cost_usd', 0) or 0) for chat in chats)
+                        
+                        # 推定値を計算（アクティブリソース数は分からないので仮定）
+                        estimated_prompt_refs = len(chats) * 2  # 平均2つのリソース参照と仮定
+                        prompt_references_total = estimated_prompt_refs
+                        
+                                                # トークンから基本コストを逆算
+                        if total_tokens_used > 0:
+                            if total_cost_usd > 0:
+                                # 既存のコストデータを使用
+                                estimated_prompt_cost = estimated_prompt_refs * 0.001
+                                base_cost_total = max(0, total_cost_usd - estimated_prompt_cost)
+                                prompt_cost_total = estimated_prompt_cost
+                            else:
+                                # コストが0の場合は新料金体系で再計算
+                                print("💰 コストが0のため新料金体系で再計算中...")
+                                from modules.token_counter import TokenCounter
+                                counter = TokenCounter()
+                                pricing = counter.pricing["gemini-pro"]
+                                
+                                # 30%がinput、70%がoutputと仮定
+                                estimated_input = total_input_tokens if total_input_tokens > 0 else int(total_tokens_used * 0.3)
+                                estimated_output = total_output_tokens if total_output_tokens > 0 else int(total_tokens_used * 0.7)
+                                
+                                input_cost = (estimated_input / 1000) * pricing["input"]
+                                output_cost = (estimated_output / 1000) * pricing["output"]
+                                base_cost_total = input_cost + output_cost
+                                prompt_cost_total = estimated_prompt_refs * counter.prompt_reference_cost
+                                total_cost_usd = base_cost_total + prompt_cost_total
+                                
+                                print(f"再計算結果 - 基本: ${base_cost_total:.6f}, プロンプト: ${prompt_cost_total:.6f}, 総計: ${total_cost_usd:.6f}")
+                        else:
+                            base_cost_total = 0.0
+                            prompt_cost_total = 0.0
+                    
+                    total_conversations = len(chats)
+                    
+                    print(f"料金計算データ - トークン: {total_tokens_used:,}, プロンプト参照: {prompt_references_total}, 総コスト: ${total_cost_usd:.6f}")
+                    print(f"  基本コスト: ${base_cost_total:.6f}, プロンプトコスト: ${prompt_cost_total:.6f}")
+                else:
+                    print("⚠️ チャットデータがありません")
+            else:
+                print("⚠️ 会社IDがない")
+        except Exception as e:
+            print(f"⚠️ トークン使用量取得エラー: {e}")
+            import traceback
+            print(f"エラー詳細: {traceback.format_exc()}")
+        
+        # 基本設定
+        basic_plan_limit = 25000000  # 25M tokens
+        usage_percentage = (total_tokens_used / basic_plan_limit * 100) if basic_plan_limit > 0 else 0
+        remaining_tokens = max(0, basic_plan_limit - total_tokens_used)
+        
+        # 警告レベル計算
+        warning_level = "safe"
+        if usage_percentage >= 95:
+            warning_level = "critical"
+        elif usage_percentage >= 80:
+            warning_level = "warning"
+        
+        # 新しい料金体系での計算（USD → JPY変換）
+        usd_to_jpy = 150  # 1USD = 150JPY（仮定）
+        current_month_cost = total_cost_usd * usd_to_jpy
+        
+        data = {
+            "total_tokens_used": total_tokens_used,
+            "input_tokens_total": total_input_tokens,
+            "output_tokens_total": total_output_tokens,
+            "prompt_references_total": prompt_references_total,
+            "basic_plan_limit": basic_plan_limit,
+            "current_month_cost": int(current_month_cost),
+            "cost_breakdown": {
+                "basic_plan": 0,  # 新料金体系では基本プラン料金なし
+                "tier1_cost": 0,
+                "tier2_cost": 0,
+                "tier3_cost": 0,
+                "total_cost": int(current_month_cost),
+                "base_cost": int(base_cost_total * usd_to_jpy),
+                "prompt_cost": int(prompt_cost_total * usd_to_jpy)
+            },
+            "usage_percentage": round(usage_percentage, 1),
+            "remaining_tokens": remaining_tokens,
+            "warning_level": warning_level,
+            "company_users_count": company_users_count,
+            "total_conversations": total_conversations,
+            "cost_usd": total_cost_usd,
+            "company_name": company_name
+        }
+        
+        print(f"📊 最終データを返却:")
+        print(f"  トークン: {total_tokens_used:,}")
+        print(f"  プロンプト参照: {prompt_references_total}")
+        print(f"  USD総コスト: ${total_cost_usd:.6f}")
+        print(f"  JPY総コスト: ¥{current_month_cost:.0f}")
+        print(f"  基本コスト(JPY): ¥{int(base_cost_total * usd_to_jpy)}")
+        print(f"  プロンプトコスト(JPY): ¥{int(prompt_cost_total * usd_to_jpy)}")
+        
+        return data
+        
+    except Exception as e:
+        print(f"プロンプト参照含むトークン使用量取得エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"トークン使用量の取得中にエラーが発生しました: {str(e)}")
+
+# プロンプト参照を含む料金シミュレーションエンドポイント
+@app.post("/chatbot/api/simulate-cost-with-prompts", response_model=dict)
+async def simulate_token_cost_with_prompts(request: dict, current_user = Depends(get_current_user)):
+    """プロンプト参照を含む指定されたトークン数での料金をシミュレーション"""
+    try:
+        print(f"simulate-cost-with-promptsエンドポイントが呼び出されました - ユーザー: {current_user['email']}")
+        
+        tokens = request.get("tokens", 0)
+        prompt_references = request.get("prompt_references", 0)
+        
+        print(f"シミュレーション - トークン: {tokens}, プロンプト参照: {prompt_references}")
+        
+        if not isinstance(tokens, (int, float)) or tokens < 0:
+            raise HTTPException(status_code=400, detail="有効なトークン数を指定してください")
+        
+        if not isinstance(prompt_references, (int, float)) or prompt_references < 0:
+            raise HTTPException(status_code=400, detail="有効なプロンプト参照数を指定してください")
+        
+        # 新しい料金体系での計算
+        from modules.token_counter import TokenCounter
+        counter = TokenCounter()
+        
+        # 仮のテキストでトークン計算をシミュレート
+        # 実際の計算ではinput/outputの比率を仮定
+        input_tokens = int(tokens * 0.3)  # 30%がinput
+        output_tokens = int(tokens * 0.7)  # 70%がoutput
+        
+        # 新料金体系で計算
+        pricing = counter.pricing["workmate-standard"]
+        input_cost = (input_tokens / 1000) * pricing["input"]
+        output_cost = (output_tokens / 1000) * pricing["output"]
+        base_cost = input_cost + output_cost
+        
+        # プロンプト参照コスト
+        prompt_cost = prompt_references * counter.prompt_reference_cost
+        total_cost = base_cost + prompt_cost
+        
+        # USD → JPY変換
+        usd_to_jpy = 150
+        total_cost_jpy = total_cost * usd_to_jpy
+        base_cost_jpy = base_cost * usd_to_jpy
+        prompt_cost_jpy = prompt_cost * usd_to_jpy
+        
+        effective_rate = total_cost_jpy / tokens * 1000 if tokens > 0 else 0
+        
+        result = {
+            "simulated_tokens": tokens,
+            "prompt_references": prompt_references,
+            "cost_breakdown": {
+                "total_cost": int(total_cost_jpy),
+                "basic_plan": 0,
+                "tier1_cost": 0,
+                "tier2_cost": 0,
+                "tier3_cost": 0,
+                "base_cost": int(base_cost_jpy),
+                "prompt_cost": int(prompt_cost_jpy),
+                "effective_rate": round(effective_rate, 2)
+            },
+            "tokens_in_millions": tokens / 1000000,
+            "cost_per_million": total_cost_jpy / (tokens / 1000000) if tokens > 0 else 0
+        }
+        
+        print(f"新料金体系シミュレーション結果: {result}")
+        return result
+        
+    except Exception as e:
+        print(f"プロンプト参照含む料金シミュレーションエラー: {str(e)}")
         import traceback
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"料金シミュレーション中にエラーが発生しました: {str(e)}")

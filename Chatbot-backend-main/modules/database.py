@@ -12,7 +12,7 @@ from typing import Dict, List, Any, Optional
 from fastapi import Depends
 from .config import get_db_params
 from .database_schema import SCHEMA, INITIAL_DATA
-from supabase_adapter import get_supabase_client, insert_data, update_data, delete_data, select_data, execute_query
+from supabase_adapter import get_supabase_client, insert_data, update_data, select_data, execute_query
 
 # データ型変換ユーティリティ関数
 def ensure_string(value, for_db=False):
@@ -1701,35 +1701,117 @@ def get_applications(status: str = None, db: SupabaseConnection = None) -> List[
 
 def update_application_status(application_id: str, status: str, processed_by: str = None, notes: str = None, db: SupabaseConnection = None) -> bool:
     """申請のステータスを更新する"""
+    if db is None:
+        db = SupabaseConnection()
+        close_db = True
+    else:
+        close_db = False
+    
     try:
-        print(f"=== 申請ステータス更新開始 ===")
-        print(f"申請ID: {application_id}")
-        print(f"新ステータス: {status}")
+        from supabase_adapter import update_data
         
-        # 更新データを準備
-        update_data = {
+        update_dict = {
             "status": status,
             "processed_at": datetime.datetime.now().isoformat()
         }
         
         if processed_by:
-            update_data["processed_by"] = processed_by
+            update_dict["processed_by"] = processed_by
         
         if notes:
-            update_data["notes"] = notes
+            update_dict["notes"] = notes
         
-        # データベースを更新
-        result = update_data_by_id("applications", update_data, "id", application_id)
+        result = update_data("applications", update_dict, {"id": application_id})
         
-        if result:
-            print(f"✓ 申請ステータス更新完了")
+        if result and result.data:
+            print(f"申請 {application_id} のステータスを {status} に更新しました")
             return True
         else:
-            print(f"✗ 申請ステータス更新失敗")
+            print(f"申請 {application_id} の更新に失敗しました")
             return False
             
     except Exception as e:
-        print(f"✗ 申請ステータス更新エラー: {str(e)}")
-        import traceback
-        print(traceback.format_exc())
+        print(f"申請ステータス更新エラー: {str(e)}")
         return False
+    finally:
+        if close_db:
+            db.close()
+
+def migrate_chat_history_schema(db: SupabaseConnection = None) -> bool:
+    """chat_historyテーブルに新しいカラムを追加するマイグレーション"""
+    if db is None:
+        db = SupabaseConnection()
+        close_db = True
+    else:
+        close_db = False
+    
+    try:
+        from supabase_adapter import execute_query
+        
+        # 新しいカラムを追加するSQL
+        migration_queries = [
+            "ALTER TABLE chat_history ADD COLUMN IF NOT EXISTS prompt_references INTEGER DEFAULT 0",
+            "ALTER TABLE chat_history ADD COLUMN IF NOT EXISTS base_cost_usd DECIMAL(10,6) DEFAULT 0.000000", 
+            "ALTER TABLE chat_history ADD COLUMN IF NOT EXISTS prompt_cost_usd DECIMAL(10,6) DEFAULT 0.000000"
+        ]
+        
+        for query in migration_queries:
+            try:
+                result = execute_query(query)
+                print(f"マイグレーション実行成功: {query}")
+            except Exception as e:
+                print(f"マイグレーション実行エラー: {query} - {str(e)}")
+                # カラムが既に存在する場合はエラーを無視
+                if "already exists" in str(e).lower() or "duplicate column" in str(e).lower():
+                    print("カラムは既に存在します - スキップ")
+                    continue
+                else:
+                    return False
+        
+        print("chat_historyテーブルのマイグレーションが完了しました")
+        return True
+        
+    except Exception as e:
+        print(f"マイグレーションエラー: {str(e)}")
+        return False
+    finally:
+        if close_db:
+            db.close()
+
+def check_new_columns_exist(db: SupabaseConnection = None) -> dict:
+    """新しいカラムが存在するかチェックする"""
+    if db is None:
+        db = SupabaseConnection()
+        close_db = True
+    else:
+        close_db = False
+    
+    try:
+        from supabase_adapter import execute_query
+        
+        # テーブル構造を確認
+        result = execute_query("SELECT column_name FROM information_schema.columns WHERE table_name = 'chat_history'")
+        
+        columns = []
+        if result and hasattr(result, 'data') and result.data:
+            columns = [row.get('column_name', '') for row in result.data]
+        
+        return {
+            "prompt_references": "prompt_references" in columns,
+            "base_cost_usd": "base_cost_usd" in columns,
+            "prompt_cost_usd": "prompt_cost_usd" in columns,
+            "all_columns": columns
+        }
+        
+    except Exception as e:
+        print(f"カラム存在チェックエラー: {str(e)}")
+        return {
+            "prompt_references": False,
+            "base_cost_usd": False,
+            "prompt_cost_usd": False,
+            "all_columns": [],
+            "error": str(e)
+        }
+    finally:
+        if close_db:
+            db.close()

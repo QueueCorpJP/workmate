@@ -45,12 +45,17 @@ interface TokenUsageData {
     tier2_cost: number;
     tier3_cost: number;
     total_cost: number;
+    base_cost: number;
+    prompt_cost: number;
   };
   usage_percentage: number;
   remaining_tokens: number;
   warning_level: 'safe' | 'warning' | 'critical';
   company_users_count: number;
   company_name: string;
+  prompt_references_total: number;
+  input_tokens_total: number;
+  output_tokens_total: number;
 }
 
 interface SimulationData {
@@ -62,9 +67,12 @@ interface SimulationData {
     tier2_cost: number;
     tier3_cost: number;
     effective_rate: number;
+    base_cost: number;
+    prompt_cost: number;
   };
   tokens_in_millions: number;
   cost_per_million: number;
+  prompt_references: number;
 }
 
 const BillingTab: React.FC = () => {
@@ -74,30 +82,57 @@ const BillingTab: React.FC = () => {
   const [tokenUsage, setTokenUsage] = useState<TokenUsageData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [simulationTokens, setSimulationTokens] = useState(30000000); // 30M tokens
+  const [simulationPrompts, setSimulationPrompts] = useState(1000); // 1000 prompt references
   const [simulationData, setSimulationData] = useState<SimulationData | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(false);
 
   // トークン使用量データを取得
   const fetchTokenUsage = async () => {
     try {
       setIsLoading(true);
-      const response = await api.get('/company-token-usage');
+      const response = await api.get('/company-token-usage-with-prompts');
       setTokenUsage(response.data);
     } catch (error: any) {
       console.error('トークン使用量取得エラー:', error);
+      // フォールバック：従来のAPIを試す
+      try {
+        const fallbackResponse = await api.get('/company-token-usage');
+        setTokenUsage({
+          ...fallbackResponse.data,
+          prompt_references_total: 0,
+          input_tokens_total: 0,
+          output_tokens_total: 0
+        });
+      } catch (fallbackError) {
+        console.error('フォールバックAPIもエラー:', fallbackError);
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   // 料金シミュレーションを実行
-  const simulateCost = async (tokens: number) => {
+  const simulateCost = async (tokens: number, prompts: number = 0) => {
     try {
       setIsSimulating(true);
-      const response = await api.post('/simulate-cost', { tokens });
+      const response = await api.post('/simulate-cost-with-prompts', { 
+        tokens, 
+        prompt_references: prompts 
+      });
       setSimulationData(response.data);
     } catch (error: any) {
       console.error('料金シミュレーションエラー:', error);
+      // フォールバック：従来のAPIを試す
+      try {
+        const fallbackResponse = await api.post('/simulate-cost', { tokens });
+        setSimulationData({
+          ...fallbackResponse.data,
+          prompt_references: prompts
+        });
+      } catch (fallbackError) {
+        console.error('フォールバックシミュレーションもエラー:', fallbackError);
+      }
     } finally {
       setIsSimulating(false);
     }
@@ -108,8 +143,25 @@ const BillingTab: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    simulateCost(simulationTokens);
-  }, [simulationTokens]);
+    simulateCost(simulationTokens, simulationPrompts);
+  }, [simulationTokens, simulationPrompts]);
+
+  // リアルタイム更新機能
+  useEffect(() => {
+    let interval: number;
+    
+    if (autoRefresh) {
+      interval = setInterval(() => {
+        fetchTokenUsage();
+      }, 30000); // 30秒ごとに更新
+    }
+    
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [autoRefresh]);
 
   // 数値のフォーマット関数
   const formatNumber = (num: number): string => {
@@ -183,17 +235,29 @@ const BillingTab: React.FC = () => {
             </Typography>
           </Box>
 
-          <Button
-            variant="outlined"
-            color="primary"
-            onClick={fetchTokenUsage}
-            disabled={isLoading}
-            startIcon={<RefreshIcon />}
-            size={isMobile ? "small" : "medium"}
-            sx={{ borderRadius: 2 }}
-          >
-            {!isMobile && '更新'}
-          </Button>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Button
+              variant={autoRefresh ? "contained" : "outlined"}
+              color="primary"
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              size={isMobile ? "small" : "medium"}
+              sx={{ borderRadius: 2 }}
+            >
+              {autoRefresh ? '自動更新ON' : '自動更新OFF'}
+            </Button>
+            
+            <Button
+              variant="outlined"
+              color="primary"
+              onClick={fetchTokenUsage}
+              disabled={isLoading}
+              startIcon={<RefreshIcon />}
+              size={isMobile ? "small" : "medium"}
+              sx={{ borderRadius: 2 }}
+            >
+              {!isMobile && '更新'}
+            </Button>
+          </Box>
         </Box>
 
         {tokenUsage && (
@@ -273,6 +337,40 @@ const BillingTab: React.FC = () => {
                     </Alert>
                   )}
 
+                  {/* 使用量詳細 */}
+                  <Grid container spacing={2} sx={{ mb: 3 }}>
+                    <Grid item xs={12} sm={4}>
+                      <Box sx={{ textAlign: 'center', p: 2, backgroundColor: 'rgba(103, 58, 183, 0.05)', borderRadius: 2 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 600, color: 'primary.main' }}>
+                          {formatTokens(tokenUsage.input_tokens_total || 0)}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Input トークン
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <Box sx={{ textAlign: 'center', p: 2, backgroundColor: 'rgba(156, 39, 176, 0.05)', borderRadius: 2 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 600, color: 'secondary.main' }}>
+                          {formatTokens(tokenUsage.output_tokens_total || 0)}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Output トークン
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <Box sx={{ textAlign: 'center', p: 2, backgroundColor: 'rgba(255, 193, 7, 0.05)', borderRadius: 2 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 600, color: 'warning.main' }}>
+                          {formatNumber(tokenUsage.prompt_references_total || 0)}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          プロンプト参照
+                        </Typography>
+                      </Box>
+                    </Grid>
+                  </Grid>
+
                   {/* 料金内訳 */}
                   <Grid container spacing={2}>
                     <Grid item xs={12} sm={6} md={3}>
@@ -288,10 +386,20 @@ const BillingTab: React.FC = () => {
                     <Grid item xs={12} sm={6} md={3}>
                       <Box sx={{ textAlign: 'center', p: 2, backgroundColor: 'rgba(76, 175, 80, 0.05)', borderRadius: 2 }}>
                         <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                          {formatCurrency(tokenUsage.cost_breakdown.basic_plan)}
+                          {formatCurrency(tokenUsage.cost_breakdown.base_cost || tokenUsage.cost_breakdown.basic_plan)}
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                          基本プラン
+                          基本料金
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Box sx={{ textAlign: 'center', p: 2, backgroundColor: 'rgba(255, 193, 7, 0.05)', borderRadius: 2 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                          {formatCurrency(tokenUsage.cost_breakdown.prompt_cost || 0)}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          プロンプト料金
                         </Typography>
                       </Box>
                     </Grid>
@@ -354,20 +462,35 @@ const BillingTab: React.FC = () => {
                     ]}
                     valueLabelDisplay="auto"
                     valueLabelFormat={(value) => `${value}M`}
-                    sx={{ mb: 3 }}
+                    sx={{ mb: 2 }}
                   />
 
-                  <TextField
-                    label="詳細な値を入力（M tokens）"
-                    type="number"
-                    value={simulationTokens / 1000000}
-                    onChange={(e) => setSimulationTokens(parseFloat(e.target.value) * 1000000 || 0)}
-                    variant="outlined"
-                    size="small"
-                    fullWidth
-                    sx={{ mb: 3 }}
-                    inputProps={{ step: 0.1, min: 0 }}
-                  />
+                  <Grid container spacing={2} sx={{ mb: 3 }}>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        label="トークン数（M tokens）"
+                        type="number"
+                        value={simulationTokens / 1000000}
+                        onChange={(e) => setSimulationTokens(parseFloat(e.target.value) * 1000000 || 0)}
+                        variant="outlined"
+                        size="small"
+                        fullWidth
+                        inputProps={{ step: 0.1, min: 0 }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        label="プロンプト参照数"
+                        type="number"
+                        value={simulationPrompts}
+                        onChange={(e) => setSimulationPrompts(parseInt(e.target.value) || 0)}
+                        variant="outlined"
+                        size="small"
+                        fullWidth
+                        inputProps={{ step: 1, min: 0 }}
+                      />
+                    </Grid>
+                  </Grid>
 
                   {simulationData && (
                     <Box sx={{ p: 2, backgroundColor: 'rgba(156, 39, 176, 0.05)', borderRadius: 2 }}>
@@ -375,8 +498,22 @@ const BillingTab: React.FC = () => {
                         {formatCurrency(simulationData.cost_breakdown.total_cost)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        月額料金（{simulationData.tokens_in_millions.toFixed(1)}M tokens使用時）
+                        月額料金（{simulationData.tokens_in_millions.toFixed(1)}M tokens + {simulationData.prompt_references}回参照）
                       </Typography>
+                      
+                      <Grid container spacing={1} sx={{ mb: 2 }}>
+                        <Grid item xs={6}>
+                          <Typography variant="body2" color="text.secondary">
+                            基本料金: {formatCurrency(simulationData.cost_breakdown.base_cost || 0)}
+                          </Typography>
+                        </Grid>
+                        <Grid item xs={6}>
+                          <Typography variant="body2" color="text.secondary">
+                            プロンプト料金: {formatCurrency(simulationData.cost_breakdown.prompt_cost || 0)}
+                          </Typography>
+                        </Grid>
+                      </Grid>
+                      
                       <Typography variant="body2" color="text.secondary">
                         実効レート: {simulationData.cost_breakdown.effective_rate.toFixed(2)}円/1,000tokens
                       </Typography>
@@ -403,39 +540,43 @@ const BillingTab: React.FC = () => {
                     <Table size="small">
                       <TableHead>
                         <TableRow sx={{ backgroundColor: 'rgba(0, 0, 0, 0.02)' }}>
-                          <TableCell><strong>プラン</strong></TableCell>
-                          <TableCell><strong>使用量</strong></TableCell>
-                          <TableCell><strong>料金</strong></TableCell>
+                          <TableCell><strong>項目</strong></TableCell>
+                          <TableCell><strong>単価</strong></TableCell>
+                          <TableCell><strong>説明</strong></TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
                         <TableRow>
-                          <TableCell>基本プラン</TableCell>
-                          <TableCell>0 ～ 25M</TableCell>
-                          <TableCell>{formatCurrency(150000)}/月</TableCell>
+                          <TableCell>Input トークン</TableCell>
+                          <TableCell>¥0.045/1,000tokens</TableCell>
+                          <TableCell>ユーザーからの質問</TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell>第1段階</TableCell>
-                          <TableCell>25M ～ 50M</TableCell>
-                          <TableCell>15円/1,000tokens</TableCell>
+                          <TableCell>Output トークン</TableCell>
+                          <TableCell>¥0.375/1,000tokens</TableCell>
+                          <TableCell>AIからの回答</TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell>第2段階</TableCell>
-                          <TableCell>50M ～ 100M</TableCell>
-                          <TableCell>12円/1,000tokens</TableCell>
-                        </TableRow>
-                        <TableRow>
-                          <TableCell>第3段階</TableCell>
-                          <TableCell>100M超</TableCell>
-                          <TableCell>10円/1,000tokens</TableCell>
+                          <TableCell>プロンプト参照</TableCell>
+                          <TableCell>¥0.15/回</TableCell>
+                          <TableCell>知識ベース参照</TableCell>
                         </TableRow>
                       </TableBody>
                     </Table>
                   </TableContainer>
 
                   <Box sx={{ mt: 2, p: 2, backgroundColor: 'rgba(76, 175, 80, 0.05)', borderRadius: 1 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      💡 <strong>新料金体系の特徴:</strong>
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                      • Input $0.30、Output $2.5 per 1M tokens
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                      • プロンプト参照ごとに追加料金
+                    </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      💡 <strong>メリット:</strong> 25Mまでは定額制で安心、超過分は段階的に安くなります
+                      • 使った分だけの従量課金制
                     </Typography>
                   </Box>
                 </CardContent>

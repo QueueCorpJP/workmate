@@ -754,7 +754,7 @@ def process_csv_file(contents: bytes, filename: str):
             
             if modifications:
                 logger.info(f"Unnamedカラム修正: {', '.join(modifications)}")
-                
+            
             logger.info(f"CSV読み込み完了: {len(df)} 行, {len(df.columns)} 列")
             logger.info(f"修正後カラム名: {list(df.columns)}")
             

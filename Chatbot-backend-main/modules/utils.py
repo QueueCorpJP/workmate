@@ -16,6 +16,20 @@ from .database import ensure_string
 
 load_dotenv()
 
+def safe_print(text):
+    """安全な出力関数"""
+    try:
+        print(text)
+    except Exception as e:
+        print(f"出力エラー: {str(e)}")
+
+def safe_safe_print(text):
+    """より安全な出力関数"""
+    try:
+        print(text)
+    except Exception:
+        pass  # エラーが発生しても無視
+
 # プロキシ設定を環境変数から取得
 WEBSHAREPROXY_USERNAME = os.getenv("WEBSHAREPROXY_USERNAME")
 WEBSHAREPROXY_PASSWORD = os.getenv("WEBSHAREPROXY_PASSWORD")

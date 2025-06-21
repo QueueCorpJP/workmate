@@ -61,6 +61,7 @@ const AdminPanel: React.FC = () => {
   // 認証コンテキストを使用
   const { user } = useAuth();
   const isUserRole = user?.role === "user";
+  const isQueueTechAdmin = user?.email === "queue@queueu-tech.jp";
 
   // Tab state
   const [tabValue, setTabValue] = useState(0);
@@ -768,15 +769,15 @@ const AdminPanel: React.FC = () => {
       label: "料金管理",
       ariaLabel: "料金管理タブ",
     },
-    ...(isUserRole
-      ? []
-      : [
+    ...(isQueueTechAdmin
+      ? [
         {
           icon: <QueryStatsIcon sx={{ color: "#3b82f6" }} />,
           label: "デモ統計",
           ariaLabel: "デモ統計タブ",
         },
-      ]),
+      ]
+      : []),
     {
       icon: <PersonAddIcon sx={{ color: "#3b82f6" }} />,
       label: "ユーザー管理",
@@ -786,7 +787,7 @@ const AdminPanel: React.FC = () => {
 
   // タブが変更されたときの実際のインデックスを計算する関数
   const getActualTabIndex = (visibleIndex: number) => {
-    if (isUserRole && visibleIndex >= 6) {
+    if (!isQueueTechAdmin && visibleIndex >= 6) {
       return visibleIndex + 1; // デモ統計タブがスキップされるので+1する
     }
     return visibleIndex;
@@ -818,8 +819,8 @@ const AdminPanel: React.FC = () => {
       case 5: // 料金管理
         // 料金管理は内部で自動読み込みするため何もしない
         break;
-      case 6: // デモ統計 (ユーザーロールでない場合のみ)
-        if (!isUserRole) {
+      case 6: // デモ統計 (queue@queueu-tech.jpのみ)
+        if (isQueueTechAdmin) {
           fetchDemoStats();
         }
         break;
@@ -1250,8 +1251,8 @@ const AdminPanel: React.FC = () => {
                 <BillingTab />
               )}
 
-              {/* デモ統計タブ - ユーザーロールでない場合のみ表示 */}
-              {!isUserRole && getActualTabIndex(tabValue) === 6 && (
+              {/* デモ統計タブ - queue@queueu-tech.jpのみ表示 */}
+              {isQueueTechAdmin && getActualTabIndex(tabValue) === 6 && (
                 <DemoStatsTab
                   demoStats={demoStats}
                   isLoading={isDemoStatsLoading}
@@ -1262,7 +1263,7 @@ const AdminPanel: React.FC = () => {
               )}
 
               {/* ユーザー管理タブ */}
-              {tabValue === (isUserRole ? 6 : 7) && (
+              {tabValue === (isQueueTechAdmin ? 7 : 6) && (
                 <UserManagementTab
                   isSpecialAdmin={isSpecialAdmin}
                   newUserEmail={newUserEmail}
