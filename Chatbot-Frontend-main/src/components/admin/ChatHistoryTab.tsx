@@ -175,7 +175,6 @@ const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({
                 <TableCell>日時</TableCell>
                 <TableCell>管理者の質問</TableCell>
                 <TableCell>ボットの回答</TableCell>
-                <TableCell>カテゴリ</TableCell>
                 <TableCell>感情</TableCell>
               </TableRow>
             </TableHead>
@@ -202,7 +201,6 @@ const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({
                   >
                     <MarkdownRenderer content={chat.bot_response} />
                   </TableCell>
-                  <TableCell>{chat.category || "未分類"}</TableCell>
                   <TableCell>{chat.sentiment || "neutral"}</TableCell>
                 </TableRow>
               ))}

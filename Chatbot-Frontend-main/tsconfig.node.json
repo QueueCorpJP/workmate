@@ -3,8 +3,15 @@
     "composite": true,
     "skipLibCheck": true,
     "module": "ESNext",
-    "moduleResolution": "bundler",
-    "allowSyntheticDefaultImports": true
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "strict": false,
+    "noEmit": true,
+    "target": "ES2020",
+    "lib": ["ES2020"],
+    "types": ["node", "vite/client"]
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "*.config.ts", "*.config.js"],
+  "exclude": ["node_modules", "dist", "build"]
 }

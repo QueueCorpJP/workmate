@@ -383,9 +383,9 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
               <SmartToyIcon sx={{ fontSize: '2rem', color: '#2563eb' }} />
             </Box>
             <Box>
-              <Typography
+            <Typography
                 variant="h4"
-                sx={{
+              sx={{
                   fontWeight: 700,
                   color: 'text.primary',
                   fontSize: { xs: '1.5rem', md: '2rem' },
@@ -396,21 +396,21 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                 }}
               >
                 AI強化分析ダッシュボード
-              </Typography>
-              <Typography
+            </Typography>
+            <Typography
                 variant="body1"
-                sx={{
-                  color: 'text.secondary',
+              sx={{
+                color: 'text.secondary',
                   fontSize: '1.1rem',
-                  mt: 0.5,
+                mt: 0.5,
                   display: 'flex',
                   alignItems: 'center',
                   gap: 1
-                }}
-              >
+              }}
+            >
                 <AutoFixHighIcon fontSize="small" />
                 Gemini AIによる高度な分析と洞察
-              </Typography>
+            </Typography>
               {lastRefresh && (
                 <Typography
                   variant="caption"
@@ -484,7 +484,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
         {/* ローディング状態 */}
         {isEnhancedLoading ? (
           <Box sx={{ py: 8 }}>
-            <LoadingIndicator />
+          <LoadingIndicator />
             <Typography
               variant="h6"
               sx={{
@@ -501,22 +501,22 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
         ) : (
           <Grid container spacing={3}>
             {/* Gemini AI洞察カード */}
-            <Grid item xs={12}>
-              <Card
-                elevation={0}
-                sx={{
+                <Grid item xs={12}>
+                  <Card
+                    elevation={0}
+                    sx={{
                   borderRadius: 3,
                   border: '1px solid rgba(25, 118, 210, 0.15)',
-                  position: 'relative',
-                  overflow: 'hidden',
+                      position: 'relative',
+                      overflow: 'hidden',
                   background: 'linear-gradient(135deg, rgba(25, 118, 210, 0.02), rgba(25, 118, 210, 0.06))',
-                  '&::before': {
-                    content: '""',
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '4px',
+                      '&::before': {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '4px',
                     background: 'linear-gradient(90deg, #1976d2, #42a5f5, #1565c0)',
                   }
                 }}
@@ -524,7 +524,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                 <CardContent sx={{ p: 4 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
                     <Box
-                      sx={{
+                          sx={{
                         mr: 2,
                         p: 1.5,
                         borderRadius: 2,
@@ -535,9 +535,9 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                       <SmartToyIcon sx={{ fontSize: '1.8rem', color: '#1976d2' }} />
                     </Box>
                     <Box>
-                      <Typography
+                        <Typography
                         variant="h5"
-                        sx={{
+                          sx={{
                           fontWeight: 700,
                           color: '#1976d2',
                           fontSize: '1.4rem'
@@ -550,15 +550,15 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                         sx={{ color: 'text.secondary', mt: 0.5 }}
                       >
                         AIによる高度な分析と改善提案
-                      </Typography>
-                    </Box>
+                        </Typography>
+                      </Box>
                   </Box>
 
                   <Divider sx={{ mb: 3, borderColor: 'rgba(25, 118, 210, 0.1)' }} />
 
-                  <Paper
-                    elevation={0}
-                    sx={{
+                      <Paper
+                        elevation={0}
+                        sx={{
                       p: 3,
                       backgroundColor: 'rgba(255, 255, 255, 0.7)',
                       borderRadius: 2,
@@ -567,10 +567,10 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                     }}
                   >
                     <MarkdownRenderer content={enhancedAnalysis.ai_insights || 'AI分析を実行中です...'} />
-                  </Paper>
-                </CardContent>
-              </Card>
-            </Grid>
+                      </Paper>
+                    </CardContent>
+                  </Card>
+                </Grid>
 
             {/* 強化分析セクション */}
             {[
@@ -616,16 +616,16 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
               }
             ].map((section, index) => (
               <Grid item xs={12} key={index}>
-                <Card
+                  <Card
                   elevation={0}
-                  sx={{
+                    sx={{
                     mb: 2,
-                    borderRadius: 3,
+                      borderRadius: 3,
                     border: `1px solid ${section.borderColor}`,
                     background: section.color,
                     transition: 'all 0.3s ease',
-                    overflow: 'hidden',
-                    '&:hover': {
+                      overflow: 'hidden',
+                      '&:hover': {
                       boxShadow: `0 8px 24px ${section.borderColor}`,
                       transform: 'translateY(-2px)',
                     }
@@ -720,55 +720,55 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                                 <Box sx={{ height: 450, p: 2, backgroundColor: 'rgba(255, 255, 255, 0.5)', borderRadius: 2 }}>
                                   <Bar
                                     data={getResourceReferenceChartData(section.content.resources)}
-                                    options={{
-                                      responsive: true,
-                                      maintainAspectRatio: false,
-                                      plugins: {
+                            options={{
+                              responsive: true,
+                              maintainAspectRatio: false,
+                              plugins: {
                                         title: {
                                           display: true,
                                           text: '資料別参照回数（上位10件）',
                                           font: { size: 16, weight: 'bold' }
                                         },
                                         legend: { display: false },
-                                        tooltip: {
+                                tooltip: {
                                           backgroundColor: 'rgba(0, 0, 0, 0.8)',
                                           titleColor: 'white',
                                           bodyColor: 'white',
                                           cornerRadius: 8,
                                           padding: 12
-                                        }
-                                      },
-                                      scales: {
-                                        y: {
-                                          beginAtZero: true,
+                                }
+                              },
+                              scales: {
+                                y: {
+                                  beginAtZero: true,
                                           grid: { color: 'rgba(0, 0, 0, 0.1)' },
-                                          ticks: { 
+                                  ticks: {
                                             color: '#666',
                                             callback: function(value: any) {
                                               return value + '回';
                                             }
-                                          }
-                                        },
-                                        x: {
+                                  }
+                                },
+                                x: {
                                           grid: { display: false },
-                                          ticks: { 
+                                  ticks: {
                                             color: '#666',
-                                            maxRotation: 45
+                                    maxRotation: 45
                                           }
                                         }
-                                      }
-                                    }}
-                                  />
-                                </Box>
-                              </Box>
-                            )}
+                              }
+                            }}
+                          />
+                            </Box>
                           </Box>
                         )}
+                      </Box>
+                        )}
                         {index === 2 && (
-                          <Box>
+                        <Box>
                             <Paper 
                               elevation={0}
-                              sx={{ 
+                            sx={{
                                 p: 2, 
                                 mb: 3, 
                                 backgroundColor: 'rgba(255, 255, 255, 0.7)',
@@ -781,14 +781,14 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                               <Box>
                                 <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
                                   📊 アクティブユーザー推移グラフ
-                                </Typography>
+                          </Typography>
                                 <Box sx={{ height: 450, p: 2, backgroundColor: 'rgba(255, 255, 255, 0.5)', borderRadius: 2 }}>
                                   <Line
                                     data={getUserTrendsChartData(section.content.daily_trends)}
-                                    options={{
-                                      responsive: true,
-                                      maintainAspectRatio: false,
-                                      plugins: {
+                            options={{
+                              responsive: true,
+                              maintainAspectRatio: false,
+                              plugins: {
                                         title: {
                                           display: true,
                                           text: 'アクティブユーザー数推移（過去30日）',
@@ -832,31 +832,31 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                                         x: {
                                           grid: { color: 'rgba(0, 0, 0, 0.1)' },
                                           ticks: { color: '#666' }
-                                        }
-                                      }
-                                    }}
-                                  />
-                                </Box>
-                              </Box>
-                            )}
+                                }
+                              }
+                            }}
+                          />
+                            </Box>
                           </Box>
+                        )}
+                      </Box>
                         )}
                         {(index === 1 || index === 3 || index === 4) && (
                           <Paper 
-                            elevation={0}
-                            sx={{ 
+                  elevation={0}
+                  sx={{
                               p: 3, 
                               backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                              borderRadius: 2,
+                    borderRadius: 2,
                               border: '1px solid rgba(0, 0, 0, 0.08)'
                             }}
                           >
                             <MarkdownRenderer content={section.content.summary || 'データを解析中です...'} />
                           </Paper>
                         )}
-                      </Box>
-                    </AccordionDetails>
-                  </Accordion>
+                    </Box>
+                        </AccordionDetails>
+                      </Accordion>
                 </Card>
               </Grid>
             ))}

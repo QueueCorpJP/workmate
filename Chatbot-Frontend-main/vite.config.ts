@@ -23,7 +23,11 @@ export default defineConfig({
     sourcemap: false,
     minify: "esbuild",
     target: "es2020",
+    commonjsOptions: {
+      transformMixedEsModules: true,
+    },
     rollupOptions: {
+      external: [],
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom'],
@@ -32,9 +36,13 @@ export default defineConfig({
           utils: ['axios', 'react-router-dom', 'react-markdown']
         },
         chunkFileNames: (chunkInfo) => {
-          const facadeModuleId = chunkInfo.facadeModuleId ? chunkInfo.facadeModuleId.split('/').pop().replace(/\.[^/.]+$/, "") : "chunk";
+          const facadeModuleId = chunkInfo.facadeModuleId ? 
+            chunkInfo.facadeModuleId.split('/').pop()?.replace(/\.[^/.]+$/, "") || "chunk" : 
+            "chunk";
           return `assets/${facadeModuleId}-[hash].js`;
-        }
+        },
+        assetFileNames: "assets/[name]-[hash].[ext]",
+        entryFileNames: "assets/[name]-[hash].js"
       }
     }
   },
@@ -49,6 +57,24 @@ export default defineConfig({
     },
   },
   esbuild: {
-    logOverride: { "this-is-undefined-in-esm": "silent" }
+    logOverride: { 
+      "this-is-undefined-in-esm": "silent",
+      "direct-eval": "silent"
+    },
+    target: "es2020",
+    format: "esm"
+  },
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      '@mui/material',
+      '@mui/icons-material',
+      'chart.js',
+      'react-chartjs-2'
+    ],
+    esbuildOptions: {
+      target: "es2020"
+    }
   }
 });

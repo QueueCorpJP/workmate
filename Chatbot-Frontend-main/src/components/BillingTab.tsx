@@ -30,7 +30,6 @@ import {
   TrendingUp as TrendingUpIcon,
   Warning as WarningIcon,
   Calculate as CalculateIcon,
-  Refresh as RefreshIcon,
   Info as InfoIcon
 } from '@mui/icons-material';
 import api from '../api';
@@ -85,7 +84,6 @@ const BillingTab: React.FC = () => {
   const [simulationPrompts, setSimulationPrompts] = useState(1000); // 1000 prompt references
   const [simulationData, setSimulationData] = useState<SimulationData | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(false);
 
   // トークン使用量データを取得
   const fetchTokenUsage = async () => {
@@ -146,22 +144,16 @@ const BillingTab: React.FC = () => {
     simulateCost(simulationTokens, simulationPrompts);
   }, [simulationTokens, simulationPrompts]);
 
-  // リアルタイム更新機能
+  // 自動更新機能（常に有効）
   useEffect(() => {
-    let interval: number;
-    
-    if (autoRefresh) {
-      interval = setInterval(() => {
-        fetchTokenUsage();
-      }, 30000); // 30秒ごとに更新
-    }
+    const interval = setInterval(() => {
+      fetchTokenUsage();
+    }, 30000); // 30秒ごとに更新
     
     return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
+      clearInterval(interval);
     };
-  }, [autoRefresh]);
+  }, []);
 
   // 数値のフォーマット関数
   const formatNumber = (num: number): string => {
@@ -236,27 +228,12 @@ const BillingTab: React.FC = () => {
           </Box>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Button
-              variant={autoRefresh ? "contained" : "outlined"}
+            <Chip
+              label="自動更新中"
               color="primary"
-              onClick={() => setAutoRefresh(!autoRefresh)}
-              size={isMobile ? "small" : "medium"}
-              sx={{ borderRadius: 2 }}
-            >
-              {autoRefresh ? '自動更新ON' : '自動更新OFF'}
-            </Button>
-            
-            <Button
-              variant="outlined"
-              color="primary"
-              onClick={fetchTokenUsage}
-              disabled={isLoading}
-              startIcon={<RefreshIcon />}
-              size={isMobile ? "small" : "medium"}
-              sx={{ borderRadius: 2 }}
-            >
-              {!isMobile && '更新'}
-            </Button>
+              size="small"
+              sx={{ fontWeight: 600 }}
+            />
           </Box>
         </Box>
 

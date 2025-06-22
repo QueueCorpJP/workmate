@@ -34,9 +34,12 @@
     "vite": "^5.1.3"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "type-check": "tsc --noEmit"
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build --mode production",
+    "build:safe": "cross-env NODE_OPTIONS=\"--max-old-space-size=4096\" vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "type-check": "tsc --noEmit --skipLibCheck",
+    "clean": "rm -rf dist build node_modules/.vite",
+    "prestart": "npm run type-check"
   }
 }
