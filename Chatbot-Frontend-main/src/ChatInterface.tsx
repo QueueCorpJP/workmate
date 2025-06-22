@@ -711,14 +711,6 @@ function ChatInterface() {
                 isUser={message.isUser}
               />
               {message.source && <SourceCitation source={message.source} />}
-              {/* デバッグ用：常に表示 */}
-              {!message.isUser && (
-                <Box sx={{ mt: 1, p: 1, backgroundColor: '#f0f0f0', borderRadius: 1, fontSize: '0.75rem' }}>
-                  <Typography variant="caption">
-                    デバッグ - Source: "{message.source || 'なし'}"
-                  </Typography>
-                </Box>
-              )}
             </Box>
           ))}
           {isLoading && <TypingAnimation />}

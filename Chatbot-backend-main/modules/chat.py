@@ -821,14 +821,9 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
         
         safe_print(f"最終ソース情報: '{source_text}'")
         
-        # 🔍 本番環境デバッグ用の情報を応答に追加
-        knowledge_summary = f"知識ベース: {len(active_knowledge_text):,}文字" if active_knowledge_text else "知識ベース: 空"
-        sources_summary = f"ソース: {len(active_resource_names)}件 ({', '.join(active_resource_names[:3])}{'...' if len(active_resource_names) > 3 else ''})"
-        debug_info = f"\n\nデバッグ - {knowledge_summary}, {sources_summary}, Source: \"{source_text if source_text else 'なし'}\""
-        
         return {
-            "response": response_text + debug_info,
-            "source": source_text,
+            "response": response_text,
+            "source": source_text if source_text and source_text.strip() else "",
             "remaining_questions": remaining_questions,
             "limit_reached": limit_reached
         }

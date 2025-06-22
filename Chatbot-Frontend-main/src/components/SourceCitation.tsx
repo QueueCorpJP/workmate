@@ -26,7 +26,7 @@ const SourceCitation: React.FC<SourceCitationProps> = ({ source }) => {
     setAnimate(true);
   }, []);
 
-  if (!source) return null;
+  if (!source || !source.trim()) return null;
 
   console.log("SourceCitation受信ソース:", source);
 
