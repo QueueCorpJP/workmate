@@ -424,6 +424,12 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
             safe_print(f"🎯 RAG検索開始 - 元サイズ: {len(active_knowledge_text):,} 文字")
             active_knowledge_text = simple_rag_search(active_knowledge_text, message_text, max_results=8)
             safe_print(f"🎯 RAG検索完了 - 新サイズ: {len(active_knowledge_text):,} 文字")
+            
+            # RAG検索後のサイズが30万文字以下なら通常処理に切り替え
+            if len(active_knowledge_text) <= 300000:
+                safe_print(f"🔄 RAG検索後のサイズが小さいため、通常処理に切り替えます")
+                # 通常のprocess_chat関数を呼び出し
+                return await process_chat(message, db, current_user)
         
         # 知識ベースのサイズを制限（API制限対応のため一時的に復活）
         MAX_KNOWLEDGE_SIZE = 300000  # 30万文字制限（API制限対応）
@@ -949,10 +955,13 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
         
         safe_print(f"📊 取得した知識ベース: {len(active_knowledge_text)} 文字")
         
-        # RAG風検索で関連部分のみを抽出（チャンク化前の事前フィルタリング）
+        # 🎯 RAG検索による事前フィルタリング（チャンク化システム最適化）
+        # チャンク化を考慮して、より多くの関連セクションを取得
         if active_knowledge_text and len(active_knowledge_text) > 100000:
-            active_knowledge_text = simple_rag_search(active_knowledge_text, message_text, max_results=15)
-            safe_print(f"📊 RAG検索後: {len(active_knowledge_text)} 文字")
+            # チャンク化システムでは、各チャンクに十分な情報が含まれるよう多めに取得
+            rag_max_results = min(25, max(15, len(active_knowledge_text) // 50000))  # 動的調整
+            active_knowledge_text = simple_rag_search(active_knowledge_text, message_text, max_results=rag_max_results)
+            safe_print(f"📊 RAG検索後: {len(active_knowledge_text)} 文字 (取得セクション数: {rag_max_results})")
         
         # アクティブなリソースの情報とSpecial指示を取得
         special_instructions = []
@@ -985,10 +994,15 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
             for idx, inst in enumerate(special_instructions, 1):
                 special_instructions_text += f"{idx}. 【{inst['name']}】: {inst['instruction']}\n"
 
-        # 知識ベースをチャンク化
-        CHUNK_SIZE = 500000  # 50万文字
+        # 🔪 知識ベースをチャンク化（RAG後のサイズに応じて調整）
+        # RAG検索後のサイズが小さい場合はチャンクサイズも小さくして、各チャンクに情報を分散
+        if len(active_knowledge_text) < 200000:  # 20万文字未満の場合
+            CHUNK_SIZE = max(100000, len(active_knowledge_text) // 2)  # 最大2チャンクに分割
+        else:
+            CHUNK_SIZE = 300000  # 30万文字（従来より小さく）
+        
         chunks = chunk_knowledge_base(active_knowledge_text, CHUNK_SIZE)
-        safe_print(f"🔪 チャンク化完了: {len(chunks)}個のチャンク")
+        safe_print(f"🔪 チャンク化完了: {len(chunks)}個のチャンク (チャンクサイズ: {CHUNK_SIZE:,}文字)")
         
         # 会話履歴の取得
         conversation_history = ""
@@ -1025,16 +1039,19 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
         for i, chunk in enumerate(chunks):
             safe_print(f"🔄 チャンク {i+1}/{len(chunks)} 処理開始 ({len(chunk)} 文字)")
             
-            # 全チャンクの詳細情報を出力（デバッグ用）
+            # 🔍 チャンク内容の詳細分析（デバッグ用）
             safe_print(f"🔍 チャンク{i+1}の最初の200文字: {chunk[:200]}...")
             if len(chunk) > 400:
                 safe_print(f"🔍 チャンク{i+1}の最後の200文字: ...{chunk[-200:]}")
             
-            # キーワード検索でデバッグ
-            if "Buzz Style" in chunk:
-                safe_print(f"✅ チャンク{i+1}に「Buzz Style」を発見")
-            if "設定完了" in chunk:
-                safe_print(f"✅ チャンク{i+1}に「設定完了」を発見")
+            # 質問に関連するキーワードがチャンクに含まれているかチェック
+            question_keywords = message_text.lower().split()[:5]  # 質問の最初の5単語
+            matching_keywords = [kw for kw in question_keywords if kw in chunk.lower()]
+            safe_print(f"🎯 チャンク{i+1}内の関連キーワード: {matching_keywords} (質問キーワード: {question_keywords})")
+            
+            # チャンクが有効かどうかの事前判定
+            has_relevant_content = len(matching_keywords) > 0 or len(chunk.strip()) > 1000
+            safe_print(f"📊 チャンク{i+1}の有効性: {'有効' if has_relevant_content else '無効'} (キーワード一致: {len(matching_keywords)}, 長さ: {len(chunk)})")
             
             # プロンプトの作成
             prompt = f"""
