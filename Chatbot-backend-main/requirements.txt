@@ -21,3 +21,4 @@ youtube_transcript_api
 playwright
 yt-dlp
 tiktoken
+supabase>=2.0.0
