@@ -35,11 +35,9 @@
   },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build --mode production",
-    "build:safe": "cross-env NODE_OPTIONS=\"--max-old-space-size=4096\" vite build",
+    "build": "vite build",
+    "build:prod": "vite build --mode production --base ./",
     "preview": "vite preview --host 0.0.0.0",
-    "type-check": "tsc --noEmit --skipLibCheck",
-    "clean": "rm -rf dist build node_modules/.vite",
-    "prestart": "npm run type-check"
+    "type-check": "tsc --noEmit --skipLibCheck"
   }
 }

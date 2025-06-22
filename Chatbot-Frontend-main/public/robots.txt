@@ -1,0 +1,19 @@
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://workmatechat.com/sitemap.xml
+
+# Crawl delay
+Crawl-delay: 1
+
+# Allow access to static assets
+Allow: /static/
+Allow: /assets/
+Allow: /images/
+
+# Disallow sensitive areas
+Disallow: /admin/
+Disallow: /api/
+Disallow: /*.json$
+Disallow: /*.config.* 

@@ -1,5 +1,11 @@
-# SPA fallback for client-side routing
-/*    /index.html   200
+# API proxy rules (highest priority)
+/chatbot/api/* /chatbot/api/:splat 200
 
-# API proxy (if needed)
-/chatbot/api/*   /chatbot/api/:splat   200
+# Static assets should be served as-is
+/static/* /static/:splat 200
+/assets/* /assets/:splat 200
+/favicon.ico /favicon.ico 200
+/robots.txt /robots.txt 200
+
+# SPA fallback for all other routes (lowest priority)
+/* /index.html 200

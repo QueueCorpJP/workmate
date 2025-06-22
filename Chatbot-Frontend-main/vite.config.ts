@@ -18,7 +18,7 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    assetsDir: "assets",
+    assetsDir: "static",
     chunkSizeWarningLimit: 1000,
     sourcemap: false,
     minify: "esbuild",
@@ -27,28 +27,22 @@ export default defineConfig({
       transformMixedEsModules: true,
     },
     rollupOptions: {
-      external: [],
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom'],
-          mui: ['@mui/material', '@mui/icons-material', '@emotion/react', '@emotion/styled'],
+          mui: ['@mui/material', '@mui/icons-material'],
           charts: ['chart.js', 'react-chartjs-2'],
-          utils: ['axios', 'react-router-dom', 'react-markdown']
+          router: ['react-router-dom']
         },
-        chunkFileNames: (chunkInfo) => {
-          const facadeModuleId = chunkInfo.facadeModuleId ? 
-            chunkInfo.facadeModuleId.split('/').pop()?.replace(/\.[^/.]+$/, "") || "chunk" : 
-            "chunk";
-          return `assets/${facadeModuleId}-[hash].js`;
-        },
-        assetFileNames: "assets/[name]-[hash].[ext]",
-        entryFileNames: "assets/[name]-[hash].js"
+        chunkFileNames: "static/js/[name]-[hash].js",
+        entryFileNames: "static/js/[name]-[hash].js",
+        assetFileNames: "static/[ext]/[name]-[hash].[ext]"
       }
     }
   },
-  base: "/",
+  base: "./",
+  publicDir: "public",
   define: {
-    __PROD_API_URL__: JSON.stringify("/chatbot/api"),
     global: "globalThis",
   },
   resolve: {
@@ -57,24 +51,7 @@ export default defineConfig({
     },
   },
   esbuild: {
-    logOverride: { 
-      "this-is-undefined-in-esm": "silent",
-      "direct-eval": "silent"
-    },
     target: "es2020",
     format: "esm"
-  },
-  optimizeDeps: {
-    include: [
-      'react',
-      'react-dom',
-      '@mui/material',
-      '@mui/icons-material',
-      'chart.js',
-      'react-chartjs-2'
-    ],
-    esbuildOptions: {
-      target: "es2020"
-    }
   }
 });

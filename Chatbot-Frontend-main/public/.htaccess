@@ -1,0 +1,47 @@
+Options -Indexes
+DirectoryIndex index.html
+
+# Enable rewrite engine
+RewriteEngine On
+
+# Security headers
+Header always set X-Content-Type-Options nosniff
+Header always set X-Frame-Options SAMEORIGIN
+Header always set X-XSS-Protection "1; mode=block"
+
+# MIME type fixes
+AddType application/javascript .js
+AddType text/css .css
+AddType application/json .json
+
+# Handle Angular/React Router
+RewriteBase /
+RewriteRule ^index\.html$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.html [L]
+
+# API proxy (if needed)
+RewriteRule ^chatbot/api/(.*)$ http://13.211.77.231:8083/$1 [P,L]
+
+# Cache static assets
+<FilesMatch "\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$">
+    ExpiresActive On
+    ExpiresDefault "access plus 1 year"
+    Header set Cache-Control "public, immutable"
+</FilesMatch>
+
+# Don't cache HTML files
+<FilesMatch "\.(html|htm)$">
+    ExpiresActive On
+    ExpiresDefault "access plus 0 seconds"
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires 0
+</FilesMatch>
+
+# Prevent access to sensitive files
+<FilesMatch "(^\.|(package\.json|tsconfig\.json|\.env))">
+    Order allow,deny
+    Deny from all
+</FilesMatch> 
