@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Box, 
   Container, 
@@ -18,7 +18,9 @@ import {
   useTheme,
   AppBar,
   Toolbar,
-  IconButton
+  IconButton,
+  Tabs,
+  Tab
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -35,6 +37,7 @@ const GuideBook = () => {
   const navigate = useNavigate();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'md'));
+  const [activeTab, setActiveTab] = useState(0); // 0: 管理者向け, 1: ユーザー向け
 
   return (
     <Box sx={{ 
@@ -294,6 +297,37 @@ const GuideBook = () => {
           </Grid>
         </Grid>
         
+        {/* Tabs Section */}
+        <Box sx={{ mb: 6, borderBottom: 1, borderColor: 'divider' }}>
+          <Container maxWidth="lg">
+            <Tabs
+              value={activeTab}
+              onChange={(event, newValue) => setActiveTab(newValue)}
+              centered
+              sx={{
+                '& .MuiTab-root': {
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  fontSize: '1.1rem',
+                  minWidth: 160,
+                  px: 4,
+                  py: 2,
+                },
+                '& .Mui-selected': {
+                  color: theme.palette.primary.main,
+                },
+                '& .MuiTabs-indicator': {
+                  height: 3,
+                  borderRadius: '2px 2px 0 0',
+                },
+              }}
+            >
+              <Tab label="管理者向け" />
+              <Tab label="ユーザー向け" />
+            </Tabs>
+          </Container>
+        </Box>
+
         {/* How to Use Section */}
         <Box sx={{ mb: 8 }}>
           <Typography 
@@ -306,162 +340,477 @@ const GuideBook = () => {
               color: theme.palette.primary.main
             }}
           >
-            使い方ガイド
+            {activeTab === 0 ? '管理者向け' : 'ユーザー向け'}使い方ガイド
           </Typography>
           
-          <Paper 
-            elevation={0} 
-            sx={{ 
-              p: 4, 
-              borderRadius: 4,
-              border: '1px solid rgba(37, 99, 235, 0.08)',
-              mb: 4
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <Box 
-                sx={{ 
-                  width: 36, 
-                  height: 36, 
-                  borderRadius: '50%', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center', 
-                  mr: 2,
-                  bgcolor: theme.palette.primary.main,
-                  color: 'white',
-                  fontWeight: 'bold'
-                }}
-              >
-                1
+{activeTab === 0 && (
+            <Paper 
+              elevation={0} 
+              sx={{ 
+                p: 4, 
+                borderRadius: 4,
+                border: '1px solid rgba(37, 99, 235, 0.08)',
+                mb: 4
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                <Box 
+                  sx={{ 
+                    width: 36, 
+                    height: 36, 
+                    borderRadius: '50%', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    mr: 2,
+                    bgcolor: theme.palette.primary.main,
+                    color: 'white',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  1
+                </Box>
+                <Typography variant="h6" fontWeight={600}>
+                  リソースのアップロード（管理者）
+                </Typography>
               </Box>
-              <Typography variant="h6" fontWeight={600}>
-                リソースのアップロード（管理者）
+              <Typography variant="body1" sx={{ mb: 2, ml: 7 }}>
+                管理者は管理画面のリソースタブで、分析したい資料をアップロードします。PDFやWord、Excel、URLなど様々な形式に対応しています。
               </Typography>
-            </Box>
-            <Typography variant="body1" sx={{ mb: 2, ml: 7 }}>
-              管理者は管理画面のリソースタブで、分析したい資料をアップロードします。PDFやWord、Excel、URLなど様々な形式に対応しています。
-            </Typography>
-            <List sx={{ ml: 7 }}>
-              <ListItem sx={{ p: 0.5 }}>
-                <ListItemIcon sx={{ minWidth: 36 }}>
-                  <CheckCircleIcon fontSize="small" color="primary" />
-                </ListItemIcon>
-                <ListItemText primary="管理画面→リソースタブ→「新規アップロード」でファイルを追加" />
-              </ListItem>
-              <ListItem sx={{ p: 0.5 }}>
-                <ListItemIcon sx={{ minWidth: 36 }}>
-                  <CheckCircleIcon fontSize="small" color="primary" />
-                </ListItemIcon>
-                <ListItemText primary="Google DriveファイルやウェブページのURLも取り込み可能" />
-              </ListItem>
-              <ListItem sx={{ p: 0.5 }}>
-                <ListItemIcon sx={{ minWidth: 36 }}>
-                  <CheckCircleIcon fontSize="small" color="primary" />
-                </ListItemIcon>
-                <ListItemText primary="アップロードが完了すると、AIが自動的に内容を分析" />
-              </ListItem>
-            </List>
-          </Paper>
+              <List sx={{ ml: 7 }}>
+                <ListItem sx={{ p: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <CheckCircleIcon fontSize="small" color="primary" />
+                  </ListItemIcon>
+                  <ListItemText primary="管理画面→リソースタブ→「新規アップロード」でファイルを追加" />
+                </ListItem>
+                <ListItem sx={{ p: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <CheckCircleIcon fontSize="small" color="primary" />
+                  </ListItemIcon>
+                  <ListItemText primary="Google DriveファイルやウェブページのURLも取り込み可能" />
+                </ListItem>
+                <ListItem sx={{ p: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <CheckCircleIcon fontSize="small" color="primary" />
+                  </ListItemIcon>
+                  <ListItemText primary="アップロードが完了すると、AIが自動的に内容を分析" />
+                </ListItem>
+              </List>
+            </Paper>
+          )}
           
-          <Paper 
-            elevation={0} 
-            sx={{ 
-              p: 4, 
-              borderRadius: 4,
-              border: '1px solid rgba(37, 99, 235, 0.08)',
-              mb: 4
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <Box 
-                sx={{ 
-                  width: 36, 
-                  height: 36, 
-                  borderRadius: '50%', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center', 
-                  mr: 2,
-                  bgcolor: theme.palette.primary.main,
-                  color: 'white',
-                  fontWeight: 'bold'
-                }}
-              >
-                2
+{activeTab === 0 && (
+            <Paper 
+              elevation={0} 
+              sx={{ 
+                p: 4, 
+                borderRadius: 4,
+                border: '1px solid rgba(37, 99, 235, 0.08)',
+                mb: 4
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                <Box 
+                  sx={{ 
+                    width: 36, 
+                    height: 36, 
+                    borderRadius: '50%', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    mr: 2,
+                    bgcolor: theme.palette.primary.main,
+                    color: 'white',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  2
+                </Box>
+                <Typography variant="h6" fontWeight={600}>
+                  管理者設定の確認
+                </Typography>
               </Box>
-              <Typography variant="h6" fontWeight={600}>
-                質問をする
+              <Typography variant="body1" sx={{ mb: 2, ml: 7 }}>
+                アップロードしたリソースの管理者指令を設定し、AIの動作をカスタマイズします。
               </Typography>
-            </Box>
-            <Typography variant="body1" sx={{ mb: 2, ml: 7 }}>
-              チャット画面で質問を入力します。資料の内容に関する質問や、要約、分析の依頼など、自然な言葉で問いかけてください。
-            </Typography>
-            <List sx={{ ml: 7 }}>
-              <ListItem sx={{ p: 0.5 }}>
-                <ListItemIcon sx={{ minWidth: 36 }}>
-                  <CheckCircleIcon fontSize="small" color="primary" />
-                </ListItemIcon>
-                <ListItemText primary="質問は具体的に、明確に入力することでより正確な回答が得られます" />
-              </ListItem>
-              <ListItem sx={{ p: 0.5 }}>
-                <ListItemIcon sx={{ minWidth: 36 }}>
-                  <CheckCircleIcon fontSize="small" color="primary" />
-                </ListItemIcon>
-                <ListItemText primary="追加質問や詳細な説明を求めることも可能です" />
-              </ListItem>
-            </List>
-          </Paper>
+              <List sx={{ ml: 7 }}>
+                <ListItem sx={{ p: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <CheckCircleIcon fontSize="small" color="primary" />
+                  </ListItemIcon>
+                  <ListItemText primary="各リソースに対して「管理者指令」を設定" />
+                </ListItem>
+                <ListItem sx={{ p: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <CheckCircleIcon fontSize="small" color="primary" />
+                  </ListItemIcon>
+                  <ListItemText primary="機密情報の取り扱い方法を指定" />
+                </ListItem>
+              </List>
+            </Paper>
+          )}
+
+          {activeTab === 1 && (
+            <Paper 
+              elevation={0} 
+              sx={{ 
+                p: 4, 
+                borderRadius: 4,
+                border: '1px solid rgba(37, 99, 235, 0.08)',
+                mb: 4
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                <Box 
+                  sx={{ 
+                    width: 36, 
+                    height: 36, 
+                    borderRadius: '50%', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    mr: 2,
+                    bgcolor: theme.palette.primary.main,
+                    color: 'white',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  1
+                </Box>
+                <Typography variant="h6" fontWeight={600}>
+                  質問をする
+                </Typography>
+              </Box>
+              <Typography variant="body1" sx={{ mb: 2, ml: 7 }}>
+                チャット画面で質問を入力します。資料の内容に関する質問や、要約、分析の依頼など、自然な言葉で問いかけてください。
+              </Typography>
+              <List sx={{ ml: 7 }}>
+                <ListItem sx={{ p: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <CheckCircleIcon fontSize="small" color="primary" />
+                  </ListItemIcon>
+                  <ListItemText primary="質問は具体的に、明確に入力することでより正確な回答が得られます" />
+                </ListItem>
+                <ListItem sx={{ p: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <CheckCircleIcon fontSize="small" color="primary" />
+                  </ListItemIcon>
+                  <ListItemText primary="追加質問や詳細な説明を求めることも可能です" />
+                </ListItem>
+              </List>
+            </Paper>
+          )}
           
-          <Paper 
-            elevation={0} 
-            sx={{ 
-              p: 4, 
-              borderRadius: 4,
-              border: '1px solid rgba(37, 99, 235, 0.08)'
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <Box 
-                sx={{ 
-                  width: 36, 
-                  height: 36, 
-                  borderRadius: '50%', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center', 
-                  mr: 2,
-                  bgcolor: theme.palette.primary.main,
-                  color: 'white',
-                  fontWeight: 'bold'
-                }}
-              >
-                3
+{activeTab === 0 && (
+            <Paper 
+              elevation={0} 
+              sx={{ 
+                p: 4, 
+                borderRadius: 4,
+                border: '1px solid rgba(37, 99, 235, 0.08)'
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                <Box 
+                  sx={{ 
+                    width: 36, 
+                    height: 36, 
+                    borderRadius: '50%', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    mr: 2,
+                    bgcolor: theme.palette.primary.main,
+                    color: 'white',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  3
+                </Box>
+                <Typography variant="h6" fontWeight={600}>
+                  運用とメンテナンス
+                </Typography>
               </Box>
-              <Typography variant="h6" fontWeight={600}>
-                回答の活用
+              <Typography variant="body1" sx={{ mb: 2, ml: 7 }}>
+                システムの継続的な改善と効果的な運用のためのポイントを把握しましょう。
               </Typography>
-            </Box>
-            <Typography variant="body1" sx={{ mb: 2, ml: 7 }}>
-              AIからの回答を確認し、必要に応じてさらに質問を続けることができます。回答内容はコピーしたり、引用元を確認したりすることも可能です。
-            </Typography>
-            <List sx={{ ml: 7 }}>
-              <ListItem sx={{ p: 0.5 }}>
-                <ListItemIcon sx={{ minWidth: 36 }}>
-                  <CheckCircleIcon fontSize="small" color="primary" />
-                </ListItemIcon>
-                <ListItemText primary="回答の根拠となる資料の該当箇所を確認できます" />
-              </ListItem>
-              <ListItem sx={{ p: 0.5 }}>
-                <ListItemIcon sx={{ minWidth: 36 }}>
-                  <CheckCircleIcon fontSize="small" color="primary" />
-                </ListItemIcon>
-                <ListItemText primary="会話の履歴は保存され、後から確認することも可能です" />
-              </ListItem>
-            </List>
-          </Paper>
+              <List sx={{ ml: 7 }}>
+                <ListItem sx={{ p: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <CheckCircleIcon fontSize="small" color="primary" />
+                  </ListItemIcon>
+                  <ListItemText primary="定期的なリソースの見直しと更新" />
+                </ListItem>
+                <ListItem sx={{ p: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <CheckCircleIcon fontSize="small" color="primary" />
+                  </ListItemIcon>
+                  <ListItemText primary="ユーザーのフィードバックに基づく改善" />
+                </ListItem>
+              </List>
+            </Paper>
+          )}
+
+          {activeTab === 1 && (
+            <Paper 
+              elevation={0} 
+              sx={{ 
+                p: 4, 
+                borderRadius: 4,
+                border: '1px solid rgba(37, 99, 235, 0.08)'
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                <Box 
+                  sx={{ 
+                    width: 36, 
+                    height: 36, 
+                    borderRadius: '50%', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    mr: 2,
+                    bgcolor: theme.palette.primary.main,
+                    color: 'white',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  2
+                </Box>
+                <Typography variant="h6" fontWeight={600}>
+                  回答の活用
+                </Typography>
+              </Box>
+              <Typography variant="body1" sx={{ mb: 2, ml: 7 }}>
+                AIからの回答を確認し、必要に応じてさらに質問を続けることができます。回答内容はコピーしたり、引用元を確認したりすることも可能です。
+              </Typography>
+              <List sx={{ ml: 7 }}>
+                <ListItem sx={{ p: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <CheckCircleIcon fontSize="small" color="primary" />
+                  </ListItemIcon>
+                  <ListItemText primary="回答の根拠となる資料の該当箇所を確認できます" />
+                </ListItem>
+                <ListItem sx={{ p: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <CheckCircleIcon fontSize="small" color="primary" />
+                  </ListItemIcon>
+                  <ListItemText primary="会話の履歴は保存され、後から確認することも可能です" />
+                </ListItem>
+              </List>
+            </Paper>
+          )}
         </Box>
         
+{/* Admin Resource Management Section */}
+        {activeTab === 0 && (
+          <Box sx={{ mb: 8 }}>
+            <Typography 
+              variant="h4" 
+              component="h2" 
+              sx={{ 
+                fontWeight: 700, 
+                mb: 4, 
+                textAlign: 'center',
+                color: theme.palette.primary.main
+              }}
+            >
+              管理者向け高度な機能
+            </Typography>
+          
+          <Paper 
+            elevation={0} 
+            sx={{ 
+              p: 4, 
+              borderRadius: 4,
+              border: '1px solid rgba(37, 99, 235, 0.08)',
+              mb: 4
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+              <Box 
+                sx={{ 
+                  width: 36, 
+                  height: 36, 
+                  borderRadius: '50%', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  mr: 2,
+                  bgcolor: '#ff6b35',
+                  color: 'white',
+                  fontWeight: 'bold'
+                }}
+              >
+                ★
+              </Box>
+              <Typography variant="h6" fontWeight={600}>
+                管理者指令機能
+              </Typography>
+            </Box>
+            <Typography variant="body1" sx={{ mb: 2 }}>
+              リソース画面で各アップロードファイルに対して個別の「管理者指令」を設定できます。これにより、AIがそのリソースを参照する際に特別な指示を与えることができます。
+            </Typography>
+            <List>
+              <ListItem sx={{ p: 0.5 }}>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <CheckCircleIcon fontSize="small" color="primary" />
+                </ListItemIcon>
+                <ListItemText primary="リソース一覧で「管理者指令」列の編集ボタンをクリック" />
+              </ListItem>
+              <ListItem sx={{ p: 0.5 }}>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <CheckCircleIcon fontSize="small" color="primary" />
+                </ListItemIcon>
+                <ListItemText primary="機密情報の取り扱い注意、要約方法の指定、特定の観点での分析指示など" />
+              </ListItem>
+              <ListItem sx={{ p: 0.5 }}>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <CheckCircleIcon fontSize="small" color="primary" />
+                </ListItemIcon>
+                <ListItemText primary="例：「この資料は機密情報なので、要約時に注意喚起を含めてください」" />
+              </ListItem>
+            </List>
+          </Paper>
+
+          <Paper 
+            elevation={0} 
+            sx={{ 
+              p: 4, 
+              borderRadius: 4,
+              border: '1px solid rgba(37, 99, 235, 0.08)',
+              mb: 4
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+              <Box 
+                sx={{ 
+                  width: 36, 
+                  height: 36, 
+                  borderRadius: '50%', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  mr: 2,
+                  bgcolor: '#28a745',
+                  color: 'white',
+                  fontWeight: 'bold'
+                }}
+              >
+                ⚙
+              </Box>
+              <Typography variant="h6" fontWeight={600}>
+                リソース管理機能
+              </Typography>
+            </Box>
+            <Typography variant="body1" sx={{ mb: 2 }}>
+              リソース画面では、アップロードした資料の詳細管理が可能です。効率的な知識ベース管理のために以下の機能をご活用ください。
+            </Typography>
+            <List>
+              <ListItem sx={{ p: 0.5 }}>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <CheckCircleIcon fontSize="small" color="primary" />
+                </ListItemIcon>
+                <ListItemText primary="リソースの有効/無効切り替え - 一時的に特定の資料を無効化" />
+              </ListItem>
+              <ListItem sx={{ p: 0.5 }}>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <CheckCircleIcon fontSize="small" color="primary" />
+                </ListItemIcon>
+                <ListItemText primary="Google Drive連携 - Googleドライブから直接ファイルを取り込み" />
+              </ListItem>
+              <ListItem sx={{ p: 0.5 }}>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <CheckCircleIcon fontSize="small" color="primary" />
+                </ListItemIcon>
+                <ListItemText primary="URL取り込み - ウェブページの内容を自動分析・取り込み" />
+              </ListItem>
+              <ListItem sx={{ p: 0.5 }}>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <CheckCircleIcon fontSize="small" color="primary" />
+                </ListItemIcon>
+                <ListItemText primary="アップロード進捗表示 - リアルタイムでのファイル処理状況確認" />
+              </ListItem>
+            </List>
+          </Paper>
+          </Box>
+        )}
+
+        {/* New Features Section */}
+        {activeTab === 0 && (
+          <Box sx={{ mb: 8 }}>
+            <Typography 
+              variant="h4" 
+              component="h2" 
+              sx={{ 
+                fontWeight: 700, 
+                mb: 4, 
+                textAlign: 'center',
+                color: theme.palette.primary.main
+              }}
+            >
+              最新の追加機能
+            </Typography>
+            
+            <Paper 
+              elevation={0} 
+              sx={{ 
+                p: 4, 
+                borderRadius: 4,
+                border: '1px solid rgba(37, 99, 235, 0.08)',
+                mb: 4,
+                background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.02) 0%, rgba(255, 255, 255, 0.8) 100%)'
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                <Box 
+                  sx={{ 
+                    width: 36, 
+                    height: 36, 
+                    borderRadius: '50%', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    mr: 2,
+                    bgcolor: '#6f42c1',
+                    color: 'white',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  🆕
+                </Box>
+                <Typography variant="h6" fontWeight={600}>
+                  分析機能の品質向上
+                </Typography>
+              </Box>
+              <Typography variant="body1" sx={{ mb: 2 }}>
+                分析画面の品質が大幅に向上しました。より詳細で正確な分析結果を提供し、視覚的にも分かりやすい表示を実現しています。
+              </Typography>
+              <List>
+                <ListItem sx={{ p: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <CheckCircleIcon fontSize="small" color="primary" />
+                  </ListItemIcon>
+                  <ListItemText primary="より詳細な分析結果の表示" />
+                </ListItem>
+                <ListItem sx={{ p: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <CheckCircleIcon fontSize="small" color="primary" />
+                  </ListItemIcon>
+                  <ListItemText primary="視覚的に分かりやすいレポート形式" />
+                </ListItem>
+                <ListItem sx={{ p: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <CheckCircleIcon fontSize="small" color="primary" />
+                  </ListItemIcon>
+                  <ListItemText primary="分析精度の向上とエラー処理の強化" />
+                </ListItem>
+              </List>
+            </Paper>
+          </Box>
+        )}
+
         {/* Tips Section */}
         <Box sx={{ mb: 8 }}>
           <Typography 
