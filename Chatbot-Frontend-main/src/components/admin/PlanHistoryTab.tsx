@@ -453,7 +453,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                         </TableCell>
                         <TableCell>
                           <Typography variant="body2">
-                            {user.company_name || user.email.split('@')[1]}
+                            {user.company_name || '不明な会社'}
                           </Typography>
                         </TableCell>
                         <TableCell>

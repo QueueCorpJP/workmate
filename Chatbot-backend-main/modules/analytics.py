@@ -49,7 +49,7 @@ def get_company_usage_periods(db) -> List[Dict[str, Any]]:
         companies = {}
         for user in users_result.data:
             company_id = user.get("company_id")
-            company_name = company_name_map.get(company_id) or user.get("email", "").split("@")[1] if "@" in user.get("email", "") else "不明"
+            company_name = company_name_map.get(company_id) or "不明な会社"
             if company_name not in companies:
                 companies[company_name] = {
                     "company_name": company_name,
@@ -104,7 +104,7 @@ def get_user_usage_periods(db) -> List[Dict[str, Any]]:
                 start_date = datetime.fromisoformat(user["created_at"].replace('Z', '+00:00'))
                 usage_days = (datetime.now() - start_date).days
                 company_id = user.get("company_id")
-                company_name = company_name_map.get(company_id) or user.get("email", "").split("@")[1] if "@" in user.get("email", "") else "不明"
+                company_name = company_name_map.get(company_id) or "不明な会社"
                 
                 user_analytics.append({
                     "user_id": user["id"],
@@ -169,7 +169,7 @@ def get_active_users(db) -> Dict[str, Any]:
         if users_result and users_result.data:
             for user in users_result.data:
                 company_id = user.get("company_id")
-                company_name = company_name_map.get(company_id) or user.get("email", "").split("@")[1] if "@" in user.get("email", "") else "不明"
+                company_name = company_name_map.get(company_id) or "不明な会社"
                 user_company_map[user["id"]] = company_name
         
         # 会社別アクティブユーザー数を計算

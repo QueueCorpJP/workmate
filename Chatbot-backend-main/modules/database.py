@@ -888,7 +888,7 @@ def get_all_users(db: SupabaseConnection) -> list:
     # ユーザーに会社名を追加
     for user in users:
         company_id = user.get("company_id")
-        user["company_name"] = companies.get(company_id, "No Company")
+        user["company_name"] = companies.get(company_id, "不明な会社")
     
     # 作成日時でソート
     users.sort(key=lambda x: x.get("created_at", ""), reverse=True)

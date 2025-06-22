@@ -44,6 +44,8 @@ export interface CompanyEmployee {
   email: string;
   role: string;
   created_at: string;
+  company_id?: string;
+  company_name?: string;
   last_activity?: string;
   message_count?: number;
   is_demo?: boolean;
