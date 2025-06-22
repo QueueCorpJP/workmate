@@ -404,13 +404,26 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
             safe_print(f"Special指示取得エラー: {str(e)}")
             special_instructions = []
         
-        # safe_print(f"知識ベースの生データ長: {len(knowledge_base.raw_text) if knowledge_base.raw_text else 0}")
-        safe_print(f"アクティブなソース: {active_sources}")
+        # 🔍 知識ベース取得の詳細デバッグ（本番環境問題調査）
+        safe_print(f"📋 アクティブなソース ({len(active_sources)}件): {active_sources}")
+        safe_print(f"🔍 知識ベース取得開始...")
+        
         active_knowledge_text = await get_active_resources_content_by_ids(active_sources, db)
+        
+        # 知識ベース取得結果の詳細チェック
+        if not active_knowledge_text:
+            safe_print(f"❌ 知識ベースが空です - active_knowledge_text: {repr(active_knowledge_text)}")
+        elif isinstance(active_knowledge_text, str) and not active_knowledge_text.strip():
+            safe_print(f"❌ 知識ベースが空文字列です - 長さ: {len(active_knowledge_text)}")
+        else:
+            safe_print(f"✅ 知識ベース取得成功 - 長さ: {len(active_knowledge_text):,} 文字")
+            safe_print(f"👀 知識ベース先頭200文字: {active_knowledge_text[:200]}...")
         
         # RAG風検索で関連部分のみを抽出（超高速化）
         if active_knowledge_text and len(active_knowledge_text) > 50000:
+            safe_print(f"🎯 RAG検索開始 - 元サイズ: {len(active_knowledge_text):,} 文字")
             active_knowledge_text = simple_rag_search(active_knowledge_text, message_text, max_results=8)
+            safe_print(f"🎯 RAG検索完了 - 新サイズ: {len(active_knowledge_text):,} 文字")
         
         # 知識ベースのサイズを制限（API制限対応のため一時的に復活）
         MAX_KNOWLEDGE_SIZE = 300000  # 30万文字制限（API制限対応）
@@ -802,8 +815,13 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
         
         safe_print(f"最終ソース情報: '{source_text}'")
         
+        # 🔍 本番環境デバッグ用の情報を応答に追加
+        knowledge_summary = f"知識ベース: {len(active_knowledge_text):,}文字" if active_knowledge_text else "知識ベース: 空"
+        sources_summary = f"ソース: {len(active_resource_names)}件 ({', '.join(active_resource_names[:3])}{'...' if len(active_resource_names) > 3 else ''})"
+        debug_info = f"\n\nデバッグ - {knowledge_summary}, {sources_summary}, Source: \"{source_text if source_text else 'なし'}\""
+        
         return {
-            "response": response_text,
+            "response": response_text + debug_info,
             "source": source_text,
             "remaining_questions": remaining_questions,
             "limit_reached": limit_reached

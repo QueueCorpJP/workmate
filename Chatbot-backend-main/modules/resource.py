@@ -253,9 +253,14 @@ async def get_active_resource_names_by_company_id(company_id: str, db: Connectio
         return []
 
 async def get_active_resources_content_by_ids(resource_ids: list[str], db: Connection) -> str:
-    """指定されたIDのリソースのコンテンツを取得して結合します"""
+    """
+    🔍 指定されたIDのリソースのコンテンツを取得して結合します
+    
+    本番環境での知識ベース取得問題をデバッグするため、詳細なログを出力
+    """
     # Check if resource_ids is None or empty
     if not resource_ids:
+        print("❌ リソースIDリストが空です")
         return ""
     
     try:
@@ -264,32 +269,84 @@ async def get_active_resources_content_by_ids(resource_ids: list[str], db: Conne
         # Supabaseクライアントを取得
         supabase = get_supabase_client()
         
-        print(f"リソースID一覧: {resource_ids}")
+        print(f"📋 リソースID一覧 ({len(resource_ids)}件): {resource_ids}")
         
         combined_content = []
+        failed_resources = []
         
         # 各リソースIDに対して個別にクエリを実行
-        for resource_id in resource_ids:
-            query = supabase.table("document_sources").select("content").eq("id", resource_id)
-            result = query.execute()
+        for i, resource_id in enumerate(resource_ids):
+            print(f"🔍 [{i+1}/{len(resource_ids)}] リソースID {resource_id} の処理開始")
             
-            if result.data and len(result.data) > 0:
-                content = result.data[0].get("content")
-                if content is not None:
-                    combined_content.append(ensure_string(content, for_db=True))
-                    print(f"リソースID {resource_id} のコンテンツを取得しました")
-                else:
-                    print(f"リソースID {resource_id} のコンテンツはNoneです")
-            else:
-                print(f"リソースID {resource_id} のコンテンツが見つかりませんでした")
+            try:
+                # まずリソースの基本情報を確認
+                info_query = supabase.table("document_sources").select("id,name,active,content").eq("id", resource_id)
+                info_result = info_query.execute()
+                
+                if not info_result.data or len(info_result.data) == 0:
+                    print(f"❌ リソースID {resource_id} が存在しません")
+                    failed_resources.append({"id": resource_id, "reason": "リソースが存在しない"})
+                    continue
+                
+                resource_info = info_result.data[0]
+                resource_name = resource_info.get("name", "不明")
+                is_active = resource_info.get("active", False)
+                content = resource_info.get("content")
+                
+                print(f"📄 リソース名: {resource_name}")
+                print(f"🔘 アクティブ状態: {is_active}")
+                print(f"📝 コンテンツ存在: {'あり' if content else 'なし'}")
+                
+                if not is_active:
+                    print(f"⚠️ リソースID {resource_id} ({resource_name}) は無効です")
+                    failed_resources.append({"id": resource_id, "name": resource_name, "reason": "リソースが無効"})
+                    continue
+                
+                if content is None or content == "":
+                    print(f"❌ リソースID {resource_id} ({resource_name}) のコンテンツが空です")
+                    failed_resources.append({"id": resource_id, "name": resource_name, "reason": "コンテンツが空"})
+                    continue
+                
+                # コンテンツの詳細情報を出力
+                content_length = len(str(content))
+                content_preview = str(content)[:200] + "..." if content_length > 200 else str(content)
+                print(f"📊 コンテンツ長: {content_length:,} 文字")
+                print(f"👀 コンテンツ先頭: {content_preview}")
+                
+                # コンテンツを追加
+                processed_content = ensure_string(content, for_db=True)
+                combined_content.append(f"=== {resource_name} ===\n{processed_content}")
+                print(f"✅ リソースID {resource_id} ({resource_name}) のコンテンツを追加しました")
+                
+            except Exception as resource_error:
+                print(f"❌ リソースID {resource_id} 処理中にエラー: {str(resource_error)}")
+                failed_resources.append({"id": resource_id, "reason": f"処理エラー: {str(resource_error)}"})
+                continue
+        
+        # 結果のサマリーを出力
+        print(f"\n📊 処理結果サマリー:")
+        print(f"✅ 成功: {len(combined_content)} 件")
+        print(f"❌ 失敗: {len(failed_resources)} 件")
+        
+        if failed_resources:
+            print(f"🔍 失敗したリソース詳細:")
+            for failed in failed_resources:
+                print(f"  - ID: {failed['id']}, 名前: {failed.get('name', '不明')}, 理由: {failed['reason']}")
         
         # 結合
-        combined = "\n".join(combined_content)
-        print(f"合計 {len(combined_content)} 件のコンテンツを結合しました")
+        combined = "\n\n".join(combined_content)
+        final_length = len(combined)
+        print(f"📝 最終的な知識ベース長: {final_length:,} 文字")
+        
+        if final_length == 0:
+            print("❌ 最終的な知識ベースが空です - すべてのリソースが失敗")
+        else:
+            print(f"✅ 知識ベース結合完了 - {len(combined_content)} 件のリソース")
         
         return combined
+        
     except Exception as e:
-        print(f"リソースコンテンツ取得エラー: {str(e)}")
+        print(f"❌ リソースコンテンツ取得で重大エラー: {str(e)}")
         import traceback
-        print(traceback.format_exc())
+        print(f"🔍 エラー詳細:\n{traceback.format_exc()}")
         return ""
