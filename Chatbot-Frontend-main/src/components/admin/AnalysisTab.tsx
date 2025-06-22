@@ -409,7 +409,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
               }}
             >
                 <AutoFixHighIcon fontSize="small" />
-                Gemini AIによる高度な分析と洞察
+                AIによる高度な分析と洞察
             </Typography>
               {lastRefresh && (
                 <Typography
@@ -500,7 +500,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
           <EmptyState message="強化分析データがありません。更新ボタンを押してデータを取得してください。" />
         ) : (
           <Grid container spacing={3}>
-            {/* Gemini AI洞察カード */}
+            {/* AI洞察カード */}
                 <Grid item xs={12}>
                   <Card
                     elevation={0}
@@ -543,7 +543,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                           fontSize: '1.4rem'
                         }}
                       >
-                        🤖 Gemini AI 分析レポート
+                        🤖 AI 分析レポート
                       </Typography>
                       <Typography
                         variant="body2"
@@ -575,59 +575,47 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
             {/* 強化分析セクション */}
             {[
               { 
-                title: '📊 資料の参照回数分析', 
+                title: '資料の参照回数分析', 
                 icon: <DescriptionIcon />,
                 content: enhancedAnalysis.resource_reference_count,
-                color: 'linear-gradient(135deg, rgba(54, 162, 235, 0.08), rgba(54, 162, 235, 0.03))',
-                borderColor: 'rgba(54, 162, 235, 0.2)',
-                iconColor: '#36a2eb'
+                color: '#1976d2'
               },
               { 
-                title: '🏷️ 質問カテゴリ分布と偏り', 
+                title: '質問カテゴリ分布と偏り', 
                 icon: <CategoryIcon />,
                 content: enhancedAnalysis.category_distribution_analysis,
-                color: 'linear-gradient(135deg, rgba(255, 99, 132, 0.08), rgba(255, 99, 132, 0.03))',
-                borderColor: 'rgba(255, 99, 132, 0.2)',
-                iconColor: '#ff6384'
+                color: '#d32f2f'
               },
               { 
-                title: '📈 アクティブユーザー推移', 
+                title: 'アクティブユーザー推移', 
                 icon: <TimelineIcon />,
                 content: enhancedAnalysis.active_user_trends,
-                color: 'linear-gradient(135deg, rgba(75, 192, 192, 0.08), rgba(75, 192, 192, 0.03))',
-                borderColor: 'rgba(75, 192, 192, 0.2)',
-                iconColor: '#4bc0c0'
+                color: '#2e7d32'
               },
               { 
-                title: '🔄 未解決・再質問の傾向分析', 
+                title: '未解決・再質問の傾向分析', 
                 icon: <RepeatIcon />,
                 content: enhancedAnalysis.unresolved_and_repeat_analysis,
-                color: 'linear-gradient(135deg, rgba(255, 159, 64, 0.08), rgba(255, 159, 64, 0.03))',
-                borderColor: 'rgba(255, 159, 64, 0.2)',
-                iconColor: '#ff9f40'
+                color: '#ed6c02'
               },
               { 
-                title: '😊 詳細感情分析', 
+                title: '詳細感情分析', 
                 icon: <MoodIcon />,
                 content: enhancedAnalysis.sentiment_analysis,
-                color: 'linear-gradient(135deg, rgba(153, 102, 255, 0.08), rgba(153, 102, 255, 0.03))',
-                borderColor: 'rgba(153, 102, 255, 0.2)',
-                iconColor: '#9966ff'
+                color: '#9c27b0'
               }
             ].map((section, index) => (
               <Grid item xs={12} key={index}>
-                  <Card
-                  elevation={0}
-                    sx={{
+                <Card
+                  elevation={1}
+                  sx={{
                     mb: 2,
-                      borderRadius: 3,
-                    border: `1px solid ${section.borderColor}`,
-                    background: section.color,
-                    transition: 'all 0.3s ease',
-                      overflow: 'hidden',
-                      '&:hover': {
-                      boxShadow: `0 8px 24px ${section.borderColor}`,
-                      transform: 'translateY(-2px)',
+                    borderRadius: 2,
+                    border: '1px solid rgba(0, 0, 0, 0.08)',
+                    backgroundColor: '#fff',
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
                     }
                   }}
                 >
@@ -641,9 +629,9 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                     }}
                   >
                     <AccordionSummary
-                      expandIcon={<ExpandMoreIcon sx={{ color: section.iconColor }} />}
+                      expandIcon={<ExpandMoreIcon sx={{ color: section.color }} />}
                       sx={{
-                        p: 2.5,
+                        p: 2,
                         '&.Mui-expanded': {
                           minHeight: 48,
                         },
@@ -653,24 +641,16 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                       }}
                     >
                       <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                        <Box
-                          sx={{
-                            mr: 2,
-                            p: 1.5,
-                            borderRadius: 2,
-                            backgroundColor: `${section.iconColor}20`,
-                            border: `1px solid ${section.iconColor}40`,
-                          }}
-                        >
+                        <Box sx={{ mr: 2 }}>
                           {React.cloneElement(section.icon, { 
-                            sx: { fontSize: '1.5rem', color: section.iconColor } 
+                            sx: { fontSize: '1.5rem', color: section.color } 
                           })}
                         </Box>
                         <Box sx={{ flex: 1 }}>
                           <Typography
                             variant="h6"
                             sx={{
-                              fontWeight: 700,
+                              fontWeight: 600,
                               color: 'text.primary',
                               fontSize: '1.1rem',
                               mb: 0.5
@@ -683,16 +663,11 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                             sx={{ color: 'text.secondary' }}
                           >
                             {section.content.summary ? 
-                              section.content.summary.substring(0, 60) + '...' : 
+                              section.content.summary.substring(0, 80) + '...' : 
                               'データを解析中...'
                             }
                           </Typography>
                         </Box>
-                        <Badge
-                          badgeContent={expandedSections.has(index) ? '展開中' : '詳細'}
-                          color={expandedSections.has(index) ? 'success' : 'primary'}
-                          sx={{ ml: 2 }}
-                        />
                       </Box>
                     </AccordionSummary>
                     <AccordionDetails sx={{ p: 0 }}>
@@ -704,95 +679,109 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                             <Paper 
                               elevation={0}
                               sx={{ 
-                                p: 2, 
+                                p: 3, 
                                 mb: 3, 
-                                backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                                borderRadius: 2
+                                backgroundColor: '#f8f9fa',
+                                borderRadius: 1,
+                                border: '1px solid rgba(0, 0, 0, 0.06)'
                               }}
                             >
                               <MarkdownRenderer content={section.content.summary || 'データを解析中です...'} />
                             </Paper>
                             {'resources' in section.content && section.content.resources.length > 0 && (
                               <Box>
-                                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-                                  📈 資料別参照回数チャート
+                                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: section.color }}>
+                                  資料別参照回数
                                 </Typography>
-                                <Box sx={{ height: 450, p: 2, backgroundColor: 'rgba(255, 255, 255, 0.5)', borderRadius: 2 }}>
+                                <Box sx={{ 
+                                  height: 400, 
+                                  p: 2, 
+                                  backgroundColor: '#fff', 
+                                  borderRadius: 1,
+                                  border: '1px solid rgba(0, 0, 0, 0.06)'
+                                }}>
                                   <Bar
                                     data={getResourceReferenceChartData(section.content.resources)}
-                            options={{
-                              responsive: true,
-                              maintainAspectRatio: false,
-                              plugins: {
+                                    options={{
+                                      responsive: true,
+                                      maintainAspectRatio: false,
+                                      plugins: {
                                         title: {
                                           display: true,
                                           text: '資料別参照回数（上位10件）',
-                                          font: { size: 16, weight: 'bold' }
+                                          font: { size: 14, weight: 'normal' }
                                         },
                                         legend: { display: false },
-                                tooltip: {
+                                        tooltip: {
                                           backgroundColor: 'rgba(0, 0, 0, 0.8)',
                                           titleColor: 'white',
                                           bodyColor: 'white',
-                                          cornerRadius: 8,
-                                          padding: 12
-                                }
-                              },
-                              scales: {
-                                y: {
-                                  beginAtZero: true,
+                                          cornerRadius: 4,
+                                          padding: 8
+                                        }
+                                      },
+                                      scales: {
+                                        y: {
+                                          beginAtZero: true,
                                           grid: { color: 'rgba(0, 0, 0, 0.1)' },
-                                  ticks: {
+                                          ticks: {
                                             color: '#666',
                                             callback: function(value: any) {
                                               return value + '回';
                                             }
-                                  }
-                                },
-                                x: {
+                                          }
+                                        },
+                                        x: {
                                           grid: { display: false },
-                                  ticks: {
+                                          ticks: {
                                             color: '#666',
-                                    maxRotation: 45
+                                            maxRotation: 45
                                           }
                                         }
-                              }
-                            }}
-                          />
-                            </Box>
+                                      }
+                                    }}
+                                  />
+                                </Box>
+                              </Box>
+                            )}
                           </Box>
                         )}
-                      </Box>
-                        )}
                         {index === 2 && (
-                        <Box>
+                          <Box>
                             <Paper 
                               elevation={0}
-                            sx={{
-                                p: 2, 
+                              sx={{
+                                p: 3, 
                                 mb: 3, 
-                                backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                                borderRadius: 2
+                                backgroundColor: '#f8f9fa',
+                                borderRadius: 1,
+                                border: '1px solid rgba(0, 0, 0, 0.06)'
                               }}
                             >
                               <MarkdownRenderer content={section.content.summary || 'データを解析中です...'} />
                             </Paper>
                             {'daily_trends' in section.content && section.content.daily_trends.length > 0 && (
                               <Box>
-                                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-                                  📊 アクティブユーザー推移グラフ
-                          </Typography>
-                                <Box sx={{ height: 450, p: 2, backgroundColor: 'rgba(255, 255, 255, 0.5)', borderRadius: 2 }}>
+                                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: section.color }}>
+                                  アクティブユーザー推移
+                                </Typography>
+                                <Box sx={{ 
+                                  height: 400, 
+                                  p: 2, 
+                                  backgroundColor: '#fff', 
+                                  borderRadius: 1,
+                                  border: '1px solid rgba(0, 0, 0, 0.06)'
+                                }}>
                                   <Line
                                     data={getUserTrendsChartData(section.content.daily_trends)}
-                            options={{
-                              responsive: true,
-                              maintainAspectRatio: false,
-                              plugins: {
+                                    options={{
+                                      responsive: true,
+                                      maintainAspectRatio: false,
+                                      plugins: {
                                         title: {
                                           display: true,
                                           text: 'アクティブユーザー数推移（過去30日）',
-                                          font: { size: 16, weight: 'bold' }
+                                          font: { size: 14, weight: 'normal' }
                                         },
                                         legend: {
                                           position: 'top',
@@ -802,8 +791,8 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                                           backgroundColor: 'rgba(0, 0, 0, 0.8)',
                                           titleColor: 'white',
                                           bodyColor: 'white',
-                                          cornerRadius: 8,
-                                          padding: 12
+                                          cornerRadius: 4,
+                                          padding: 8
                                         }
                                       },
                                       scales: {
@@ -832,31 +821,31 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                                         x: {
                                           grid: { color: 'rgba(0, 0, 0, 0.1)' },
                                           ticks: { color: '#666' }
-                                }
-                              }
-                            }}
-                          />
-                            </Box>
+                                        }
+                                      }
+                                    }}
+                                  />
+                                </Box>
+                              </Box>
+                            )}
                           </Box>
-                        )}
-                      </Box>
                         )}
                         {(index === 1 || index === 3 || index === 4) && (
                           <Paper 
-                  elevation={0}
-                  sx={{
+                            elevation={0}
+                            sx={{
                               p: 3, 
-                              backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                    borderRadius: 2,
-                              border: '1px solid rgba(0, 0, 0, 0.08)'
+                              backgroundColor: '#f8f9fa',
+                              borderRadius: 1,
+                              border: '1px solid rgba(0, 0, 0, 0.06)'
                             }}
                           >
                             <MarkdownRenderer content={section.content.summary || 'データを解析中です...'} />
                           </Paper>
                         )}
-                    </Box>
-                        </AccordionDetails>
-                      </Accordion>
+                      </Box>
+                    </AccordionDetails>
+                  </Accordion>
                 </Card>
               </Grid>
             ))}
