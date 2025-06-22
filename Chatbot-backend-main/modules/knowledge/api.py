@@ -41,6 +41,10 @@ PDF_SIZE_ERROR = "PDFファイルが大きすぎます ({size:.2f} MB)。10MB以
 VIDEO_SIZE_ERROR = "ビデオファイルが大きすぎます ({size:.2f} MB)。500MB以下のファイルを使用するか、ファイルを分割してください。"
 TIMEOUT_ERROR = "処理がタイムアウトしました。ファイルが大きすぎるか、複雑すぎる可能性があります。ファイルを分割するか、より小さなファイルを使用してください。"
 
+# 大きなファイル処理用の設定
+MAX_PROCESSING_TIME = 300  # 5分の処理時間制限
+BATCH_SIZE_FOR_DB = 100    # データベース保存時のバッチサイズ
+
 def _get_user_info(user_id: str, db: Connection) -> Tuple[Optional[str], bool]:
     """ユーザー情報を取得し、アップロード権限をチェックする"""
     if not user_id:
@@ -86,7 +90,7 @@ def _check_upload_limits(user_id: str, db: Connection) -> Dict[str, Any]:
         "limit_reached": False
     }
 
-def _record_document_source(
+async def _record_document_source(
     name: str, 
     doc_type: str, 
     page_count: int, 
@@ -95,20 +99,128 @@ def _record_document_source(
     company_id: str, 
     db: Connection
 ) -> None:
-    """ドキュメントソースをデータベースに記録する"""
-    document_id = str(uuid.uuid4())
-    cursor = db.cursor()
-    cursor.execute(
-        "INSERT INTO document_sources (id, name, type, page_count, content, uploaded_by, company_id, uploaded_at, active) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-        (document_id, name, doc_type, page_count, ensure_string(content, for_db=True), user_id, company_id, datetime.now().isoformat(), True)
-    )
+    """ドキュメントソースをデータベースに記録する（大きなコンテンツ対応）"""
+    import time
     
-    # 会社のソースリストに追加
-    if company_id:
-        if company_id not in knowledge_base.company_sources:
-            knowledge_base.company_sources[company_id] = []
-        if name not in knowledge_base.company_sources[company_id]:
-            knowledge_base.company_sources[company_id].append(name)
+    try:
+        start_time = time.time()
+        document_id = str(uuid.uuid4())
+        
+        # コンテンツサイズをチェック
+        content_str = ensure_string(content, for_db=True)
+        content_size_mb = len(content_str.encode('utf-8')) / (1024 * 1024)
+        
+        logger.info(f"ドキュメント保存開始: {name}, サイズ: {content_size_mb:.2f}MB")
+        
+        # 2MB以上の場合は最初から分割保存（statement timeout対策）
+        if content_size_mb > 2:  # 2MB以上の場合
+            logger.info(f"大きなコンテンツを分割保存します: {content_size_mb:.2f}MB")
+            
+            # コンテンツを分割（1MB程度のチャンク）
+            chunk_size = 800000  # 800KB程度のチャンク（安全マージン）
+            content_chunks = []
+            for i in range(0, len(content_str), chunk_size):
+                chunk = content_str[i:i + chunk_size]
+                content_chunks.append(chunk)
+            
+            logger.info(f"コンテンツを{len(content_chunks)}個のチャンクに分割")
+            
+            # メインレコードを先に保存（コンテンツは要約版）
+            summary_content = content_str[:500] + f"...\n\n[このドキュメントは{len(content_chunks)}個のチャンクに分割されています。総サイズ: {content_size_mb:.2f}MB]"
+            
+            # Supabaseアダプターを使用してメインレコードを保存
+            from supabase_adapter import insert_data
+            main_record = {
+                "id": document_id,
+                "name": name,
+                "type": doc_type,
+                "page_count": page_count,
+                "content": summary_content,
+                "uploaded_by": user_id,
+                "company_id": company_id,
+                "uploaded_at": datetime.now().isoformat(),
+                "active": True
+            }
+            
+            try:
+                insert_data("document_sources", main_record)
+                logger.info(f"メインレコード保存完了: {document_id}")
+            except Exception as main_error:
+                logger.error(f"メインレコード保存エラー: {str(main_error)}")
+                raise
+            
+            # チャンクを順次保存
+            for i, chunk in enumerate(content_chunks):
+                chunk_id = str(uuid.uuid4())
+                chunk_name = f"{name}_chunk_{i+1}"
+                
+                # 処理時間チェック
+                elapsed_time = time.time() - start_time
+                if elapsed_time > 120:  # 2分制限
+                    logger.warning(f"処理時間制限に達しました ({elapsed_time:.1f}秒) - 残りのチャンクをスキップ")
+                    break
+                
+                try:
+                    chunk_record = {
+                        "id": chunk_id,
+                        "name": chunk_name,
+                        "type": f"{doc_type}_CHUNK",
+                        "page_count": 1,
+                        "content": chunk,
+                        "uploaded_by": user_id,
+                        "company_id": company_id,
+                        "uploaded_at": datetime.now().isoformat(),
+                        "active": True,
+                        "parent_id": document_id
+                    }
+                    
+                    insert_data("document_sources", chunk_record)
+                    logger.info(f"チャンク{i+1}/{len(content_chunks)}保存完了")
+                    
+                    # 小さな遅延を追加（データベース負荷軽減）
+                    await asyncio.sleep(0.05)
+                    
+                except Exception as chunk_error:
+                    logger.error(f"チャンク{i+1}の保存エラー: {str(chunk_error)}")
+                    # チャンクの保存に失敗しても続行
+                    continue
+            
+            logger.info(f"分割保存完了: {elapsed_time:.1f}秒")
+            
+        else:
+            # 通常サイズの場合は一括保存
+            try:
+                from supabase_adapter import insert_data
+                record = {
+                    "id": document_id,
+                    "name": name,
+                    "type": doc_type,
+                    "page_count": page_count,
+                    "content": content_str,
+                    "uploaded_by": user_id,
+                    "company_id": company_id,
+                    "uploaded_at": datetime.now().isoformat(),
+                    "active": True
+                }
+                
+                insert_data("document_sources", record)
+                logger.info(f"通常保存完了: {time.time() - start_time:.1f}秒")
+                
+            except Exception as normal_error:
+                logger.error(f"通常保存エラー: {str(normal_error)}")
+                raise
+        
+        # 会社のソースリストに追加
+        if company_id:
+            if company_id not in knowledge_base.company_sources:
+                knowledge_base.company_sources[company_id] = []
+            if name not in knowledge_base.company_sources[company_id]:
+                knowledge_base.company_sources[company_id].append(name)
+                
+    except Exception as e:
+        logger.error(f"ドキュメントソース保存エラー: {str(e)}")
+        # データベースエラーでも処理は継続（知識ベースは更新済み）
+        raise HTTPException(status_code=500, detail=f"ドキュメントの保存中にエラーが発生しました: {str(e)}")
 
 def _update_source_info(source_name: str) -> None:
     """ソース情報を更新する"""
@@ -216,7 +328,7 @@ async def process_url(url: str, user_id: str = None, company_id: str = None, db:
         # ユーザーIDがある場合はドキュメントアップロードカウントを更新
         if user_id:
             updated_limits = update_usage_count(user_id, "document_uploads_used", db)
-            _record_document_source(url, "URL", 1, processed_text, user_id, company_id, db)
+            await _record_document_source(url, "URL", 1, processed_text, user_id, company_id, db)
             db.commit()
         
         # レスポンスを準備して返す
@@ -292,18 +404,42 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
             if detected_type == 'excel' or file_extension in ['xlsx', 'xls']:
                 logger.info(f"Excelファイル処理開始: {file.filename}")
                 
+                # 大きなExcelファイルの処理時間制限
+                processing_start_time = asyncio.get_event_loop().time()
+                
                 try:
                     # Google Sheets APIを使用してExcelファイルを処理
                     # OAuth2トークンを優先的に使用
                     access_token = getattr(request.state, 'google_access_token', None)
                     service_account_file = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE')
                     
-                    data_list, sections, extracted_text = await process_excel_file_with_sheets_api(
-                        contents, 
-                        file.filename, 
-                        access_token, 
-                        service_account_file
-                    )
+                    # 大きなファイルの場合は処理前に警告
+                    if file_size_mb > 3:
+                        logger.info(f"大きなExcelファイル（{file_size_mb:.2f}MB）を処理します - 時間がかかる可能性があります")
+                        # 処理前の小さな遅延
+                        await asyncio.sleep(1)
+                    
+                    # タイムアウト付きでExcel処理を実行
+                    try:
+                        data_list, sections, extracted_text = await asyncio.wait_for(
+                            process_excel_file_with_sheets_api(
+                                contents, 
+                                file.filename, 
+                                access_token, 
+                                service_account_file
+                            ),
+                            timeout=MAX_PROCESSING_TIME  # 5分のタイムアウト
+                        )
+                    except asyncio.TimeoutError:
+                        logger.error(f"Excel処理がタイムアウトしました: {file.filename} ({file_size_mb:.2f}MB)")
+                        raise HTTPException(
+                            status_code=408, 
+                            detail=f"Excelファイルの処理がタイムアウトしました（{file_size_mb:.2f}MB）。ファイルを分割するか、より小さなファイルを使用してください。"
+                        )
+                    
+                    # 処理時間をログ出力
+                    processing_time = asyncio.get_event_loop().time() - processing_start_time
+                    logger.info(f"Excel処理時間: {processing_time:.1f}秒")
                     
                     # データリストを直接使用（DataFrameを使用しない）
                     if not data_list:
@@ -319,7 +455,7 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                     sheet_count = len(set(item.get('metadata', {}).get('sheet_name', 'Sheet1') for item in data_list))
                     page_count = max(1, sheet_count)
                     
-                    logger.info(f"Excel処理完了（Google Sheets API使用）: {len(data_list)} レコード, {page_count} シート")
+                    logger.info(f"Excel処理完了（Google Sheets API使用）: {len(data_list)} レコード, {page_count} シート, {processing_time:.1f}秒")
                     
                     # データベース保存用にデータを準備
                     df = None  # DataFrameは使用しない
@@ -327,17 +463,28 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                 except Exception as e:
                     logger.warning(f"Google Sheets API処理エラー、従来の処理にフォールバック: {str(e)}")
                     # フォールバック：従来のpandas処理
-                    df, sections, extracted_text = process_excel_file(contents, file.filename)
-                    data_list = None  # 従来処理の場合はDataFrameを使用
-                    
-                    # Excelファイルのシート数を取得
                     try:
-                        excel_file = BytesIO(contents)
-                        df_dict = pd.read_excel(excel_file, sheet_name=None)
-                        page_count = len(df_dict)
-                    except:
-                        page_count = 1
-                    
+                        df, sections, extracted_text = await asyncio.wait_for(
+                            asyncio.to_thread(process_excel_file, contents, file.filename),
+                            timeout=MAX_PROCESSING_TIME
+                        )
+                        data_list = None  # 従来処理の場合はDataFrameを使用
+                        
+                        # Excelファイルのシート数を取得
+                        try:
+                            excel_file = BytesIO(contents)
+                            df_dict = pd.read_excel(excel_file, sheet_name=None)
+                            page_count = len(df_dict)
+                        except:
+                            page_count = 1
+                            
+                    except asyncio.TimeoutError:
+                        logger.error(f"Excel従来処理もタイムアウトしました: {file.filename}")
+                        raise HTTPException(
+                            status_code=408, 
+                            detail=f"Excelファイルの処理がタイムアウトしました。ファイルサイズ（{file_size_mb:.2f}MB）が大きすぎます。"
+                        )
+
             elif detected_type == 'csv' or is_csv_file(file.filename):
                 logger.info(f"CSVファイル処理開始: {file.filename}, サイズ: {file_size_mb:.2f}MB")
                 # CSVファイルサイズ制限（50MB）
@@ -568,7 +715,7 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
             limit_reached = remaining_uploads <= 0
             
             # ドキュメントソースを記録
-            _record_document_source(file.filename, file_extension.upper(), page_count, extracted_text, user_id, company_id, db)
+            await _record_document_source(file.filename, file_extension.upper(), page_count, extracted_text, user_id, company_id, db)
             db.commit()
         
         # レスポンスを準備して返す

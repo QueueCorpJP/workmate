@@ -431,101 +431,75 @@ def get_db():
         conn.close()
 
 def init_db():
-    """データベースを初期化します（Supabaseテーブルの作成）"""
-    print("Supabaseデータベースを初期化しています...")
-    
+    """データベースを初期化する"""
     try:
-        # テーブル存在確認のクエリ
-        tables_query = """
-        SELECT table_name
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-        """
+        from supabase_adapter import execute_query
         
-        # RPCを使用してクエリを実行
-        existing_tables = execute_query(tables_query)
-        existing_table_names = [table.get('table_name') for table in existing_tables]
-        print(f"既存のテーブル: {existing_table_names}")
+        print("データベース初期化開始...")
         
-        # 必要なテーブルを作成
-        for table_name, create_statement in SCHEMA.items():
-            if table_name not in existing_table_names:
-                try:
-                    # SQLクエリを実行してテーブルを作成
-                    create_query = create_statement.strip()
-                    execute_query(create_query)
-                    print(f"テーブル {table_name} を作成しました")
-                except Exception as e:
-                    print(f"テーブル作成エラー ({table_name}): {e}")
-            else:
-                print(f"テーブル {table_name} は既に存在します")
+        # スキーマの作成
+        for table_name, create_sql in SCHEMA.items():
+            try:
+                print(f"テーブル作成中: {table_name}")
+                execute_query(create_sql)
+            except Exception as e:
+                print(f"テーブル {table_name} 作成エラー: {e}")
+        
+        # parent_idカラムのマイグレーション（既存テーブル用）
+        try:
+            print("document_sourcesテーブルのparent_idカラム確認...")
+            # より簡単な方法でカラムの存在確認
+            check_result = execute_query("SELECT parent_id FROM document_sources LIMIT 1")
+            print("parent_idカラムは既に存在します")
+                
+        except Exception as e:
+            print(f"parent_idカラムが存在しません。追加します... (エラー: {str(e)})")
+            try:
+                # 直接ALTER TABLE文を実行
+                add_column_query = "ALTER TABLE document_sources ADD COLUMN parent_id TEXT"
+                execute_query(add_column_query)
+                print("✅ parent_idカラムを追加しました")
+            except Exception as add_error:
+                print(f"⚠️ parent_idカラム追加エラー: {str(add_error)}")
+                # カラム追加に失敗してもアプリケーションは継続
+                print("parent_idカラムなしで継続します")
+        
+        # ビューの作成
+        from .database_schema import VIEWS
+        for view_name, create_sql in VIEWS.items():
+            try:
+                print(f"ビュー作成中: {view_name}")
+                execute_query(create_sql)
+            except Exception as e:
+                print(f"ビュー {view_name} 作成エラー: {e}")
+        
+        # インデックスの作成
+        from .database_schema import INDEXES
+        for index_name, create_sql in INDEXES.items():
+            try:
+                print(f"インデックス作成中: {index_name}")
+                execute_query(create_sql)
+            except Exception as e:
+                print(f"インデックス {index_name} 作成エラー: {e}")
         
         # 初期データの挿入
-        for data_name, insert_statement in INITIAL_DATA.items():
-            try:
-                # SQLステートメントからテーブル名と値を抽出
-                if "companies" in insert_statement:
-                    # 既存のcompanyを確認
-                    result = select_data("companies", filters={"name": "ヘルプ"})
-                    if not result.data:
-                        # UUIDで会社IDを生成
-                        company_id = str(uuid.uuid4())
-                        insert_data("companies", {
-                            "id": company_id,
-                            "name": "ヘルプ",
-                            "created_at": datetime.datetime.now().isoformat()
-                        })
-                        print(f"{data_name} 初期データを挿入しました (ID: {company_id})")
-                    else:
-                        print(f"{data_name} 初期データは既に存在します")
-                        company_id = result.data[0]["id"]
-                        
-                elif "users" in insert_statement and "admin" in insert_statement:
-                    # 既存のadminユーザーを確認
-                    result = select_data("users", filters={"email": "queue@queueu-tech.jp"})
-                    if not result.data:
-                        # ヘルプ会社のIDを取得
-                        company_result = select_data("companies", filters={"name": "ヘルプ"})
-                        if company_result and company_result.data:
-                            help_company_id = company_result.data[0]["id"]
-                            admin_user_id = str(uuid.uuid4())
-                            insert_data("users", {
-                                "id": admin_user_id,
-                                "email": "queue@queueu-tech.jp",
-                                "password": "John.Queue2025",
-                                "name": "管理者",
-                                "role": "admin",
-                                "company_id": help_company_id,
-                                "created_at": datetime.datetime.now().isoformat()
-                            })
-                            print(f"{data_name} 初期データを挿入しました (ID: {admin_user_id})")
-                        else:
-                            print(f"ヘルプ会社が見つからないため、管理者ユーザーを作成できませんでした")
-                    else:
-                        print(f"{data_name} 初期データは既に存在します")
-                        admin_user_id = result.data[0]["id"]
-                        
-                elif "usage_limits" in insert_statement:
-                    # 既存の利用制限を確認
-                    admin_result = select_data("users", filters={"email": "queue@queueu-tech.jp"})
-                    if admin_result and admin_result.data:
-                        admin_user_id = admin_result.data[0]["id"]
-                        result = select_data("usage_limits", filters={"user_id": admin_user_id})
-                        if not result.data:
-                            insert_data("usage_limits", {
-                                "user_id": admin_user_id,
-                                "is_unlimited": True
-                            })
-                            print(f"{data_name} 初期データを挿入しました")
-                        else:
-                            print(f"{data_name} 初期データは既に存在します")
-            except Exception as e:
-                print(f"初期データ挿入エラー ({data_name}): {e}")
-                
-        print("データベース初期化が完了しました")
+        for table_name, data_list in INITIAL_DATA.items():
+            for data in data_list:
+                try:
+                    from supabase_adapter import insert_data
+                    insert_data(table_name, data)
+                except Exception as e:
+                    print(f"初期データ挿入エラー ({table_name}): {e}")
+        
+        print("データベース初期化完了")
+        return True
+        
     except Exception as e:
         print(f"データベース初期化エラー: {e}")
-    
+        import traceback
+        print(traceback.format_exc())
+        return False
+
 def check_user_exists(email: str, db: SupabaseConnection) -> bool:
     """ユーザーが存在するか確認します"""
     result = select_data("users", filters={"email": email})

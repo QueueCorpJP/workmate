@@ -2686,4 +2686,4 @@ if __name__ == "__main__":
     import uvicorn
     from modules.config import get_port
     port = get_port()
-    uvicorn.run(app, host="0.0.0.0", port=port, timeout_keep_alive=300)
+    uvicorn.run(app, host="0.0.0.0", port=port, timeout_keep_alive=600)

@@ -191,126 +191,151 @@ class ExcelSheetsProcessor:
                 raise Exception("Google Sheets サービスが初期化されていません")
             
             def get_spreadsheet_data():
-                # スプレッドシートのメタデータを取得
-                spreadsheet = self.sheets_service.spreadsheets().get(
-                    spreadsheetId=spreadsheet_id
-                ).execute()
+                import time
+                start_time = time.time()
                 
+                # スプレッドシートのメタデータを取得
+                logger.info(f"スプレッドシートメタデータ取得開始: {spreadsheet_id}")
+                spreadsheet = self.sheets_service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
                 sheets = spreadsheet.get('sheets', [])
+                
+                logger.info(f"検出されたシート数: {len(sheets)}")
+                
                 all_data = []
                 sections = {}
                 extracted_text = f"=== ファイル: {filename} ===\n\n"
                 
-                for sheet in sheets:
+                # 各シートを処理
+                for sheet_index, sheet in enumerate(sheets):
                     sheet_title = sheet['properties']['title']
-                    logger.info(f"シート処理中: {sheet_title}")
+                    logger.info(f"シート処理開始 ({sheet_index + 1}/{len(sheets)}): {sheet_title}")
+                    
+                    # 処理時間チェック
+                    elapsed_time = time.time() - start_time
+                    if elapsed_time > 240:  # 4分制限
+                        logger.warning(f"シート処理時間制限に達しました ({elapsed_time:.1f}秒) - 残りのシートをスキップ")
+                        break
                     
                     # シートデータを取得
-                    range_name = f"'{sheet_title}'!A:ZZ"
-                    result = self.sheets_service.spreadsheets().values().get(
-                        spreadsheetId=spreadsheet_id,
-                        range=range_name,
-                        valueRenderOption='FORMATTED_VALUE'  # フォーマット済みの値を取得
-                    ).execute()
-                    
-                    values = result.get('values', [])
-                    
-                    if not values:
-                        logger.warning(f"シート '{sheet_title}' にデータがありません")
-                        continue
-                    
-                    # ヘッダー行とデータ行を分離
-                    headers = values[0] if values else []
-                    data_rows = values[1:] if len(values) > 1 else []
-                    
-                    # 生のデータをDataFrameに変換してUnnamedカラム修正を適用
-                    if headers and data_rows:
-                        try:
-                            # DataFrameを作成
-                            import pandas as pd
-                            df_data = []
-                            for row in data_rows:
-                                # 行の長さをヘッダーに合わせる
-                                extended_row = row + [''] * (len(headers) - len(row))
-                                df_data.append(extended_row[:len(headers)])
-                            
-                            df = pd.DataFrame(df_data, columns=headers)
-                            
-                            # Unnamedカラム修正を適用
-                            handler = UnnamedColumnHandler()
-                            df, modifications = handler.fix_dataframe(df, f"{filename}_{sheet_title}")
-                            
-                            if modifications:
-                                logger.info(f"シート '{sheet_title}' のUnnamedカラム修正: {', '.join(modifications)}")
-                            
-                            # 修正されたヘッダーとデータ行を更新
-                            headers = df.columns.tolist()
-                            data_rows = df.values.tolist()
-                            
-                        except Exception as fix_error:
-                            logger.warning(f"シート '{sheet_title}' のUnnamedカラム修正エラー: {str(fix_error)}")
-                            # エラーの場合は元のデータを使用
-                    
-                    # セクション情報を作成
-                    section_name = f"シート: {sheet_title}"
-                    section_content = f"行数: {len(data_rows)}, 列数: {len(headers)}\n"
-                    
-                    if headers:
-                        section_content += f"列名: {', '.join(headers)}\n"
-                    
-                    # サンプルデータを追加
-                    if data_rows:
-                        sample_rows = data_rows[:3]  # 最初の3行をサンプルとして
-                        section_content += "サンプルデータ:\n"
-                        for i, row in enumerate(sample_rows):
-                            row_data = []
-                            for j, header in enumerate(headers):
-                                if j < len(row) and row[j]:
-                                    row_data.append(f"{header}: {row[j]}")
-                            if row_data:
-                                section_content += f"  行{i+1}: {' | '.join(row_data)}\n"
-                    
-                    sections[section_name] = section_content
-                    extracted_text += f"=== {section_name} ===\n{section_content}\n\n"
-                    
-                    # 各データ行を処理
-                    for row_index, row in enumerate(data_rows):
-                        if not any(cell for cell in row if cell):  # 空行をスキップ
+                    try:
+                        range_name = f"'{sheet_title}'!A:ZZ"
+                        result = self.sheets_service.spreadsheets().values().get(
+                            spreadsheetId=spreadsheet_id,
+                            range=range_name,
+                            valueRenderOption='FORMATTED_VALUE'  # フォーマット済みの値を取得
+                        ).execute()
+                        
+                        values = result.get('values', [])
+                        
+                        if not values:
+                            logger.warning(f"シート '{sheet_title}' にデータがありません")
                             continue
                         
-                        # 行データを辞書形式で作成
-                        row_dict = {}
-                        content_parts = []
+                        logger.info(f"シート '{sheet_title}' データ取得完了: {len(values)} 行")
                         
-                        for col_index, header in enumerate(headers):
-                            cell_value = row[col_index] if col_index < len(row) else ""
+                        # ヘッダー行とデータ行を分離
+                        headers = values[0] if values else []
+                        data_rows = values[1:] if len(values) > 1 else []
+                        
+                        # 大きなシートの場合は行数制限
+                        max_rows = 5000  # 最大5000行
+                        if len(data_rows) > max_rows:
+                            logger.warning(f"シート '{sheet_title}' の行数が多すぎます ({len(data_rows)} 行) - 最初の{max_rows}行のみ処理")
+                            data_rows = data_rows[:max_rows]
+                    
+                        # 生のデータをDataFrameに変換してUnnamedカラム修正を適用
+                        if headers and data_rows:
+                            try:
+                                # DataFrameを作成
+                                import pandas as pd
+                                df_data = []
+                                for row in data_rows:
+                                    # 行の長さをヘッダーに合わせる
+                                    extended_row = row + [''] * (len(headers) - len(row))
+                                    df_data.append(extended_row[:len(headers)])
+                                
+                                df = pd.DataFrame(df_data, columns=headers)
+                                
+                                # Unnamedカラム修正を適用
+                                handler = UnnamedColumnHandler()
+                                df, modifications = handler.fix_dataframe(df, f"{filename}_{sheet_title}")
+                                
+                                if modifications:
+                                    logger.info(f"シート '{sheet_title}' のUnnamedカラム修正: {', '.join(modifications)}")
+                                
+                                # 修正されたヘッダーとデータ行を更新
+                                headers = df.columns.tolist()
+                                data_rows = df.values.tolist()
+                                
+                            except Exception as fix_error:
+                                logger.warning(f"シート '{sheet_title}' のUnnamedカラム修正エラー: {str(fix_error)}")
+                                # エラーの場合は元のデータを使用
+                        
+                        # セクション情報を作成
+                        section_name = f"シート: {sheet_title}"
+                        section_content = f"行数: {len(data_rows)}, 列数: {len(headers)}\n"
+                        
+                        if headers:
+                            section_content += f"列名: {', '.join(headers)}\n"
+                        
+                        # サンプルデータを追加
+                        if data_rows:
+                            sample_rows = data_rows[:3]  # 最初の3行をサンプルとして
+                            section_content += "サンプルデータ:\n"
+                            for i, row in enumerate(sample_rows):
+                                row_data = []
+                                for j, header in enumerate(headers):
+                                    if j < len(row) and row[j]:
+                                        row_data.append(f"{header}: {row[j]}")
+                                if row_data:
+                                    section_content += f"  行{i+1}: {' | '.join(row_data)}\n"
+                        
+                        sections[section_name] = section_content
+                        extracted_text += f"=== {section_name} ===\n{section_content}\n\n"
+                        
+                        # 各データ行を処理
+                        for row_index, row in enumerate(data_rows):
+                            if not any(cell for cell in row if cell):  # 空行をスキップ
+                                continue
                             
-                            if cell_value:
-                                header_str = ensure_string(header) if header else f"列{col_index+1}"
-                                cell_str = ensure_string(cell_value)
-                                row_dict[header_str] = cell_str
-                                content_parts.append(f"{header_str}: {cell_str}")
-                        
-                        if content_parts:
-                            # データベース保存用の構造を作成
-                            data_record = {
-                                'section': ensure_string(section_name),
-                                'content': ' | '.join(content_parts),
-                                'source': 'Excel (Google Sheets)',
-                                'file': ensure_string(filename),
-                                'url': None,
-                                'metadata': {
-                                    'sheet_name': ensure_string(sheet_title),
-                                    'row_index': row_index + 1,
-                                    'columns': list(row_dict.keys())
+                            # 行データを辞書形式で作成
+                            row_dict = {}
+                            content_parts = []
+                            
+                            for col_index, header in enumerate(headers):
+                                cell_value = row[col_index] if col_index < len(row) else ""
+                                
+                                if cell_value:
+                                    header_str = ensure_string(header) if header else f"列{col_index+1}"
+                                    cell_str = ensure_string(cell_value)
+                                    row_dict[header_str] = cell_str
+                                    content_parts.append(f"{header_str}: {cell_str}")
+                            
+                            if content_parts:
+                                # データベース保存用の構造を作成
+                                data_record = {
+                                    'section': ensure_string(section_name),
+                                    'content': ' | '.join(content_parts),
+                                    'source': 'Excel (Google Sheets)',
+                                    'file': ensure_string(filename),
+                                    'url': None,
+                                    'metadata': {
+                                        'sheet_name': ensure_string(sheet_title),
+                                        'row_index': row_index + 1,
+                                        'columns': list(row_dict.keys())
+                                    }
                                 }
-                            }
-                            
-                            # 元の列データも保持
-                            for key, value in row_dict.items():
-                                data_record[f"column_{key}"] = value
-                            
-                            all_data.append(data_record)
+                                
+                                # 元の列データも保持
+                                for key, value in row_dict.items():
+                                    data_record[f"column_{key}"] = value
+                                
+                                all_data.append(data_record)
+                    
+                    except Exception as sheet_error:
+                        logger.error(f"シート '{sheet_title}' の処理エラー: {str(sheet_error)}")
+                        # エラーが発生したシートはスキップして次のシートを処理
+                        continue
                 
                 return all_data, sections, extracted_text
             

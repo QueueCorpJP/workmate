@@ -13,8 +13,22 @@ load_dotenv()
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_KEY")
 
+# Supabaseクライアント設定（タイムアウト設定追加）
+client_options = {
+    "timeout": 600,  # 10分のタイムアウト（大きなファイル処理用）
+    "retry_count": 3,  # リトライ回数
+}
+
 # Create Supabase client
-supabase: Client = create_client(supabase_url, supabase_key)
+try:
+    supabase: Client = create_client(supabase_url, supabase_key)
+    # タイムアウト設定を適用
+    if hasattr(supabase, '_client'):
+        supabase._client.timeout = 600
+except Exception as e:
+    print(f"Supabase client creation error: {e}")
+    # フォールバック：デフォルト設定でクライアント作成
+    supabase: Client = create_client(supabase_url, supabase_key)
 
 def get_supabase_client():
     """Get the Supabase client instance"""
@@ -58,6 +72,15 @@ def insert_data(table, data):
     """Insert data into a table"""
     # Ensure all data values are properly converted to strings
     if isinstance(data, dict):
+        # コンテンツサイズをチェック
+        content_size = 0
+        if 'content' in data and data['content']:
+            content_size = len(str(data['content']).encode('utf-8')) / (1024 * 1024)
+        
+        # 大きなコンテンツの場合は警告ログ
+        if content_size > 1:
+            print(f"⚠️ 大きなコンテンツを挿入中: {content_size:.2f}MB (テーブル: {table})")
+        
         for key, value in data.items():
             if value is None:
                 # Keep NULL values as NULL for integer fields
@@ -74,7 +97,32 @@ def insert_data(table, data):
                     elif not isinstance(value, (str, int, float, bool)):
                         item[key] = str(value)
     
-    return supabase.table(table).insert(data).execute()
+    try:
+        # タイムアウト付きで実行
+        result = supabase.table(table).insert(data).execute()
+        
+        # 成功ログ
+        if isinstance(data, dict) and 'content' in data:
+            content_size = len(str(data['content']).encode('utf-8')) / (1024 * 1024)
+            if content_size > 0.1:  # 100KB以上の場合
+                print(f"✅ データ挿入成功: {content_size:.2f}MB (テーブル: {table})")
+        
+        return result
+        
+    except Exception as e:
+        # エラーの詳細をログ出力
+        error_msg = str(e)
+        if isinstance(data, dict) and 'content' in data:
+            content_size = len(str(data['content']).encode('utf-8')) / (1024 * 1024)
+            print(f"❌ データ挿入エラー: {content_size:.2f}MB (テーブル: {table}) - {error_msg}")
+        else:
+            print(f"❌ データ挿入エラー (テーブル: {table}) - {error_msg}")
+        
+        # statement timeoutの場合は特別なエラーメッセージ
+        if "statement timeout" in error_msg.lower() or "57014" in error_msg:
+            raise Exception(f"データベースタイムアウト: コンテンツが大きすぎます。ファイルを分割してください。")
+        
+        raise
 
 def update_data(table, data, match_column, match_value):
     """Update data in a table"""

@@ -51,8 +51,10 @@ SCHEMA = {
         uploaded_at TEXT NOT NULL,
         active INTEGER NOT NULL DEFAULT 1,
         special TEXT,
+        parent_id TEXT,
         FOREIGN KEY (uploaded_by) REFERENCES users (id),
-        FOREIGN KEY (company_id) REFERENCES companies (id)
+        FOREIGN KEY (company_id) REFERENCES companies (id),
+        FOREIGN KEY (parent_id) REFERENCES document_sources (id)
     )
     """,
 

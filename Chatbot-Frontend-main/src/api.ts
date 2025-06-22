@@ -52,8 +52,8 @@ const api = axios.create({
       }
     },
   ],
-  // タイムアウトを設定（OCR処理のために3分に延長）
-  timeout: 300000,
+  // タイムアウトを設定（大きなファイル処理のために10分に延長）
+  timeout: 600000,
   // エラーハンドリング
   validateStatus: (status) => {
     console.log("Response status:", status);
