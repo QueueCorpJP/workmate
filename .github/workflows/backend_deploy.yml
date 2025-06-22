@@ -97,9 +97,54 @@ jobs:
           df -h $DEPLOY_PATH
           
           echo "🧹 古いファイル削除（ディスク容量確保）..."
+          
+          # ディスク容量が90%以上の場合、強力なクリーンアップを実行
+          DISK_USAGE=$(df $DEPLOY_PATH | tail -1 | awk '{print $5}' | sed 's/%//')
+          echo "現在のディスク使用率: ${DISK_USAGE}%"
+          
+          if [ "$DISK_USAGE" -gt 90 ]; then
+            echo "⚠️ ディスク使用率が90%を超えています。強力なクリーンアップを実行します..."
+            
+            # 古いログファイルを削除
+            sudo find /var/log -name "*.log" -type f -mtime +7 -delete 2>/dev/null || true
+            sudo find /var/log -name "*.log.*" -type f -mtime +3 -delete 2>/dev/null || true
+            
+            # PM2ログファイルをクリーンアップ
+            if command -v pm2 >/dev/null 2>&1; then
+              pm2 flush 2>/dev/null || true
+            fi
+            
+            # tmpディレクトリのクリーンアップ
+            sudo find /tmp -type f -mtime +1 -delete 2>/dev/null || true
+            
+            # ユーザーのキャッシュディレクトリクリーンアップ
+            rm -rf ~/.cache/* 2>/dev/null || true
+            rm -rf ~/.npm/_cacache 2>/dev/null || true
+            
+            # Pythonキャッシュのクリーンアップ
+            find $HOME -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+            find $HOME -name "*.pyc" -delete 2>/dev/null || true
+            
+            # パッケージマネージャーのキャッシュクリーンアップ
+            if command -v dnf >/dev/null 2>&1; then
+              sudo dnf clean all 2>/dev/null || true
+            elif command -v yum >/dev/null 2>&1; then
+              sudo yum clean all 2>/dev/null || true
+            fi
+            
+            echo "ディスクスペース確保後の容量:"
+            df -h $DEPLOY_PATH
+          fi
+          
           # .envファイル以外の古いファイルを削除
           find . -maxdepth 1 -type f ! -name '.env' ! -name '.env.*' -delete 2>/dev/null || true
           find . -maxdepth 1 -type d ! -name '.' ! -name 'venv' -exec rm -rf {} + 2>/dev/null || true
+          
+          # 古いvenvも削除してディスク容量を確保
+          if [ "$DISK_USAGE" -gt 85 ]; then
+            echo "ディスク容量確保のため既存のvenvを削除します..."
+            rm -rf venv 2>/dev/null || true
+          fi
           
           # 新しいファイルを展開
           echo "📦 ファイル展開..."
