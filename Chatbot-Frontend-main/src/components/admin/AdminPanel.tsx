@@ -184,8 +184,8 @@ const AdminPanel: React.FC = () => {
       const offset = loadMore ? chatHistory.length : 0;
       
       const baseUrl = isSpecialAdmin
-        ? `${import.meta.env.VITE_API_URL}/admin/chat-history`
-        : `${import.meta.env.VITE_API_URL}/admin/chat-history`;
+        ? `/admin/chat-history`
+        : `/admin/chat-history`;
       
       const params = new URLSearchParams({
         limit: limit.toString(),
@@ -274,8 +274,8 @@ const AdminPanel: React.FC = () => {
       const storedUser = localStorage.getItem("user");
       const userId = storedUser ? JSON.parse(storedUser).id : null;
       const url = isSpecialAdmin
-        ? `${import.meta.env.VITE_API_URL}/admin/analyze-chats`
-        : `${import.meta.env.VITE_API_URL}/admin/analyze-chats?user_id=${userId}`;
+        ? `/admin/analyze-chats`
+        : `/admin/analyze-chats?user_id=${userId}`;
       const response = await api.get(url, {
         headers: {
           'Access-Control-Allow-Origin': '*',
@@ -338,7 +338,7 @@ const AdminPanel: React.FC = () => {
       console.log("会社の管理者用アカウント利用状況を取得中...");
       // 認証情報はHTTPヘッダーに含まれるため、クエリパラメータは不要
       const response = await api.get(
-        `${import.meta.env.VITE_API_URL}/admin/employee-usage`,
+        `/admin/employee-usage`,
         {
           headers: {
             'Access-Control-Allow-Origin': '*',
@@ -387,7 +387,7 @@ const AdminPanel: React.FC = () => {
       const storedUser = localStorage.getItem("user");
       const userId = storedUser ? JSON.parse(storedUser).id : null;
       const response = await api.get(
-        `${import.meta.env.VITE_API_URL}/admin/company-employees?user_id=${userId}`,
+        `/admin/company-employees?user_id=${userId}`,
         {
           headers: {
             'Access-Control-Allow-Origin': '*',

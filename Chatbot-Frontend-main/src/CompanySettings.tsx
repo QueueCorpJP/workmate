@@ -42,7 +42,7 @@ function CompanySettings() {
   useEffect(() => {
     const fetchCompanyName = async () => {
       try {
-        const response = await api.get(`${import.meta.env.VITE_API_URL}/company-name`);
+        const response = await api.get(`/company-name`);
         if (response.data && response.data.company_name) {
           setCompanyName(response.data.company_name);
           setNewCompanyName(response.data.company_name);
@@ -63,7 +63,7 @@ function CompanySettings() {
     setError(null);
 
     try {
-      const response = await api.post(`${import.meta.env.VITE_API_URL}/company-name`, {
+      const response = await api.post(`/company-name`, {
         company_name: newCompanyName.trim(),
       });
 

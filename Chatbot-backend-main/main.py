@@ -1279,9 +1279,9 @@ async def admin_enhanced_analysis(current_user = Depends(get_admin_or_user), db:
         analytics_data = get_enhanced_analytics(db, company_id)
         print(f"🔍 [ENHANCED ANALYSIS] 分析データ取得完了")
         
-        # Geminiによる洞察生成
+        # Geminiによる洞察生成（全チャット履歴を含む）
         print(f"🔍 [ENHANCED ANALYSIS] Gemini洞察生成開始")
-        ai_insights = await generate_gemini_insights(analytics_data, db)
+        ai_insights = await generate_gemini_insights(analytics_data, db, company_id)
         analytics_data["ai_insights"] = ai_insights
         print(f"🔍 [ENHANCED ANALYSIS] Gemini洞察生成完了")
         

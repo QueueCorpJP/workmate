@@ -98,6 +98,11 @@ function ChatInterface() {
   const [url, setUrl] = useState("");
   const [applicationOpen, setApplicationOpen] = useState(false);
   const [upgradeSuccess, setUpgradeSuccess] = useState(false);
+  
+  // チャット履歴の表示制御用の状態
+  const [displayedMessageCount, setDisplayedMessageCount] = useState(10); // 最初は5ペア（10件）表示
+  const [showLoadMoreButton, setShowLoadMoreButton] = useState(false);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   // メッセージエリアのスタイルを改善 - モバイル対応を強化
   const messageContainerStyles = {
@@ -233,9 +238,13 @@ function ChatInterface() {
   useEffect(() => {
     if (user?.id) {
       const savedMessages = localStorage.getItem(`chatMessages_${user.id}`);
-      setMessages(savedMessages ? JSON.parse(savedMessages) : []);
+      const loadedMessages = savedMessages ? JSON.parse(savedMessages) : [];
+      setMessages(loadedMessages);
+      // 保存されたメッセージ数に応じて表示数を設定
+      setDisplayedMessageCount(Math.min(10, loadedMessages.length));
     } else {
       setMessages([]);
+      setDisplayedMessageCount(10);
     }
   }, [user?.id]);
 
@@ -382,6 +391,7 @@ function ChatInterface() {
       localStorage.removeItem(`chatMessages_${user.id}`);
     }
     setMessages([]);
+    setDisplayedMessageCount(10); // 表示数をリセット
     setConfirmClearOpen(false);
   };
 
@@ -399,6 +409,51 @@ function ChatInterface() {
 
   const handleCloseApplication = () => {
     setApplicationOpen(false);
+  };
+
+  // 「もっと見る」ボタンの処理
+  const handleLoadMoreMessages = () => {
+    const prevScrollHeight = chatContainerRef.current?.scrollHeight || 0;
+    setDisplayedMessageCount(prev => prev + 10); // さらに5ペア（10件）表示
+    
+    // スクロール位置を保持
+    setTimeout(() => {
+      if (chatContainerRef.current) {
+        const newScrollHeight = chatContainerRef.current.scrollHeight;
+        const scrollDiff = newScrollHeight - prevScrollHeight;
+        chatContainerRef.current.scrollTop = scrollDiff;
+      }
+    }, 100);
+  };
+
+  // メッセージ数が変更されたら「もっと見る」ボタンの表示を判定
+  useEffect(() => {
+    setShowLoadMoreButton(messages.length > displayedMessageCount);
+  }, [messages.length, displayedMessageCount]);
+
+  // 新しいメッセージが追加されたら下にスクロール＆表示数を調整
+  useEffect(() => {
+    if (messages.length > 0) {
+      // 新しいメッセージが追加された場合、表示数を調整
+      if (displayedMessageCount < messages.length) {
+        // 現在の表示数が総メッセージ数より少ない場合、最新のメッセージが見えるように調整
+        const needToShow = messages.length - displayedMessageCount;
+        if (needToShow <= 2) { // 新しいメッセージが1-2件の場合は表示数を増やす
+          setDisplayedMessageCount(messages.length);
+        }
+      }
+      
+      // 最新メッセージが表示範囲内の場合のみスクロール
+      const isLatestMessageVisible = displayedMessageCount >= messages.length;
+      if (isLatestMessageVisible) {
+        setTimeout(() => scrollToBottom(), 100);
+      }
+    }
+  }, [messages.length, displayedMessageCount]);
+
+  // 表示するメッセージを取得
+  const getDisplayedMessages = () => {
+    return messages.slice(-displayedMessageCount);
   };
 
   // AppBarコンポーネントのスタイル修正 - メニューボタン追加
@@ -569,6 +624,50 @@ function ChatInterface() {
 
   // メッセージエリアのレンダリング部分
   // ローディングアニメーションコンポーネント
+  // 「もっと見る」ボタンコンポーネント
+  const LoadMoreButton = () => (
+    <Box
+      sx={{
+        display: 'flex',
+        justifyContent: 'center',
+        py: 2,
+        px: 3,
+        position: 'sticky',
+        top: 0,
+        zIndex: 10,
+        backgroundColor: 'rgba(248, 250, 252, 0.95)',
+        backdropFilter: 'blur(8px)',
+        borderBottom: '1px solid rgba(37, 99, 235, 0.1)',
+        mb: 2,
+      }}
+    >
+      <Button
+        variant="outlined"
+        onClick={handleLoadMoreMessages}
+        sx={{
+          borderRadius: '20px',
+          textTransform: 'none',
+          fontWeight: 600,
+          px: 3,
+          py: 1,
+          background: 'rgba(255, 255, 255, 0.9)',
+          border: '1px solid rgba(37, 99, 235, 0.2)',
+          color: 'primary.main',
+          boxShadow: '0 2px 8px rgba(37, 99, 235, 0.1)',
+          '&:hover': {
+            background: 'rgba(37, 99, 235, 0.05)',
+            border: '1px solid rgba(37, 99, 235, 0.3)',
+            boxShadow: '0 4px 16px rgba(37, 99, 235, 0.15)',
+            transform: 'translateY(-1px)',
+          },
+          transition: 'all 0.2s ease',
+        }}
+      >
+        ↑ 過去のメッセージを読み込む ({messages.length - displayedMessageCount}件)
+      </Button>
+    </Box>
+  );
+
   const TypingAnimation = () => (
     <Box
       sx={{
@@ -649,13 +748,16 @@ function ChatInterface() {
   );
 
   const renderChatMessages = () => (
-    <Box sx={{
-      ...messageContainerStyles,
-      pt: { xs: 2, sm: 2.5, md: 3 }, // スクロール領域の上部パディングを追加
-      height: '100%', // 高さを100%に設定
-      WebkitOverflowScrolling: 'touch', // iOSのスムーススクロール対応
-      overscrollBehavior: 'contain', // スクロールの慣性を制御
-    }}>
+    <Box 
+      ref={chatContainerRef}
+      sx={{
+        ...messageContainerStyles,
+        pt: showLoadMoreButton ? 0 : { xs: 2, sm: 2.5, md: 3 }, // 「もっと見る」ボタンがある場合は上部パディングを削除
+        height: '100%', // 高さを100%に設定
+        WebkitOverflowScrolling: 'touch', // iOSのスムーススクロール対応
+        overscrollBehavior: 'contain', // スクロールの慣性を制御
+      }}
+    >
       {messages.length === 0 && !isLoading ? (
         <Box
           sx={{
@@ -701,18 +803,26 @@ function ChatInterface() {
         </Box>
       ) : (
         <>
-          {messages.map((message, index) => (
-            <Box
-              key={index}
-              sx={message.isUser ? userMessageStyles : botMessageStyles}
-            >
-              <MarkdownRenderer 
-                content={message.text} 
-                isUser={message.isUser}
-              />
-              {message.source && <SourceCitation source={message.source} />}
-            </Box>
-          ))}
+          {/* 「もっと見る」ボタンを最上部に表示 */}
+          {showLoadMoreButton && <LoadMoreButton />}
+          
+          {/* 制限されたメッセージ数のみ表示 */}
+          {getDisplayedMessages().map((message, index) => {
+            // 元のインデックスを計算（キーとして使用）
+            const originalIndex = messages.length - displayedMessageCount + index;
+            return (
+              <Box
+                key={originalIndex}
+                sx={message.isUser ? userMessageStyles : botMessageStyles}
+              >
+                <MarkdownRenderer 
+                  content={message.text} 
+                  isUser={message.isUser}
+                />
+                {message.source && <SourceCitation source={message.source} />}
+              </Box>
+            );
+          })}
           {isLoading && <TypingAnimation />}
         </>
       )}

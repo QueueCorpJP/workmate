@@ -912,8 +912,8 @@ def get_detailed_sentiment_analysis(db, company_id: str = None) -> Dict[str, Any
             "summary": f"分析エラー: {str(e)}"
         }
 
-async def generate_gemini_insights(analytics_data: Dict[str, Any], db) -> str:
-    """Geminiを使用して分析データから洞察を生成"""
+async def generate_gemini_insights(analytics_data: Dict[str, Any], db, company_id: str = None) -> str:
+    """Geminiを使用して分析データから洞察を生成（全チャット履歴を含む）"""
     try:
         # Gemini設定を確認
         from modules.config import setup_gemini
@@ -922,38 +922,63 @@ async def generate_gemini_insights(analytics_data: Dict[str, Any], db) -> str:
         if not model:
             return "Gemini APIが利用できません。基本的な統計分析のみ表示しています。"
         
+        # 全チャット履歴を取得
+        chat_history_query = """
+        SELECT 
+            employee_name,
+            user_message,
+            bot_response,
+            timestamp,
+            sentiment,
+            category,
+            company_name
+        FROM chat_history
+        WHERE 1=1
+        """
+        
+        if company_id:
+            chat_history_query += f" AND company_id = '{company_id}'"
+        
+        chat_history_query += " ORDER BY timestamp DESC LIMIT 500"  # 最新500件を取得
+        
+        chat_history = execute_query(chat_history_query)
+        
+        # チャット履歴をテキスト形式に変換
+        chat_history_text = ""
+        if chat_history:
+            chat_history_text = "\n".join([
+                f"【{safe_str(row.get('timestamp', ''))}】 {safe_str(row.get('employee_name', '匿名'))} ({safe_str(row.get('sentiment', 'neutral'))}):\n質問: {safe_str(row.get('user_message', ''))[:200]}...\n回答: {safe_str(row.get('bot_response', ''))[:200]}...\nカテゴリ: {safe_str(row.get('category', 'なし'))}\n---"
+                for row in chat_history[:100]  # プロンプトサイズを考慮して100件に制限
+            ])
+        
         # 分析データを要約してプロンプトを作成
         prompt = f"""
 以下のチャットボット利用データを分析し、ビジネス改善の洞察を日本語で提供してください：
 
-## 資料参照分析
+## 統計サマリー
 - 総参照回数: {analytics_data.get('resource_reference_count', {}).get('total_references', 0)}回
 - アクティブリソース: {analytics_data.get('resource_reference_count', {}).get('active_resources', 0)}個
 - 最も参照される資料: {analytics_data.get('resource_reference_count', {}).get('most_referenced', {}).get('name', 'N/A') if analytics_data.get('resource_reference_count', {}).get('most_referenced') else 'N/A'}
-
-## カテゴリ分析
 - 総質問数: {analytics_data.get('category_distribution_analysis', {}).get('total_questions', 0)}件
 - カテゴリ数: {analytics_data.get('category_distribution_analysis', {}).get('category_diversity', 0)}種類
 - 主要カテゴリ: {', '.join([cat['category'] for cat in analytics_data.get('category_distribution_analysis', {}).get('top_categories', [])[:3]])}
-
-## ユーザー活動
-- トレンド: {analytics_data.get('active_user_trends', {}).get('trend_analysis', {}).get('direction', 'N/A')}
-- 変化率: {analytics_data.get('active_user_trends', {}).get('trend_analysis', {}).get('percentage_change', 0)}%
-
-## 問題パターン
+- ユーザートレンド: {analytics_data.get('active_user_trends', {}).get('trend_analysis', {}).get('direction', 'N/A')} ({analytics_data.get('active_user_trends', {}).get('trend_analysis', {}).get('percentage_change', 0)}%)
 - 再質問率: {analytics_data.get('unresolved_and_repeat_analysis', {}).get('statistics', {}).get('repeat_rate', 0)}%
 - 未解決率: {analytics_data.get('unresolved_and_repeat_analysis', {}).get('statistics', {}).get('unresolved_rate', 0)}%
-
-## 感情分析
 - 全体感情スコア: {analytics_data.get('sentiment_analysis', {}).get('overall_sentiment_score', 0) * 100:.1f}点/100点
 
-上記データから以下の観点で分析してください：
-1. 現在の利用状況の評価
-2. 発見された問題点と課題
-3. 具体的な改善提案（優先度付き）
-4. 期待される効果
+## 実際のチャット履歴（最新100件）
+{chat_history_text}
 
-回答は300文字以内で簡潔にまとめてください。
+## 分析要求
+上記の統計データと実際のチャット履歴を総合的に分析して、以下の観点で洞察を提供してください：
+
+1. **利用パターンの特徴**: ユーザーの質問傾向、よく使われる機能
+2. **品質課題の発見**: 不適切な回答、ユーザー満足度の低い領域
+3. **改善優先度**: 最も効果的な改善点（データに基づく根拠付き）
+4. **ビジネス価値**: 現在の貢献度と今後の可能性
+
+実際のやり取りを見た上での具体的で実践的な提案をお願いします。回答は400文字以内で簡潔にまとめてください。
 """
         
         # Geminiで分析

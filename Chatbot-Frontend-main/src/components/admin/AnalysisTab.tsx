@@ -395,7 +395,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                   WebkitTextFillColor: 'transparent',
                 }}
               >
-                AI強化分析ダッシュボード
+                AI分析ダッシュボード
             </Typography>
             <Typography
                 variant="body1"

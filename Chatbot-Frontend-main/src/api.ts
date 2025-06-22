@@ -4,7 +4,7 @@ import axios from "axios";
 const API_URL = import.meta.env.VITE_API_URL || 
   (import.meta.env.PROD ? 
     "https://workmatechat.com/chatbot/api" : 
-    `http://localhost:${import.meta.env.VITE_BACKEND_PORT || 8085}/chatbot/api`);
+    `http://localhost:${import.meta.env.VITE_BACKEND_PORT || 8083}/chatbot/api`);
 
 console.log("API URL:", API_URL);
 console.log("Environment:", import.meta.env.MODE);

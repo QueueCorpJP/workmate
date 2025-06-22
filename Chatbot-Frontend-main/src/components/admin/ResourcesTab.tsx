@@ -337,7 +337,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
   const handleToggleResourceStatus = async (sourceId: string) => {
     try {
       const response = await api.post(
-        `${import.meta.env.VITE_API_URL}/admin/resources/${encodeURIComponent(sourceId)}/toggle`
+        `/admin/resources/${encodeURIComponent(sourceId)}/toggle`
       );
       console.log("リソース状態切り替え結果:", response.data);
       // リソース情報を再取得
@@ -363,7 +363,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
     try {
       console.log(`リソース ${sourceId} を削除中...`);
       const response = await api.delete(
-        `${import.meta.env.VITE_API_URL}/admin/resources/${encodeURIComponent(sourceId)}`
+        `/admin/resources/${encodeURIComponent(sourceId)}`
       );
       console.log("リソース削除結果:", response.data);
       // リソース情報を再取得

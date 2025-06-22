@@ -59,7 +59,7 @@ const CompanyNameModal: React.FC<CompanyNameModalProps> = ({ open, onClose }) =>
     setError(null);
     
     try {
-      const response = await api.post(`${import.meta.env.VITE_API_URL}/company-name`, {
+      const response = await api.post(`/company-name`, {
         company_name: newCompanyName.trim()
       });
       
