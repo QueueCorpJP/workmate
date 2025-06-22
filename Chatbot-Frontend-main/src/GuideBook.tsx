@@ -1083,7 +1083,7 @@ const GuideBook = () => {
               <Typography
                 variant="body2"
                 component="a"
-                href="https://queue-lp.vercel.app/"
+                href="https://www.workmate-ai.com"
                 target="_blank"
                 sx={{
                   color: 'text.secondary',

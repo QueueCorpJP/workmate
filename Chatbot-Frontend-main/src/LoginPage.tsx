@@ -180,7 +180,7 @@ function LoginPage() {
                 },
               }}
               onClick={() =>
-                window.open("https://workmate-ai.com/", "_blank")
+                window.open("https://www.workmate-ai.com", "_blank")
               }
             >
               ホームページ
@@ -459,7 +459,7 @@ function LoginPage() {
               }}
             >
               <Link
-                href="https://queue-lp.vercel.app/"
+                href="https://www.workmate-ai.com"
                 target="_blank"
                 rel="noopener"
                 sx={{
