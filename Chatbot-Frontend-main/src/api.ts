@@ -22,24 +22,24 @@ const getEnvironment = () => {
 const getApiUrl = () => {
   const environment = getEnvironment();
   
+  // 本番環境では、ハードコードされた本番用URLを常に使用する
+  if (environment === "production") {
+    const productionUrl = "https://workmatechat.com/chatbot/api";
+    console.log(`🌐 API URL: ${productionUrl} (本番環境固定)`);
+    return productionUrl;
+  }
+  
   // 環境変数VITE_API_URLが明示的に設定されている場合は優先
   if (import.meta.env.VITE_API_URL) {
     console.log(`🌐 API URL: ${import.meta.env.VITE_API_URL} (環境変数VITE_API_URL指定)`);
     return import.meta.env.VITE_API_URL;
   }
   
-  // 環境に応じてデフォルトURLを設定
-  if (environment === "production") {
-    const productionUrl = "https://workmatechat.com/chatbot/api";
-    console.log(`🌐 API URL: ${productionUrl} (本番環境デフォルト)`);
-    return productionUrl;
-  } else {
-    // ローカル開発環境
-    const backendPort = import.meta.env.VITE_BACKEND_PORT || 8085;
-    const developmentUrl = `http://localhost:${backendPort}/chatbot/api`;
-    console.log(`🌐 API URL: ${developmentUrl} (ローカル開発環境デフォルト)`);
-    return developmentUrl;
-  }
+  // ローカル開発環境のデフォルト
+  const backendPort = import.meta.env.VITE_BACKEND_PORT || 8085;
+  const developmentUrl = `http://localhost:${backendPort}/chatbot/api`;
+  console.log(`🌐 API URL: ${developmentUrl} (ローカル開発環境デフォルト)`);
+  return developmentUrl;
 };
 
 // 環境情報を表示

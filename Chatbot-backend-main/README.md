@@ -109,7 +109,7 @@ DB_PORT=5432
 python main.py
 ```
 
-サーバーは環境変数PORTで指定されたポート（デフォルト例：`http://localhost:8083`）で起動します。
+サーバーは環境変数PORTで指定されたポート（ローカル例：`http://localhost:8085`、本番例：`http://localhost:8083`）で起動します。
 
 # AWS EC2 上で FastAPI + PostgreSQL アプリケーションを構築・デプロイする手順
 

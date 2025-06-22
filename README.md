@@ -210,7 +210,7 @@ cd Chatbot-Frontend-main
 npm install
 
 # 環境変数設定
-echo "VITE_API_URL=http://localhost:8083" > .env
+echo "VITE_API_URL=http://localhost:8085" > .env
 
 # 開発サーバー起動
 npm run dev
@@ -253,7 +253,7 @@ ASSEMBLYAI_API_KEY=your_assemblyai_key
 ### フロントエンド環境変数 (.env)
 ```bash
 # API エンドポイント
-VITE_API_URL=http://localhost:8083
+VITE_API_URL=http://localhost:8085
 
 # 本番環境の場合
 VITE_API_URL=https://your-backend-domain.com
@@ -321,7 +321,7 @@ Content-Type: multipart/form-data
 
 ### 詳細なAPI仕様
 FastAPIの自動生成ドキュメントを参照：
-- **開発環境**: http://localhost:8083/docs
+- **開発環境**: http://localhost:8085/docs
 - **本番環境**: https://your-domain.com/docs
 
 ## デプロイ
@@ -416,7 +416,7 @@ which python  # 仮想環境のPythonが使われているか確認
 export default defineConfig({
   server: {
     proxy: {
-      '/api': 'http://localhost:8083'
+      '/api': 'http://localhost:8085'
     }
   }
 })
