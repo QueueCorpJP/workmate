@@ -80,7 +80,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
   const [isSubmittingUrl, setIsSubmittingUrl] = useState(false);
   const [urlInput, setUrlInput] = useState("");
   
-  // Special指示編集ダイアログの状態
+  // 管理者指令編集ダイアログの状態
   const [specialDialogOpen, setSpecialDialogOpen] = useState(false);
   const [editingResource, setEditingResource] = useState<Resource | null>(null);
   const [specialText, setSpecialText] = useState("");
@@ -383,7 +383,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
     setUploadTab(newValue);
   };
 
-  // Special指示編集機能
+  // 管理者指令編集機能
   const handleEditSpecial = (resource: Resource) => {
     setEditingResource(resource);
     // 常にリソースの最新のspecial値を設定（データベースから取得した最新の値）
@@ -396,7 +396,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
 
     setIsUpdatingSpecial(true);
     try {
-      // Special指示を更新
+      // 管理者指令を更新
       const response = await api.put(`/admin/resources/${encodeURIComponent(editingResource.id)}/special`, {
         special: specialText
       });
@@ -416,18 +416,18 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
           // 編集中のリソース情報を最新の状態に更新
           setEditingResource(updatedResource);
           
-          // フォームにデータベースに保存されている最新のSpecial指示を表示
+          // フォームにデータベースに保存されている最新の管理者指令を表示
           setSpecialText(updatedResource.special || "");
           
-          console.log("データベースから取得したSpecial指示:", updatedResource.special);
+          console.log("データベースから取得した管理者指令:", updatedResource.special);
         }
       }
 
-      setAlertMessage("Special指示が更新されました");
+              setAlertMessage("管理者指令が更新されました");
       setAlertSeverity('success');
       setShowAlert(true);
     } catch (error: any) {
-      console.error("Special指示更新エラー:", error);
+      console.error("管理者指令更新エラー:", error);
       const errorMessage = error.response?.data?.detail || error.message || "更新に失敗しました";
       setAlertMessage(`更新エラー: ${errorMessage}`);
       setAlertSeverity('error');
@@ -502,7 +502,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
                 <TableCell>ページ数</TableCell>
                 <TableCell>アップロード日時</TableCell>
                 <TableCell>状態</TableCell>
-                <TableCell>Special指示</TableCell>
+                <TableCell>管理者指令</TableCell>
                 <TableCell>操作</TableCell>
               </TableRow>
             </TableHead>
@@ -566,7 +566,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
                       }}>
                         {resource.special || "未設定"}
                       </Typography>
-                      <Tooltip title="Special指示を編集">
+                      <Tooltip title="管理者指令を編集">
                         <IconButton
                           size="small"
                           onClick={() => handleEditSpecial(resource)}
@@ -906,7 +906,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
         </DialogActions>
       </Dialog>
 
-      {/* Special指示編集ダイアログ */}
+      {/* 管理者指令編集ダイアログ */}
       <Dialog
         open={specialDialogOpen}
         onClose={handleCloseSpecialDialog}
@@ -926,7 +926,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
             pb: 1,
           }}
         >
-          Special指示を編集 - {editingResource?.name}
+          管理者指令を編集 - {editingResource?.name}
         </DialogTitle>
         <DialogContent sx={{ px: 3, pb: 2 }}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -939,7 +939,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
             rows={6}
             value={specialText}
             onChange={(e) => setSpecialText(e.target.value)}
-            placeholder="Special指示を入力してください..."
+            placeholder="管理者指令を入力してください..."
             variant="outlined"
             sx={{
               "& .MuiOutlinedInput-root": {
