@@ -8,6 +8,59 @@ from typing import Dict, List, Any, Optional
 from supabase_adapter import select_data, execute_query
 import json
 
+# 安全なデータ変換関数
+def safe_int(value, default=0):
+    """安全にintに変換する"""
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    if isinstance(value, dict):
+        # Supabaseから辞書形式で返される場合の処理
+        if 'value' in value:
+            return safe_int(value['value'], default)
+        if len(value) == 1:
+            return safe_int(list(value.values())[0], default)
+    return default
+
+def safe_float(value, default=0.0):
+    """安全にfloatに変換する"""
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return default
+    if isinstance(value, dict):
+        # Supabaseから辞書形式で返される場合の処理
+        if 'value' in value:
+            return safe_float(value['value'], default)
+        if len(value) == 1:
+            return safe_float(list(value.values())[0], default)
+    return default
+
+def safe_str(value, default=""):
+    """安全にstrに変換する"""
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        # Supabaseから辞書形式で返される場合の処理
+        if 'value' in value:
+            return safe_str(value['value'], default)
+        if len(value) == 1:
+            return safe_str(list(value.values())[0], default)
+    return str(value)
+
 def get_usage_analytics(db) -> Dict[str, Any]:
     """
     queue@queueu-tech.jp用の利用状況分析を取得
@@ -376,14 +429,14 @@ def get_resource_reference_analysis(db, company_id: str = None) -> Dict[str, Any
         resources = []
         for row in result:
             resources.append({
-                "name": row.get("resource_name", "不明"),
-                "type": row.get("resource_type", "不明"),
-                "reference_count": int(row.get("reference_count", 0)),
-                "unique_users": int(row.get("unique_users", 0)),
-                "unique_days": int(row.get("unique_days", 0)),
-                "last_referenced": row.get("last_referenced"),
-                "avg_satisfaction": round(float(row.get("avg_satisfaction", 2.0)), 2) if row.get("avg_satisfaction") else 2.0,
-                "usage_intensity": round(int(row.get("reference_count", 0)) / max(int(row.get("unique_users", 1)), 1), 2)
+                "name": safe_str(row.get("resource_name", "不明")),
+                "type": safe_str(row.get("resource_type", "不明")),
+                "reference_count": safe_int(row.get("reference_count", 0)),
+                "unique_users": safe_int(row.get("unique_users", 0)),
+                "unique_days": safe_int(row.get("unique_days", 0)),
+                "last_referenced": safe_str(row.get("last_referenced")),
+                "avg_satisfaction": round(safe_float(row.get("avg_satisfaction", 2.0)), 2) if row.get("avg_satisfaction") else 2.0,
+                "usage_intensity": round(safe_int(row.get("reference_count", 0)) / max(safe_int(row.get("unique_users", 1)), 1), 2)
             })
         
         total_references = sum(r["reference_count"] for r in resources)
@@ -401,6 +454,8 @@ def get_resource_reference_analysis(db, company_id: str = None) -> Dict[str, Any
         
     except Exception as e:
         print(f"資料参照分析エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         return {
             "resources": [],
             "total_references": 0,
@@ -452,18 +507,19 @@ def get_category_distribution_analysis(db, company_id: str = None) -> Dict[str, 
         total_questions = 0
         
         for row in result:
-            count = int(row.get("count", 0))
+            # 安全なデータ変換を使用
+            count = safe_int(row.get("count", 0))
             total_questions += count
             
             categories.append({
-                "category": row.get("category", "不明"),
+                "category": safe_str(row.get("category", "不明")),
                 "count": count,
-                "unique_users": int(row.get("unique_users", 0)),
-                "unique_days": int(row.get("unique_days", 0)),
-                "avg_sentiment_score": round(float(row.get("avg_sentiment_score", 2.0)), 2),
-                "positive_count": int(row.get("positive_count", 0)),
-                "neutral_count": int(row.get("neutral_count", 0)),
-                "negative_count": int(row.get("negative_count", 0))
+                "unique_users": safe_int(row.get("unique_users", 0)),
+                "unique_days": safe_int(row.get("unique_days", 0)),
+                "avg_sentiment_score": round(safe_float(row.get("avg_sentiment_score", 2.0)), 2),
+                "positive_count": safe_int(row.get("positive_count", 0)),
+                "neutral_count": safe_int(row.get("neutral_count", 0)),
+                "negative_count": safe_int(row.get("negative_count", 0))
             })
         
         # 分布とバイアス分析
@@ -500,11 +556,13 @@ def get_category_distribution_analysis(db, company_id: str = None) -> Dict[str, 
             "bottom_categories": bottom_categories,
             "total_questions": total_questions,
             "category_diversity": len(categories),
-            "summary": f"合計{len(categories)}カテゴリで{total_questions}件の質問があり、最も多いのは'{top_categories[0]['category']}'({top_categories[0]['count']}件)です"
+            "summary": f"合計{len(categories)}カテゴリで{total_questions}件の質問があり、最も多いのは'{top_categories[0]['category']}'({top_categories[0]['count']}件)です" if top_categories else "カテゴリデータが不足しています"
         }
         
     except Exception as e:
         print(f"カテゴリ分布分析エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         return {
             "categories": [],
             "distribution": {},
@@ -556,11 +614,11 @@ def get_active_user_trends(db, company_id: str = None, days: int = 30) -> Dict[s
         daily_trends = []
         for row in result:
             daily_trends.append({
-                "date": str(row.get("date")),
-                "active_users": int(row.get("active_users", 0)),
-                "total_messages": int(row.get("total_messages", 0)),
-                "unique_names": int(row.get("unique_names", 0)),
-                "positive_ratio": round(float(row.get("positive_ratio", 0)), 2)
+                "date": safe_str(row.get("date")),
+                "active_users": safe_int(row.get("active_users", 0)),
+                "total_messages": safe_int(row.get("total_messages", 0)),
+                "unique_names": safe_int(row.get("unique_names", 0)),
+                "positive_ratio": round(safe_float(row.get("positive_ratio", 0)), 2)
             })
         
         # 週次トレンド計算
@@ -612,6 +670,8 @@ def get_active_user_trends(db, company_id: str = None, days: int = 30) -> Dict[s
         
     except Exception as e:
         print(f"アクティブユーザー推移分析エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         return {
             "daily_trends": [],
             "weekly_trends": [],
@@ -653,18 +713,18 @@ def get_unresolved_repeat_analysis(db, company_id: str = None) -> Dict[str, Any]
         # ユーザー別の質問履歴を構築
         user_questions = {}
         for row in result:
-            employee_id = row.get("employee_id")
+            employee_id = safe_str(row.get("employee_id"))
             if employee_id not in user_questions:
                 user_questions[employee_id] = []
             
             user_questions[employee_id].append({
-                "message": row.get("user_message", ""),
-                "response": row.get("bot_response", ""),
-                "timestamp": row.get("timestamp"),
-                "sentiment": row.get("sentiment", "neutral"),
-                "category": row.get("category", ""),
-                "response_length": int(row.get("response_length", 0)),
-                "employee_name": row.get("employee_name", "")
+                "message": safe_str(row.get("user_message", "")),
+                "response": safe_str(row.get("bot_response", "")),
+                "timestamp": safe_str(row.get("timestamp")),
+                "sentiment": safe_str(row.get("sentiment", "neutral")),
+                "category": safe_str(row.get("category", "")),
+                "response_length": safe_int(row.get("response_length", 0)),
+                "employee_name": safe_str(row.get("employee_name", ""))
             })
         
         # 再質問パターンの検出
@@ -688,8 +748,11 @@ def get_unresolved_repeat_analysis(db, company_id: str = None) -> Dict[str, Any]
                     similarity = len(common_words) / min(len(current_words), len(next_words))
                     
                     if similarity > 0.3:  # 30%以上の類似性
-                        time_diff = datetime.fromisoformat(next_q["timestamp"].replace('Z', '+00:00')) - \
-                                   datetime.fromisoformat(current["timestamp"].replace('Z', '+00:00'))
+                        try:
+                            time_diff = datetime.fromisoformat(next_q["timestamp"].replace('Z', '+00:00')) - \
+                                       datetime.fromisoformat(current["timestamp"].replace('Z', '+00:00'))
+                        except:
+                            time_diff = "不明"
                         
                         repeat_questions.append({
                             "employee_id": employee_id,
@@ -743,6 +806,8 @@ def get_unresolved_repeat_analysis(db, company_id: str = None) -> Dict[str, Any]
         
     except Exception as e:
         print(f"未解決・再質問分析エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         return {
             "repeat_questions": [],
             "unresolved_patterns": [],
@@ -790,10 +855,10 @@ def get_detailed_sentiment_analysis(db, company_id: str = None) -> Dict[str, Any
         temporal_sentiment = {}
         
         for row in result:
-            sentiment = row.get("sentiment", "neutral")
-            category = row.get("category", "その他")
-            date = str(row.get("date", ""))
-            count = int(row.get("count", 0))
+            sentiment = safe_str(row.get("sentiment", "neutral"))
+            category = safe_str(row.get("category", "その他"))
+            date = safe_str(row.get("date", ""))
+            count = safe_int(row.get("count", 0))
             
             # 全体の感情分布
             if sentiment not in sentiment_distribution:
@@ -838,6 +903,8 @@ def get_detailed_sentiment_analysis(db, company_id: str = None) -> Dict[str, Any
         
     except Exception as e:
         print(f"詳細感情分析エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         return {
             "sentiment_distribution": {},
             "sentiment_by_category": {},

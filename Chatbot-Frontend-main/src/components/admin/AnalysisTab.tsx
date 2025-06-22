@@ -27,13 +27,33 @@ import {
   AccordionDetails,
   CircularProgress,
   LinearProgress,
-  Alert
+  Alert,
+  Container,
+  Stack,
+  Badge
 } from '@mui/material';
-import { Bar, Pie, Line } from 'react-chartjs-2';
+import { Bar, Pie, Line, Doughnut, PolarArea } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip as ChartTooltip,
+  Legend,
+  ArcElement,
+  PointElement,
+  LineElement,
+  Filler,
+  RadialLinearScale,
+  PolarAreaController,
+  defaults
+} from 'chart.js';
 import { AnalysisResult, categoryColors, sentimentColors } from './types';
 import LoadingIndicator from './LoadingIndicator';
 import EmptyState from './EmptyState';
 import { getCategoryChartData, getSentimentChartData, exportAnalysisToCSV } from './utils';
+import MarkdownRenderer from '../MarkdownRenderer';
 import InsightsIcon from '@mui/icons-material/Insights';
 import CategoryIcon from '@mui/icons-material/Category';
 import MoodIcon from '@mui/icons-material/Mood';
@@ -48,7 +68,33 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import PeopleIcon from '@mui/icons-material/People';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import AnalyticsIcon from '@mui/icons-material/Analytics';
+import QueryStatsIcon from '@mui/icons-material/QueryStats';
+import TrendingDownIcon from '@mui/icons-material/TrendingDown';
+import RepeatIcon from '@mui/icons-material/Repeat';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
 import api from '../../api';
+
+// Chart.jsのデフォルト設定をリセット
+defaults.font.family = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+defaults.color = '#374151';
+
+// Chart.jsの必要なコンポーネントを登録
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  ChartTooltip,
+  Legend,
+  ArcElement,
+  PointElement,
+  LineElement,
+  Filler,
+  RadialLinearScale,
+  PolarAreaController
+);
 
 // 強化分析結果の型定義
 interface EnhancedAnalysisResult {
@@ -183,54 +229,67 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'md'));
 
-  // 分析モード (標準/強化)
-  const [analysisMode, setAnalysisMode] = useState<string>('standard');
+  // 強化分析データ
   const [enhancedAnalysis, setEnhancedAnalysis] = useState<EnhancedAnalysisResult | null>(null);
   const [isEnhancedLoading, setIsEnhancedLoading] = useState<boolean>(false);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [expandedSections, setExpandedSections] = useState<Set<number>>(new Set([0, 1, 2])); // デフォルトで最初の3つを展開
+
+  // 初回ロード時に強化分析データを取得
+  useEffect(() => {
+    fetchEnhancedAnalysis();
+  }, []);
 
   // 強化分析データを取得する関数
   const fetchEnhancedAnalysis = async () => {
     try {
       setIsEnhancedLoading(true);
-      console.log('強化分析データ取得開始...');
+      console.log('🔍 強化分析データ取得開始...');
 
       const response = await api.get('/admin/enhanced-analysis');
-      console.log('強化分析レスポンス:', response.data);
+      console.log('✅ 強化分析レスポンス:', response.data);
 
       if (response.data) {
         setEnhancedAnalysis(response.data);
-        console.log('強化分析データ設定完了');
+        setLastRefresh(new Date());
+        console.log('🎯 強化分析データ設定完了');
       } else {
-        console.error('強化分析レスポンスのデータが空です');
+        console.error('❌ 強化分析レスポンスのデータが空です');
       }
     } catch (error: any) {
-      console.error('強化分析データ取得エラー:', error);
+      console.error('💥 強化分析データ取得エラー:', error);
       
-      let errorMessage = '強化分析データの取得中にエラーが発生しました。';
-      if (error.response) {
-        if (error.response.status === 500) {
-          errorMessage += '\nサーバーエラーが発生しました。';
-        } else if (error.response.status === 401) {
-          errorMessage += '\n認証エラーです。ログインし直してください。';
-        } else {
-          errorMessage += `\nエラーコード: ${error.response.status}`;
-        }
-      } else if (error.request) {
-        errorMessage += '\nサーバーに接続できませんでした。';
+      // エラー処理を改善
+      if (error.response?.status === 401) {
+        // 認証エラーの場合、リダイレクトやログイン画面へ
+        console.error('認証エラー: ログインが必要です');
+      } else if (error.response?.status === 403) {
+        console.error('権限エラー: 管理者権限が必要です');
+      } else if (error.response?.status >= 500) {
+        console.error('サーバーエラー: システム管理者に連絡してください');
+      } else {
+        console.error('その他のエラー:', error.message);
       }
-      
-      alert(errorMessage);
     } finally {
       setIsEnhancedLoading(false);
     }
   };
 
-  // タブの変更ハンドラ
-  const handleTabChange = (_event: React.SyntheticEvent, newValue: string) => {
-    if (newValue === 'enhanced' && !enhancedAnalysis) {
-      fetchEnhancedAnalysis();
+  // セクション展開/折りたたみの処理
+  const toggleSection = (index: number) => {
+    const newExpanded = new Set(expandedSections);
+    if (newExpanded.has(index)) {
+      newExpanded.delete(index);
+    } else {
+      newExpanded.add(index);
     }
-    setAnalysisMode(newValue);
+    setExpandedSections(newExpanded);
+  };
+
+  // 更新ボタンのハンドラ
+  const handleRefresh = () => {
+    onRefresh();
+    fetchEnhancedAnalysis();
   };
 
   // 資料参照回数チャートのデータを生成
@@ -283,63 +342,107 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
   };
 
   return (
-    <Fade in={true} timeout={400}>
-      <Box>
+    <Fade in={true} timeout={600}>
+      <Container maxWidth="xl" sx={{ py: 3 }}>
+        {/* ヘッダーセクション */}
         <Box
           sx={{
-            mb: 3,
+            mb: 4,
             display: 'flex',
+            flexDirection: { xs: 'column', md: 'row' },
             justifyContent: 'space-between',
-            alignItems: 'center',
-            px: { xs: 1, sm: 0 }
+            alignItems: { xs: 'flex-start', md: 'center' },
+            gap: 2,
+            p: 3,
+            background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.05) 0%, rgba(59, 130, 246, 0.08) 100%)',
+            borderRadius: 3,
+            border: '1px solid rgba(37, 99, 235, 0.12)',
+            position: 'relative',
+            overflow: 'hidden',
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: '4px',
+              background: 'linear-gradient(90deg, #2563eb, #3b82f6, #1d4ed8)',
+            }
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <InsightsIcon
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Box
               sx={{
-                mr: 1.5,
-                color: 'primary.main',
-                fontSize: { xs: '1.8rem', sm: '2rem' }
+                p: 2,
+                borderRadius: 2,
+                background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.15), rgba(59, 130, 246, 0.1))',
+                border: '1px solid rgba(37, 99, 235, 0.2)',
+                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.15)'
               }}
-            />
+            >
+              <SmartToyIcon sx={{ fontSize: '2rem', color: '#2563eb' }} />
+            </Box>
             <Box>
               <Typography
-                variant={isMobile ? "h6" : "h5"}
+                variant="h4"
                 sx={{
-                  fontWeight: 600,
-                  color: 'text.primary'
+                  fontWeight: 700,
+                  color: 'text.primary',
+                  fontSize: { xs: '1.5rem', md: '2rem' },
+                  background: 'linear-gradient(135deg, #1e293b, #475569)',
+                  backgroundClip: 'text',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
                 }}
               >
-                チャット分析ダッシュボード
+                AI強化分析ダッシュボード
               </Typography>
               <Typography
-                variant="body2"
+                variant="body1"
                 sx={{
                   color: 'text.secondary',
+                  fontSize: '1.1rem',
                   mt: 0.5,
-                  fontSize: '0.9rem'
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1
                 }}
               >
-                チャットボットの利用状況を詳細に分析し、ビジネス改善の洞察を提供
+                <AutoFixHighIcon fontSize="small" />
+                Gemini AIによる高度な分析と洞察
               </Typography>
+              {lastRefresh && (
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: 'text.secondary',
+                    fontSize: '0.9rem',
+                    mt: 1,
+                    display: 'block'
+                  }}
+                >
+                  最終更新: {lastRefresh.toLocaleString('ja-JP')}
+                </Typography>
+              )}
             </Box>
           </Box>
 
-          <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
-            {/* CSV出力ボタン */}
+          <Stack direction="row" spacing={2}>
             <Tooltip title="分析データをCSV形式で出力">
               <span>
                 <Button
                   variant="outlined"
                   color="secondary"
-                  onClick={() => analysis && exportAnalysisToCSV(analysis)}
-                  disabled={isLoading || !analysis}
+                  onClick={() => enhancedAnalysis && exportAnalysisToCSV(analysis)}
+                  disabled={isLoading || isEnhancedLoading || !enhancedAnalysis}
                   startIcon={<FileDownloadIcon />}
-                  size={isMobile ? "small" : "medium"}
                   sx={{
                     borderRadius: 2,
-                    px: { xs: 1.5, sm: 2.5 },
+                    px: 3,
+                    py: 1.2,
                     fontWeight: 600,
+                    textTransform: 'none',
+                    fontSize: '0.95rem',
                     '&:hover': {
                       backgroundColor: 'rgba(156, 39, 176, 0.08)',
                     }
@@ -350,920 +453,416 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
               </span>
             </Tooltip>
 
-            {/* 更新ボタン */}
             <Tooltip title="最新データに更新">
               <span>
                 <Button
                   variant="contained"
                   color="primary"
-                  onClick={() => {
-                    onRefresh();
-                    if (analysisMode === 'enhanced') {
-                      fetchEnhancedAnalysis();
-                    }
-                  }}
+                  onClick={handleRefresh}
                   disabled={isLoading || isEnhancedLoading}
-                  startIcon={<RefreshIcon />}
-                  size={isMobile ? "small" : "medium"}
+                  startIcon={isEnhancedLoading ? <CircularProgress size={20} color="inherit" /> : <RefreshIcon />}
                   sx={{
                     borderRadius: 2,
-                    px: { xs: 1.5, sm: 2.5 },
+                    px: 3,
+                    py: 1.2,
                     fontWeight: 600,
+                    textTransform: 'none',
+                    fontSize: '0.95rem',
                     boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
                     '&:hover': {
                       boxShadow: '0 6px 16px rgba(37, 99, 235, 0.4)',
                     }
                   }}
                 >
-                  {!isMobile && '更新'}
+                  {isEnhancedLoading ? '更新中...' : '更新'}
                 </Button>
               </span>
             </Tooltip>
+          </Stack>
+        </Box>
+
+        {/* ローディング状態 */}
+        {isEnhancedLoading ? (
+          <Box sx={{ py: 8 }}>
+            <LoadingIndicator />
+            <Typography
+              variant="h6"
+              sx={{
+                textAlign: 'center',
+                mt: 2,
+                color: 'text.secondary'
+              }}
+            >
+              AI分析を実行中...
+            </Typography>
           </Box>
-        </Box>
-
-        {/* 分析モード切り替えタブ */}
-        <Box sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
-          <Tabs
-            value={analysisMode}
-            onChange={handleTabChange}
-            aria-label="分析モード"
-            variant={isMobile ? "fullWidth" : "standard"}
-          >
-            <Tab
-              label="標準分析"
-              value="standard"
-              icon={<InsightsIcon />}
-              iconPosition="start"
-            />
-            <Tab
-              label="強化分析"
-              value="enhanced"
-              icon={<BusinessIcon />}
-              iconPosition="start"
-              disabled={isLoading || isEnhancedLoading}
-            />
-          </Tabs>
-        </Box>
-
-        {isLoading || isEnhancedLoading ? (
-          <LoadingIndicator />
-        ) : analysisMode === 'standard' && !analysis ? (
-          <EmptyState message="分析データがありません" />
-        ) : analysisMode === 'enhanced' && !enhancedAnalysis ? (
-          <EmptyState message="強化分析データがありません" />
+        ) : !enhancedAnalysis ? (
+          <EmptyState message="強化分析データがありません。更新ボタンを押してデータを取得してください。" />
         ) : (
           <Grid container spacing={3}>
-            {/* 標準分析モード */}
-            {analysisMode === 'standard' && analysis ? (
-              <>
-                {/* AI洞察カード */}
-                <Grid item xs={12}>
-                  <Card
-                    elevation={0}
-                    sx={{
-                      mb: 3,
-                      borderRadius: 2,
-                      border: '1px solid rgba(37, 99, 235, 0.12)',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      background: 'linear-gradient(to right, rgba(37, 99, 235, 0.05), rgba(37, 99, 235, 0.01))',
-                      '&::before': {
-                        content: '""',
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        height: '4px',
-                        background: 'linear-gradient(90deg, #2563eb, #3b82f6)',
-                        opacity: 0.8
-                      }
-                    }}
-                  >
-                    <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                        <TrendingUpIcon
-                          sx={{
-                            mr: 1.5,
-                            color: 'primary.main',
-                            fontSize: '1.5rem'
-                          }}
-                        />
-                        <Typography
-                          variant="h6"
-                          sx={{
-                            fontWeight: 600,
-                            color: 'primary.main',
-                            display: 'flex',
-                            alignItems: 'center'
-                          }}
-                        >
-                          AI分析による洞察
-                        </Typography>
-                      </Box>
-                      <Divider sx={{ mb: 2 }} />
-                      <Paper
-                        elevation={0}
-                        sx={{
-                          p: 2,
-                          backgroundColor: alpha(theme.palette.background.paper, 0.7),
-                          borderRadius: 1.5,
-                          border: '1px solid rgba(0, 0, 0, 0.05)'
-                        }}
-                      >
-                        <Typography
-                          variant="body1"
-                          sx={{
-                            whiteSpace: 'pre-line',
-                            lineHeight: 1.6,
-                            color: 'text.primary'
-                          }}
-                        >
-                          {analysis.insights}
-                        </Typography>
-                      </Paper>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                {/* グラフセクション */}
-                <Grid item xs={12} md={6}>
-                  <Card
-                    elevation={3}
-                    sx={{
-                      borderRadius: 3,
-                      height: '100%',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                      background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      border: '1px solid rgba(59, 130, 246, 0.08)',
-                      '&::before': {
-                        content: '""',
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: '3px',
-                        background: 'linear-gradient(90deg, #3b82f6, #1e40af, #6366f1)',
-                        opacity: 1
-                      },
-                      '&:hover': {
-                        transform: 'translateY(-4px)',
-                        boxShadow: '0 20px 40px rgba(59, 130, 246, 0.15), 0 12px 24px rgba(59, 130, 246, 0.1)',
-                        border: '1px solid rgba(59, 130, 246, 0.15)',
-                      }
-                    }}
-                  >
-                    <CardContent sx={{ p: { xs: 3, sm: 4 }, flex: 1, display: 'flex', flexDirection: 'column' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                        <Box
-                          sx={{
-                            mr: 2,
-                            p: 1.5,
-                            borderRadius: 2.5,
-                            background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(37, 99, 235, 0.05))',
-                            border: '1px solid rgba(59, 130, 246, 0.2)',
-                            boxShadow: '0 4px 12px rgba(59, 130, 246, 0.1)'
-                          }}
-                        >
-                          <CategoryIcon
-                            sx={{
-                              color: '#3b82f6',
-                              fontSize: '1.4rem'
-                            }}
-                          />
-                        </Box>
-                        <Box>
-                          <Typography
-                            variant="h6"
-                            sx={{
-                              fontWeight: 700,
-                              color: '#1e293b',
-                              fontSize: '1.2rem',
-                              mb: 0.5
-                            }}
-                          >
-                            カテゴリ別分布
-                          </Typography>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              color: '#64748b',
-                              fontSize: '0.875rem'
-                            }}
-                          >
-                            質問のカテゴリ別統計
-                          </Typography>
-                        </Box>
-                      </Box>
-
-                      <Divider sx={{ mb: 3, borderColor: 'rgba(59, 130, 246, 0.1)' }} />
-
-                      <Box sx={{
-                        flex: 1,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'center',
-                        minHeight: { xs: 280, md: 300 }
-                      }}>
-                        {(Array.isArray(analysis.category_distribution) && analysis.category_distribution.length > 0) ||
-                         (!Array.isArray(analysis.category_distribution) && Object.keys(analysis.category_distribution).length > 0) ? (
-                          <Bar
-                            data={getCategoryChartData(
-                              Array.isArray(analysis.category_distribution)
-                                ? analysis.category_distribution.reduce((acc, item) => {
-                                    acc[item.category] = item.count;
-                                    return acc;
-                                  }, {} as Record<string, number>)
-                                : analysis.category_distribution,
-                              categoryColors
-                            )}
-                            options={{
-                              responsive: true,
-                              maintainAspectRatio: false,
-                              interaction: {
-                                intersect: false,
-                                mode: 'index'
-                              },
-                              plugins: {
-                                legend: {
-                                  display: false
-                                },
-                                tooltip: {
-                                  backgroundColor: 'rgba(30, 41, 59, 0.95)',
-                                  titleColor: '#f1f5f9',
-                                  bodyColor: '#e2e8f0',
-                                  borderColor: 'rgba(59, 130, 246, 0.3)',
-                                  borderWidth: 1,
-                                  padding: 16,
-                                  titleFont: {
-                                    size: 14,
-                                    weight: 'bold'
-                                  },
-                                  bodyFont: {
-                                    size: 13
-                                  },
-                                  cornerRadius: 12,
-                                  displayColors: true,
-                                  boxPadding: 8,
-                                  usePointStyle: true,
-                                  callbacks: {
-                                    title: (tooltipItems) => {
-                                      return tooltipItems[0].label;
-                                    },
-                                    label: (context) => {
-                                      return ` ${context.dataset.label}: ${context.parsed.y.toLocaleString()} 件`;
-                                    }
-                                  }
-                                }
-                              },
-                              scales: {
-                                y: {
-                                  beginAtZero: true,
-                                  grid: {
-                                    color: 'rgba(148, 163, 184, 0.3)',
-                                    lineWidth: 1,
-                                    drawTicks: false
-                                  },
-                                  ticks: {
-                                    color: '#475569',
-                                    font: {
-                                      size: 13,
-                                      weight: 600,
-                                      family: "'Inter', sans-serif"
-                                    },
-                                    padding: 15,
-                                    callback: function(value) {
-                                      return value.toLocaleString() + '件';
-                                    }
-                                  },
-                                  border: {
-                                    display: false
-                                  }
-                                },
-                                x: {
-                                  grid: {
-                                    display: false
-                                  },
-                                  ticks: {
-                                    color: '#475569',
-                                    font: {
-                                      size: 12,
-                                      weight: 600,
-                                      family: "'Inter', sans-serif"
-                                    },
-                                    padding: 15,
-                                    maxRotation: 45
-                                  },
-                                  border: {
-                                    color: 'rgba(148, 163, 184, 0.3)',
-                                    width: 1
-                                  }
-                                }
-                              },
-                              animation: {
-                                duration: 1200,
-                                easing: 'easeInOutCubic'
-                              },
-                              elements: {
-                                bar: {
-                                  borderRadius: {
-                                    topLeft: 6,
-                                    topRight: 6,
-                                    bottomLeft: 0,
-                                    bottomRight: 0
-                                  },
-                                  borderWidth: 0
-                                }
-                              },
-                              layout: {
-                                padding: {
-                                  top: 20,
-                                  bottom: 10,
-                                  left: 10,
-                                  right: 10
-                                }
-                              }
-                            }}
-                          />
-                        ) : (
-                          <Box sx={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            height: '100%',
-                            py: 4
-                          }}>
-                            <Box sx={{
-                              p: 3,
-                              borderRadius: '50%',
-                              backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                              mb: 3
-                            }}>
-                              <CategoryIcon sx={{ fontSize: '2.5rem', color: '#3b82f6' }} />
-                            </Box>
-                            <Typography variant="h6" sx={{ color: '#374151', mb: 1, fontWeight: 600 }}>
-                              データがありません
-                            </Typography>
-                            <Typography variant="body2" sx={{ color: '#6b7280', textAlign: 'center' }}>
-                              カテゴリ分析を表示するために<br />十分なデータを収集中です
-                            </Typography>
-                          </Box>
-                        )}
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                <Grid item xs={12} md={6}>
-                  <Card
-                    elevation={3}
-                    sx={{
-                      borderRadius: 3,
-                      height: '100%',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                      background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      border: '1px solid rgba(16, 185, 129, 0.08)',
-                      '&::before': {
-                        content: '""',
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: '3px',
-                        background: 'linear-gradient(90deg, #10b981, #059669, #34d399)',
-                        opacity: 1
-                      },
-                      '&:hover': {
-                        transform: 'translateY(-4px)',
-                        boxShadow: '0 20px 40px rgba(16, 185, 129, 0.15), 0 12px 24px rgba(16, 185, 129, 0.1)',
-                        border: '1px solid rgba(16, 185, 129, 0.15)',
-                      }
-                    }}
-                  >
-                    <CardContent sx={{ p: { xs: 3, sm: 4 }, flex: 1, display: 'flex', flexDirection: 'column' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                        <Box
-                          sx={{
-                            mr: 2,
-                            p: 1.5,
-                            borderRadius: 2.5,
-                            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(34, 197, 94, 0.05))',
-                            border: '1px solid rgba(16, 185, 129, 0.2)',
-                            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.1)'
-                          }}
-                        >
-                          <MoodIcon
-                            sx={{
-                              color: '#10b981',
-                              fontSize: '1.4rem'
-                            }}
-                          />
-                        </Box>
-                        <Box>
-                          <Typography
-                            variant="h6"
-                            sx={{
-                              fontWeight: 700,
-                              color: '#1e293b',
-                              fontSize: '1.2rem',
-                              mb: 0.5
-                            }}
-                          >
-                            感情分析結果
-                          </Typography>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              color: '#64748b',
-                              fontSize: '0.875rem'
-                            }}
-                          >
-                            管理者の感情分布
-                          </Typography>
-                        </Box>
-                      </Box>
-
-                      <Divider sx={{ mb: 3, borderColor: 'rgba(16, 185, 129, 0.1)' }} />
-
-                      <Box sx={{
-                        flex: 1,
-                        display: 'flex',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        minHeight: { xs: 280, md: 300 }
-                      }}>
-                        {(Array.isArray(analysis.sentiment_distribution) && analysis.sentiment_distribution.length > 0) ||
-                         (!Array.isArray(analysis.sentiment_distribution) && Object.keys(analysis.sentiment_distribution).length > 0) ? (
-                          <Pie
-                            data={getSentimentChartData(
-                              Array.isArray(analysis.sentiment_distribution)
-                                ? analysis.sentiment_distribution.reduce((acc, item) => {
-                                    acc[item.sentiment] = item.count;
-                                    return acc;
-                                  }, {} as Record<string, number>)
-                                : analysis.sentiment_distribution,
-                              sentimentColors
-                            )}
-                            options={{
-                              responsive: true,
-                              maintainAspectRatio: false,
-                              interaction: {
-                                intersect: false
-                              },
-                              plugins: {
-                                tooltip: {
-                                  backgroundColor: 'rgba(30, 41, 59, 0.95)',
-                                  titleColor: '#f1f5f9',
-                                  bodyColor: '#e2e8f0',
-                                  borderColor: 'rgba(59, 130, 246, 0.3)',
-                                  borderWidth: 1,
-                                  padding: 16,
-                                  titleFont: {
-                                    size: 14,
-                                    weight: 'bold'
-                                  },
-                                  bodyFont: {
-                                    size: 13
-                                  },
-                                  cornerRadius: 12,
-                                  displayColors: true,
-                                  boxPadding: 8,
-                                  usePointStyle: true,
-                                  callbacks: {
-                                    label: (context) => {
-                                      const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0);
-                                      const percentage = ((context.parsed / total) * 100).toFixed(1);
-                                      return ` ${context.label}: ${context.parsed.toLocaleString()} 件 (${percentage}%)`;
-                                    }
-                                  }
-                                },
-                                legend: {
-                                  position: 'bottom',
-                                  labels: {
-                                    usePointStyle: true,
-                                    pointStyle: 'circle',
-                                    padding: 25,
-                                    font: {
-                                      size: 14,
-                                      weight: 600,
-                                      family: "'Inter', sans-serif"
-                                    },
-                                    color: '#374151',
-                                    boxWidth: 12,
-                                    boxHeight: 12
-                                  },
-                                  align: 'center'
-                                }
-                              },
-                              animation: {
-                                animateRotate: true,
-                                animateScale: true,
-                                duration: 1500,
-                                easing: 'easeInOutCubic'
-                              },
-                              elements: {
-                                arc: {
-                                  borderWidth: 4,
-                                  borderColor: '#ffffff',
-                                  hoverBorderWidth: 6
-                                }
-                              },
-                              layout: {
-                                padding: {
-                                  top: 20,
-                                  bottom: 20,
-                                  left: 20,
-                                  right: 20
-                                }
-                              }
-                            }}
-                          />
-                        ) : (
-                          <Box sx={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            height: '100%',
-                            py: 4
-                          }}>
-                            <Box sx={{
-                              p: 3,
-                              borderRadius: '50%',
-                              backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                              mb: 3
-                            }}>
-                              <MoodIcon sx={{ fontSize: '2.5rem', color: '#10b981' }} />
-                            </Box>
-                            <Typography variant="h6" sx={{ color: '#374151', mb: 1, fontWeight: 600 }}>
-                              データがありません
-                            </Typography>
-                            <Typography variant="body2" sx={{ color: '#6b7280', textAlign: 'center' }}>
-                              感情分析を表示するために<br />十分なデータを収集中です
-                            </Typography>
-                          </Box>
-                        )}
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                {/* よくある質問セクション */}
-                <Grid item xs={12}>
-                  <Card
-                    elevation={0}
-                    sx={{
-                      borderRadius: 2,
-                      border: '1px solid rgba(0, 0, 0, 0.12)',
-                      transition: 'all 0.3s ease',
-                      '&:hover': {
-                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
-                      }
-                    }}
-                  >
-                    <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                        <LiveHelpIcon
-                          sx={{
-                            mr: 1.5,
-                            color: theme.palette.warning.main,
-                            fontSize: '1.4rem'
-                          }}
-                        />
-                        <Typography
-                          variant="h6"
-                          sx={{
-                            fontWeight: 600,
-                            color: 'text.primary'
-                          }}
-                        >
-                          よくある質問
-                        </Typography>
-                      </Box>
-
-                      <Divider sx={{ mb: 2 }} />
-
-                      {!analysis.common_questions ||
-                       (Array.isArray(analysis.common_questions) && analysis.common_questions.length === 0) ? (
-                        <Box sx={{
-                          py: 4,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}>
-                          <ChatIcon sx={{ fontSize: '3rem', color: 'text.disabled', mb: 2 }} />
-                          <Typography variant="body1" color="text.secondary">
-                            よくある質問のデータがありません
-                          </Typography>
-                        </Box>
-                      ) : (
-                        <TableContainer
-                          component={Paper}
-                          elevation={0}
-                          sx={{
-                            border: '1px solid rgba(0, 0, 0, 0.08)',
-                            borderRadius: 1.5,
-                            overflow: 'hidden'
-                          }}
-                        >
-                          <Table>
-                            <TableHead>
-                              <TableRow sx={{ bgcolor: 'rgba(0, 0, 0, 0.02)' }}>
-                                <TableCell sx={{ fontWeight: 'bold', py: 2 }}>質問</TableCell>
-                                <TableCell align="right" sx={{ fontWeight: 'bold', py: 2 }}>回数</TableCell>
-                              </TableRow>
-                            </TableHead>
-                            <TableBody>
-                              {analysis.common_questions.map((item, index) => (
-                                <TableRow
-                                  key={index}
-                                  hover
-                                  sx={{
-                                    transition: 'background-color 0.2s',
-                                    '&:last-child td, &:last-child th': { border: 0 }
-                                  }}
-                                >
-                                  <TableCell
-                                    sx={{
-                                      py: 1.8,
-                                      maxWidth: { xs: '200px', sm: '400px', md: '600px' },
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      whiteSpace: { xs: 'nowrap', md: 'normal' }
-                                    }}
-                                  >
-                                    <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
-                                      <ChatIcon
-                                        fontSize="small"
-                                        sx={{
-                                          mt: 0.3,
-                                          mr: 1,
-                                          color: theme.palette.primary.main,
-                                          opacity: 0.7
-                                        }}
-                                      />
-                                      <Typography variant="body2">
-                                        {typeof item === 'string' ? item : item.question}
-                                      </Typography>
-                                    </Box>
-                                  </TableCell>
-                                  <TableCell align="right">
-                                    <Chip
-                                      size="small"
-                                      label={typeof item === 'string' ? '1' : item.count.toString()}
-                                      sx={{
-                                        fontWeight: 'bold',
-                                        bgcolor: theme.palette.primary.main,
-                                        color: 'white',
-                                        minWidth: '40px'
-                                      }}
-                                    />
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </TableContainer>
-                      )}
-                    </CardContent>
-                  </Card>
-                </Grid>
-              </>
-            ) : analysisMode === 'enhanced' && enhancedAnalysis ? (
-              <>
-                {/* Gemini AI洞察カード */}
-                <Grid item xs={12}>
-                  <Card
-                    elevation={0}
-                    sx={{
-                      mb: 3,
-                      borderRadius: 2,
-                      border: '1px solid rgba(25, 118, 210, 0.2)',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      background: 'linear-gradient(to right, rgba(25, 118, 210, 0.03), rgba(25, 118, 210, 0.01))',
-                      '&::before': {
-                        content: '""',
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        height: '4px',
-                        background: 'linear-gradient(90deg, #1976d2, #42a5f5)',
-                        opacity: 0.8
-                      }
-                    }}
-                  >
-                    <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                        <BusinessIcon
-                          sx={{
-                            mr: 1.5,
-                            color: 'primary.main',
-                            fontSize: '1.5rem'
-                          }}
-                        />
-                        <Typography
-                          variant="h6"
-                          sx={{
-                            fontWeight: 600,
-                            color: 'primary.main',
-                            display: 'flex',
-                            alignItems: 'center'
-                          }}
-                        >
-                          Gemini AI による強化分析レポート
-                        </Typography>
-                      </Box>
-                      <Divider sx={{ mb: 2 }} />
-                      <Paper
-                        elevation={0}
-                        sx={{
-                          p: 2,
-                          backgroundColor: alpha(theme.palette.background.paper, 0.7),
-                          borderRadius: 1.5,
-                          border: '1px solid rgba(0, 0, 0, 0.05)'
-                        }}
-                      >
-                        <Typography
-                          variant="body1"
-                          sx={{
-                            whiteSpace: 'pre-line',
-                            lineHeight: 1.6,
-                            color: 'text.primary'
-                          }}
-                        >
-                          {enhancedAnalysis.ai_insights}
-                        </Typography>
-                      </Paper>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                {/* 強化分析セクション */}
-                {[
-                  { 
-                    title: '1. 資料の参照回数分析', 
-                    icon: <DescriptionIcon />,
-                    content: enhancedAnalysis.resource_reference_count,
-                    color: 'rgba(54, 162, 235, 0.1)'
-                  },
-                  { 
-                    title: '2. 質問カテゴリ分布と偏り', 
-                    icon: <CategoryIcon />,
-                    content: enhancedAnalysis.category_distribution_analysis,
-                    color: 'rgba(255, 99, 132, 0.1)'
-                  },
-                  { 
-                    title: '3. アクティブユーザー推移', 
-                    icon: <TimelineIcon />,
-                    content: enhancedAnalysis.active_user_trends,
-                    color: 'rgba(75, 192, 192, 0.1)'
-                  },
-                  { 
-                    title: '4. 未解決・再質問の傾向分析', 
-                    icon: <HelpOutlineIcon />,
-                    content: enhancedAnalysis.unresolved_and_repeat_analysis,
-                    color: 'rgba(255, 159, 64, 0.1)'
-                  },
-                  { 
-                    title: '5. 詳細感情分析', 
-                    icon: <MoodIcon />,
-                    content: enhancedAnalysis.sentiment_analysis,
-                    color: 'rgba(153, 102, 255, 0.1)'
+            {/* Gemini AI洞察カード */}
+            <Grid item xs={12}>
+              <Card
+                elevation={0}
+                sx={{
+                  borderRadius: 3,
+                  border: '1px solid rgba(25, 118, 210, 0.15)',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  background: 'linear-gradient(135deg, rgba(25, 118, 210, 0.02), rgba(25, 118, 210, 0.06))',
+                  '&::before': {
+                    content: '""',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '4px',
+                    background: 'linear-gradient(90deg, #1976d2, #42a5f5, #1565c0)',
                   }
-                ].map((section, index) => (
-                  <Grid item xs={12} key={index}>
-                    <Accordion
-                      defaultExpanded={index === 0}
+                }}
+              >
+                <CardContent sx={{ p: 4 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                    <Box
                       sx={{
-                        mb: 1.5,
-                        boxShadow: 'none',
-                        border: '1px solid rgba(0, 0, 0, 0.08)',
-                        '&:before': { display: 'none' },
-                        borderRadius: '8px !important',
-                        overflow: 'hidden'
+                        mr: 2,
+                        p: 1.5,
+                        borderRadius: 2,
+                        background: 'linear-gradient(135deg, rgba(25, 118, 210, 0.1), rgba(25, 118, 210, 0.05))',
+                        border: '1px solid rgba(25, 118, 210, 0.2)',
                       }}
                     >
-                      <AccordionSummary
-                        expandIcon={<ExpandMoreIcon />}
+                      <SmartToyIcon sx={{ fontSize: '1.8rem', color: '#1976d2' }} />
+                    </Box>
+                    <Box>
+                      <Typography
+                        variant="h5"
                         sx={{
-                          backgroundColor: section.color,
-                          borderBottom: '1px solid rgba(0, 0, 0, 0.08)',
-                          '&.Mui-expanded': {
-                            minHeight: 48,
-                          },
+                          fontWeight: 700,
+                          color: '#1976d2',
+                          fontSize: '1.4rem'
                         }}
                       >
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                          {section.icon}
+                        🤖 Gemini AI 分析レポート
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{ color: 'text.secondary', mt: 0.5 }}
+                      >
+                        AIによる高度な分析と改善提案
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  <Divider sx={{ mb: 3, borderColor: 'rgba(25, 118, 210, 0.1)' }} />
+
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      p: 3,
+                      backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                      borderRadius: 2,
+                      border: '1px solid rgba(25, 118, 210, 0.08)',
+                      boxShadow: '0 2px 8px rgba(25, 118, 210, 0.08)'
+                    }}
+                  >
+                    <MarkdownRenderer content={enhancedAnalysis.ai_insights || 'AI分析を実行中です...'} />
+                  </Paper>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            {/* 強化分析セクション */}
+            {[
+              { 
+                title: '📊 資料の参照回数分析', 
+                icon: <DescriptionIcon />,
+                content: enhancedAnalysis.resource_reference_count,
+                color: 'linear-gradient(135deg, rgba(54, 162, 235, 0.08), rgba(54, 162, 235, 0.03))',
+                borderColor: 'rgba(54, 162, 235, 0.2)',
+                iconColor: '#36a2eb'
+              },
+              { 
+                title: '🏷️ 質問カテゴリ分布と偏り', 
+                icon: <CategoryIcon />,
+                content: enhancedAnalysis.category_distribution_analysis,
+                color: 'linear-gradient(135deg, rgba(255, 99, 132, 0.08), rgba(255, 99, 132, 0.03))',
+                borderColor: 'rgba(255, 99, 132, 0.2)',
+                iconColor: '#ff6384'
+              },
+              { 
+                title: '📈 アクティブユーザー推移', 
+                icon: <TimelineIcon />,
+                content: enhancedAnalysis.active_user_trends,
+                color: 'linear-gradient(135deg, rgba(75, 192, 192, 0.08), rgba(75, 192, 192, 0.03))',
+                borderColor: 'rgba(75, 192, 192, 0.2)',
+                iconColor: '#4bc0c0'
+              },
+              { 
+                title: '🔄 未解決・再質問の傾向分析', 
+                icon: <RepeatIcon />,
+                content: enhancedAnalysis.unresolved_and_repeat_analysis,
+                color: 'linear-gradient(135deg, rgba(255, 159, 64, 0.08), rgba(255, 159, 64, 0.03))',
+                borderColor: 'rgba(255, 159, 64, 0.2)',
+                iconColor: '#ff9f40'
+              },
+              { 
+                title: '😊 詳細感情分析', 
+                icon: <MoodIcon />,
+                content: enhancedAnalysis.sentiment_analysis,
+                color: 'linear-gradient(135deg, rgba(153, 102, 255, 0.08), rgba(153, 102, 255, 0.03))',
+                borderColor: 'rgba(153, 102, 255, 0.2)',
+                iconColor: '#9966ff'
+              }
+            ].map((section, index) => (
+              <Grid item xs={12} key={index}>
+                <Card
+                  elevation={0}
+                  sx={{
+                    mb: 2,
+                    borderRadius: 3,
+                    border: `1px solid ${section.borderColor}`,
+                    background: section.color,
+                    transition: 'all 0.3s ease',
+                    overflow: 'hidden',
+                    '&:hover': {
+                      boxShadow: `0 8px 24px ${section.borderColor}`,
+                      transform: 'translateY(-2px)',
+                    }
+                  }}
+                >
+                  <Accordion
+                    expanded={expandedSections.has(index)}
+                    onChange={() => toggleSection(index)}
+                    sx={{
+                      boxShadow: 'none',
+                      '&:before': { display: 'none' },
+                      backgroundColor: 'transparent',
+                    }}
+                  >
+                    <AccordionSummary
+                      expandIcon={<ExpandMoreIcon sx={{ color: section.iconColor }} />}
+                      sx={{
+                        p: 2.5,
+                        '&.Mui-expanded': {
+                          minHeight: 48,
+                        },
+                        '& .MuiAccordionSummary-content': {
+                          margin: 0,
+                        }
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                        <Box
+                          sx={{
+                            mr: 2,
+                            p: 1.5,
+                            borderRadius: 2,
+                            backgroundColor: `${section.iconColor}20`,
+                            border: `1px solid ${section.iconColor}40`,
+                          }}
+                        >
+                          {React.cloneElement(section.icon, { 
+                            sx: { fontSize: '1.5rem', color: section.iconColor } 
+                          })}
+                        </Box>
+                        <Box sx={{ flex: 1 }}>
                           <Typography
+                            variant="h6"
                             sx={{
-                              ml: 1.5,
-                              fontWeight: 600,
+                              fontWeight: 700,
                               color: 'text.primary',
-                              fontSize: { xs: '0.9rem', sm: '1rem' }
+                              fontSize: '1.1rem',
+                              mb: 0.5
                             }}
                           >
                             {section.title}
                           </Typography>
+                          <Typography
+                            variant="body2"
+                            sx={{ color: 'text.secondary' }}
+                          >
+                            {section.content.summary ? 
+                              section.content.summary.substring(0, 60) + '...' : 
+                              'データを解析中...'
+                            }
+                          </Typography>
                         </Box>
-                      </AccordionSummary>
-                      <AccordionDetails sx={{ p: { xs: 2, sm: 3 } }}>
+                        <Badge
+                          badgeContent={expandedSections.has(index) ? '展開中' : '詳細'}
+                          color={expandedSections.has(index) ? 'success' : 'primary'}
+                          sx={{ ml: 2 }}
+                        />
+                      </Box>
+                    </AccordionSummary>
+                    <AccordionDetails sx={{ p: 0 }}>
+                      <Divider />
+                      <Box sx={{ p: 3 }}>
                         {/* セクション別の詳細表示 */}
                         {index === 0 && (
                           <Box>
-                            <Typography variant="body1" sx={{ mb: 2 }}>
-                              {section.content.summary}
-                            </Typography>
-                            {section.content.resources.length > 0 && (
-                              <Box sx={{ height: 400, mt: 2 }}>
-                                <Bar
-                                  data={getResourceReferenceChartData(section.content.resources)}
-                                  options={{
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    plugins: {
-                                      title: {
-                                        display: true,
-                                        text: '資料別参照回数'
+                            <Paper 
+                              elevation={0}
+                              sx={{ 
+                                p: 2, 
+                                mb: 3, 
+                                backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                                borderRadius: 2
+                              }}
+                            >
+                              <MarkdownRenderer content={section.content.summary || 'データを解析中です...'} />
+                            </Paper>
+                            {'resources' in section.content && section.content.resources.length > 0 && (
+                              <Box>
+                                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                                  📈 資料別参照回数チャート
+                                </Typography>
+                                <Box sx={{ height: 450, p: 2, backgroundColor: 'rgba(255, 255, 255, 0.5)', borderRadius: 2 }}>
+                                  <Bar
+                                    data={getResourceReferenceChartData(section.content.resources)}
+                                    options={{
+                                      responsive: true,
+                                      maintainAspectRatio: false,
+                                      plugins: {
+                                        title: {
+                                          display: true,
+                                          text: '資料別参照回数（上位10件）',
+                                          font: { size: 16, weight: 'bold' }
+                                        },
+                                        legend: { display: false },
+                                        tooltip: {
+                                          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                          titleColor: 'white',
+                                          bodyColor: 'white',
+                                          cornerRadius: 8,
+                                          padding: 12
+                                        }
+                                      },
+                                      scales: {
+                                        y: {
+                                          beginAtZero: true,
+                                          grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                                          ticks: { 
+                                            color: '#666',
+                                            callback: function(value: any) {
+                                              return value + '回';
+                                            }
+                                          }
+                                        },
+                                        x: {
+                                          grid: { display: false },
+                                          ticks: { 
+                                            color: '#666',
+                                            maxRotation: 45
+                                          }
+                                        }
                                       }
-                                    }
-                                  }}
-                                />
+                                    }}
+                                  />
+                                </Box>
                               </Box>
                             )}
                           </Box>
                         )}
                         {index === 2 && (
                           <Box>
-                            <Typography variant="body1" sx={{ mb: 2 }}>
-                              {section.content.summary}
-                            </Typography>
-                            {section.content.daily_trends.length > 0 && (
-                              <Box sx={{ height: 400, mt: 2 }}>
-                                <Line
-                                  data={getUserTrendsChartData(section.content.daily_trends)}
-                                  options={{
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    plugins: {
-                                      title: {
-                                        display: true,
-                                        text: 'アクティブユーザー数推移（過去30日）'
-                                      }
-                                    },
-                                    scales: {
-                                      y: {
-                                        type: 'linear',
-                                        display: true,
-                                        position: 'left',
-                                      },
-                                      y1: {
-                                        type: 'linear',
-                                        display: true,
-                                        position: 'right',
-                                        grid: {
-                                          drawOnChartArea: false,
+                            <Paper 
+                              elevation={0}
+                              sx={{ 
+                                p: 2, 
+                                mb: 3, 
+                                backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                                borderRadius: 2
+                              }}
+                            >
+                              <MarkdownRenderer content={section.content.summary || 'データを解析中です...'} />
+                            </Paper>
+                            {'daily_trends' in section.content && section.content.daily_trends.length > 0 && (
+                              <Box>
+                                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                                  📊 アクティブユーザー推移グラフ
+                                </Typography>
+                                <Box sx={{ height: 450, p: 2, backgroundColor: 'rgba(255, 255, 255, 0.5)', borderRadius: 2 }}>
+                                  <Line
+                                    data={getUserTrendsChartData(section.content.daily_trends)}
+                                    options={{
+                                      responsive: true,
+                                      maintainAspectRatio: false,
+                                      plugins: {
+                                        title: {
+                                          display: true,
+                                          text: 'アクティブユーザー数推移（過去30日）',
+                                          font: { size: 16, weight: 'bold' }
                                         },
+                                        legend: {
+                                          position: 'top',
+                                          labels: { usePointStyle: true }
+                                        },
+                                        tooltip: {
+                                          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                          titleColor: 'white',
+                                          bodyColor: 'white',
+                                          cornerRadius: 8,
+                                          padding: 12
+                                        }
                                       },
-                                    }
-                                  }}
-                                />
+                                      scales: {
+                                        y: {
+                                          type: 'linear',
+                                          display: true,
+                                          position: 'left',
+                                          title: {
+                                            display: true,
+                                            text: 'アクティブユーザー数'
+                                          },
+                                          grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                                          ticks: { color: '#666' }
+                                        },
+                                        y1: {
+                                          type: 'linear',
+                                          display: true,
+                                          position: 'right',
+                                          title: {
+                                            display: true,
+                                            text: 'メッセージ数'
+                                          },
+                                          grid: { drawOnChartArea: false },
+                                          ticks: { color: '#666' }
+                                        },
+                                        x: {
+                                          grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                                          ticks: { color: '#666' }
+                                        }
+                                      }
+                                    }}
+                                  />
+                                </Box>
                               </Box>
                             )}
                           </Box>
                         )}
                         {(index === 1 || index === 3 || index === 4) && (
-                          <Typography
-                            variant="body1"
-                            sx={{
-                              whiteSpace: 'pre-line',
-                              lineHeight: 1.6
+                          <Paper 
+                            elevation={0}
+                            sx={{ 
+                              p: 3, 
+                              backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                              borderRadius: 2,
+                              border: '1px solid rgba(0, 0, 0, 0.08)'
                             }}
                           >
-                            {section.content.summary || 'データを解析中です...'}
-                          </Typography>
+                            <MarkdownRenderer content={section.content.summary || 'データを解析中です...'} />
+                          </Paper>
                         )}
-                      </AccordionDetails>
-                    </Accordion>
-                  </Grid>
-                ))}
-              </>
-            ) : null}
+                      </Box>
+                    </AccordionDetails>
+                  </Accordion>
+                </Card>
+              </Grid>
+            ))}
           </Grid>
         )}
-      </Box>
+      </Container>
     </Fade>
   );
 };
