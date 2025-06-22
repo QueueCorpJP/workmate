@@ -54,7 +54,11 @@ const SourceCitation: React.FC<SourceCitationProps> = ({ source }) => {
     trimmedSource === invalid || 
     trimmedSource.toLowerCase() === invalid.toLowerCase() ||
     trimmedSource.includes('デバッグ') ||
-    trimmedSource.includes('debug')
+    trimmedSource.includes('debug') ||
+    trimmedSource.startsWith('デバッグ -') ||
+    trimmedSource.startsWith('debug -') ||
+    /^デバッグ\s*-\s*source\s*:\s*["']?なし["']?\s*$/i.test(trimmedSource) ||
+    /^debug\s*-\s*source\s*:\s*["']?(none|null|なし)["']?\s*$/i.test(trimmedSource)
   )) {
     return null;
   }
