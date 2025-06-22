@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.exceptions import RequestValidationError
 # モジュールのインポート
-from modules.config import setup_logging, setup_gemini
+from modules.config import setup_logging, setup_gemini, get_cors_origins, get_environment
 from modules.company import DEFAULT_COMPANY_NAME
 from modules.database import get_db, init_db, get_all_users, get_demo_usage_stats, create_user, SupabaseConnection
 from supabase_adapter import get_supabase_client, select_data, insert_data, update_data, delete_data
@@ -88,42 +88,22 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 # CORSミドルウェアの設定
-# すべてのオリジンを許可する
-origins = []
-# 環境変数からCORSオリジンを取得
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173,https://chatbot-frontend-nine-eta.vercel.app")
-if allowed_origins:
-    origins = [origin.strip() for origin in allowed_origins.split(",")]
-    
-# 開発環境では追加のローカルオリジンを許可
-if os.getenv("ENVIRONMENT", "development") == "development":
-    # 環境変数からフロントエンドポートを取得（デフォルト値を設定）
-    frontend_ports = os.getenv("FRONTEND_PORTS", "3000,3025,5173")
-    ports = [port.strip() for port in frontend_ports.split(",")]
-    
-    dev_origins = []
-    for port in ports:
-        if port.isdigit():
-            dev_origins.extend([
-                f"http://localhost:{port}",
-                f"http://127.0.0.1:{port}"
-            ])
-    
-    origins.extend(dev_origins)
+# 環境別に適切なオリジンを設定
+environment = get_environment()
+print(f"🌍 実行環境: {environment}")
 
-# すべてのオリジンを許可する場合（開発環境のみ推奨）
-if os.getenv("ALLOW_ALL_ORIGINS", "false").lower() == "true":
-    origins.append("*")
+# 環境に応じたCORSオリジンを取得
+origins = get_cors_origins()
+print(f"🔗 CORS許可オリジン: {origins}")
 
 # CORSミドルウェアを最初に追加して優先度を上げる
-# 開発環境では全てのオリジンを許可
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 開発環境では全てのオリジンを許可
-    allow_credentials=False,  # allow_origins=["*"]の場合はFalseにする必要がある
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # 明示的なHTTPメソッドを指定
-    allow_headers=["*"],  # 全てのヘッダーを許可
-    expose_headers=["*"],  # レスポンスヘッダーを公開
+    allow_origins=origins if environment == "production" else ["*"],  # 本番環境では限定、開発環境では全許可
+    allow_credentials=environment == "production",  # 本番環境でのみクレデンシャル許可
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],
+    expose_headers=["*"],
     max_age=86400,  # プリフライトリクエストのキャッシュ時間（秒）
 )
 
@@ -138,16 +118,6 @@ async def log_requests(request: Request, call_next):
     except Exception as e:
         logger.error(f"Request error: {str(e)}")
         raise
-
-# CORSミドルウェアの設定
-# 統合環境では、すべてのオリジンを許可する
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["https://chatbot-frontend-nine-eta.vercel.app"],  # すべてのオリジンを許可
-#     allow_credentials=True,  # クレデンシャルを含むリクエストを許可
-#     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-#     allow_headers=["*"],
-# )
 
 # アプリケーション起動時にデータベースを初期化
 init_db()

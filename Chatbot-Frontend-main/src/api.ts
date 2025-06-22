@@ -1,14 +1,58 @@
 import axios from "axios";
 
-// 環境変数からAPIのURL取得
-const API_URL = import.meta.env.VITE_API_URL || 
-  (import.meta.env.PROD ? 
-    "https://workmatechat.com/chatbot/api" : 
-    `http://localhost:${import.meta.env.VITE_BACKEND_PORT || 8083}/chatbot/api`);
+// 環境を判定する関数
+const getEnvironment = () => {
+  // NODE_ENVまたはVITE_ENVIRONMENTをチェック
+  const nodeEnv = import.meta.env.NODE_ENV?.toLowerCase();
+  const viteEnv = import.meta.env.VITE_ENVIRONMENT?.toLowerCase();
+  
+  if (nodeEnv === "production" || viteEnv === "production") {
+    return "production";
+  }
+  
+  // import.meta.env.PRODがtrueの場合も本番環境
+  if (import.meta.env.PROD) {
+    return "production";
+  }
+  
+  return "development";
+};
 
-console.log("API URL:", API_URL);
-console.log("Environment:", import.meta.env.MODE);
-console.log("VITE_API_URL:", import.meta.env.VITE_API_URL);
+// 環境に応じたAPI URLを取得する関数
+const getApiUrl = () => {
+  const environment = getEnvironment();
+  
+  // 環境変数VITE_API_URLが明示的に設定されている場合は優先
+  if (import.meta.env.VITE_API_URL) {
+    console.log(`🌐 API URL: ${import.meta.env.VITE_API_URL} (環境変数VITE_API_URL指定)`);
+    return import.meta.env.VITE_API_URL;
+  }
+  
+  // 環境に応じてデフォルトURLを設定
+  if (environment === "production") {
+    const productionUrl = "https://workmatechat.com/chatbot/api";
+    console.log(`🌐 API URL: ${productionUrl} (本番環境デフォルト)`);
+    return productionUrl;
+  } else {
+    // ローカル開発環境
+    const backendPort = import.meta.env.VITE_BACKEND_PORT || 8085;
+    const developmentUrl = `http://localhost:${backendPort}/chatbot/api`;
+    console.log(`🌐 API URL: ${developmentUrl} (ローカル開発環境デフォルト)`);
+    return developmentUrl;
+  }
+};
+
+// 環境情報を表示
+const environment = getEnvironment();
+const API_URL = getApiUrl();
+
+console.log("🌍 フロントエンド実行環境:", environment);
+console.log("🔧 NODE_ENV:", import.meta.env.NODE_ENV);
+console.log("🔧 VITE_ENVIRONMENT:", import.meta.env.VITE_ENVIRONMENT);
+console.log("🔧 import.meta.env.PROD:", import.meta.env.PROD);
+console.log("🔧 VITE_API_URL:", import.meta.env.VITE_API_URL);
+console.log("🔧 VITE_BACKEND_PORT:", import.meta.env.VITE_BACKEND_PORT);
+console.log("📡 最終API URL:", API_URL);
 
 // axiosのインスタンス
 const api = axios.create({
@@ -17,13 +61,13 @@ const api = axios.create({
   transformRequest: [
     (data, headers) => {
       console.log("Request:", { url: API_URL, data, headers });
-      // CORSヘッダーを追
-      headers = headers || {};
-      headers['Access-Control-Allow-Origin'] = '*';
+      // CORSヘッダーを追加
+      const requestHeaders = headers || ({} as any);
+      requestHeaders['Access-Control-Allow-Origin'] = '*';
       
       // FormDataの場合はContent-Typeを設定しない（axiosが自動的に設定する）
       if (!(data instanceof FormData)) {
-        headers['Content-Type'] = 'application/json';
+        requestHeaders['Content-Type'] = 'application/json';
       }
       
       return data;
