@@ -432,11 +432,25 @@ const AdminPanel: React.FC = () => {
 
   // アップロードされたリソースの取得
   const fetchResources = async () => {
+    console.log("🔍 [FRONTEND DEBUG] fetchResources 開始");
     setIsResourcesLoading(true);
     try {
+      console.log("🔍 [FRONTEND DEBUG] APIエンドポイント: /admin/resources");
+      console.log("🔍 [FRONTEND DEBUG] API呼び出し前のユーザー情報:", { user });
       console.log("アップロードされたリソースを取得中...");
+      
       const response = await api.get("/admin/resources");
+      
+      console.log("🔍 [FRONTEND DEBUG] APIレスポンス詳細:");
+      console.log("  - status:", response.status);
+      console.log("  - statusText:", response.statusText);
+      console.log("  - headers:", response.headers);
+      console.log("  - data type:", typeof response.data);
+      console.log("  - data:", response.data);
+      console.log("  - data stringify:", JSON.stringify(response.data, null, 2));
+      
       console.log("リソース取得結果:", response.data);
+      
       // レスポンスが有効なオブジェクトであることを確認
       if (
         response.data &&
@@ -444,8 +458,21 @@ const AdminPanel: React.FC = () => {
         "resources" in response.data &&
         Array.isArray(response.data.resources)
       ) {
+        console.log("🔍 [FRONTEND DEBUG] レスポンス検証OK");
+        console.log("🔍 [FRONTEND DEBUG] リソース配列の長さ:", response.data.resources.length);
+        console.log("🔍 [FRONTEND DEBUG] リソース配列詳細:");
+        response.data.resources.forEach((resource, index) => {
+          console.log(`  [${index + 1}] ${JSON.stringify(resource, null, 2)}`);
+        });
+        
         setResources(response.data.resources);
+        console.log("🔍 [FRONTEND DEBUG] setResources 完了");
       } else {
+        console.error("🔍 [FRONTEND DEBUG] レスポンス検証失敗");
+        console.error("  - response.data存在:", !!response.data);
+        console.error("  - response.dataタイプ:", typeof response.data);
+        console.error("  - 'resources'プロパティ存在:", response.data && "resources" in response.data);
+        console.error("  - resourcesが配列:", response.data && Array.isArray(response.data.resources));
         console.error(
           "リソースのレスポンスが有効なオブジェクトではありません:",
           response.data
@@ -453,6 +480,13 @@ const AdminPanel: React.FC = () => {
         setResources([]);
       }
     } catch (error) {
+      console.error("🔍 [FRONTEND DEBUG] fetchResourcesエラー:", error);
+      console.error("🔍 [FRONTEND DEBUG] エラー詳細:", {
+        message: error.message,
+        stack: error.stack,
+        response: error.response,
+        request: error.request
+      });
       console.error("リソースの取得に失敗しました:", error);
       // エラーメッセージを表示
       alert(
@@ -460,6 +494,7 @@ const AdminPanel: React.FC = () => {
       );
     } finally {
       setIsResourcesLoading(false);
+      console.log("🔍 [FRONTEND DEBUG] fetchResources 完了 (isResourcesLoading = false)");
     }
   };
 

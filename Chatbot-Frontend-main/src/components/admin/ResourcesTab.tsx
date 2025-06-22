@@ -51,6 +51,24 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
   isLoading,
   onRefresh,
 }) => {
+  // デバッグログを追加
+  console.log("🔍 [RESOURCES TAB DEBUG] コンポーネント描画開始");
+  console.log("🔍 [RESOURCES TAB DEBUG] props:");
+  console.log("  - resources:", resources);
+  console.log("  - resources type:", typeof resources);
+  console.log("  - resources length:", resources?.length);
+  console.log("  - isLoading:", isLoading);
+  console.log("  - onRefresh:", typeof onRefresh);
+  
+  if (resources && resources.length > 0) {
+    console.log("🔍 [RESOURCES TAB DEBUG] リソース詳細:");
+    resources.forEach((resource, index) => {
+      console.log(`  [${index + 1}] ${JSON.stringify(resource, null, 2)}`);
+    });
+  } else {
+    console.log("🔍 [RESOURCES TAB DEBUG] リソースが空または未定義");
+  }
+
   const { refreshUserData } = useAuth();
   
   // アップロードダイアログの状態

@@ -4,50 +4,83 @@ from .database import ensure_string
 async def get_uploaded_resources_by_company_id(company_id: str, db: Connection, uploaded_by: str = None):
     """会社IDに基づいてアップロードされたリソースの詳細情報を取得します"""
     try:
+        print(f"🔍 [DEBUG] get_uploaded_resources_by_company_id 開始")
+        print(f"🔍 [DEBUG] 入力パラメータ:")
+        print(f"  - company_id: {company_id} (type: {type(company_id)})")
+        print(f"  - uploaded_by: {uploaded_by} (type: {type(uploaded_by)})")
+        print(f"  - db: {db} (type: {type(db)})")
+        
         from supabase_adapter import execute_query, select_data, get_supabase_client
         
         # Supabaseクライアントを取得
         supabase = get_supabase_client()
+        print(f"🔍 [DEBUG] Supabaseクライアント取得完了: {supabase}")
         
         # document_sourcesテーブルから直接データを取得
         query = supabase.table("document_sources").select("*")
+        print(f"🔍 [DEBUG] 基本クエリ作成完了")
         
         # 会社IDに基づいてフィルタリング
         if company_id is not None:
             query = query.eq("company_id", company_id)
+            print(f"🔍 [DEBUG] company_idフィルタ適用: {company_id}")
+        else:
+            print(f"🔍 [DEBUG] company_idフィルタなし（全件取得）")
         
         # アップロード者IDに基づいてフィルタリング（管理者用）
         if uploaded_by is not None:
             query = query.eq("uploaded_by", uploaded_by)
+            print(f"🔍 [DEBUG] uploaded_byフィルタ適用: {uploaded_by}")
+        else:
+            print(f"🔍 [DEBUG] uploaded_byフィルタなし")
         
         # クエリを実行
+        print(f"🔍 [DEBUG] Supabaseクエリ実行開始...")
         sources_result = query.execute()
+        print(f"🔍 [DEBUG] Supabaseクエリ実行完了")
+        print(f"🔍 [DEBUG] sources_result: {sources_result}")
+        print(f"🔍 [DEBUG] sources_result.data: {sources_result.data}")
+        print(f"🔍 [DEBUG] sources_result.count: {getattr(sources_result, 'count', 'N/A')}")
         
         # 結果を取得
         sources = sources_result.data if sources_result.data else []
+        print(f"🔍 [DEBUG] 取得したsourcesの数: {len(sources)}")
+        print(f"🔍 [DEBUG] sources詳細:")
+        for i, source in enumerate(sources):
+            print(f"  [{i+1}] ID: {source.get('id')}, Name: {source.get('name')}, Type: {source.get('type')}, Active: {source.get('active')}")
+        
         print(f"Supabase APIから直接取得したリソース: {len(sources)}件")
         
         resources = []
         
         # 全ユーザー情報を一度に取得
+        print(f"🔍 [DEBUG] ユーザー情報取得開始...")
         all_users = {}
         if sources:
             unique_uploader_ids = list(set([source.get("uploaded_by") for source in sources if source.get("uploaded_by")]))
+            print(f"🔍 [DEBUG] ユニークなアップローダーID: {unique_uploader_ids}")
             if unique_uploader_ids:
                 users_query = supabase.table("users").select("id, name").in_("id", unique_uploader_ids)
                 users_result = users_query.execute()
+                print(f"🔍 [DEBUG] ユーザー情報クエリ結果: {users_result.data}")
                 if users_result.data:
                     all_users = {user["id"]: user.get("name", "不明") for user in users_result.data}
+                    print(f"🔍 [DEBUG] all_usersマップ: {all_users}")
+        else:
+            print(f"🔍 [DEBUG] sourcesが空のため、ユーザー情報取得をスキップ")
         
         # 全チャット履歴を一度に取得（使用回数計算用）
+        print(f"🔍 [DEBUG] チャット履歴取得開始...")
         all_usage_counts = {}
         all_last_used = {}
         if sources:
             resource_ids = [source.get("id") for source in sources if source.get("id")]
+            print(f"🔍 [DEBUG] チャット履歴取得対象のリソースID: {resource_ids}")
             if resource_ids:
                 # 使用回数を一度に取得
                 usage_query = supabase.table("chat_history").select("source_document, timestamp").in_("source_document", resource_ids)
                 usage_result = usage_query.execute()
+                print(f"🔍 [DEBUG] チャット履歴クエリ結果: {len(usage_result.data) if usage_result.data else 0}件")
                 if usage_result.data:
                     # 使用回数をカウント
                     for chat in usage_result.data:
@@ -59,25 +92,35 @@ async def get_uploaded_resources_by_company_id(company_id: str, db: Connection, 
                             if timestamp:
                                 if source_doc not in all_last_used or timestamp > all_last_used[source_doc]:
                                     all_last_used[source_doc] = timestamp
+                    print(f"🔍 [DEBUG] 使用回数カウント結果: {all_usage_counts}")
+                    print(f"🔍 [DEBUG] 最終使用日時: {all_last_used}")
+        else:
+            print(f"🔍 [DEBUG] sourcesが空のため、チャット履歴取得をスキップ")
         
         # 各リソースに対して処理
-        for source in sources:
+        print(f"🔍 [DEBUG] リソース処理開始...")
+        for i, source in enumerate(sources):
+            print(f"🔍 [DEBUG] [{i+1}/{len(sources)}] リソース処理: {source}")
             resource_id = source.get("id")
             if not resource_id:
+                print(f"🔍 [DEBUG] リソースIDがない - スキップ")
                 continue
             
             # アップローダー名を取得（キャッシュから）
             uploader_id = source.get("uploaded_by")
             uploader_name = all_users.get(uploader_id, "不明") if uploader_id else "不明"
+            print(f"🔍 [DEBUG] アップローダー: ID={uploader_id}, Name={uploader_name}")
             
             # 使用回数を取得（キャッシュから）
             usage_count = all_usage_counts.get(resource_id, 0)
+            print(f"🔍 [DEBUG] 使用回数: {usage_count}")
             
             # 最終使用日時を取得（キャッシュから）
             last_used = all_last_used.get(resource_id)
+            print(f"🔍 [DEBUG] 最終使用日時: {last_used}")
             
             # リソース情報を構築
-            resources.append({
+            resource_data = {
                 "id": resource_id,
                 "name": source.get("name", ""),
                 "type": source.get("type", ""),
@@ -89,17 +132,27 @@ async def get_uploaded_resources_by_company_id(company_id: str, db: Connection, 
                 "usage_count": usage_count,
                 "last_used": last_used,
                 "special": source.get("special", "")
-            })
+            }
+            print(f"🔍 [DEBUG] 構築されたリソースデータ: {resource_data}")
+            resources.append(resource_data)
         
-        print(f"処理後のリソース: {len(resources)}件")
-        return {
+        print(f"🔍 [DEBUG] 最終リソース配列:")
+        for i, resource in enumerate(resources):
+            print(f"  [{i+1}] {resource}")
+        
+        result = {
             "resources": resources,
             "message": f"{len(resources)}件のリソースが見つかりました"
         }
+        
+        print(f"🔍 [DEBUG] 最終レスポンス: {result}")
+        print(f"処理後のリソース: {len(resources)}件")
+        return result
     except Exception as e:
-        print(f"リソース取得エラー: {e}")
+        print(f"❌ [ERROR] リソース取得エラー: {e}")
         import traceback
-        print(traceback.format_exc())
+        error_details = traceback.format_exc()
+        print(f"❌ [ERROR] エラー詳細:\n{error_details}")
         # エラーが発生した場合は空のリソースリストを返す
         return {
             "resources": [],

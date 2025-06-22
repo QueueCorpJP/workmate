@@ -32,7 +32,8 @@ from modules.chat import process_chat, process_chat_chunked, set_model as set_ch
 from modules.admin import (
     get_chat_history, get_chat_history_paginated, analyze_chats, get_employee_details,
     get_employee_usage, get_uploaded_resources, toggle_resource_active,
-    get_company_employees, set_model as set_admin_model, delete_resource
+    get_company_employees, set_model as set_admin_model, delete_resource,
+    get_chat_history_by_company_paginated, get_chat_history_by_company
 )
 from modules.company import get_company_name, set_company_name
 from modules.auth import get_current_user, get_current_admin, register_new_user, get_admin_or_user, get_company_admin, get_user_with_delete_permission, get_user_creation_permission
@@ -563,7 +564,10 @@ async def submit_url(submission: UrlSubmission, current_user = Depends(get_curre
             submission.url = 'https://' + submission.url
             
         # URL処理実施
-        result = await process_url(submission.url, current_user["id"], None, db)
+        company_id = current_user.get("company_id")
+        print(f"🔍 [UPLOAD DEBUG] URL処理時のcompany_id: {company_id}")
+        print(f"🔍 [UPLOAD DEBUG] current_user: {current_user}")
+        result = await process_url(submission.url, current_user["id"], company_id, db)
         return result
     except Exception as e:
         logger.error(f"URL送信エラー: {str(e)}")
@@ -619,7 +623,10 @@ async def upload_knowledge(
             )
             
         # ファイル処理実施
-        result = await process_file(file, current_user["id"], None, db)
+        company_id = current_user.get("company_id")
+        print(f"🔍 [UPLOAD DEBUG] ファイルアップロード時のcompany_id: {company_id}")
+        print(f"🔍 [UPLOAD DEBUG] current_user: {current_user}")
+        result = await process_file(file, current_user["id"], company_id, db)
         return result
     except Exception as e:
         logger.error(f"ファイルアップロードエラー: {str(e)}")
@@ -696,7 +703,9 @@ async def upload_multiple_knowledge(
                     await asyncio.sleep(delay_seconds)
                 
                 # ファイル処理実行
-                result = await process_file(file, current_user["id"], None, db)
+                company_id = current_user.get("company_id")
+                print(f"🔍 [UPLOAD DEBUG] 複数ファイルアップロード時のcompany_id: {company_id} (ファイル: {file.filename})")
+                result = await process_file(file, current_user["id"], company_id, db)
                 processed_count += 1
                 
                 results.append({
@@ -817,27 +826,73 @@ async def admin_get_chat_history(
     db: SupabaseConnection = Depends(get_db)
 ):
     """チャット履歴を取得する（ページネーション対応）"""
-    # 現在のユーザーIDを渡して、そのユーザーのチャットのみを取得
-    # 特別な管理者のqueue@queueu-tech.jpの場合は全ユーザーのチャットを取得できるようにする
+    print(f"🔍 [CHAT HISTORY DEBUG] admin_get_chat_history 開始")
+    print(f"🔍 [CHAT HISTORY DEBUG] current_user: {current_user}")
+    print(f"🔍 [CHAT HISTORY DEBUG] limit: {limit}, offset: {offset}")
+    
+    # 権限チェック
+    is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
+    is_admin = current_user["role"] == "admin"
+    is_user = current_user["role"] == "user"
+    is_employee = current_user["role"] == "employee"
+    
+    print(f"🔍 [CHAT HISTORY DEBUG] 権限チェック:")
+    print(f"  - is_special_admin: {is_special_admin}")
+    print(f"  - is_admin: {is_admin}")
+    print(f"  - is_user: {is_user}")
+    print(f"  - is_employee: {is_employee}")
+    
     try:
-        if current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False):
+        if is_special_admin:
+            print(f"🔍 [CHAT HISTORY DEBUG] 特別管理者として全ユーザーのチャットを取得")
             # 特別な管理者の場合は全ユーザーのチャットを取得
             chat_history, total_count = get_chat_history_paginated(None, db, limit, offset)
+        elif is_admin:
+            print(f"🔍 [CHAT HISTORY DEBUG] 管理者として会社のチャットを取得")
+            # 管理者の場合は自分の会社のチャットを取得
+            company_id = current_user.get("company_id")
+            print(f"🔍 [CHAT HISTORY DEBUG] company_id: {company_id}")
+            if company_id:
+                chat_history, total_count = get_chat_history_by_company_paginated(company_id, db, limit, offset)
+            else:
+                print(f"🔍 [CHAT HISTORY DEBUG] company_idがないため自分のチャットのみ取得")
+                chat_history, total_count = get_chat_history_paginated(current_user["id"], db, limit, offset)
+        elif is_user:
+            print(f"🔍 [CHAT HISTORY DEBUG] ユーザーとして会社のチャットを取得")
+            # ユーザーの場合は自分の会社のチャットを取得
+            company_id = current_user.get("company_id")
+            print(f"🔍 [CHAT HISTORY DEBUG] company_id: {company_id}")
+            if company_id:
+                chat_history, total_count = get_chat_history_by_company_paginated(company_id, db, limit, offset)
+            else:
+                print(f"🔍 [CHAT HISTORY DEBUG] company_idがないため自分のチャットのみ取得")
+                chat_history, total_count = get_chat_history_paginated(current_user["id"], db, limit, offset)
         else:
-            # 通常のユーザーの場合は自分のチャットのみを取得
-            user_id = current_user["id"]
-            chat_history, total_count = get_chat_history_paginated(user_id, db, limit, offset)
+            print(f"🔍 [CHAT HISTORY DEBUG] 通常ユーザーとして自分のチャットのみ取得")
+            # その他の場合は自分のチャットのみ取得
+            chat_history, total_count = get_chat_history_paginated(current_user["id"], db, limit, offset)
+            
+        print(f"🔍 [CHAT HISTORY DEBUG] 取得結果: {len(chat_history) if chat_history else 0}件 (全体: {total_count}件)")
+        
     except Exception as e:
-        print(f"ページネーション機能でエラーが発生: {e}")
+        print(f"🔍 [CHAT HISTORY DEBUG] ページネーション機能でエラーが発生: {e}")
         import traceback
         print(traceback.format_exc())
         
         # フォールバック: 古い方法でデータを取得
-        if current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False):
+        if is_special_admin:
+            print(f"🔍 [CHAT HISTORY DEBUG] フォールバック: 特別管理者として全チャット取得")
             chat_history = get_chat_history(None, db)
+        elif is_admin or is_user:
+            print(f"🔍 [CHAT HISTORY DEBUG] フォールバック: 会社チャット取得")
+            company_id = current_user.get("company_id")
+            if company_id:
+                chat_history = get_chat_history_by_company(company_id, db)
+            else:
+                chat_history = get_chat_history(current_user["id"], db)
         else:
-            user_id = current_user["id"]
-            chat_history = get_chat_history(user_id, db)
+            print(f"🔍 [CHAT HISTORY DEBUG] フォールバック: 個人チャット取得")
+            chat_history = get_chat_history(current_user["id"], db)
         
         # ページネーション風に制限
         total_count = len(chat_history)
@@ -851,6 +906,8 @@ async def admin_get_chat_history(
     # has_moreを計算（try文内で成功した場合の処理）
     if 'has_more' not in locals():
         has_more = (offset + limit) < total_count
+    
+    print(f"🔍 [CHAT HISTORY DEBUG] 最終レスポンス: {len(chat_history) if chat_history else 0}件, has_more: {has_more}")
     
     return {
         "data": chat_history,
@@ -866,21 +923,46 @@ async def admin_get_chat_history(
 @app.get("/chatbot/api/admin/analyze-chats")
 async def admin_analyze_chats(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """チャット履歴を分析する"""
+    print(f"🔍 [ANALYZE CHAT DEBUG] admin_analyze_chats 開始")
+    print(f"🔍 [ANALYZE CHAT DEBUG] current_user: {current_user}")
+    
+    # 権限チェック
+    is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
+    is_admin = current_user["role"] == "admin"
+    is_user = current_user["role"] == "user"
+    
+    print(f"🔍 [ANALYZE CHAT DEBUG] 権限チェック:")
+    print(f"  - is_special_admin: {is_special_admin}")
+    print(f"  - is_admin: {is_admin}")
+    print(f"  - is_user: {is_user}")
+    
     try:
-        # 特別な管理者のqueue@queueu-tech.jpの場合は全ユーザーのチャットを分析できるようにする
-        if current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False):
+        if is_special_admin:
+            print(f"🔍 [ANALYZE CHAT DEBUG] 特別管理者として全ユーザーのチャットを分析")
             # 特別な管理者の場合は全ユーザーのチャットを分析
             result = await analyze_chats(None, db)
-            print(f"分析結果: {result}")
-            return result
+        elif is_admin or is_user:
+            print(f"🔍 [ANALYZE CHAT DEBUG] 管理者/ユーザーとして会社のチャットを分析")
+            # 管理者/ユーザーの場合は自分の会社のチャットのみを分析
+            company_id = current_user.get("company_id")
+            print(f"🔍 [ANALYZE CHAT DEBUG] company_id: {company_id}")
+            if company_id:
+                result = await analyze_chats(None, db, company_id=company_id)
+            else:
+                print(f"🔍 [ANALYZE CHAT DEBUG] company_idがないため自分のチャットのみ分析")
+                result = await analyze_chats(current_user["id"], db)
         else:
-            # 通常のユーザーの場合は自分のチャットのみを分析
-            user_id = current_user["id"]
-            result = await analyze_chats(user_id, db)
-            print(f"分析結果: {result}")
-            return result
+            print(f"🔍 [ANALYZE CHAT DEBUG] 通常ユーザーとして自分のチャットのみ分析")
+            # その他の場合は自分のチャットのみを分析
+            result = await analyze_chats(current_user["id"], db)
+        
+        print(f"🔍 [ANALYZE CHAT DEBUG] 分析結果: {result}")
+        return result
+    
     except Exception as e:
-        print(f"チャット履歴分析エラー: {e}")
+        print(f"🔍 [ANALYZE CHAT DEBUG] チャット履歴分析エラー: {e}")
+        import traceback
+        print(traceback.format_exc())
         # エラーが発生した場合でも空の結果を返す
         return {
             "total_messages": 0,
@@ -891,46 +973,71 @@ async def admin_analyze_chats(current_user = Depends(get_admin_or_user), db: Sup
             "common_questions": []
         }
 
-# 詳細ビジネス情報エンドポイント@app.post("/chatbot/api/admin/detailed-analysis")
+@app.post("/chatbot/api/admin/detailed-analysis")
 async def admin_detailed_analysis(request: dict, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """詳細なビジネス分析を行う"""
+    print(f"🔍 [DETAILED ANALYSIS DEBUG] admin_detailed_analysis 開始")
+    print(f"🔍 [DETAILED ANALYSIS DEBUG] current_user: {current_user}")
+    
     try:
         # ユーザー情報の取得
         is_admin = current_user["role"] == "admin"
         is_user = current_user["role"] == "user"
         is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
         
+        print(f"🔍 [DETAILED ANALYSIS DEBUG] 権限チェック:")
+        print(f"  - is_special_admin: {is_special_admin}")
+        print(f"  - is_admin: {is_admin}")
+        print(f"  - is_user: {is_user}")
+        
         # プロンプトを取得
         prompt = request.get("prompt", "")
+        print(f"🔍 [DETAILED ANALYSIS DEBUG] prompt: {prompt}")
         
         # 通常の分析結果を取得
         if is_special_admin:
+            print(f"🔍 [DETAILED ANALYSIS DEBUG] 特別管理者として全チャットで分析")
             # 特別管理者の全チャットのタイプで分析
             analysis_result = await analyze_chats(None, db)
         else:
             # 一般ユーザーは自分の会社のチャットのみで分析
             user_company_id = current_user.get("company_id")
+            print(f"🔍 [DETAILED ANALYSIS DEBUG] user_company_id: {user_company_id}")
             if user_company_id:
+                print(f"🔍 [DETAILED ANALYSIS DEBUG] 会社のチャットで分析")
                 analysis_result = await analyze_chats(None, db, company_id=user_company_id)
             else:
+                print(f"🔍 [DETAILED ANALYSIS DEBUG] 個人のチャットで分析")
                 # 会社IDがない場合は自分のチャットのみ
                 analysis_result = await analyze_chats(current_user["id"], db)
         
         # より詳細なチャットデータを取得
         try:
             if is_special_admin:
+                print(f"🔍 [DETAILED ANALYSIS DEBUG] 特別管理者として全チャットデータ取得")
                 # 特別管理者の全チャットを取得
                 chat_result = select_data("chat_history", limit=1000, order="created_at desc")
             else:
                 # 一般ユーザーは自分の会社のチャットのみ取得
                 user_company_id = current_user.get("company_id")
                 if user_company_id:
-                    chat_result = select_data("chat_history", filters={"company_id": user_company_id}, limit=1000, order="created_at desc")
+                    print(f"🔍 [DETAILED ANALYSIS DEBUG] 会社のチャットデータ取得 (company_id: {user_company_id})")
+                    # 会社のユーザーIDを取得
+                    users_result = select_data("users", columns="id", filters={"company_id": user_company_id})
+                    if users_result and users_result.data:
+                        user_ids = [user["id"] for user in users_result.data]
+                        user_ids_str = ','.join([f"'{uid}'" for uid in user_ids])
+                        chat_result = select_data("chat_history", filters={"employee_id": f"in.({user_ids_str})"}, limit=1000, order="created_at desc")
+                    else:
+                        print(f"🔍 [DETAILED ANALYSIS DEBUG] 会社のユーザーが見つからないため空のデータで処理")
+                        chat_result = None
                 else:
+                    print(f"🔍 [DETAILED ANALYSIS DEBUG] 個人のチャットデータ取得")
                     # 会社IDがない場合は自分のチャットのみ
-                    chat_result = select_data("chat_history", filters={"user_id": current_user["id"]}, limit=1000, order="created_at desc")
+                    chat_result = select_data("chat_history", filters={"employee_id": current_user["id"]}, limit=1000, order="created_at desc")
             
-            chat_data = chat_result.data if chat_result.data else []
+            chat_data = chat_result.data if chat_result and chat_result.data else []
+            print(f"🔍 [DETAILED ANALYSIS DEBUG] 取得したチャットデータ数: {len(chat_data)}")
             
             # 詳細なチャットのタイプ
             detailed_metrics = {
@@ -1194,20 +1301,38 @@ async def admin_get_employee_usage(current_user = Depends(get_admin_or_user), db
 @app.get("/chatbot/api/admin/resources", response_model=ResourcesResult)
 async def admin_get_resources(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """アップロードされたリソースのURL、PDF、Excel、TXTの情報を取得する"""
+    print(f"🔍 [ENDPOINT DEBUG] admin_get_resources 開始")
+    print(f"🔍 [ENDPOINT DEBUG] current_user: {current_user}")
+    print(f"🔍 [ENDPOINT DEBUG] current_user type: {type(current_user)}")
+    print(f"🔍 [ENDPOINT DEBUG] db: {db}")
+    print(f"🔍 [ENDPOINT DEBUG] db type: {type(db)}")
+    
     # 特別管理者のみがチのタにアクセス可能
     is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
+    print(f"🔍 [ENDPOINT DEBUG] is_special_admin: {is_special_admin}")
+    print(f"🔍 [ENDPOINT DEBUG] user email: {current_user.get('email')}")
+    print(f"🔍 [ENDPOINT DEBUG] user is_special_admin: {current_user.get('is_special_admin')}")
     
     if is_special_admin:
+        print(f"🔍 [ENDPOINT DEBUG] 特別管理者として全リソースを取得")
         # 特別管理者の全てのリソースを表示
-        return await get_uploaded_resources_by_company_id(None, db, uploaded_by=None)
+        result = await get_uploaded_resources_by_company_id(None, db, uploaded_by=None)
+        print(f"🔍 [ENDPOINT DEBUG] 特別管理者の結果: {result}")
+        return result
     else:
         # 通常のユーザーは自分の会社のリソースのみ表示
         company_id = current_user.get("company_id")
+        print(f"🔍 [ENDPOINT DEBUG] 通常ユーザーのcompany_id: {company_id}")
+        print(f"🔍 [ENDPOINT DEBUG] company_id type: {type(company_id)}")
+        
         if not company_id:
+            print(f"🔍 [ENDPOINT DEBUG] company_idが見つからない - HTTPException発生")
             raise HTTPException(status_code=400, detail="会社IDが見つかりません")
         
         print(f"会社ID {company_id} のリソースを取得します")
-        return await get_uploaded_resources_by_company_id(company_id, db)
+        result = await get_uploaded_resources_by_company_id(company_id, db)
+        print(f"🔍 [ENDPOINT DEBUG] 通常ユーザーの結果: {result}")
+        return result
 
 # リソースのアクティブ状態を切り替えるエンドポイント
 @app.post("/chatbot/api/admin/resources/{resource_id:path}/toggle", response_model=ResourceToggleResponse)
@@ -1639,25 +1764,32 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
     import csv
     
     try:
-        print(f"CSVダウンロード開始 - ユーザー: {current_user['email']}")
+        print(f"🔍 [CSV DOWNLOAD DEBUG] CSVダウンロード開始 - ユーザー: {current_user['email']}")
+        print(f"🔍 [CSV DOWNLOAD DEBUG] current_user: {current_user}")
         
         # 権限チェック
         is_admin = current_user["role"] == "admin"
         is_user = current_user["role"] == "user"
         is_employee = current_user["role"] == "employee"
-        is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"]
+        is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
+        
+        print(f"🔍 [CSV DOWNLOAD DEBUG] 権限チェック:")
+        print(f"  - is_special_admin: {is_special_admin}")
+        print(f"  - is_admin: {is_admin}")
+        print(f"  - is_user: {is_user}")
+        print(f"  - is_employee: {is_employee}")
         
         # チャット履歴を直接Supabaseから取得
         try:
-            if is_special_admin or is_admin:
-                # 管理者の場合は全ユーザーのチャットを取得
-                # print("管理者として全ユーザーのチャット履歴を取得")
+            if is_special_admin:
+                print(f"🔍 [CSV DOWNLOAD DEBUG] 特別管理者として全ユーザーのチャット履歴を取得")
+                # 特別管理者の場合のみ全ユーザーのチャットを取得
                 from supabase_adapter import select_data
                 result = select_data("chat_history", columns="*")
                 chat_history = result.data if result and result.data else []
-            elif is_user or is_employee:
-                # userまたはemployeeロールの場合は自分の会社のチャットのみを取得
-                # print(f"{current_user['role']}ロールとして自分の会社のチャット履歴を取得")
+            elif is_admin or is_user:
+                print(f"🔍 [CSV DOWNLOAD DEBUG] 管理者/ユーザーとして会社のチャット履歴を取得")
+                # 管理者・ユーザーの場合は自分の会社のチャットのみを取得
                 from supabase_adapter import select_data
                 
                 # まずユーザーの会社IDを取得
@@ -1665,42 +1797,46 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
                 if user_result and user_result.data:
                     user_data = user_result.data[0]
                     company_id = user_data.get("company_id")
+                    print(f"🔍 [CSV DOWNLOAD DEBUG] company_id: {company_id}")
                     
                     if company_id:
                         # 同じ会社のユーザーIDリストを取得
                         company_users_result = select_data("users", filters={"company_id": company_id})
                         if company_users_result and company_users_result.data:
                             company_user_ids = [user["id"] for user in company_users_result.data]
+                            print(f"🔍 [CSV DOWNLOAD DEBUG] 会社のユーザーID一覧: {company_user_ids}")
+                            
                             # 会社のユーザーのチャット履歴を取得
                             if company_user_ids:
-                                # 各ユーザーのチャット履歴を取得して結合
-                                chat_history = []
-                                for user_id in company_user_ids:
-                                    result = select_data("chat_history", filters={"employee_id": user_id})
-                                    if result and result.data:
-                                        chat_history.extend(result.data)
+                                # IN句でフィルタリング
+                                user_ids_str = ','.join([f"'{uid}'" for uid in company_user_ids])
+                                result = select_data("chat_history", filters={"employee_id": f"in.({user_ids_str})"})
+                                chat_history = result.data if result and result.data else []
                             else:
                                 chat_history = []
                         else:
+                            print(f"🔍 [CSV DOWNLOAD DEBUG] 会社のユーザーが見つかりません")
                             chat_history = []
                     else:
+                        print(f"🔍 [CSV DOWNLOAD DEBUG] company_idがないため自分のチャットのみ取得")
                         # 会社IDがない場合は自分のチャットのみ
                         result = select_data("chat_history", filters={"employee_id": current_user["id"]})
                         chat_history = result.data if result and result.data else []
                 else:
+                    print(f"🔍 [CSV DOWNLOAD DEBUG] ユーザー情報が取得できません")
                     chat_history = []
             else:
+                print(f"🔍 [CSV DOWNLOAD DEBUG] 通常ユーザーとして自分のチャット履歴のみ取得")
                 # その他のユーザーの場合は自分のチャットのみを取得
                 user_id = current_user["id"]
-                # print(f"通常ユーザーとして個人のチャット履歴を取得 {user_id}")
                 from supabase_adapter import select_data
                 result = select_data("chat_history", filters={"employee_id": user_id})
                 chat_history = result.data if result and result.data else []
         except Exception as e:
-            # print(f"チャット履歴取得エラー: {e}")
+            print(f"🔍 [CSV DOWNLOAD DEBUG] チャット履歴取得エラー: {e}")
             chat_history = []
         
-        # print(f"取得したチャット履歴数: {len(chat_history)}")
+        print(f"🔍 [CSV DOWNLOAD DEBUG] 取得したチャット履歴数: {len(chat_history)}")
         
         # CSV形式に変換
         csv_data = io.StringIO()
@@ -2610,10 +2746,13 @@ async def upload_from_google_drive(
             
             # 既存のprocess_file関数を使用
             mock_file = MockUploadFile(processed_filename, file_content)
+            company_id = current_user.get("company_id")
+            print(f"🔍 [UPLOAD DEBUG] Google Driveアップロード時のcompany_id: {company_id}")
+            print(f"🔍 [UPLOAD DEBUG] current_user: {current_user}")
             result = await process_file(
                 mock_file,
                 current_user["id"],
-                None,  # company_id
+                company_id,  # company_id
                 db
             )
             
