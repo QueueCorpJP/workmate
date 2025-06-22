@@ -50,7 +50,18 @@ jobs:
         cd Chatbot-backend-main
         
         # 不要なファイルを除外してアーカイブ作成
-        tar --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' \
+        tar --exclude='.git' \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='.env' \
+            --exclude='node_modules' \
+            --exclude='venv' \
+            --exclude='*.log' \
+            --exclude='dist' \
+            --exclude='build' \
+            --exclude='coverage' \
+            --exclude='.pytest_cache' \
+            --exclude='.coverage' \
             -czf ../backend.tar.gz .
         
         echo "📦 アーカイブ内容確認:"
@@ -81,21 +92,20 @@ jobs:
           mkdir -p $DEPLOY_PATH
           cd $DEPLOY_PATH
           
-          # 既存ファイルのバックアップ
-          echo "💾 既存ファイルバックアップ..."
-          if [ -f .env ]; then
-            cp .env .env.backup 2>/dev/null || echo "⚠️ .env.backup 作成に失敗（処理継続）"
-          fi
+          # ディスク容量確認と古いファイル削除
+          echo "💾 ディスク容量確認..."
+          df -h $DEPLOY_PATH
+          
+          echo "🧹 古いファイル削除（ディスク容量確保）..."
+          # .envファイル以外の古いファイルを削除
+          find . -maxdepth 1 -type f ! -name '.env' ! -name '.env.*' -delete 2>/dev/null || true
+          find . -maxdepth 1 -type d ! -name '.' ! -name 'venv' -exec rm -rf {} + 2>/dev/null || true
           
           # 新しいファイルを展開
           echo "📦 ファイル展開..."
           tar -xzf /tmp/backend.tar.gz
           
-          # 環境ファイル復元
-          if [ -f ".env.backup" ]; then
-            mv .env.backup .env
-            echo "環境ファイルを復元しました"
-          fi
+          echo "✅ ファイル展開完了"
           
           # Pythonパッケージインストール
           echo "📥 依存関係インストール..."
@@ -163,18 +173,16 @@ jobs:
             source venv/bin/activate
             echo "仮想環境をアクティベートしました: $(which python)"
             
-            # requirements.txtの変更チェック
+            # requirements.txtの変更チェック（ハッシュベース）
             REQUIREMENTS_CHANGED=false
-            if [ -f "requirements.txt.backup" ]; then
-              if ! cmp -s requirements.txt requirements.txt.backup; then
-                echo "📝 requirements.txtに変更が検出されました"
-                REQUIREMENTS_CHANGED=true
-              else
-                echo "📝 requirements.txtに変更はありません"
-              fi
-            else
-              echo "📝 初回デプロイまたはバックアップファイルが見つかりません"
+            CURRENT_HASH=$(md5sum requirements.txt 2>/dev/null | cut -d' ' -f1 || echo "new")
+            STORED_HASH=$(cat .requirements_hash 2>/dev/null || echo "")
+            
+            if [ "$CURRENT_HASH" != "$STORED_HASH" ]; then
+              echo "📝 requirements.txtに変更が検出されました"
               REQUIREMENTS_CHANGED=true
+            else
+              echo "📝 requirements.txtに変更はありません"
             fi
             
             # パッケージインストール（必要な場合のみ）
@@ -198,9 +206,9 @@ jobs:
               INSTALL_TIME=$((INSTALL_END - INSTALL_START))
               echo "⏱️ パッケージインストール時間: ${INSTALL_TIME}秒"
               
-              # requirements.txtのバックアップ作成
-              cp requirements.txt requirements.txt.backup
-              echo "✅ requirements.txtバックアップを作成しました"
+              # requirements.txtのハッシュ保存
+              echo "$CURRENT_HASH" > .requirements_hash
+              echo "✅ requirements.txtハッシュを保存しました"
               
               # Playwrightブラウザインストール（存在する場合）
               if $PIP_CMD show playwright >/dev/null 2>&1; then
