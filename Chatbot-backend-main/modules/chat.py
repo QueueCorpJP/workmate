@@ -548,7 +548,7 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
         あなたは親切で丁寧な対応ができる{current_company_name}のアシスタントです。
         以下の知識ベースを参考に、ユーザーの質問に対して可能な限り具体的で役立つ回答を提供してください。
 
-        利用可能なファイル: {', '.join(active_resource_names) if active_resource_names else 'なし'}
+        利用可能なファイル: {', '.join(active_resource_names) if active_resource_names else ''}
 
         回答の際の注意点：
         1. 常に丁寧な言葉遣いを心がけ、ユーザーに対して敬意を持って接してください
@@ -566,7 +566,7 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
         13. コードやファイル名、設定値などは`バッククォート`で囲んでください{special_instructions_text}
         
         利用可能なデータ列：
-        {', '.join(knowledge_base.columns) if knowledge_base and hasattr(knowledge_base, 'columns') and knowledge_base.columns else "データ列なし"}
+        {', '.join(knowledge_base.columns) if knowledge_base and hasattr(knowledge_base, 'columns') and knowledge_base.columns else ""}
 
         知識ベース内容（アクティブなリソースのみ）：
         {active_knowledge_text}
@@ -592,7 +592,7 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
         あなたは親切で丁寧な対応ができる{current_company_name}のアシスタントです。
         以下の知識ベースを参考に、ユーザーの質問に対って可能な限り具体的で役立つ回答を提供してください。
 
-        利用可能なファイル: {', '.join(active_resource_names) if active_resource_names else 'なし'}
+        利用可能なファイル: {', '.join(active_resource_names) if active_resource_names else ''}
 
         回答の際の注意点：
         1. 常に丁寧な言葉遣いを心がけ、ユーザーに対して敬意を持って接してください
@@ -950,14 +950,6 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
         
         safe_print(f"📊 取得した知識ベース: {len(active_knowledge_text)} 文字")
         
-        # 🎯 RAG検索による事前フィルタリング（チャンク化システム最適化）
-        # チャンク化を考慮して、より多くの関連セクションを取得
-        if active_knowledge_text and len(active_knowledge_text) > 100000:
-            # チャンク化システムでは、各チャンクに十分な情報が含まれるよう多めに取得
-            rag_max_results = min(25, max(15, len(active_knowledge_text) // 50000))  # 動的調整
-            active_knowledge_text = simple_rag_search(active_knowledge_text, message_text, max_results=rag_max_results)
-            safe_print(f"📊 RAG検索後: {len(active_knowledge_text)} 文字 (取得セクション数: {rag_max_results})")
-        
         # アクティブなリソースの情報とSpecial指示を取得
         special_instructions = []
         active_resource_names = []
@@ -989,15 +981,10 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
             for idx, inst in enumerate(special_instructions, 1):
                 special_instructions_text += f"{idx}. 【{inst['name']}】: {inst['instruction']}\n"
 
-        # 🔪 知識ベースをチャンク化（RAG後のサイズに応じて調整）
-        # RAG検索後のサイズが小さい場合はチャンクサイズも小さくして、各チャンクに情報を分散
-        if len(active_knowledge_text) < 200000:  # 20万文字未満の場合
-            CHUNK_SIZE = max(100000, len(active_knowledge_text) // 2)  # 最大2チャンクに分割
-        else:
-            CHUNK_SIZE = 300000  # 30万文字（従来より小さく）
-        
-        chunks = chunk_knowledge_base(active_knowledge_text, CHUNK_SIZE)
-        safe_print(f"🔪 チャンク化完了: {len(chunks)}個のチャンク (チャンクサイズ: {CHUNK_SIZE:,}文字)")
+        # 🔪 まず知識ベース全体をチャンク化（RAG前に実行）
+        CHUNK_SIZE = 500000  # 50万文字でチャンク化
+        raw_chunks = chunk_knowledge_base(active_knowledge_text, CHUNK_SIZE)
+        safe_print(f"🔪 チャンク化完了: {len(raw_chunks)}個のチャンク (チャンクサイズ: {CHUNK_SIZE:,}文字)")
         
         # 会話履歴の取得
         conversation_history = ""
@@ -1027,47 +1014,88 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
         except Exception as e:
             safe_print(f"会話履歴取得エラー: {str(e)}")
         
-        # 各チャンクを順次処理（適切な回答が得られた時点で停止）
+        # 複数チャンクを一括でRAG検索 → 見つからなければ次のセット
         all_responses = []
         successful_chunks = 0
+        processed_chunks = set()  # 処理済みチャンクのインデックスを記録
+        BATCH_SIZE = 5  # 一度に処理するチャンク数
         
-        for i, chunk in enumerate(chunks):
-            safe_print(f"🔄 チャンク {i+1}/{len(chunks)} 処理開始 ({len(chunk)} 文字)")
+        batch_start = 0
+        while batch_start < len(raw_chunks):
+            # 未処理のチャンクから次のバッチを取得
+            available_chunks = [i for i in range(batch_start, min(batch_start + BATCH_SIZE, len(raw_chunks))) 
+                              if i not in processed_chunks]
             
-            # 🔍 チャンク内容の詳細分析（デバッグ用）
-            safe_print(f"🔍 チャンク{i+1}の最初の200文字: {chunk[:200]}...")
-            if len(chunk) > 400:
-                safe_print(f"🔍 チャンク{i+1}の最後の200文字: ...{chunk[-200:]}")
+            if not available_chunks:
+                batch_start += BATCH_SIZE
+                continue
+                
+            safe_print(f"🔄 バッチ処理開始: チャンク {available_chunks[0]+1}-{available_chunks[-1]+1} ({len(available_chunks)}個)")
             
-            # 質問に関連するキーワードがチャンクに含まれているかチェック
+            # 複数チャンクを結合してRAG検索
+            combined_chunk = ""
+            chunk_info = []
+            
+            for chunk_idx in available_chunks:
+                raw_chunk = raw_chunks[chunk_idx]
+                combined_chunk += f"\n\n=== チャンク {chunk_idx+1} ===\n{raw_chunk}"
+                chunk_info.append(f"チャンク{chunk_idx+1}({len(raw_chunk):,}文字)")
+            
+            safe_print(f"📊 結合チャンク: {chunk_info}")
+            safe_print(f"📊 結合サイズ: {len(combined_chunk):,} 文字")
+            
+            # 🎯 結合チャンクでRAG検索を実行
+            if len(combined_chunk) > 10000:
+                rag_max_results = min(50, max(20, len(combined_chunk) // 20000))  # より多くの結果を取得
+                safe_print(f"🎯 バッチRAG検索実行: max_results={rag_max_results}")
+                filtered_chunk = simple_rag_search(combined_chunk, message_text, max_results=rag_max_results)
+                safe_print(f"📊 RAG検索後: {len(filtered_chunk)} 文字 (元: {len(combined_chunk)} 文字)")
+            else:
+                filtered_chunk = combined_chunk
+                safe_print(f"📊 小さなバッチのため RAG検索をスキップ")
+            
+            # バッチが空でない場合のみGemini処理
+            if not filtered_chunk or len(filtered_chunk.strip()) < 200:
+                safe_print(f"⚠️ バッチ結果が空または小さすぎる - 次のバッチへ")
+                for chunk_idx in available_chunks:
+                    processed_chunks.add(chunk_idx)
+                batch_start += BATCH_SIZE
+                continue
+            # 🔍 バッチ内容の詳細分析（デバッグ用）
+            safe_print(f"🔍 バッチの最初の200文字: {filtered_chunk[:200]}...")
+            if len(filtered_chunk) > 400:
+                safe_print(f"🔍 バッチの最後の200文字: ...{filtered_chunk[-200:]}")
+            
+            # 質問に関連するキーワードがバッチに含まれているかチェック
             question_keywords = message_text.lower().split()[:5]  # 質問の最初の5単語
-            matching_keywords = [kw for kw in question_keywords if kw in chunk.lower()]
-            safe_print(f"🎯 チャンク{i+1}内の関連キーワード: {matching_keywords} (質問キーワード: {question_keywords})")
+            matching_keywords = [kw for kw in question_keywords if kw in filtered_chunk.lower()]
+            safe_print(f"🎯 バッチ内の関連キーワード: {matching_keywords} (質問キーワード: {question_keywords})")
             
-            # チャンクが有効かどうかの事前判定
-            has_relevant_content = len(matching_keywords) > 0 or len(chunk.strip()) > 1000
-            safe_print(f"📊 チャンク{i+1}の有効性: {'有効' if has_relevant_content else '無効'} (キーワード一致: {len(matching_keywords)}, 長さ: {len(chunk)})")
+            # バッチが有効かどうかの事前判定
+            has_relevant_content = len(matching_keywords) > 0 or len(filtered_chunk.strip()) > 1000
+            safe_print(f"📊 バッチの有効性: {'有効' if has_relevant_content else '無効'} (キーワード一致: {len(matching_keywords)}, 長さ: {len(filtered_chunk)})")
             
             # プロンプトの作成
+            batch_info = f"バッチ {len(available_chunks)}個 ({available_chunks[0]+1}-{available_chunks[-1]+1})"
             prompt = f"""
 あなたは親切で丁寧な対応ができる{current_company_name}のアシスタントです。
 以下の知識ベースを参考に、ユーザーの質問に対して可能な限り具体的で役立つ回答を提供してください。
 
-注意: これは知識ベース全体の一部です（チャンク {i+1}/{len(chunks)}）。
-このチャンクの情報を使用して、質問に関連する情報があれば積極的に回答してください。
+注意: これは知識ベース全体の一部です（{batch_info}）。
+この情報を使用して、質問に関連する情報があれば積極的に回答してください。
 
-利用可能なファイル: {', '.join(active_resource_names) if active_resource_names else 'なし'}
+利用可能なファイル: {', '.join(active_resource_names) if active_resource_names else ''}
 
 回答の際の注意点：
 1. 常に丁寧な言葉遣いを心がけ、ユーザーに対して敬意を持って接してください
 2. 知識ベース内に質問に関連する情報があれば、部分的でも積極的に回答してください
-3. 完全に関連のない情報しかない場合のみ「このチャンクには該当情報がありません」と回答してください
+3. 完全に関連のない情報しかない場合のみ「このバッチには該当情報がありません」と回答してください
 4. 可能な限り具体的で実用的な情報を提供してください
 5. 知識ベースの情報を使用して回答した場合は、回答の最後に「情報ソース: [ファイル名]」の形式で参照したファイル名を記載してください
 6. 回答は**Markdown記法**を使用して見やすく整理してください{special_instructions_text}
 
-知識ベース内容（チャンク {i+1}/{len(chunks)}）：
-{chunk}
+知識ベース内容（{batch_info}）：
+{filtered_chunk}
 
 {conversation_history}
 
@@ -1079,7 +1107,7 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
             try:
                 model = setup_gemini()
                 
-                safe_print(f"🤖 Gemini API呼び出し - チャンク {i+1}")
+                safe_print(f"🤖 Gemini API呼び出し - バッチ {batch_info}")
                 safe_print(f"📏 プロンプトサイズ: {len(prompt)} 文字")
                 
                 # タイムアウト付きでAPI呼び出し
@@ -1090,17 +1118,18 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
                 
                 end_time = time.time()
                 elapsed_time = end_time - start_time
-                safe_print(f"📨 API応答受信 - チャンク {i+1} (処理時間: {elapsed_time:.2f}秒)")
+                safe_print(f"📨 API応答受信 - バッチ {batch_info} (処理時間: {elapsed_time:.2f}秒)")
                 
                 if response and hasattr(response, 'text'):
                     if response.text and response.text.strip():
-                        chunk_response = response.text.strip()
-                        safe_print(f"📝 応答テキスト長: {len(chunk_response)} 文字 - チャンク {i+1}")
-                        safe_print(f"📝 応答内容（最初の100文字）: {chunk_response[:100]}...")
+                        batch_response = response.text.strip()
+                        safe_print(f"📝 応答テキスト長: {len(batch_response)} 文字 - バッチ {batch_info}")
+                        safe_print(f"📝 応答内容（最初の100文字）: {batch_response[:100]}...")
                         
                         # 「該当情報がありません」系の回答でない場合のみ追加
                         # より厳密な条件で「該当情報なし」を判定
                         no_info_phrases = [
+                            "このバッチには該当情報がありません",
                             "このチャンクには該当情報がありません",
                             "該当する情報が見つかりません", 
                             "完全に関連のない情報しかありません"
@@ -1108,39 +1137,38 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
                         
                         # 完全一致または非常に類似した応答の場合のみ除外
                         is_no_info = any(
-                            phrase in chunk_response.lower() and len(chunk_response.strip()) < 100
+                            phrase in batch_response.lower() and len(batch_response.strip()) < 150
                             for phrase in no_info_phrases
                         )
                         
                         if not is_no_info:
-                            all_responses.append(chunk_response)
-                            successful_chunks += 1
-                            safe_print(f"✅ チャンク {i+1} 処理成功 - 回答を統合リストに追加")
-                            
-                            # 適切な回答が得られた場合、後続のチャンクを処理せずに終了
-                            # 回答の質を判定（文字数、内容の具体性、および回答の完全性をチェック）
-                            if (len(chunk_response) > 100 and 
-                                not any(vague_phrase in chunk_response.lower() for vague_phrase in [
-                                    "申し訳ございません", "わかりません", "不明", "詳細は", "確認できません",
-                                    "情報が不足", "明確ではない", "部分的"
-                                ]) and
-                                # 具体的な内容が含まれているかを確認
-                                any(content_indicator in chunk_response.lower() for content_indicator in [
-                                    "方法", "手順", "設定", "について", "場合", "必要", "以下", "または", "および"
-                                ])):
-                                safe_print(f"🎯 チャンク {i+1} で十分で具体的な回答を取得 - 処理を終了")
-                                break
+                            all_responses.append(batch_response)
+                            successful_chunks += len(available_chunks)  # バッチ内のチャンク数を加算
+                            safe_print(f"✅ バッチ {batch_info} 処理成功 - 回答を統合リストに追加")
+                            # このバッチのチャンクを処理済みに追加
+                            for chunk_idx in available_chunks:
+                                processed_chunks.add(chunk_idx)
+                            # 成功した場合、残りのチャンクも処理するため次のバッチへ
                         else:
-                            safe_print(f"ℹ️ チャンク {i+1} に該当情報なし - 除外フレーズにマッチ")
+                            safe_print(f"ℹ️ バッチ {batch_info} に該当情報なし - 除外フレーズにマッチ")
+                            # このバッチのチャンクを処理済みに追加
+                            for chunk_idx in available_chunks:
+                                processed_chunks.add(chunk_idx)
                     else:
-                        safe_print(f"⚠️ チャンク {i+1} 空の応答テキスト")
+                        safe_print(f"⚠️ バッチ {batch_info} 空の応答テキスト")
+                        # このバッチのチャンクを処理済みに追加
+                        for chunk_idx in available_chunks:
+                            processed_chunks.add(chunk_idx)
                 else:
-                    safe_print(f"⚠️ チャンク {i+1} 無効な応答オブジェクト")
+                    safe_print(f"⚠️ バッチ {batch_info} 無効な応答オブジェクト")
                     if response:
                         safe_print(f"🔍 応答オブジェクトの属性: {dir(response)}")
+                    # このバッチのチャンクを処理済みに追加
+                    for chunk_idx in available_chunks:
+                        processed_chunks.add(chunk_idx)
                     
             except Exception as e:
-                safe_print(f"❌ チャンク {i+1} 処理エラー: {str(e)}")
+                safe_print(f"❌ バッチ {batch_info} 処理エラー: {str(e)}")
                 safe_print(f"🔍 エラータイプ: {type(e).__name__}")
                 import traceback
                 safe_print(f"🔍 エラー詳細: {traceback.format_exc()}")
@@ -1150,17 +1178,28 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
                     safe_print(f"🔍 APIエラーコード: {e.code}")
                 if hasattr(e, 'message'):
                     safe_print(f"🔍 APIエラーメッセージ: {e.message}")
+                
+                # エラーの場合もこのバッチのチャンクを処理済みに追加
+                for chunk_idx in available_chunks:
+                    processed_chunks.add(chunk_idx)
                     
                 continue
             
-            # APIレート制限を避けるため少し待機（最後のチャンクでない場合のみ）
-            if i < len(chunks) - 1:
+            # APIレート制限を避けるため少し待機
+            batch_start += BATCH_SIZE
+            if batch_start < len(raw_chunks):
                 await asyncio.sleep(1)
         
         # 最終回答の生成
         if all_responses:
-            # 最初の有効な回答を使用（無駄な統合を避ける）
-            final_response = all_responses[0]
+            if len(all_responses) == 1:
+                # 単一の回答の場合はそのまま使用
+                final_response = all_responses[0]
+            else:
+                # 複数の回答がある場合は統合
+                safe_print(f"🔗 複数チャンクからの回答を統合: {len(all_responses)}個")
+                final_response = "\n\n".join(all_responses)
+                safe_print(f"📝 統合後の回答長: {len(final_response)} 文字")
             
             # チャンク情報を削除し、シンプルなファイル名表示に変更
             # [チャンク X/Y より] のような表示を削除
@@ -1214,13 +1253,35 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
             except Exception as e:
                 safe_print(f"利用制限更新エラー: {str(e)}")
         
-        safe_print(f"✅ チャンク化処理完了 - 成功チャンク: {successful_chunks}/{len(chunks)}")
+        safe_print(f"✅ チャンク化処理完了 - 成功チャンク: {successful_chunks}/{len(raw_chunks)}")
+        
+        # ソース情報の抽出（回答からファイル名を抽出）
+        source_text = ""
+        if final_response and active_resource_names:
+            # 回答から「情報ソース:」部分を抽出
+            import re
+            source_match = re.search(r'情報ソース[:：]\s*([^\n]+)', final_response)
+            if source_match:
+                source_text = source_match.group(1).strip()
+                # 情報ソース部分を回答から削除
+                final_response = re.sub(r'\n*情報ソース[:：][^\n]*', '', final_response).strip()
+            elif len(active_resource_names) == 1:
+                # アクティブリソースが1つだけの場合はそれをソースとする
+                source_text = active_resource_names[0]
+        
+        # 無効なソース情報は空文字列にする
+        invalid_sources = ['なし', 'デバッグ', 'debug', '情報なし', '該当なし', '不明', 'unknown', 'null', 'undefined']
+        if source_text.lower() in [s.lower() for s in invalid_sources] or 'デバッグ' in source_text or 'debug' in source_text.lower():
+            source_text = ""
+        
+        safe_print(f"📄 最終ソース情報: '{source_text}'")
         
         return {
             "response": final_response,
+            "source": source_text,
             "remaining_questions": remaining_questions,
             "limit_reached": limit_reached,
-            "chunks_processed": len(chunks),
+            "chunks_processed": len(raw_chunks),
             "successful_chunks": successful_chunks
         }
         
@@ -1236,6 +1297,7 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
             
         return {
             "response": f"申し訳ございません。システムエラーが発生しました: {str(e)}",
+            "source": "",
             "remaining_questions": remaining_questions,
             "limit_reached": limit_reached
         }

@@ -28,6 +28,37 @@ const SourceCitation: React.FC<SourceCitationProps> = ({ source }) => {
 
   if (!source || !source.trim()) return null;
 
+  // 不要なソース情報を除外
+  const trimmedSource = source.trim();
+  const invalidSources = [
+    'なし',
+    'デバッグ',
+    'debug',
+    'Debug',
+    'DEBUG',
+    'Source: "なし"',
+    'デバッグ - Source: "なし"',
+    '情報なし',
+    '該当なし',
+    '不明',
+    'unknown',
+    'Unknown',
+    'UNKNOWN',
+    'null',
+    'undefined',
+    ''
+  ];
+  
+  // 無効なソース情報の場合は表示しない
+  if (invalidSources.some(invalid => 
+    trimmedSource === invalid || 
+    trimmedSource.toLowerCase() === invalid.toLowerCase() ||
+    trimmedSource.includes('デバッグ') ||
+    trimmedSource.includes('debug')
+  )) {
+    return null;
+  }
+
   console.log("SourceCitation受信ソース:", source);
 
   // 複数のソースを処理する（ [file1.pdf], [file2.pdf] 形式に対応）
