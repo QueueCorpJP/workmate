@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -20,14 +20,16 @@ import {
   useTheme,
   useMediaQuery,
   alpha,
-  // Tabs,
-  // Tab,
-  // Accordion,
-  // AccordionSummary,
-  // AccordionDetails,
-  // CircularProgress
+  Tabs,
+  Tab,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  CircularProgress,
+  LinearProgress,
+  Alert
 } from '@mui/material';
-import { Bar, Pie } from 'react-chartjs-2';
+import { Bar, Pie, Line } from 'react-chartjs-2';
 import { AnalysisResult, categoryColors, sentimentColors } from './types';
 import LoadingIndicator from './LoadingIndicator';
 import EmptyState from './EmptyState';
@@ -39,41 +41,138 @@ import LiveHelpIcon from '@mui/icons-material/LiveHelp';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ChatIcon from '@mui/icons-material/Chat';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-// import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-// import BusinessIcon from '@mui/icons-material/Business';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import BusinessIcon from '@mui/icons-material/Business';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
-// import api from '../../api';
+import DescriptionIcon from '@mui/icons-material/Description';
+import PeopleIcon from '@mui/icons-material/People';
+import TimelineIcon from '@mui/icons-material/Timeline';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import api from '../../api';
+
+// 強化分析結果の型定義
+interface EnhancedAnalysisResult {
+  resource_reference_count: {
+    resources: Array<{
+      name: string;
+      type: string;
+      reference_count: number;
+      unique_users: number;
+      unique_days: number;
+      last_referenced: string | null;
+      avg_satisfaction: number;
+      usage_intensity: number;
+    }>;
+    total_references: number;
+    most_referenced: any;
+    least_referenced: any;
+    active_resources: number;
+    summary: string;
+  };
+  category_distribution_analysis: {
+    categories: Array<{
+      category: string;
+      count: number;
+      unique_users: number;
+      unique_days: number;
+      avg_sentiment_score: number;
+      positive_count: number;
+      neutral_count: number;
+      negative_count: number;
+    }>;
+    distribution: Record<string, { count: number; percentage: number }>;
+    bias_analysis: Record<string, {
+      bias_score: number;
+      is_over_represented: boolean;
+      is_under_represented: boolean;
+      sentiment_bias: string;
+    }>;
+    top_categories: any[];
+    bottom_categories: any[];
+    total_questions: number;
+    category_diversity: number;
+    summary: string;
+  };
+  active_user_trends: {
+    daily_trends: Array<{
+      date: string;
+      active_users: number;
+      total_messages: number;
+      unique_names: number;
+      positive_ratio: number;
+    }>;
+    weekly_trends: Array<{
+      week_start: string;
+      week_end: string;
+      avg_active_users: number;
+      total_messages: number;
+      days_with_activity: number;
+    }>;
+    trend_analysis: {
+      direction: string;
+      percentage_change: number;
+      period: string;
+    };
+    peak_day: any;
+    total_unique_users: number;
+    summary: string;
+  };
+  unresolved_and_repeat_analysis: {
+    repeat_questions: Array<{
+      employee_id: string;
+      employee_name: string;
+      first_question: string;
+      repeat_question: string;
+      time_between: string;
+      similarity_score: number;
+      first_sentiment: string;
+      repeat_sentiment: string;
+      category: string;
+    }>;
+    unresolved_patterns: Array<{
+      employee_id: string;
+      employee_name: string;
+      question: string;
+      response: string;
+      timestamp: string;
+      sentiment: string;
+      category: string;
+      response_length: number;
+      issue_type: string;
+    }>;
+    statistics: {
+      total_conversations: number;
+      repeat_questions_count: number;
+      unresolved_patterns_count: number;
+      repeat_rate: number;
+      unresolved_rate: number;
+    };
+    summary: string;
+  };
+  sentiment_analysis: {
+    sentiment_distribution: Record<string, number>;
+    sentiment_by_category: Record<string, Record<string, number>>;
+    temporal_sentiment: Array<{
+      date: string;
+      sentiments: Record<string, number>;
+    }>;
+    overall_sentiment_score: number;
+    total_responses: number;
+    summary: string;
+  };
+  ai_insights: string;
+  analysis_metadata: {
+    generated_at: string;
+    analysis_type: string;
+    company_id?: string;
+  };
+}
 
 interface AnalysisTabProps {
   analysis: AnalysisResult | null;
   isLoading: boolean;
   onRefresh: () => void;
 }
-
-// 短縮されたビジネス分析プロンプト（一時的にコメントアウト）
-// const BUSINESS_ANALYSIS_PROMPT = `あなたは業務改善コンサルタントです。チャットボットの利用データから、実行可能なビジネス改善提案を行ってください。
-// 
-// 以下の6項目で分析し、各項目は300文字以内で簡潔に回答してください：
-// 
-// 【1. 頻出トピック分析】
-// 最多質問パターンと業務課題を特定し、標準化の機会を示してください。
-// 
-// 【2. 効率化機会】  
-// 繰り返し質問から自動化可能な業務を特定し、ROIの高い改善案を提案してください。
-// 
-// 【3. フラストレーション要因】
-// ネガティブ感情の原因と未解決問題のパターンを分析し、優先改善点を明示してください。
-// 
-// 【4. システム改善案】
-// 機能追加・改善の具体提案と管理者ニーズの優先順位を示してください。
-// 
-// 【5. 情報共有課題】
-// 部門間の情報ギャップとドキュメント化が必要な領域を特定してください。
-// 
-// 【6. 実行計画】
-// 短期（1-3ヶ月）・中期（3-6ヶ月）・長期（6ヶ月-1年）の改善提案を投資対効果と共に提示してください。
-// 
-// データに基づく具体的な数値を使用し、実装可能な提案を心がけてください。`;
 
 const AnalysisTab: React.FC<AnalysisTabProps> = ({
   analysis,
@@ -84,100 +183,104 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'md'));
 
-  // 分析モード (標準/ビジネス)（一時的にコメントアウト）
-  // const [analysisMode, setAnalysisMode] = useState<string>('standard');
+  // 分析モード (標準/強化)
+  const [analysisMode, setAnalysisMode] = useState<string>('standard');
+  const [enhancedAnalysis, setEnhancedAnalysis] = useState<EnhancedAnalysisResult | null>(null);
+  const [isEnhancedLoading, setIsEnhancedLoading] = useState<boolean>(false);
 
-  // ビジネス分析の読み込み状態（一時的にコメントアウト）
-  // const [isBusinessAnalysisLoading, setIsBusinessAnalysisLoading] = useState<boolean>(false);
+  // 強化分析データを取得する関数
+  const fetchEnhancedAnalysis = async () => {
+    try {
+      setIsEnhancedLoading(true);
+      console.log('強化分析データ取得開始...');
 
-  // 詳細なビジネス分析を取得する関数（一時的にコメントアウト）
-  // const fetchBusinessAnalysis = async () => {
-  //   if (!analysis) return;
-  // 
-  //   // 既にビジネス分析が完了している場合はスキップ
-  //   if (analysis.business_analysis_completed) {
-  //     setAnalysisMode('business');
-  //     return;
-  //   }
-  // 
-  //   try {
-  //     setIsBusinessAnalysisLoading(true);
-  //     console.log('高精度ビジネス詳細分析を開始...');
-  // 
-  //     // バックエンドAPIに詳細分析をリクエスト
-  //     const response = await api.post('/admin/detailed-analysis', {
-  //       prompt: BUSINESS_ANALYSIS_PROMPT
-  //     });
-  // 
-  //     console.log('ビジネス詳細分析レスポンス:', response.data);
-  // 
-  //     // レスポンスから詳細分析結果とメタデータを取得
-  //     if (response.data && response.data.detailed_analysis) {
-  //       const {
-  //         detailed_topic_analysis,
-  //         efficiency_opportunities,
-  //         frustration_points,
-  //         improvement_suggestions,
-  //         communication_gaps,
-  //         specific_recommendations
-  //       } = response.data.detailed_analysis;
-  // 
-  //       // 分析メタデータも取得
-  //       const metadata = response.data.analysis_metadata || {};
-  // 
-  //       // 分析結果を既存の分析データにマージ
-  //       Object.assign(analysis, {
-  //         detailed_topic_analysis,
-  //         efficiency_opportunities,
-  //         frustration_points,
-  //         improvement_suggestions,
-  //         communication_gaps,
-  //         specific_recommendations,
-  //         business_analysis_completed: true,
-  //         analysis_metadata: metadata
-  //       });
-  // 
-  //       console.log('高精度ビジネス詳細分析結果をマージ完了');
-  //       console.log('分析品質スコア:', metadata.data_quality_score || 'N/A');
-  //       console.log('分析対象会話数:', metadata.total_conversations || 'N/A');
-  //     } else {
-  //       console.error('詳細分析レスポンスの形式が不正です:', response.data);
-  //       throw new Error('詳細分析レスポンスの形式が不正です');
-  //     }
-  // 
-  //     // ビジネス分析モードに切り替え
-  //     setAnalysisMode('business');
-  //   } catch (error: any) {
-  //     console.error('詳細ビジネス分析の取得エラー:', error);
-  //     
-  //     // より詳細なエラーメッセージ
-  //     let errorMessage = '高精度ビジネス詳細分析の取得中にエラーが発生しました。';
-  //     if (error.response) {
-  //       if (error.response.status === 500) {
-  //         errorMessage += '\nサーバーエラーが発生しました。Geminiモデルが初期化されていない可能性があります。';
-  //       } else if (error.response.status === 401) {
-  //         errorMessage += '\n認証エラーです。ログインし直してください。';
-  //       } else {
-  //         errorMessage += `\nエラーコード: ${error.response.status}`;
-  //       }
-  //     } else if (error.request) {
-  //       errorMessage += '\nサーバーに接続できませんでした。';
-  //     }
-  //     
-  //     alert(errorMessage);
-  //   } finally {
-  //     setIsBusinessAnalysisLoading(false);
-  //   }
-  // };
+      const response = await api.get('/admin/enhanced-analysis');
+      console.log('強化分析レスポンス:', response.data);
 
-  // タブの変更ハンドラ（一時的にコメントアウト）
-  // const handleTabChange = (_event: React.SyntheticEvent, newValue: string) => {
-  //   if (newValue === 'business' && !analysis?.business_analysis_completed) {
-  //     fetchBusinessAnalysis();
-  //   } else {
-  //     setAnalysisMode(newValue);
-  //   }
-  // };
+      if (response.data) {
+        setEnhancedAnalysis(response.data);
+        console.log('強化分析データ設定完了');
+      } else {
+        console.error('強化分析レスポンスのデータが空です');
+      }
+    } catch (error: any) {
+      console.error('強化分析データ取得エラー:', error);
+      
+      let errorMessage = '強化分析データの取得中にエラーが発生しました。';
+      if (error.response) {
+        if (error.response.status === 500) {
+          errorMessage += '\nサーバーエラーが発生しました。';
+        } else if (error.response.status === 401) {
+          errorMessage += '\n認証エラーです。ログインし直してください。';
+        } else {
+          errorMessage += `\nエラーコード: ${error.response.status}`;
+        }
+      } else if (error.request) {
+        errorMessage += '\nサーバーに接続できませんでした。';
+      }
+      
+      alert(errorMessage);
+    } finally {
+      setIsEnhancedLoading(false);
+    }
+  };
+
+  // タブの変更ハンドラ
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: string) => {
+    if (newValue === 'enhanced' && !enhancedAnalysis) {
+      fetchEnhancedAnalysis();
+    }
+    setAnalysisMode(newValue);
+  };
+
+  // 資料参照回数チャートのデータを生成
+  const getResourceReferenceChartData = (resources: any[]) => {
+    if (!resources || resources.length === 0) return null;
+
+    const top10Resources = resources.slice(0, 10);
+    
+    return {
+      labels: top10Resources.map(r => r.name.length > 20 ? r.name.substring(0, 20) + '...' : r.name),
+      datasets: [
+        {
+          label: '参照回数',
+          data: top10Resources.map(r => r.reference_count),
+          backgroundColor: 'rgba(54, 162, 235, 0.6)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          borderWidth: 2,
+        },
+      ],
+    };
+  };
+
+  // アクティブユーザー推移チャートのデータを生成
+  const getUserTrendsChartData = (dailyTrends: any[]) => {
+    if (!dailyTrends || dailyTrends.length === 0) return null;
+
+    const last30Days = dailyTrends.slice(-30);
+    
+    return {
+      labels: last30Days.map(d => new Date(d.date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })),
+      datasets: [
+        {
+          label: 'アクティブユーザー数',
+          data: last30Days.map(d => d.active_users),
+          borderColor: 'rgba(75, 192, 192, 1)',
+          backgroundColor: 'rgba(75, 192, 192, 0.2)',
+          fill: true,
+          tension: 0.4,
+        },
+        {
+          label: 'メッセージ数',
+          data: last30Days.map(d => d.total_messages),
+          borderColor: 'rgba(255, 99, 132, 1)',
+          backgroundColor: 'rgba(255, 99, 132, 0.2)',
+          fill: false,
+          yAxisID: 'y1',
+        },
+      ],
+    };
+  };
 
   return (
     <Fade in={true} timeout={400}>
@@ -199,25 +302,27 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                 fontSize: { xs: '1.8rem', sm: '2rem' }
               }}
             />
-            <Typography
-              variant={isMobile ? "h6" : "h5"}
-              sx={{
-                fontWeight: 600,
-                color: 'text.primary'
-              }}
-            >
-              チャット分析ダッシュボード
-            </Typography>
-            <Typography
-              variant="body2"
-              sx={{
-                color: 'text.secondary',
-                mt: 0.5,
-                fontSize: '0.9rem'
-              }}
-            >
-              チャットボットの利用状況を詳細に分析し、ビジネス改善の洞察を提供
-            </Typography>
+            <Box>
+              <Typography
+                variant={isMobile ? "h6" : "h5"}
+                sx={{
+                  fontWeight: 600,
+                  color: 'text.primary'
+                }}
+              >
+                チャット分析ダッシュボード
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: 'text.secondary',
+                  mt: 0.5,
+                  fontSize: '0.9rem'
+                }}
+              >
+                チャットボットの利用状況を詳細に分析し、ビジネス改善の洞察を提供
+              </Typography>
+            </Box>
           </Box>
 
           <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
@@ -251,8 +356,13 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                 <Button
                   variant="contained"
                   color="primary"
-                  onClick={onRefresh}
-                  disabled={isLoading}
+                  onClick={() => {
+                    onRefresh();
+                    if (analysisMode === 'enhanced') {
+                      fetchEnhancedAnalysis();
+                    }
+                  }}
+                  disabled={isLoading || isEnhancedLoading}
                   startIcon={<RefreshIcon />}
                   size={isMobile ? "small" : "medium"}
                   sx={{
@@ -272,50 +382,40 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
           </Box>
         </Box>
 
-        {/* 分析モード切り替えタブ（一時的にコメントアウト） */}
-        {/* {analysis && (
-          <Box sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
-            <Tabs
-              value={analysisMode}
-              onChange={handleTabChange}
-              aria-label="分析モード"
-              variant={isMobile ? "fullWidth" : "standard"}
-            >
-              <Tab
-                label="標準分析"
-                value="standard"
-                icon={<InsightsIcon />}
-                iconPosition="start"
-              />
-              <Tab
-                label="ビジネス詳細分析"
-                value="business"
-                icon={<BusinessIcon />}
-                iconPosition="start"
-                disabled={isLoading || isBusinessAnalysisLoading}
-              />
-            </Tabs>
-          </Box>
-        )} */}
+        {/* 分析モード切り替えタブ */}
+        <Box sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
+          <Tabs
+            value={analysisMode}
+            onChange={handleTabChange}
+            aria-label="分析モード"
+            variant={isMobile ? "fullWidth" : "standard"}
+          >
+            <Tab
+              label="標準分析"
+              value="standard"
+              icon={<InsightsIcon />}
+              iconPosition="start"
+            />
+            <Tab
+              label="強化分析"
+              value="enhanced"
+              icon={<BusinessIcon />}
+              iconPosition="start"
+              disabled={isLoading || isEnhancedLoading}
+            />
+          </Tabs>
+        </Box>
 
-        {isLoading ? (
+        {isLoading || isEnhancedLoading ? (
           <LoadingIndicator />
-        ) : !analysis ? (
+        ) : analysisMode === 'standard' && !analysis ? (
           <EmptyState message="分析データがありません" />
-        ) /* : isBusinessAnalysisLoading ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 8 }}>
-            <CircularProgress size={60} sx={{ mb: 3 }} />
-            <Typography variant="h6" color="text.secondary">
-              ビジネス詳細分析を実行中...
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              チャットデータの分析にはしばらく時間がかかる場合があります
-            </Typography>
-          </Box>
-        ) */ : (
+        ) : analysisMode === 'enhanced' && !enhancedAnalysis ? (
+          <EmptyState message="強化分析データがありません" />
+        ) : (
           <Grid container spacing={3}>
             {/* 標準分析モード */}
-            {/* {analysisMode === 'standard' ? ( */}
+            {analysisMode === 'standard' && analysis ? (
               <>
                 {/* AI洞察カード */}
                 <Grid item xs={12}>
@@ -939,86 +1039,137 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                   </Card>
                 </Grid>
               </>
-            {/* ビジネス詳細分析モード（一時的にコメントアウト） */}
-            {/* ) : (
-              <Grid item xs={12}>
-                <Card
-                  elevation={0}
-                  sx={{
-                    mb: 3,
-                    borderRadius: 2,
-                    border: '1px solid rgba(25, 118, 210, 0.2)',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    background: 'linear-gradient(to right, rgba(25, 118, 210, 0.03), rgba(25, 118, 210, 0.01))',
-                    '&::before': {
-                      content: '""',
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      height: '4px',
-                      background: 'linear-gradient(90deg, #1976d2, #42a5f5)',
-                      opacity: 0.8
-                    }
-                  }}
-                >
-                  <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                      <BusinessIcon
-                        sx={{
-                          mr: 1.5,
-                          color: 'primary.main',
-                          fontSize: '1.5rem'
-                        }}
-                      />
-                      <Typography
-                        variant="h6"
-                        sx={{
-                          fontWeight: 600,
-                          color: 'primary.main',
-                          display: 'flex',
-                          alignItems: 'center'
-                        }}
-                      >
-                        ビジネス詳細分析レポート
-                      </Typography>
-                    </Box>
-                    <Divider sx={{ mb: 2 }} />
-
-                    ビジネス分析セクション
-                    {[
-                      { title: '1. 頻出トピック/質問とその傾向分析', content: analysis.detailed_topic_analysis },
-                      { title: '2. 業務効率化の機会', content: analysis.efficiency_opportunities },
-                      { title: '3. 社員のフラストレーションポイント', content: analysis.frustration_points },
-                      { title: '4. 製品/サービス改善の示唆', content: analysis.improvement_suggestions },
-                      { title: '5. コミュニケーションギャップ', content: analysis.communication_gaps },
-                      { title: '具体的な改善提案', content: analysis.specific_recommendations }
-                    ].map((section, index) => (
-                      <Accordion
-                        key={index}
-                        defaultExpanded={index === 0}
-                        sx={{
-                          mb: 1.5,
-                          boxShadow: 'none',
-                          border: '1px solid rgba(0, 0, 0, 0.08)',
-                          '&:before': { display: 'none' },
-                          borderRadius: '8px !important',
-                          overflow: 'hidden'
-                        }}
-                      >
-                        <AccordionSummary
-                          expandIcon={<ExpandMoreIcon />}
+            ) : analysisMode === 'enhanced' && enhancedAnalysis ? (
+              <>
+                {/* Gemini AI洞察カード */}
+                <Grid item xs={12}>
+                  <Card
+                    elevation={0}
+                    sx={{
+                      mb: 3,
+                      borderRadius: 2,
+                      border: '1px solid rgba(25, 118, 210, 0.2)',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      background: 'linear-gradient(to right, rgba(25, 118, 210, 0.03), rgba(25, 118, 210, 0.01))',
+                      '&::before': {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '4px',
+                        background: 'linear-gradient(90deg, #1976d2, #42a5f5)',
+                        opacity: 0.8
+                      }
+                    }}
+                  >
+                    <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                        <BusinessIcon
                           sx={{
-                            backgroundColor: 'rgba(0, 0, 0, 0.02)',
-                            borderBottom: '1px solid rgba(0, 0, 0, 0.08)',
-                            '&.Mui-expanded': {
-                              minHeight: 48,
-                            },
+                            mr: 1.5,
+                            color: 'primary.main',
+                            fontSize: '1.5rem'
+                          }}
+                        />
+                        <Typography
+                          variant="h6"
+                          sx={{
+                            fontWeight: 600,
+                            color: 'primary.main',
+                            display: 'flex',
+                            alignItems: 'center'
                           }}
                         >
+                          Gemini AI による強化分析レポート
+                        </Typography>
+                      </Box>
+                      <Divider sx={{ mb: 2 }} />
+                      <Paper
+                        elevation={0}
+                        sx={{
+                          p: 2,
+                          backgroundColor: alpha(theme.palette.background.paper, 0.7),
+                          borderRadius: 1.5,
+                          border: '1px solid rgba(0, 0, 0, 0.05)'
+                        }}
+                      >
+                        <Typography
+                          variant="body1"
+                          sx={{
+                            whiteSpace: 'pre-line',
+                            lineHeight: 1.6,
+                            color: 'text.primary'
+                          }}
+                        >
+                          {enhancedAnalysis.ai_insights}
+                        </Typography>
+                      </Paper>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                {/* 強化分析セクション */}
+                {[
+                  { 
+                    title: '1. 資料の参照回数分析', 
+                    icon: <DescriptionIcon />,
+                    content: enhancedAnalysis.resource_reference_count,
+                    color: 'rgba(54, 162, 235, 0.1)'
+                  },
+                  { 
+                    title: '2. 質問カテゴリ分布と偏り', 
+                    icon: <CategoryIcon />,
+                    content: enhancedAnalysis.category_distribution_analysis,
+                    color: 'rgba(255, 99, 132, 0.1)'
+                  },
+                  { 
+                    title: '3. アクティブユーザー推移', 
+                    icon: <TimelineIcon />,
+                    content: enhancedAnalysis.active_user_trends,
+                    color: 'rgba(75, 192, 192, 0.1)'
+                  },
+                  { 
+                    title: '4. 未解決・再質問の傾向分析', 
+                    icon: <HelpOutlineIcon />,
+                    content: enhancedAnalysis.unresolved_and_repeat_analysis,
+                    color: 'rgba(255, 159, 64, 0.1)'
+                  },
+                  { 
+                    title: '5. 詳細感情分析', 
+                    icon: <MoodIcon />,
+                    content: enhancedAnalysis.sentiment_analysis,
+                    color: 'rgba(153, 102, 255, 0.1)'
+                  }
+                ].map((section, index) => (
+                  <Grid item xs={12} key={index}>
+                    <Accordion
+                      defaultExpanded={index === 0}
+                      sx={{
+                        mb: 1.5,
+                        boxShadow: 'none',
+                        border: '1px solid rgba(0, 0, 0, 0.08)',
+                        '&:before': { display: 'none' },
+                        borderRadius: '8px !important',
+                        overflow: 'hidden'
+                      }}
+                    >
+                      <AccordionSummary
+                        expandIcon={<ExpandMoreIcon />}
+                        sx={{
+                          backgroundColor: section.color,
+                          borderBottom: '1px solid rgba(0, 0, 0, 0.08)',
+                          '&.Mui-expanded': {
+                            minHeight: 48,
+                          },
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          {section.icon}
                           <Typography
                             sx={{
+                              ml: 1.5,
                               fontWeight: 600,
                               color: 'text.primary',
                               fontSize: { xs: '0.9rem', sm: '1rem' }
@@ -1026,8 +1177,74 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                           >
                             {section.title}
                           </Typography>
-                        </AccordionSummary>
-                        <AccordionDetails sx={{ p: { xs: 2, sm: 3 } }}>
+                        </Box>
+                      </AccordionSummary>
+                      <AccordionDetails sx={{ p: { xs: 2, sm: 3 } }}>
+                        {/* セクション別の詳細表示 */}
+                        {index === 0 && (
+                          <Box>
+                            <Typography variant="body1" sx={{ mb: 2 }}>
+                              {section.content.summary}
+                            </Typography>
+                            {section.content.resources.length > 0 && (
+                              <Box sx={{ height: 400, mt: 2 }}>
+                                <Bar
+                                  data={getResourceReferenceChartData(section.content.resources)}
+                                  options={{
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: {
+                                      title: {
+                                        display: true,
+                                        text: '資料別参照回数'
+                                      }
+                                    }
+                                  }}
+                                />
+                              </Box>
+                            )}
+                          </Box>
+                        )}
+                        {index === 2 && (
+                          <Box>
+                            <Typography variant="body1" sx={{ mb: 2 }}>
+                              {section.content.summary}
+                            </Typography>
+                            {section.content.daily_trends.length > 0 && (
+                              <Box sx={{ height: 400, mt: 2 }}>
+                                <Line
+                                  data={getUserTrendsChartData(section.content.daily_trends)}
+                                  options={{
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: {
+                                      title: {
+                                        display: true,
+                                        text: 'アクティブユーザー数推移（過去30日）'
+                                      }
+                                    },
+                                    scales: {
+                                      y: {
+                                        type: 'linear',
+                                        display: true,
+                                        position: 'left',
+                                      },
+                                      y1: {
+                                        type: 'linear',
+                                        display: true,
+                                        position: 'right',
+                                        grid: {
+                                          drawOnChartArea: false,
+                                        },
+                                      },
+                                    }
+                                  }}
+                                />
+                              </Box>
+                            )}
+                          </Box>
+                        )}
+                        {(index === 1 || index === 3 || index === 4) && (
                           <Typography
                             variant="body1"
                             sx={{
@@ -1035,15 +1252,15 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                               lineHeight: 1.6
                             }}
                           >
-                            {section.content || '分析データがありません'}
+                            {section.content.summary || 'データを解析中です...'}
                           </Typography>
-                        </AccordionDetails>
-                      </Accordion>
-                    ))}
-                  </CardContent>
-                </Card>
-              </Grid>
-            ) */}
+                        )}
+                      </AccordionDetails>
+                    </Accordion>
+                  </Grid>
+                ))}
+              </>
+            ) : null}
           </Grid>
         )}
       </Box>

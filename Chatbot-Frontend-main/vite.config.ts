@@ -16,25 +16,39 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: "dist", // ビルド出力先をバックエンドの静的ファイルディレクトリに設定
+    outDir: "dist",
     emptyOutDir: true,
-    assetsDir: "assets", // アセットディレクトリ名を明示的に指定
-    chunkSizeWarningLimit: 1000, // チャンクサイズ警告の閾値を1000kBに設定
+    assetsDir: "assets",
+    chunkSizeWarningLimit: 1000,
+    sourcemap: false,
+    minify: "esbuild",
+    target: "es2020",
     rollupOptions: {
       output: {
         manualChunks: {
-          // 大きなライブラリを別チャンクに分離
           vendor: ['react', 'react-dom'],
           mui: ['@mui/material', '@mui/icons-material', '@emotion/react', '@emotion/styled'],
           charts: ['chart.js', 'react-chartjs-2'],
           utils: ['axios', 'react-router-dom', 'react-markdown']
+        },
+        chunkFileNames: (chunkInfo) => {
+          const facadeModuleId = chunkInfo.facadeModuleId ? chunkInfo.facadeModuleId.split('/').pop().replace(/\.[^/.]+$/, "") : "chunk";
+          return `assets/${facadeModuleId}-[hash].js`;
         }
       }
     }
   },
-  base: "/", // ベースパスを設定
+  base: "/",
   define: {
-    // 本番環境でのフォールバック設定
     __PROD_API_URL__: JSON.stringify("/chatbot/api"),
+    global: "globalThis",
   },
+  resolve: {
+    alias: {
+      "@": resolve(__dirname, "src"),
+    },
+  },
+  esbuild: {
+    logOverride: { "this-is-undefined-in-esm": "silent" }
+  }
 });

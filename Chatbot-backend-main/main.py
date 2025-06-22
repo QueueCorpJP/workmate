@@ -1248,6 +1248,88 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
             }
         }
 
+# 強化分析エンドポイント
+@app.get("/chatbot/api/admin/enhanced-analysis")
+async def admin_enhanced_analysis(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
+    """強化された分析機能（sumry.mdの要求項目に対応）"""
+    try:
+        print(f"🔍 [ENHANCED ANALYSIS] 強化分析開始")
+        print(f"🔍 [ENHANCED ANALYSIS] current_user: {current_user}")
+        
+        # ユーザー情報の取得
+        is_admin = current_user["role"] == "admin"
+        is_user = current_user["role"] == "user"
+        is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
+        
+        print(f"🔍 [ENHANCED ANALYSIS] 権限チェック:")
+        print(f"  - is_special_admin: {is_special_admin}")
+        print(f"  - is_admin: {is_admin}")
+        print(f"  - is_user: {is_user}")
+        
+        # 会社IDの取得
+        company_id = None
+        if not is_special_admin:
+            company_id = current_user.get("company_id")
+            print(f"🔍 [ENHANCED ANALYSIS] company_id: {company_id}")
+        
+        # 強化分析データを取得
+        from modules.analytics import get_enhanced_analytics, generate_gemini_insights
+        
+        print(f"🔍 [ENHANCED ANALYSIS] 分析データ取得開始")
+        analytics_data = get_enhanced_analytics(db, company_id)
+        print(f"🔍 [ENHANCED ANALYSIS] 分析データ取得完了")
+        
+        # Geminiによる洞察生成
+        print(f"🔍 [ENHANCED ANALYSIS] Gemini洞察生成開始")
+        ai_insights = await generate_gemini_insights(analytics_data, db)
+        analytics_data["ai_insights"] = ai_insights
+        print(f"🔍 [ENHANCED ANALYSIS] Gemini洞察生成完了")
+        
+        print(f"🔍 [ENHANCED ANALYSIS] 分析完了")
+        return analytics_data
+        
+    except Exception as e:
+        import traceback
+        print(f"強化分析エラー: {str(e)}")
+        print(traceback.format_exc())
+        
+        # エラーの場合でも基本的な情報を返す
+        return {
+            "resource_reference_count": {
+                "resources": [],
+                "total_references": 0,
+                "summary": f"分析エラー: {str(e)}"
+            },
+            "category_distribution_analysis": {
+                "categories": [],
+                "distribution": {},
+                "bias_analysis": {},
+                "summary": f"分析エラー: {str(e)}"
+            },
+            "active_user_trends": {
+                "daily_trends": [],
+                "weekly_trends": [],
+                "summary": f"分析エラー: {str(e)}"
+            },
+            "unresolved_and_repeat_analysis": {
+                "repeat_questions": [],
+                "unresolved_patterns": [],
+                "summary": f"分析エラー: {str(e)}"
+            },
+            "sentiment_analysis": {
+                "sentiment_distribution": {},
+                "sentiment_by_category": {},
+                "temporal_sentiment": [],
+                "summary": f"分析エラー: {str(e)}"
+            },
+            "ai_insights": f"AI分析中にエラーが発生しました: {str(e)}",
+            "analysis_metadata": {
+                "generated_at": datetime.datetime.now().isoformat(),
+                "analysis_type": "enhanced_error",
+                "error": str(e)
+            }
+        }
+
 # 社員詳細情報を取得するエンドポイント
 @app.get("/chatbot/api/admin/employee-details/{employee_id}", response_model=List[ChatHistoryItem])
 async def admin_get_employee_details(employee_id: str, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
@@ -2826,3 +2908,5 @@ if __name__ == "__main__":
     from modules.config import get_port
     port = get_port()
     uvicorn.run(app, host="0.0.0.0", port=port, timeout_keep_alive=600)
+
+

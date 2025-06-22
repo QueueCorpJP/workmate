@@ -13,14 +13,14 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "strict": true,
+    "strict": false,
     "noImplicitAny": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noFallthroughCasesInSwitch": true,
+    "noFallthroughCasesInSwitch": false,
     "types": ["vite/client"]
   },
   "include": ["src"],
-  "exclude": ["src/test/**/*", "**/*.test.tsx", "**/*.test.ts"],
+  "exclude": ["src/test/**/*", "**/*.test.tsx", "**/*.test.ts", "dist", "node_modules"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

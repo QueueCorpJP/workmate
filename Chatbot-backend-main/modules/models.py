@@ -66,6 +66,63 @@ class AnalysisResult(BaseModel):
     common_questions: List[Dict[str, Any]]
     insights: str
 
+# 強化分析関連モデル
+class EnhancedAnalysisResult(BaseModel):
+    resource_reference_count: Dict[str, Any]
+    category_distribution_analysis: Dict[str, Any]
+    active_user_trends: Dict[str, Any]
+    unresolved_and_repeat_analysis: Dict[str, Any]
+    sentiment_analysis: Dict[str, Any]
+    ai_insights: Optional[str] = None
+    analysis_metadata: Dict[str, Any]
+
+# 資料参照分析結果
+class ResourceReferenceItem(BaseModel):
+    name: str
+    type: str
+    reference_count: int
+    unique_users: int
+    unique_days: int
+    last_referenced: Optional[str] = None
+    avg_satisfaction: float
+    usage_intensity: float
+
+class ResourceReferenceAnalysis(BaseModel):
+    resources: List[ResourceReferenceItem]
+    total_references: int
+    most_referenced: Optional[ResourceReferenceItem] = None
+    least_referenced: Optional[ResourceReferenceItem] = None
+    active_resources: int
+    summary: str
+
+# アクティブユーザー推移分析結果
+class DailyTrend(BaseModel):
+    date: str
+    active_users: int
+    total_messages: int
+    unique_names: int
+    positive_ratio: float
+
+class WeeklyTrend(BaseModel):
+    week_start: str
+    week_end: str
+    avg_active_users: float
+    total_messages: int
+    days_with_activity: int
+
+class TrendAnalysis(BaseModel):
+    direction: str
+    percentage_change: float
+    period: str
+
+class ActiveUserTrends(BaseModel):
+    daily_trends: List[DailyTrend]
+    weekly_trends: List[WeeklyTrend]
+    trend_analysis: TrendAnalysis
+    peak_day: Optional[DailyTrend] = None
+    total_unique_users: int
+    summary: str
+
 # 社員利用状況関連モデル
 class EmployeeUsageItem(BaseModel):
     employee_id: str
