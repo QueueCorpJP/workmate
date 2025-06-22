@@ -55,7 +55,7 @@ def get_db_params():
 def get_port():
     """サーバーのポート番号を取得します"""
     # 環境変数PORTから取得、未設定の場合はデフォルト値を使用
-    port_env = os.getenv("PORT", "8085")  # デフォルト8085
+    port_env = os.getenv("PORT", "8083")  # デフォルト8083
     
     try:
         port = int(port_env)
