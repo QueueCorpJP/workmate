@@ -61,7 +61,9 @@
 
 #### 1. ログイン
 ```
-URL: https://workmatechat.com
+本番環境URL: https://workmatechat.com
+ローカル開発URL: http://localhost:3025
+
 デフォルト管理者アカウント:
 - メールアドレス: queue@queuefood.co.jp
 - パスワード: John.Queue2025
@@ -182,7 +184,9 @@ URL: https://workmatechat.com
 
 #### 1. ログイン方法
 ```
-URL: https://workmatechat.com
+本番環境URL: https://workmatechat.com
+ローカル開発URL: http://localhost:3025
+
 管理者から発行されたアカウント情報でログイン:
 - メールアドレス: （管理者から通知）
 - パスワード: （管理者から通知）

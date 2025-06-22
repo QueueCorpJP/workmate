@@ -10,6 +10,7 @@ module.exports = {
     max_memory_restart: '1G',
     env: {
       NODE_ENV: 'production',
+      ENVIRONMENT: 'production',
       PORT: '8083'
     },
     error_file: '/home/ec2-user/.pm2/logs/chatbot-backend-error.log',
