@@ -83,9 +83,8 @@ jobs:
           
           # 既存ファイルのバックアップ
           echo "💾 既存ファイルバックアップ..."
-          if [ -f ".env" ]; then
-            cp .env .env.backup
-            echo "環境ファイルをバックアップしました"
+          if [ -f .env ]; then
+            cp .env .env.backup 2>/dev/null || echo "⚠️ .env.backup 作成に失敗（処理継続）"
           fi
           
           # 新しいファイルを展開

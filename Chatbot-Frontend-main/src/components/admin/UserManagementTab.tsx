@@ -648,7 +648,7 @@ const PlanHistorySection: React.FC = () => {
     const weeks = Math.floor(((durationDays % 365) % 30) / 7);
     const days = ((durationDays % 365) % 30) % 7;
     
-    const parts = [];
+    const parts: string[] = [];
     if (years > 0) parts.push(`${years}年`);
     if (months > 0) parts.push(`${months}ヶ月`);
     if (weeks > 0) parts.push(`${weeks}週間`);

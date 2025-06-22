@@ -252,7 +252,7 @@ const AdminPanel: React.FC = () => {
           has_more: false
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("チャット履歴の取得に失敗しました:", error);
       alert(
         "チャット履歴の取得に失敗しました。バックエンドサーバーが起動しているか確認してください。"
@@ -461,7 +461,7 @@ const AdminPanel: React.FC = () => {
         console.log("🔍 [FRONTEND DEBUG] レスポンス検証OK");
         console.log("🔍 [FRONTEND DEBUG] リソース配列の長さ:", response.data.resources.length);
         console.log("🔍 [FRONTEND DEBUG] リソース配列詳細:");
-        response.data.resources.forEach((resource, index) => {
+        response.data.resources.forEach((resource: Resource, index: number) => {
           console.log(`  [${index + 1}] ${JSON.stringify(resource, null, 2)}`);
         });
         
@@ -479,13 +479,13 @@ const AdminPanel: React.FC = () => {
         );
         setResources([]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("🔍 [FRONTEND DEBUG] fetchResourcesエラー:", error);
       console.error("🔍 [FRONTEND DEBUG] エラー詳細:", {
-        message: error.message,
-        stack: error.stack,
-        response: error.response,
-        request: error.request
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        response: error && typeof error === 'object' && 'response' in error ? (error as any).response : undefined,
+        request: error && typeof error === 'object' && 'request' in error ? (error as any).request : undefined
       });
       console.error("リソースの取得に失敗しました:", error);
       // エラーメッセージを表示
