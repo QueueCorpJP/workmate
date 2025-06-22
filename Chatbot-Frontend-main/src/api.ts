@@ -2,6 +2,11 @@ import axios from "axios";
 
 // 環境を判定する関数
 const getEnvironment = () => {
+  // ホスト名で本番環境を判定
+  if (window.location.hostname === "workmatechat.com") {
+    return "production";
+  }
+
   // NODE_ENVまたはVITE_ENVIRONMENTをチェック
   const nodeEnv = import.meta.env.NODE_ENV?.toLowerCase();
   const viteEnv = import.meta.env.VITE_ENVIRONMENT?.toLowerCase();
