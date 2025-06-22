@@ -67,7 +67,7 @@ def get_environment():
         print("✅ PM2環境を検出 -> production")
         return "production"
 
-    # 環境変数NODE_ENVまたはENVIRONMENTをチェック
+    # 環境変数NODE_ENVまたはENVIRONMENTをチェッ
     node_env = os.getenv("NODE_ENV", "").lower()
     env_var = os.getenv("ENVIRONMENT", "").lower()
     print(f"🔍 NODE_ENV: {node_env}")
