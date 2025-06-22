@@ -43,6 +43,50 @@ def safe_safe_print(text):
     """Windows環境でのUnicode文字エンコーディング問題を回避する安全なsafe_print関数"""
     safe_print(text)
 
+def simple_rag_search(knowledge_text: str, query: str, max_results: int = 5) -> str:
+    """
+    超簡単RAG風検索 - BM25Sを使って関連部分だけを抽出
+    """
+    if not knowledge_text or not query:
+        return knowledge_text
+    
+    try:
+        import bm25s
+        import re
+        
+        # テキストを段落に分割
+        paragraphs = re.split(r'\n\s*\n', knowledge_text)
+        paragraphs = [p.strip() for p in paragraphs if len(p.strip()) > 50]
+        
+        if len(paragraphs) < 2:
+            return knowledge_text[:100000]  # 段落が少ない場合はそのまま
+        
+        # BM25S検索エンジンを作成
+        corpus_tokens = bm25s.tokenize(paragraphs)
+        retriever = bm25s.BM25()
+        retriever.index(corpus_tokens)
+        
+        # 質問をトークン化して検索
+        query_tokens = bm25s.tokenize([query])
+        results, scores = retriever.retrieve(query_tokens, k=min(max_results, len(paragraphs)))
+        
+        # 関連する段落を取得
+        relevant_paragraphs = []
+        for i in range(results.shape[1]):
+            if i < len(paragraphs):
+                paragraph_idx = results[0, i]
+                if paragraph_idx < len(paragraphs):
+                    relevant_paragraphs.append(paragraphs[paragraph_idx])
+        
+        result = '\n\n'.join(relevant_paragraphs)
+        safe_print(f"🎯 RAG検索完了: {len(relevant_paragraphs)}個の関連段落、{len(result)}文字 (元: {len(knowledge_text)}文字)")
+        return result
+        
+    except Exception as e:
+        safe_print(f"RAG検索エラー: {str(e)}")
+        # エラーの場合は最初の部分を返す
+        return knowledge_text[:100000]
+
 # Geminiモデル（グローバル変数）
 model = None
 
@@ -363,6 +407,10 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
         # safe_print(f"知識ベースの生データ長: {len(knowledge_base.raw_text) if knowledge_base.raw_text else 0}")
         safe_print(f"アクティブなソース: {active_sources}")
         active_knowledge_text = await get_active_resources_content_by_ids(active_sources, db)
+        
+        # RAG風検索で関連部分のみを抽出（超高速化）
+        if active_knowledge_text and len(active_knowledge_text) > 50000:
+            active_knowledge_text = simple_rag_search(active_knowledge_text, message_text, max_results=8)
         
         # 知識ベースのサイズを制限（API制限対応のため一時的に復活）
         MAX_KNOWLEDGE_SIZE = 300000  # 30万文字制限（API制限対応）
@@ -882,6 +930,11 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
             }
         
         safe_print(f"📊 取得した知識ベース: {len(active_knowledge_text)} 文字")
+        
+        # RAG風検索で関連部分のみを抽出（チャンク化前の事前フィルタリング）
+        if active_knowledge_text and len(active_knowledge_text) > 100000:
+            active_knowledge_text = simple_rag_search(active_knowledge_text, message_text, max_results=15)
+            safe_print(f"📊 RAG検索後: {len(active_knowledge_text)} 文字")
         
         # アクティブなリソースの情報とSpecial指示を取得
         special_instructions = []

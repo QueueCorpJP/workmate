@@ -1510,32 +1510,32 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                 
                 return (
                   <>
-                    <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
+              <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
                       社員アカウント ({employees.length}名)
-                    </Typography>
+              </Typography>
               
                     {employees.length > 0 ? (
-                      <Grid container spacing={2}>
+                <Grid container spacing={2}>
                         {employees.map((employee) => (
-                          <Grid item xs={12} sm={6} key={employee.id}>
-                            <Card sx={{ 
-                              transition: 'all 0.2s',
-                              '&:hover': { 
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                              }
-                            }}>
-                              <CardContent sx={{ p: 2 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                                  <Avatar sx={{ width: 40, height: 40, bgcolor: 'grey.400' }}>
-                                    {(employee.name || employee.email).charAt(0).toUpperCase()}
-                                  </Avatar>
-                                  <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                                    <Typography variant="body1" sx={{ fontWeight: 600 }} noWrap>
-                                          {employee.name || employee.email.split('@')[0]}
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary" noWrap>
-                                      {employee.email}
-                                    </Typography>
+                    <Grid item xs={12} sm={6} key={employee.id}>
+                      <Card sx={{ 
+                        transition: 'all 0.2s',
+                        '&:hover': { 
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                        }
+                      }}>
+                        <CardContent sx={{ p: 2 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                            <Avatar sx={{ width: 40, height: 40, bgcolor: 'grey.400' }}>
+                              {(employee.name || employee.email).charAt(0).toUpperCase()}
+                            </Avatar>
+                            <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                              <Typography variant="body1" sx={{ fontWeight: 600 }} noWrap>
+                                      {employee.name || employee.email.split('@')[0]}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary" noWrap>
+                                {employee.email}
+                              </Typography>
                                     <Chip
                                       label="社員"
                                       size="small"
@@ -1543,81 +1543,81 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                                       variant="outlined"
                                       sx={{ mt: 0.5 }}
                                     />
-                                  </Box>
-                                </Box>
-                                
-                                <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <Typography variant="caption" color="text.secondary">メッセージ数:</Typography>
-                                    <Typography variant="caption" sx={{ fontWeight: 500 }}>
-                                      {employee.message_count || 0}回
-                                    </Typography>
-                                  </Box>
-                                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <Typography variant="caption" color="text.secondary">作成日:</Typography>
-                                    <Typography variant="caption" sx={{ fontWeight: 500 }}>
-                                      {new Date(employee.created_at).toLocaleDateString('ja-JP')}
-                                    </Typography>
-                                  </Box>
-                                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <Typography variant="caption" color="text.secondary">最終利用:</Typography>
-                                    <Typography variant="caption" sx={{ fontWeight: 500 }}>
-                                      {employee.last_activity 
-                                        ? new Date(employee.last_activity).toLocaleDateString('ja-JP')
-                                        : '活動なし'}
-                                    </Typography>
-                                  </Box>
-                                  {!employee.usage_limits?.is_unlimited && (
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                      <Typography variant="caption" color="text.secondary">利用制限:</Typography>
-                                      <Typography variant="caption" sx={{ fontWeight: 500 }}>
-                                        {employee.usage_limits?.questions_used || 0}/{employee.usage_limits?.questions_limit || 0}
-                                      </Typography>
-                                    </Box>
-                                  )}
-                                </Box>
-                                
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <Chip
-                                    label={employee.usage_limits?.is_unlimited ? "本番版" : "デモ版"}
-                                    color={employee.usage_limits?.is_unlimited ? "success" : "warning"}
-                                    size="small"
-                                  />
-                                  <Box sx={{ display: 'flex', gap: 1 }}>
-                                    <Tooltip title={`${employee.usage_limits?.is_unlimited ? 'デモ版' : '本番版'}に切り替え`}>
-                                      <IconButton
-                                        size="small"
-                                        onClick={() => handleToggleDemo(employee)}
-                                      >
-                                        <EditIcon fontSize="small" />
-                                      </IconButton>
-                                    </Tooltip>
-                                    <Tooltip title="プラン変更履歴を表示">
-                                      <IconButton
-                                        size="small"
-                                        onClick={() => handleOpenPlanHistory(employee)}
-                                      >
-                                        <HistoryIcon fontSize="small" />
-                                      </IconButton>
-                                    </Tooltip>
-                                  </Box>
-                                </Box>
-                              </CardContent>
-                            </Card>
-                          </Grid>
-                        ))}
-                      </Grid>
-                    ) : (
-                      <Box sx={{ textAlign: 'center', py: 4 }}>
-                        <PeopleIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
-                        <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
-                          社員アカウントがありません
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          この会社にはまだ社員アカウントが作成されていません。
-                        </Typography>
-                      </Box>
-                    )}
+                            </Box>
+                          </Box>
+                          
+                          <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                              <Typography variant="caption" color="text.secondary">メッセージ数:</Typography>
+                              <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                                {employee.message_count || 0}回
+                              </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                              <Typography variant="caption" color="text.secondary">作成日:</Typography>
+                              <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                                {new Date(employee.created_at).toLocaleDateString('ja-JP')}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                              <Typography variant="caption" color="text.secondary">最終利用:</Typography>
+                              <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                                {employee.last_activity 
+                                  ? new Date(employee.last_activity).toLocaleDateString('ja-JP')
+                                  : '活動なし'}
+                              </Typography>
+                            </Box>
+                            {!employee.usage_limits?.is_unlimited && (
+                              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <Typography variant="caption" color="text.secondary">利用制限:</Typography>
+                                <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                                  {employee.usage_limits?.questions_used || 0}/{employee.usage_limits?.questions_limit || 0}
+                                </Typography>
+                              </Box>
+                            )}
+                          </Box>
+                          
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Chip
+                              label={employee.usage_limits?.is_unlimited ? "本番版" : "デモ版"}
+                              color={employee.usage_limits?.is_unlimited ? "success" : "warning"}
+                              size="small"
+                            />
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <Tooltip title={`${employee.usage_limits?.is_unlimited ? 'デモ版' : '本番版'}に切り替え`}>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleToggleDemo(employee)}
+                                >
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="プラン変更履歴を表示">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleOpenPlanHistory(employee)}
+                                >
+                                  <HistoryIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
+                          </Box>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  ))}
+                </Grid>
+              ) : (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <PeopleIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+                  <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+                    社員アカウントがありません
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    この会社にはまだ社員アカウントが作成されていません。
+                  </Typography>
+                </Box>
+              )}
                   </>
                 );
               })()}
