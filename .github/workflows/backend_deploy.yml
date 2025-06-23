@@ -12,10 +12,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Free up disk space
+      run: |
+        echo "🧹 ディスクスペースを確保しています..."
+        echo "初期のディスク使用状況:"
+        df -h
+        
+        # 不要なツールとキャッシュを削除
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /usr/local/share/chromium
+        sudo rm -rf /usr/share/swift
+        
+        # Dockerイメージのクリーンアップ
+        docker rmi $(docker image ls -q) || true
+        
+        # APTキャッシュのクリーンアップ
+        sudo apt-get clean
+        sudo apt-get autoremove -y
+        
+        echo "クリーンアップ後のディスク使用状況:"
+        df -h
+        
     - name: Checkout
       uses: actions/checkout@v3
 
-    - name: Test workflow
+    - name: Test workflow and clean up
       run: |
         echo "🚀 GitHub Actionsワークフローが動作しています"
         echo "📂 ワークスペース内容:"
@@ -28,6 +53,17 @@ jobs:
         else
           echo "❌ Chatbot-backend-mainディレクトリが見つかりません"
         fi
+        
+        echo "🧹 不要なディレクトリを削除してディスクスペースを確保..."
+        # フロントエンドディレクトリを削除（バックエンドデプロイには不要）
+        rm -rf Chatbot-Frontend-main/
+        rm -rf src/
+        rm -rf public/
+        rm -rf scripts/
+        rm -rf supabase/
+        
+        echo "最終的なディスク使用状況:"
+        df -h
 
     - name: Setup SSH
       run: |
@@ -49,6 +85,14 @@ jobs:
         echo "📦 バックエンドファイル準備..."
         cd Chatbot-backend-main
         
+        # GitHub Actions環境でのディスクスペース確保のため、
+        # テスト関連ファイルを除外
+        rm -rf tests/
+        rm -f requirements-test.txt
+        rm -rf venv/
+        rm -rf __pycache__/
+        rm -f *.log
+        
         # 不要なファイルを除外してアーカイブ作成
         tar --exclude='.git' \
             --exclude='__pycache__' \
@@ -62,6 +106,8 @@ jobs:
             --exclude='coverage' \
             --exclude='.pytest_cache' \
             --exclude='.coverage' \
+            --exclude='tests' \
+            --exclude='requirements-test.txt' \
             -czf ../backend.tar.gz .
         
         echo "📦 アーカイブ内容確認:"
@@ -235,16 +281,58 @@ jobs:
               echo "📦 パッケージインストール実行..."
               echo "⏱️ 初回または変更があるため、パッケージを再インストールします（数分かかる場合があります）"
               
-              # pipキャッシュディレクトリの設定
+              # pipキャッシュディレクトリの設定とクリーンアップ
               export PIP_CACHE_DIR="$HOME/.cache/pip"
+              echo "🧹 pipキャッシュをクリーンアップ..."
+              rm -rf $PIP_CACHE_DIR/*
               mkdir -p $PIP_CACHE_DIR
               echo "💾 pipキャッシュディレクトリ: $PIP_CACHE_DIR"
               
               # インストール時間計測開始
               INSTALL_START=$(date +%s)
               
+              # pipアップグレードとホイールインストール
               $PIP_CMD install --upgrade pip setuptools wheel
-              $PIP_CMD install --timeout 300 --retries 3 --cache-dir $PIP_CACHE_DIR -r requirements.txt
+              
+              # 大きなパッケージを個別にインストール（エラー時も続行）
+              echo "📦 大きなパッケージを個別にインストール..."
+              
+              # 必須パッケージを最初にインストール
+              $PIP_CMD install --no-cache-dir fastapi==0.109.2 uvicorn==0.27.1 python-multipart python-dotenv==1.0.1
+              
+              # Google関連パッケージ
+              $PIP_CMD install --no-cache-dir google-generativeai==0.3.2 google-api-python-client google-auth-httplib2 google-auth-oauthlib google-auth
+              
+              # データベース関連
+              $PIP_CMD install --no-cache-dir asyncpg==0.30.0 psycopg2-binary==2.9.10 supabase
+              
+              # ファイル処理関連（サイズが大きいものは個別に）
+              $PIP_CMD install --no-cache-dir PyPDF2==3.0.1 beautifulsoup4==4.12.2 aiofiles==24.1.0 requests==2.31.0
+              
+              # 画像処理関連（オプショナル）
+              $PIP_CMD install --no-cache-dir pillow || echo "⚠️ Pillowのインストールに失敗しました（続行）"
+              $PIP_CMD install --no-cache-dir pymupdf==1.23.7 || echo "⚠️ PyMuPDFのインストールに失敗しました（続行）"
+              $PIP_CMD install --no-cache-dir pdf2image==1.16.3 || echo "⚠️ pdf2imageのインストールに失敗しました（続行）"
+              
+              # AWS関連
+              $PIP_CMD install --no-cache-dir boto3==1.37.22 || echo "⚠️ boto3のインストールに失敗しました（続行）"
+              
+              # オプショナルなパッケージ（エラーを無視）
+              $PIP_CMD install --no-cache-dir youtube_transcript_api || echo "⚠️ youtube_transcript_apiのインストールに失敗しました（続行）"
+              $PIP_CMD install --no-cache-dir yt-dlp || echo "⚠️ yt-dlpのインストールに失敗しました（続行）"
+              $PIP_CMD install --no-cache-dir tiktoken || echo "⚠️ tiktokenのインストールに失敗しました（続行）"
+              
+              # データ処理関連（オプショナル）
+              $PIP_CMD install --no-cache-dir pandas openpyxl xlrd python-docx || echo "⚠️ データ処理パッケージのインストールに失敗しました（続行）"
+              
+              # RAG関連
+              $PIP_CMD install --no-cache-dir bm25s scikit-learn numpy || echo "⚠️ RAG関連パッケージのインストールに失敗しました（続行）"
+              
+              # aiohttp
+              $PIP_CMD install --no-cache-dir aiohttp || echo "⚠️ aiohttpのインストールに失敗しました（続行）"
+              
+              # Playwrightは最後に（大きいため）
+              $PIP_CMD install --no-cache-dir playwright || echo "⚠️ Playwrightのインストールに失敗しました（続行）"
               
               # インストール時間計測終了
               INSTALL_END=$(date +%s)
