@@ -399,13 +399,19 @@ async def process_excel_file_with_sheets_api(
         return data_list, sections, extracted_text
         
     except Exception as e:
-        logger.error(f"Excel処理エラー: {str(e)}")
+        logger.error(f"Excel処理エラー（Google Sheets API）: {str(e)}")
+        # より詳細なエラー情報をログに記録
+        import traceback
+        logger.error(f"Excel処理エラーの詳細:\n{traceback.format_exc()}")
         raise
     
     finally:
         # クリーンアップ
         if spreadsheet_id:
-            await processor.cleanup_drive_file(spreadsheet_id)
+            try:
+                await processor.cleanup_drive_file(spreadsheet_id)
+            except Exception as cleanup_error:
+                logger.warning(f"Google Driveファイルクリーンアップエラー: {str(cleanup_error)}")
         
         processor.cleanup_temp_files()
 

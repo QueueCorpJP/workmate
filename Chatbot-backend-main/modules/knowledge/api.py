@@ -7,7 +7,7 @@ import logging
 import pandas as pd
 import asyncio
 from datetime import datetime
-from fastapi import HTTPException, UploadFile, File, Depends
+from fastapi import HTTPException, UploadFile, File, Depends, Request
 from io import BytesIO
 import PyPDF2
 import traceback
@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Tuple, Any, Union
 from psycopg2.extensions import connection as Connection
 from ..database import get_db, update_usage_count, ensure_string
 from ..auth import check_usage_limits
-from .base import knowledge_base, _update_knowledge_base, get_active_resources
+from .base import knowledge_base, _update_knowledge_base, _update_knowledge_base_from_list, get_active_resources
 from .excel import process_excel_file
 from .excel_sheets_processor import process_excel_file_with_sheets_api, is_excel_file
 from .pdf import process_pdf_file
@@ -29,6 +29,8 @@ from ..company import DEFAULT_COMPANY_NAME
 from ..utils import _process_video_file
 import os
 from .unnamed_column_handler import UnnamedColumnHandler
+import tempfile
+from fastapi.responses import JSONResponse
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
@@ -75,20 +77,88 @@ def _check_upload_limits(user_id: str, db: Connection) -> Dict[str, Any]:
     """アップロード制限をチェックする"""
     if not user_id:
         return {"allowed": True, "remaining": None, "limit_reached": False}
+    
+    try:
+        limits_check = check_usage_limits(user_id, "document_upload", db)
         
-    limits_check = check_usage_limits(user_id, "document_upload", db)
-    
-    if not limits_check["is_unlimited"] and not limits_check["allowed"]:
-        raise HTTPException(
-            status_code=403,
-            detail=LIMIT_REACHED_ERROR.format(limit=limits_check['limit'])
-        )
-    
-    return {
-        "allowed": True,
-        "remaining": limits_check.get("remaining") if not limits_check["is_unlimited"] else None,
-        "limit_reached": False
-    }
+        if not limits_check["is_unlimited"] and not limits_check["allowed"]:
+            raise HTTPException(
+                status_code=403,
+                detail=LIMIT_REACHED_ERROR.format(limit=limits_check['limit'])
+            )
+        
+        return {
+            "allowed": True,
+            "remaining": limits_check.get("remaining") if not limits_check["is_unlimited"] else None,
+            "limit_reached": False
+        }
+    except HTTPException as e:
+        if e.status_code == 404:
+            # 利用制限情報が見つからない場合は自動作成
+            logger.warning(f"ユーザー {user_id} の利用制限情報が見つかりません。自動作成を試行します。")
+            try:
+                # 利用制限レコードを直接作成
+                from supabase_adapter import insert_data
+                
+                # ユーザー情報を取得して正しいuser_idを使用
+                from supabase_adapter import select_data
+                user_result = select_data("users", columns="id, email, role", filters={"id": user_id})
+                
+                if not user_result or not user_result.data:
+                    # user_idで見つからない場合はcompany_idで検索
+                    user_result = select_data("users", columns="id, email, role", filters={"company_id": user_id})
+                
+                if user_result and user_result.data:
+                    actual_user = user_result.data[0]
+                    actual_user_id = actual_user.get("id")
+                    user_email = actual_user.get("email", "")
+                    user_role = actual_user.get("role", "user")
+                    
+                    logger.info(f"実際のユーザーID: {actual_user_id}, email: {user_email}, role: {user_role}")
+                    
+                    # デフォルトの利用制限を設定
+                    is_admin = user_role == "admin" or user_email == "queue@queueu-tech.jp"
+                    limit_data = {
+                        "user_id": actual_user_id,
+                        "document_uploads_used": 0,
+                        "document_uploads_limit": 999999 if is_admin else 2,
+                        "questions_used": 0,
+                        "questions_limit": 999999 if is_admin else 10,
+                        "is_unlimited": is_admin
+                    }
+                else:
+                    logger.error(f"ユーザーID {user_id} に対応するユーザーが見つかりません")
+                    raise Exception(f"ユーザーID {user_id} が存在しません")
+                
+                insert_data("usage_limits", limit_data)
+                logger.info(f"ユーザー {user_id} の利用制限情報を作成しました。")
+                
+                # 再度チェック（正しいuser_idを使用）
+                limits_check = check_usage_limits(actual_user_id, "document_upload", db)
+                
+                if not limits_check["is_unlimited"] and not limits_check["allowed"]:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=LIMIT_REACHED_ERROR.format(limit=limits_check['limit'])
+                    )
+                
+                return {
+                    "allowed": True,
+                    "remaining": limits_check.get("remaining") if not limits_check["is_unlimited"] else None,
+                    "limit_reached": False
+                }
+            except Exception as create_error:
+                logger.error(f"利用制限情報の自動作成に失敗しました: {str(create_error)}")
+                # フォールバック：デフォルト値を使用（管理者の場合は無制限）
+                logger.info(f"フォールバック：ユーザー {user_id} にデフォルト制限を適用します。")
+                return {
+                    "allowed": True,
+                    "remaining": 100,  # デフォルト制限
+                    "limit_reached": False
+                }
+        else:
+            # その他のHTTPExceptionは再発生
+            raise
 
 async def _record_document_source(
     name: str, 
@@ -125,9 +195,7 @@ async def _record_document_source(
             
             logger.info(f"コンテンツを{len(content_chunks)}個のチャンクに分割")
             
-            # メインレコードを先に保存（コンテンツは要約版）
-            summary_content = content_str[:500] + f"...\n\n[このドキュメントは{len(content_chunks)}個のチャンクに分割されています。総サイズ: {content_size_mb:.2f}MB]"
-            
+            # メインレコードを先に保存（完全なコンテンツを保存）
             # Supabaseアダプターを使用してメインレコードを保存
             from supabase_adapter import insert_data
             main_record = {
@@ -135,7 +203,7 @@ async def _record_document_source(
                 "name": name,
                 "type": doc_type,
                 "page_count": page_count,
-                "content": summary_content,
+                "content": content_str,  # 完全なコンテンツを保存
                 "uploaded_by": user_id,
                 "company_id": company_id,
                 "uploaded_at": datetime.now().isoformat(),
@@ -144,48 +212,113 @@ async def _record_document_source(
             
             try:
                 insert_data("document_sources", main_record)
-                logger.info(f"メインレコード保存完了: {document_id}")
+                logger.info(f"メインレコード保存完了: {document_id} (完全なコンテンツ: {content_size_mb:.2f}MB)")
+                doc_id = document_id  # 成功時にdoc_idを設定
             except Exception as main_error:
                 logger.error(f"メインレコード保存エラー: {str(main_error)}")
-                raise
+                doc_id = None  # 初期化
+                
+                # statement timeoutの場合はチャンク分割保存を試行
+                error_str = str(main_error)
+                if "statement timeout" in error_str.lower() or "57014" in error_str:
+                    logger.warning("Statement timeoutが発生 - チャンク分割保存に切り替え")
+                    
+                    # メインレコードは要約版で保存
+                    summary_content = content_str[:1000] + f"...\n\n[このドキュメントは{len(content_chunks)}個のチャンクに分割されています。総サイズ: {content_size_mb:.2f}MB]"
+                    main_record["content"] = summary_content
+                    
+                    try:
+                        result = insert_data("document_sources", main_record)
+                        if result and result.data:
+                            doc_id = result.data[0]["id"]
+                            logger.info(f"要約版メインレコード保存成功: {doc_id}")
+                        else:
+                            logger.error("要約版メインレコード保存に失敗")
+                            doc_id = None
+                    except Exception as summary_error:
+                        logger.error(f"要約版メインレコード保存エラー: {str(summary_error)}")
+                        doc_id = None
+                
+                elif "document_sources_uploaded_by_fkey" in error_str:
+                    logger.warning(f"ユーザー '{user_id}' が存在しません - company_idで代替保存を試行")
+                    try:
+                        # company_idから代替ユーザーを検索
+                        from supabase_adapter import select_data
+                        company_users = select_data(
+                            "users", 
+                            columns="id", 
+                            filters={"company_id": company_id}
+                        )
+                        
+                        if company_users.data and len(company_users.data) > 0:
+                            alternative_user_id = company_users.data[0]["id"]
+                            logger.info(f"代替ユーザーを発見: {alternative_user_id}")
+                            
+                            # 代替ユーザーIDで再保存
+                            main_record["uploaded_by"] = alternative_user_id
+                            result = insert_data("document_sources", main_record)
+                            
+                            if result and result.data:
+                                logger.info(f"代替ユーザーIDでメインレコード保存成功: {alternative_user_id}")
+                                doc_id = result.data[0]["id"]
+                            else:
+                                logger.error("代替ユーザーIDでもメインレコード保存に失敗")
+                                doc_id = None
+                        else:
+                            logger.error(f"Company ID {company_id} に関連するユーザーが見つかりません")
+                            doc_id = None
+                            
+                    except Exception as alt_error:
+                        logger.error(f"代替ユーザー検索エラー: {str(alt_error)}")
+                        doc_id = None
             
-            # チャンクを順次保存
-            for i, chunk in enumerate(content_chunks):
-                chunk_id = str(uuid.uuid4())
-                chunk_name = f"{name}_chunk_{i+1}"
+            # チャンク保存処理（メインレコードが要約版の場合のみ）
+            if doc_id and "[このドキュメントは" in main_record.get("content", ""):
+                logger.info(f"チャンク保存開始: {len(content_chunks)} 個のチャンク")
+                successful_chunks = 0
+                for i, chunk in enumerate(content_chunks):
+                    try:
+                        chunk_record = {
+                            "id": str(uuid.uuid4()),
+                            "name": f"{name}_chunk_{i+1}",
+                            "type": f"{doc_type}_CHUNK",
+                            "page_count": 0,
+                            "content": chunk,
+                            "uploaded_by": main_record["uploaded_by"],  # メインレコードと同じuser_idを使用
+                            "company_id": company_id,
+                            "uploaded_at": datetime.now().isoformat(),
+                            "active": True,
+                            "parent_id": doc_id  # メインレコードへの参照
+                        }
+                        
+                        chunk_result = insert_data("document_sources", chunk_record)
+                        if not chunk_result or not chunk_result.data:
+                            logger.warning(f"チャンク {i+1} の保存に失敗")
+                        else:
+                            successful_chunks += 1
+                            logger.info(f"チャンク {i+1}/{len(content_chunks)} 保存完了")
+                            
+                    except Exception as chunk_error:
+                        logger.error(f"チャンク {i+1} 保存エラー: {str(chunk_error)}")
+                        continue
                 
-                # 処理時間チェック
-                elapsed_time = time.time() - start_time
-                if elapsed_time > 120:  # 2分制限
-                    logger.warning(f"処理時間制限に達しました ({elapsed_time:.1f}秒) - 残りのチャンクをスキップ")
-                    break
-                
+                logger.info(f"チャンク保存完了: {successful_chunks}/{len(content_chunks)} 個成功")
+            elif doc_id and "[このドキュメントは" not in main_record.get("content", ""):
+                logger.info("完全なコンテンツが保存されたため、チャンク保存は不要")
+            elif not doc_id:
+                logger.error("メインレコード保存に失敗したため、チャンク保存をスキップ")
+            
+            # データベースコミット（dbがNoneの場合は安全にスキップ）
+            if db is not None:
                 try:
-                    chunk_record = {
-                        "id": chunk_id,
-                        "name": chunk_name,
-                        "type": f"{doc_type}_CHUNK",
-                        "page_count": 1,
-                        "content": chunk,
-                        "uploaded_by": user_id,
-                        "company_id": company_id,
-                        "uploaded_at": datetime.now().isoformat(),
-                        "active": True,
-                        "parent_id": document_id
-                    }
-                    
-                    insert_data("document_sources", chunk_record)
-                    logger.info(f"チャンク{i+1}/{len(content_chunks)}保存完了")
-                    
-                    # 小さな遅延を追加（データベース負荷軽減）
-                    await asyncio.sleep(0.05)
-                    
-                except Exception as chunk_error:
-                    logger.error(f"チャンク{i+1}の保存エラー: {str(chunk_error)}")
-                    # チャンクの保存に失敗しても続行
-                    continue
+                    db.commit()
+                except AttributeError:
+                    # dbオブジェクトにcommitメソッドがない場合はスキップ
+                    logger.debug("データベースオブジェクトにcommitメソッドがありません")
+            else:
+                logger.debug("データベース接続がNullのためcommitをスキップ")
             
-            logger.info(f"分割保存完了: {elapsed_time:.1f}秒")
+            logger.info(f"分割保存完了: {time.time() - start_time:.1f}秒")
             
         else:
             # 通常サイズの場合は一括保存
@@ -208,7 +341,51 @@ async def _record_document_source(
                 
             except Exception as normal_error:
                 logger.error(f"通常保存エラー: {str(normal_error)}")
-                raise
+                
+                # 外部キー制約エラーの場合はユーザー情報を確認
+                error_str = str(normal_error)
+                if "document_sources_uploaded_by_fkey" in error_str:
+                    logger.warning(f"ユーザー '{user_id}' が存在しません - company_idで代替保存を試行")
+                    try:
+                        # company_idから代替ユーザーを検索
+                        from supabase_adapter import select_data
+                        company_users = select_data(
+                            "users", 
+                            columns="id", 
+                            filters={"company_id": company_id}
+                        )
+                        
+                        if company_users.data and len(company_users.data) > 0:
+                            alternative_user_id = company_users.data[0]["id"]
+                            logger.info(f"代替ユーザーを発見: {alternative_user_id}")
+                            
+                            # 代替ユーザーIDで再保存
+                            record["uploaded_by"] = alternative_user_id
+                            result = insert_data("document_sources", record)
+                            
+                            if result and result.data:
+                                logger.info(f"代替ユーザーIDで通常保存成功: {alternative_user_id}")
+                                doc_id = result.data[0]["id"]
+                            else:
+                                logger.error("代替ユーザーIDでも通常保存に失敗")
+                                doc_id = None
+                        else:
+                            logger.error(f"Company ID {company_id} に関連するユーザーが見つかりません")
+                            doc_id = None
+                            
+                    except Exception as alt_error:
+                        logger.error(f"代替ユーザー検索エラー: {str(alt_error)}")
+                        doc_id = None
+                
+                # データベースコミット（dbがNoneの場合は安全にスキップ）
+                if db is not None:
+                    try:
+                        db.commit()
+                    except AttributeError:
+                        # dbオブジェクトにcommitメソッドがない場合はスキップ
+                        logger.debug("データベースオブジェクトにcommitメソッドがありません")
+                else:
+                    logger.debug("データベース接続がNullのためcommitをスキップ")
         
         # 会社のソースリストに追加
         if company_id:
@@ -225,7 +402,7 @@ async def _record_document_source(
 def _update_source_info(source_name: str) -> None:
     """ソース情報を更新する"""
     if source_name not in knowledge_base.sources:
-        knowledge_base.sources.append(source_name)
+        knowledge_base.sources[source_name] = {}  # 辞書として初期化
         knowledge_base.source_info[source_name] = {
             'timestamp': datetime.now().isoformat(),
             'active': True
@@ -308,8 +485,16 @@ async def process_url(url: str, user_id: str = None, company_id: str = None, db:
         if user_id and not company_id:
             company_id, _ = _get_user_info(user_id, db)
         
-        # アップロード制限のチェック
-        limits = _check_upload_limits(user_id, db)
+        # アップロード制限のチェック（エラーハンドリング付き）
+        try:
+            limits = _check_upload_limits(user_id, db)
+        except HTTPException as http_error:
+            # HTTPExceptionはそのまま再発生
+            raise http_error
+        except Exception as limit_error:
+            logger.warning(f"URL処理の利用制限チェックでエラーが発生しました: {str(limit_error)}")
+            # 利用制限チェックでエラーが発生した場合はデフォルト値を設定
+            limits = {"remaining": None, "limit_reached": False}
         
         # URLからテキストを抽出
         extracted_text = await extract_text_from_url(url)
@@ -343,8 +528,15 @@ async def process_url(url: str, user_id: str = None, company_id: str = None, db:
         logger.error(f"URL処理エラー: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"URLの処理中にエラーが発生しました: {str(e)}")
 
-async def process_file(file: UploadFile = File(...), user_id: str = None, company_id: str = None, db: Connection = None):
+async def process_file(file: UploadFile = File(...), request: Request = None, user_id: str = None, company_id: str = None, db: Connection = None):
     """ファイルを処理して知識ベースを更新する"""
+    logger.info(f"ファイル処理開始: {file.filename}, ユーザーID: {user_id}, 会社ID: {company_id}")
+    
+    # 初期化
+    remaining_uploads = None
+    limit_reached = False
+    page_count = 1
+    
     # ユーザー情報の取得と会社IDの設定
     if user_id and not company_id:
         company_id, _ = _get_user_info(user_id, db)
@@ -361,10 +553,19 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
         raise HTTPException(status_code=400, detail=INVALID_FILE_ERROR)
 
     try:
-        # アップロード制限のチェック
-        limits = _check_upload_limits(user_id, db)
-        remaining_uploads = limits.get("remaining")
-        limit_reached = limits.get("limit_reached", False)
+        # アップロード制限のチェック（エラーハンドリング付き）
+        try:
+            limits = _check_upload_limits(user_id, db)
+            remaining_uploads = limits.get("remaining")
+            limit_reached = limits.get("limit_reached", False)
+        except HTTPException as http_error:
+            # HTTPExceptionはそのまま再発生
+            raise http_error
+        except Exception as limit_error:
+            logger.warning(f"利用制限チェックでエラーが発生しました: {str(limit_error)}")
+            # 利用制限チェックでエラーが発生した場合はデフォルト値を設定
+            remaining_uploads = None
+            limit_reached = False
         
         logger.info(f"ファイルアップロード開始: {file.filename}")
         
@@ -378,7 +579,7 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
         except Exception as e:
             logger.error(f"ファイル読み込みエラー: {str(e)}")
             raise HTTPException(status_code=400, detail=f"ファイルの読み込み中にエラーが発生しました: {str(e)}")
-            
+        
         file_size_mb = len(contents) / (1024 * 1024)
         logger.info(f"ファイルサイズ: {file_size_mb:.2f} MB")
         
@@ -397,7 +598,6 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
         df = None
         sections = {}
         extracted_text = ""
-        page_count = 1
         
         try:
             # 検知されたファイル形式に基づいて処理を実行
@@ -409,9 +609,14 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                 
                 try:
                     # Google Sheets APIを使用してExcelファイルを処理
-                    # OAuth2トークンを優先的に使用
-                    access_token = getattr(request.state, 'google_access_token', None)
+                    # OAuth2トークンを優先的に使用（requestがある場合のみ）
+                    access_token = None
+                    if request and hasattr(request, 'state'):
+                        access_token = getattr(request.state, 'google_access_token', None)
+                    
                     service_account_file = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE')
+                    
+                    logger.info(f"Google Sheets API処理開始 - access_token: {'あり' if access_token else 'なし'}, service_account: {'あり' if service_account_file else 'なし'}")
                     
                     # 大きなファイルの場合は処理前に警告
                     if file_size_mb > 3:
@@ -468,14 +673,48 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                             asyncio.to_thread(process_excel_file, contents, file.filename),
                             timeout=MAX_PROCESSING_TIME
                         )
-                        data_list = None  # 従来処理の場合はDataFrameを使用
+                        # ⚠️ 重要修正: data_listをNoneに設定しない（フォールバック処理でも知識ベース更新を確実に実行）
+                        # data_list = None  # この行をコメントアウト
+                        
+                        # ⚠️ 重要修正: フォールバック処理でextracted_textのUnnamed修正を強制実行
+                        from .unnamed_column_handler import UnnamedColumnHandler
+                        handler = UnnamedColumnHandler()
+                        
+                        # extracted_textのUnnamedパターンを修正
+                        if extracted_text and "Unnamed:" in extracted_text:
+                            lines = extracted_text.split('\n')
+                            fixed_lines = []
+                            
+                            for line in lines:
+                                if "Unnamed:" in line:
+                                    # Unnamed: X パターンを修正
+                                    import re
+                                    line = re.sub(r'Unnamed:\s*\d+', lambda m: f"データ{m.group().split(':')[1].strip() if ':' in m.group() else '1'}", line)
+                                fixed_lines.append(line)
+                            
+                            extracted_text = '\n'.join(fixed_lines)
+                            logger.info("フォールバック処理でextracted_textのUnnamed修正を実行")
                         
                         # Excelファイルのシート数を取得
                         try:
                             excel_file = BytesIO(contents)
                             df_dict = pd.read_excel(excel_file, sheet_name=None)
+                            
+                            # 各シートにUnnamed処理を適用
+                            for sheet_name, sheet_df in df_dict.items():
+                                if not sheet_df.empty:
+                                    try:
+                                        fixed_df, modifications = handler.fix_dataframe(sheet_df, f"{file.filename}:{sheet_name}")
+                                        df_dict[sheet_name] = fixed_df
+                                        if modifications:
+                                            logger.info(f"api.py Excel処理 - シート '{sheet_name}' のUnnamed修正: {', '.join(modifications)}")
+                                    except Exception as fix_error:
+                                        logger.warning(f"シート '{sheet_name}' のUnnamed修正でエラー: {str(fix_error)} - 元のデータを使用")
+                                        # エラーの場合は元のシートをそのまま使用
+                        
                             page_count = len(df_dict)
-                        except:
+                        except Exception as excel_error:
+                            logger.warning(f"Excelシート数取得エラー: {str(excel_error)}")
                             page_count = 1
                             
                     except asyncio.TimeoutError:
@@ -570,6 +809,9 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                 except Exception as word_error:
                     logger.error(f"Word処理エラー: {str(word_error)}")
                     # Word処理が失敗した場合のフォールバック
+                    from .unnamed_column_handler import UnnamedColumnHandler
+                    handler = UnnamedColumnHandler()
+                    
                     df = pd.DataFrame({
                         'section': ["Word処理エラー"],
                         'content': [f"Wordファイル処理中にエラーが発生しました: {str(word_error)}"],
@@ -577,6 +819,15 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                         'file': [file.filename],
                         'url': [None]
                     })
+                    
+                    # エラー時のDataFrameもUnnamed処理を適用
+                    try:
+                        df, error_modifications = handler.fix_dataframe(df, f"{file.filename}_word_error")
+                        if error_modifications:
+                            logger.debug(f"Word処理エラーのUnnamed修正: {', '.join(error_modifications)}")
+                    except:
+                        pass  # エラー処理中のエラーは無視
+                    
                     sections = {"Word処理エラー": f"Wordファイル処理中にエラーが発生しました: {str(word_error)}"}
                     extracted_text = f"=== ファイル: {file.filename} ===\n\n=== Word処理エラー ===\nWordファイル処理中にエラーが発生しました: {str(word_error)}\n\n"
                     page_count = 1
@@ -595,6 +846,9 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                 except Exception as img_error:
                     logger.error(f"画像処理エラー: {str(img_error)}")
                     # 画像処理が失敗した場合のフォールバック
+                    from .unnamed_column_handler import UnnamedColumnHandler
+                    handler = UnnamedColumnHandler()
+                    
                     df = pd.DataFrame({
                         'section': ["画像処理エラー"],
                         'content': [f"画像ファイル処理中にエラーが発生しました: {str(img_error)}"],
@@ -602,6 +856,15 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                         'file': [file.filename],
                         'url': [None]
                     })
+                    
+                    # エラー時のDataFrameもUnnamed処理を適用
+                    try:
+                        df, error_modifications = handler.fix_dataframe(df, f"{file.filename}_image_error")
+                        if error_modifications:
+                            logger.debug(f"画像処理エラーのUnnamed修正: {', '.join(error_modifications)}")
+                    except:
+                        pass  # エラー処理中のエラーは無視
+                    
                     sections = {"画像処理エラー": f"画像ファイル処理中にエラーが発生しました: {str(img_error)}"}
                     extracted_text = f"=== ファイル: {file.filename} ===\n\n=== 画像処理エラー ===\n画像ファイル処理中にエラーが発生しました: {str(img_error)}\n\n"
                     page_count = 1
@@ -633,6 +896,9 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                 except Exception as pdf_ex:
                     logger.error(f"PDFファイル処理中のエラー: {str(pdf_ex)}")
                     # エラー時のフォールバック処理
+                    from .unnamed_column_handler import UnnamedColumnHandler
+                    handler = UnnamedColumnHandler()
+                    
                     df = pd.DataFrame({
                         'section': ["エラー"],
                         'content': [f"PDFファイル処理中にエラーが発生しました: {str(pdf_ex)}"],
@@ -640,6 +906,15 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                         'file': [file.filename],
                         'url': [None]
                     })
+                    
+                    # エラー時のDataFrameもUnnamed処理を適用
+                    try:
+                        df, error_modifications = handler.fix_dataframe(df, f"{file.filename}_pdf_error")
+                        if error_modifications:
+                            logger.debug(f"PDF処理エラーのUnnamed修正: {', '.join(error_modifications)}")
+                    except:
+                        pass  # エラー処理中のエラーは無視
+                    
                     sections = {"エラー": f"PDFファイル処理中にエラーが発生しました: {str(pdf_ex)}"}
                     extracted_text = f"=== ファイル: {file.filename} ===\n\n=== エラー ===\nPDFファイル処理中にエラーが発生しました: {str(pdf_ex)}\n\n"
                     
@@ -657,6 +932,9 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
             if df is None or df.empty:
                 logger.warning("空のデータフレームが生成されました")
                 # 空のデータフレームの場合、最低限のデータを設定
+                from .unnamed_column_handler import UnnamedColumnHandler
+                handler = UnnamedColumnHandler()
+                
                 df = pd.DataFrame({
                     'section': ["一般情報"],
                     'content': ["ファイルからテキストを抽出できませんでした。"],
@@ -664,6 +942,14 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                     'file': [file.filename],
                     'url': [None]
                 })
+                
+                # 空のDataFrameもUnnamed処理を適用
+                try:
+                    df, empty_modifications = handler.fix_dataframe(df, f"{file.filename}_empty")
+                    if empty_modifications:
+                        logger.debug(f"空DataFrame処理のUnnamed修正: {', '.join(empty_modifications)}")
+                except:
+                    pass  # エラー処理中のエラーは無視
                 
         except HTTPException:
             raise
@@ -687,12 +973,16 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                 raise HTTPException(status_code=500, detail=f"{error_type}ファイルの処理中にエラーが発生しました: {str(e)}")
         
         # 知識ベースを更新（ファイルデータとして保存）
+        knowledge_base_updated = False  # 更新状況をトラッキング
+        
         if 'data_list' in locals() and data_list:
             # 新しいGoogle Sheets API処理の場合：data_listを直接使用
-            from .base import _update_knowledge_base_from_list
+            logger.info(f"data_listを使用して知識ベースを更新: {len(data_list)} レコード")
             _update_knowledge_base_from_list(data_list, extracted_text, is_file=True, source_name=file.filename, company_id=company_id)
+            knowledge_base_updated = True
         elif df is not None and not df.empty:
             # 従来のpandas処理の場合：DataFrameを使用
+            logger.info(f"DataFrameを使用して知識ベースを更新: {len(df)} 行")
             # ファイル列が存在することを確認
             if 'file' not in df.columns:
                 df['file'] = file.filename
@@ -704,6 +994,17 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
                 
             # 知識ベースを更新
             _update_knowledge_base(df, extracted_text, is_file=True, source_name=file.filename, company_id=company_id)
+            knowledge_base_updated = True
+        else:
+            # データが空の場合でも最低限のエントリを作成
+            logger.warning(f"データが空または無効です - 最低限のエントリを作成: {file.filename}")
+            if file.filename not in knowledge_base.sources:
+                knowledge_base.sources[file.filename] = {}
+            knowledge_base.sources[file.filename]["処理結果"] = extracted_text or f"ファイル '{file.filename}' を処理しました"
+            knowledge_base_updated = True
+        
+        # 知識ベース更新完了をログ出力
+        logger.info(f"知識ベース更新完了: {knowledge_base_updated}, ソース数: {len(knowledge_base.sources)}")
         
         # ソース情報を更新
         _update_source_info(file.filename)
@@ -711,12 +1012,26 @@ async def process_file(file: UploadFile = File(...), user_id: str = None, compan
         # ユーザーIDがある場合はドキュメントアップロードカウントを更新
         if user_id:
             updated_limits = update_usage_count(user_id, "document_uploads_used", db)
-            remaining_uploads = updated_limits["document_uploads_limit"] - updated_limits["document_uploads_used"]
-            limit_reached = remaining_uploads <= 0
+            if updated_limits:
+                remaining_uploads = updated_limits["document_uploads_limit"] - updated_limits["document_uploads_used"]
+                limit_reached = remaining_uploads <= 0
+            else:
+                # 利用制限が取得できない場合のデフォルト値
+                logger.warning(f"利用制限の更新に失敗しました - user_id: {user_id}")
+                remaining_uploads = None
+                limit_reached = False
             
             # ドキュメントソースを記録
             await _record_document_source(file.filename, file_extension.upper(), page_count, extracted_text, user_id, company_id, db)
-            db.commit()
+            # データベースコミット（dbがNoneの場合は安全にスキップ）
+            if db is not None:
+                try:
+                    db.commit()
+                except AttributeError:
+                    # dbオブジェクトにcommitメソッドがない場合はスキップ
+                    logger.debug("データベースオブジェクトにcommitメソッドがありません")
+            else:
+                logger.debug("データベース接続がNullのためcommitをスキップ")
         
         # レスポンスを準備して返す
         if 'data_list' in locals() and data_list:
@@ -761,9 +1076,28 @@ async def toggle_resource_active(resource_name: str):
 
 async def get_uploaded_resources():
     """アップロードされたリソース（URL、PDF、Excel、TXT）の情報を取得する"""
+    # デバッグ情報をログに出力
+    logger.info(f"get_uploaded_resources 開始 - knowledge_base.sources の型: {type(knowledge_base.sources)}")
+    logger.info(f"knowledge_base.sources の内容: {knowledge_base.sources}")
+    logger.info(f"knowledge_base.source_info の内容: {knowledge_base.source_info}")
+    
     resources = []
     
-    for source in knowledge_base.sources:
+    # knowledge_base.sources が辞書の場合とリストの場合を両方対応
+    sources_to_process = []
+    if isinstance(knowledge_base.sources, dict):
+        logger.info("knowledge_base.sources は辞書として扱います")
+        sources_to_process = list(knowledge_base.sources.keys())
+    elif isinstance(knowledge_base.sources, list):
+        logger.info("knowledge_base.sources はリストとして扱います")
+        sources_to_process = knowledge_base.sources
+    else:
+        logger.warning(f"knowledge_base.sources の型が予期しない型です: {type(knowledge_base.sources)}")
+        sources_to_process = []
+    
+    logger.info(f"処理対象のソース数: {len(sources_to_process)}")
+    
+    for source in sources_to_process:
         info = knowledge_base.source_info.get(source, {})
         
         # リソースタイプを判定
@@ -788,6 +1122,10 @@ async def get_uploaded_resources():
             "timestamp": info.get('timestamp', datetime.now().isoformat()),
             "active": info.get('active', True)
         })
+        
+        logger.info(f"リソース追加: {source} (タイプ: {resource_type})")
+    
+    logger.info(f"get_uploaded_resources 完了 - {len(resources)}件のリソース")
     
     return {
         "resources": resources,
@@ -796,7 +1134,6 @@ async def get_uploaded_resources():
 
 async def cleanup_unnamed_columns(company_id: str = None):
     """既存のデータベースコンテンツのUnnamedカラムをクリーンアップする"""
-    from .base import knowledge_base
     
     try:
         handler = UnnamedColumnHandler()

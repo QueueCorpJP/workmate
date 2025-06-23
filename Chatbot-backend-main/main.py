@@ -596,7 +596,7 @@ async def upload_knowledge(
         company_id = current_user.get("company_id")
         print(f"🔍 [UPLOAD DEBUG] ファイルアップロード時のcompany_id: {company_id}")
         print(f"🔍 [UPLOAD DEBUG] current_user: {current_user}")
-        result = await process_file(file, current_user["id"], company_id, db)
+        result = await process_file(file, request=None, user_id=current_user["id"], company_id=company_id, db=db)
         return result
     except Exception as e:
         logger.error(f"ファイルアップロードエラー: {str(e)}")
@@ -675,7 +675,7 @@ async def upload_multiple_knowledge(
                 # ファイル処理実行
                 company_id = current_user.get("company_id")
                 print(f"🔍 [UPLOAD DEBUG] 複数ファイルアップロード時のcompany_id: {company_id} (ファイル: {file.filename})")
-                result = await process_file(file, current_user["id"], company_id, db)
+                result = await process_file(file, request=None, user_id=current_user["id"], company_id=company_id, db=db)
                 processed_count += 1
                 
                 results.append({
@@ -2803,9 +2803,10 @@ async def upload_from_google_drive(
             print(f"🔍 [UPLOAD DEBUG] current_user: {current_user}")
             result = await process_file(
                 mock_file,
-                current_user["id"],
-                company_id,  # company_id
-                db
+                request=None,
+                user_id=current_user["id"],
+                company_id=company_id,
+                db=db
             )
             
             print(f"Google Driveファイル処理完了 {file_name}")

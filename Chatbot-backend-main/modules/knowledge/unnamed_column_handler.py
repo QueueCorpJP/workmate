@@ -53,6 +53,7 @@ class UnnamedColumnHandler:
         # Unnamedパターン
         self.unnamed_patterns = [
             r'^Unnamed.*',
+            r'^Unnamed:\s*\d*$',  # 'Unnamed: 1', 'Unnamed: 2' など
             r'^Column.*',
             r'^列.*',
             r'^無題.*',
@@ -190,7 +191,20 @@ class UnnamedColumnHandler:
             # 数値のみかチェック
             try:
                 numeric_data = pd.to_numeric(non_null_data, errors='coerce')
-                if numeric_data.isna().any():
+                # 安全な NaN チェック
+                has_nan = False
+                try:
+                    has_nan = numeric_data.isna().any()
+                except Exception as nan_error:
+                    logger.debug(f"Series NaN チェックエラー: {str(nan_error)}")
+                    # Series の真偽値判定エラーの場合は個別チェック
+                    try:
+                        has_nan = any(pd.isna(val) for val in numeric_data)
+                    except Exception as individual_error:
+                        logger.debug(f"個別NaNチェックエラー: {str(individual_error)}")
+                        has_nan = True  # エラーの場合は安全側に倒す
+                
+                if has_nan:
                     return False
                 
                 # 連続する整数かチェック
@@ -362,8 +376,72 @@ class UnnamedColumnHandler:
             # Step 5: 右端の空カラムを除去
             empty_cols = []
             for col in df_fixed.columns:
-                if df_fixed[col].isna().all() or (df_fixed[col] == '').all():
-                    empty_cols.append(col)
+                try:
+                    # 安全な空カラム判定
+                    col_series = df_fixed[col]
+                    
+                    # まずNA値をチェック
+                    try:
+                        is_all_na = col_series.isna().all()
+                        if is_all_na:
+                            empty_cols.append(col)
+                            continue
+                    except Exception as na_error:
+                        logger.debug(f"カラム '{col}' のNA値チェックでエラー: {str(na_error)}")
+                        # 個別にNA値チェック
+                        all_na = True
+                        try:
+                            for val in col_series:
+                                if pd.notna(val):
+                                    all_na = False
+                                    break
+                            if all_na:
+                                empty_cols.append(col)
+                                continue
+                        except Exception as individual_na_error:
+                            logger.debug(f"カラム '{col}' の個別NA値チェックでエラー: {str(individual_na_error)}")
+                            # エラーの場合は安全側に倒す（削除しない）
+                            pass
+                    
+                    # 文字列として変換して空文字チェック
+                    try:
+                        str_series = col_series.astype(str)
+                        try:
+                            is_all_empty = (str_series.str.strip() == '').all()
+                            if is_all_empty:
+                                empty_cols.append(col)
+                        except Exception as all_error:
+                            logger.debug(f"カラム '{col}' の.all()チェックでエラー: {str(all_error)}")
+                            # 個別に空文字チェック
+                            all_empty = True
+                            for val in str_series:
+                                if val.strip() != '':
+                                    all_empty = False
+                                    break
+                            if all_empty:
+                                empty_cols.append(col)
+                    except Exception as str_error:
+                        # 文字列変換でエラーが発生した場合は個別にチェック
+                        all_empty = True
+                        try:
+                            for val in col_series:
+                                if pd.notna(val):
+                                    val_str = str(val).strip()
+                                    if val_str and val_str != '':
+                                        all_empty = False
+                                        break
+                        except Exception as individual_error:
+                            # 個別チェックでもエラーが発生した場合は安全側に倒す
+                            logger.debug(f"カラム '{col}' の個別値チェックでエラー: {str(individual_error)}")
+                            all_empty = False  # 削除しない
+                        
+                        if all_empty:
+                            empty_cols.append(col)
+                            
+                except Exception as col_error:
+                    logger.warning(f"カラム '{col}' の空判定でエラー: {str(col_error)}")
+                    # エラーが発生した場合はスキップ
+                    continue
             
             if empty_cols:
                 df_fixed = df_fixed.drop(columns=empty_cols)
@@ -428,4 +506,20 @@ class UnnamedColumnHandler:
                 'source': 'Table',
                 'file': filename,
                 'url': None
-            }] 
+            }]
+    
+    def _is_unnamed_pattern(self, value: str) -> bool:
+        """値がunnamedパターンにマッチするかチェック"""
+        try:
+            value_str = ensure_string(value).strip()
+            
+            for pattern in self.unnamed_patterns:
+                if re.match(pattern, value_str, re.IGNORECASE):
+                    return True
+            return False
+            
+        except Exception as e:
+            logger.error(f"Unnamedパターンチェックエラー: {str(e)}")
+            return False 
+
+ 

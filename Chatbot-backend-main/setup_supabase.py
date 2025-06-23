@@ -1,7 +1,9 @@
+#!/usr/bin/env python3
 """
-Supabase database setup script
-This script creates the necessary tables in your Supabase PostgreSQL database
+Supabaseデータベースの初期設定スクリプト
+新しいテーブルやスキーマの変更を適用します
 """
+
 import os
 import sys
 import psycopg2

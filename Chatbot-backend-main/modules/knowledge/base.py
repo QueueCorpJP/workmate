@@ -15,7 +15,7 @@ class KnowledgeBase:
         self.data = None
         self.raw_text = ""
         self.columns = []
-        self.sources = []  # ソース（ファイル名やURL）を保存するリスト
+        self.sources = {}  # ソース（ファイル名やURL）を保存する辞書 {source_name: sections_dict}
         self.url_data = []  # URLから取得したデータを保存するリスト
         self.url_texts = []  # URLから取得したテキストを保存するリスト
         self.file_data = []  # ファイルから取得したデータを保存するリスト
@@ -122,7 +122,7 @@ def get_active_resources(company_id=None):
                 active_sources.append(source)
     else:
         # 会社IDが指定されていない場合は、すべてのアクティブなリソースを返す
-        for source in knowledge_base.sources:
+        for source in knowledge_base.sources.keys():
             if source in knowledge_base.source_info and knowledge_base.source_info[source].get('active', True):
                 active_sources.append(source)
     
@@ -136,7 +136,7 @@ def get_knowledge_base_info():
     
     # ソース情報を整形
     sources_info = []
-    for source in knowledge_base.sources:
+    for source in knowledge_base.sources.keys():
         info = knowledge_base.source_info.get(source, {})
         source_type = "URL" if source.startswith(('http://', 'https://')) else "ファイル"
         
