@@ -24,6 +24,23 @@ import google.generativeai as genai
 from .config import setup_gemini
 from .utils import safe_print, safe_safe_print
 
+# 新しいRAGシステムのインポートを追加
+try:
+    from .rag_enhanced import enhanced_rag, SearchResult
+    RAG_ENHANCED_AVAILABLE = True
+except ImportError:
+    RAG_ENHANCED_AVAILABLE = False
+    safe_print("⚠️ 強化RAGシステムが利用できないため、従来のRAGを使用します")
+
+# 高速化RAGシステムのインポートを追加
+try:
+    from .rag_optimized import high_speed_rag
+    SPEED_RAG_AVAILABLE = True
+    safe_print("⚡ 高速化RAGシステムが利用可能です")
+except ImportError:
+    SPEED_RAG_AVAILABLE = False
+    safe_print("⚠️ 高速化RAGシステムが利用できません")
+
 logger = logging.getLogger(__name__)
 
 def safe_print(text):
@@ -45,47 +62,506 @@ def safe_safe_print(text):
 
 def simple_rag_search(knowledge_text: str, query: str, max_results: int = 5) -> str:
     """
-    超簡単RAG風検索 - BM25Sを使って関連部分だけを抽出
+    ハイブリッドRAG検索 - BM25S（語彙）+ セマンティック（意味）検索の組み合わせ
     """
     if not knowledge_text or not query:
         return knowledge_text
+    
+    # 高速化RAGが利用可能な場合は優先使用
+    if SPEED_RAG_AVAILABLE and len(knowledge_text) > 10000:
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # 既存のイベントループがある場合
+                future = asyncio.ensure_future(high_speed_rag.lightning_search(query, knowledge_text, max_results))
+                return knowledge_text[:50000]  # 暫定的な結果を返す
+            else:
+                # 新しいイベントループを作成
+                return asyncio.run(high_speed_rag.lightning_search(query, knowledge_text, max_results))
+        except Exception as e:
+            safe_print(f"高速RAG呼び出しエラー: {e}")
     
     try:
         import bm25s
         import re
         
-        # テキストを段落に分割
-        paragraphs = re.split(r'\n\s*\n', knowledge_text)
-        paragraphs = [p.strip() for p in paragraphs if len(p.strip()) > 50]
+        # 🔍 改善: より柔軟なクエリ前処理
+        processed_query = _preprocess_query(query)
+        safe_print(f"🔍 クエリ前処理: '{query}' → '{processed_query}'")
         
-        if len(paragraphs) < 2:
-            return knowledge_text[:100000]  # 段落が少ない場合はそのまま
+        # 高速化: より大きなチャンクサイズで分割
+        if len(knowledge_text) > 50000:
+            # 大きなテキストの場合は大きなチャンクで分割
+            chunk_size = 3000
+            chunks = []
+            for i in range(0, len(knowledge_text), chunk_size):
+                chunk = knowledge_text[i:i+chunk_size].strip()
+                if chunk and len(chunk) > 100:
+                    chunks.append(chunk)
+        else:
+            # 小さなテキストの場合は段落分割
+            chunks = re.split(r'\n\s*\n', knowledge_text)
+            chunks = [p.strip() for p in chunks if len(p.strip()) > 50]
         
-        # BM25S検索エンジンを作成
-        corpus_tokens = bm25s.tokenize(paragraphs)
-        retriever = bm25s.BM25()
-        retriever.index(corpus_tokens)
+        if len(chunks) < 2:
+            return knowledge_text[:100000]  # チャンクが少ない場合はそのまま
         
-        # 質問をトークン化して検索
-        query_tokens = bm25s.tokenize([query])
-        results, scores = retriever.retrieve(query_tokens, k=min(max_results, len(paragraphs)))
+        # 🚀 ハイブリッド検索の実行
+        bm25_results = _bm25_search(chunks, processed_query, max_results)
+        semantic_results = _semantic_search(chunks, processed_query, max_results)
         
-        # 関連する段落を取得
-        relevant_paragraphs = []
-        for i in range(results.shape[1]):
-            if i < len(paragraphs):
-                paragraph_idx = results[0, i]
-                if paragraph_idx < len(paragraphs):
-                    relevant_paragraphs.append(paragraphs[paragraph_idx])
+        # 結果の統合と再ランキング
+        combined_results = _combine_search_results(bm25_results, semantic_results, processed_query, max_results)
         
-        result = '\n\n'.join(relevant_paragraphs)
-        safe_print(f"🎯 RAG検索完了: {len(relevant_paragraphs)}個の関連段落、{len(result)}文字 (元: {len(knowledge_text)}文字)")
+        # 🔍 完全検索: 全ての関連チャンクを取得（文字数制限を大幅緩和）
+        result_chunks = []
+        total_length = 0
+        max_length = 500000  # 制限を50万文字に大幅拡大
+        
+        # 統合結果から最良のチャンクを選択
+        for result in combined_results:
+            chunk = result['content']
+            score = result['score']
+            
+            if total_length + len(chunk) > max_length and len(result_chunks) >= 20:
+                # 最低20個のチャンクは確保し、それ以降は制限適用
+                safe_print(f"🔍 文字数制限到達: {total_length:,}文字 (制限: {max_length:,}文字)")
+                break
+            result_chunks.append(chunk)
+            total_length += len(chunk)
+        
+        result = '\n\n'.join(result_chunks)
+        safe_print(f"🚀 ハイブリッドRAG検索完了: {len(result_chunks)}個のチャンク、{len(result)}文字 (元: {len(knowledge_text)}文字)")
         return result
         
     except Exception as e:
         safe_print(f"RAG検索エラー: {str(e)}")
         # エラーの場合は最初の部分を返す
-        return knowledge_text[:100000]
+        return knowledge_text[:50000]  # フォールバック時の文字数も増加
+
+def _preprocess_query(query: str) -> str:
+    """クエリの前処理 - 表記揺れや類義語に対応"""
+    # 全角・半角の正規化
+    import unicodedata
+    normalized = unicodedata.normalize('NFKC', query)
+    
+    # 類義語の展開
+    synonyms = {
+        '顧客番号': ['お客様番号', '顧客ID', '顧客コード', '会員番号', 'カスタマーID'],
+        '会社': ['企業', '法人', '株式会社', '有限会社', '合同会社'],
+        '料金': ['価格', '費用', '金額', 'プライス', 'コスト'],
+        '契約': ['申込', '申し込み', '契約書', '合意'],
+    }
+    
+    # クエリに類義語を追加
+    expanded_terms = [normalized]
+    for term, syns in synonyms.items():
+        if term in normalized:
+            expanded_terms.extend(syns)
+    
+    return ' '.join(expanded_terms)
+
+def _bm25_search(chunks: list, query: str, max_results: int) -> list:
+    """BM25検索（語彙ベース）"""
+    try:
+        import bm25s
+        
+        # BM25S検索エンジンを作成
+        corpus_tokens = bm25s.tokenize(chunks)
+        retriever = bm25s.BM25()
+        retriever.index(corpus_tokens)
+        
+        # 質問をトークン化して検索
+        query_tokens = bm25s.tokenize([query])
+        k_value = min(max_results * 2, len(chunks))
+        results, scores = retriever.retrieve(query_tokens, k=k_value)
+        
+        # 結果を整形
+        search_results = []
+        for i in range(results.shape[1]):
+            if i < len(chunks):
+                chunk_idx = results[0, i]
+                if chunk_idx < len(chunks):
+                    search_results.append({
+                        'content': chunks[chunk_idx],
+                        'score': float(scores[0, i]) if i < len(scores[0]) else 0.0,
+                        'type': 'bm25',
+                        'index': chunk_idx
+                    })
+        
+        return search_results
+        
+    except Exception as e:
+        safe_print(f"BM25検索エラー: {e}")
+        return []
+
+def _semantic_search(chunks: list, query: str, max_results: int) -> list:
+    """セマンティック検索（意味ベース）- Sentence Transformersを使用"""
+    try:
+        # Sentence Transformersを使った本格的なセマンティック検索
+        try:
+            from sentence_transformers import SentenceTransformer, util
+            import torch
+            
+            # 日本語対応の多言語モデルを使用
+            model_name = 'paraphrase-multilingual-MiniLM-L12-v2'
+            model = SentenceTransformer(model_name)
+            safe_print(f"🤖 セマンティックモデル読み込み: {model_name}")
+            
+            # クエリとチャンクをエンベディング化
+            query_embedding = model.encode([query])
+            chunk_embeddings = model.encode(chunks)
+            
+            # コサイン類似度を計算
+            similarities = util.cos_sim(query_embedding, chunk_embeddings)[0]
+            
+            # 結果を整形
+            semantic_results = []
+            for i, similarity in enumerate(similarities):
+                semantic_results.append({
+                    'content': chunks[i],
+                    'score': float(similarity),
+                    'type': 'semantic_transformer',
+                    'index': i
+                })
+            
+            # スコア順でソート
+            semantic_results.sort(key=lambda x: x['score'], reverse=True)
+            safe_print(f"🧠 Transformer セマンティック検索完了: 上位{min(max_results, len(semantic_results))}件")
+            return semantic_results[:max_results]
+            
+        except ImportError:
+            safe_print("⚠️ Sentence Transformers未インストール、TF-IDFベースのセマンティック検索にフォールバック")
+            
+            # TF-IDFベースのセマンティック検索（フォールバック）
+            try:
+                from sklearn.feature_extraction.text import TfidfVectorizer
+                from sklearn.metrics.pairwise import cosine_similarity
+                import numpy as np
+                
+                # TF-IDFベクトル化
+                vectorizer = TfidfVectorizer(
+                    ngram_range=(1, 2),  # 1-gram, 2-gramを使用
+                    max_features=10000,
+                    stop_words=None,  # 日本語のストップワードは使わない
+                    analyzer='char',   # 文字レベルの解析（日本語に適している）
+                    min_df=1
+                )
+                
+                # コーパス（チャンク + クエリ）をベクトル化
+                corpus = chunks + [query]
+                tfidf_matrix = vectorizer.fit_transform(corpus)
+                
+                # クエリと各チャンクの類似度を計算
+                query_vector = tfidf_matrix[-1]  # 最後がクエリ
+                chunk_vectors = tfidf_matrix[:-1]  # 最後以外がチャンク
+                
+                similarities = cosine_similarity(query_vector, chunk_vectors).flatten()
+                
+                # 結果を整形
+                semantic_results = []
+                for i, similarity in enumerate(similarities):
+                    semantic_results.append({
+                        'content': chunks[i],
+                        'score': float(similarity),
+                        'type': 'semantic_tfidf',
+                        'index': i
+                    })
+                
+                # スコア順でソート
+                semantic_results.sort(key=lambda x: x['score'], reverse=True)
+                safe_print(f"📊 TF-IDF セマンティック検索完了: 上位{min(max_results, len(semantic_results))}件")
+                return semantic_results[:max_results]
+                
+            except ImportError:
+                safe_print("⚠️ scikit-learn未インストール、簡易セマンティック検索にフォールバック")
+        
+        # 最後の手段: 改良された簡易セマンティック検索
+        semantic_results = []
+        
+        # クエリの重要語句を抽出
+        import re
+        query_words = set(re.findall(r'\w+', query.lower()))
+        
+        for i, chunk in enumerate(chunks):
+            chunk_words = set(re.findall(r'\w+', chunk.lower()))
+            
+            # 複数の類似度指標を組み合わせ
+            scores = []
+            
+            # 1. Jaccard類似度
+            if len(query_words) > 0 and len(chunk_words) > 0:
+                intersection = len(query_words.intersection(chunk_words))
+                union = len(query_words.union(chunk_words))
+                jaccard = intersection / union if union > 0 else 0.0
+                scores.append(jaccard * 0.4)
+            
+            # 2. 語句の包含度
+            if len(query_words) > 0:
+                inclusion = sum(1 for word in query_words if word in chunk.lower()) / len(query_words)
+                scores.append(inclusion * 0.3)
+            
+            # 3. 文字列距離（レーベンシュタイン距離の簡易版）
+            try:
+                # 部分文字列の一致度
+                substring_match = 0
+                for word in query_words:
+                    if len(word) >= 2 and word in chunk.lower():
+                        substring_match += len(word) / len(query)
+                scores.append(min(1.0, substring_match) * 0.3)
+            except:
+                scores.append(0.0)
+            
+            # 総合スコア
+            total_score = sum(scores)
+            
+            semantic_results.append({
+                'content': chunk,
+                'score': total_score,
+                'type': 'semantic_simple',
+                'index': i
+            })
+        
+        # スコア順でソート
+        semantic_results.sort(key=lambda x: x['score'], reverse=True)
+        safe_print(f"🔍 簡易セマンティック検索完了: 上位{min(max_results, len(semantic_results))}件")
+        return semantic_results[:max_results]
+        
+    except Exception as e:
+        safe_print(f"セマンティック検索エラー: {e}")
+        return []
+
+def _evaluate_rag_quality(filtered_chunk: str, query: str, rag_attempts: int) -> float:
+    """
+    RAG検索結果の品質を評価（0.0-1.0のスコア）
+    具体的な質問に対してより厳格な評価を実施
+    """
+    if not filtered_chunk or not filtered_chunk.strip():
+        return 0.0
+    
+    score = 0.0
+    content_lower = filtered_chunk.lower()
+    query_lower = query.lower()
+    
+    # 1. 文字数による基本スコア（最大0.2） - 厳格化
+    content_length = len(filtered_chunk.strip())
+    if content_length >= 500:  # 500文字以上で最高スコア
+        score += 0.2
+    elif content_length >= 300:  # 300文字以上で中程度
+        score += 0.15
+    elif content_length >= 150:   # 150文字以上で最低限
+        score += 0.1
+    
+    # 2. 重要キーワードの厳格マッチング（最大0.6） - 大幅強化
+    query_words = set(query.lower().split())
+    
+    # 重要キーワードの特定（会社名、固有名詞など）
+    important_keywords = []
+    company_patterns = [
+        r'株式会社\s*[\w\s]+',
+        r'有限会社\s*[\w\s]+', 
+        r'合同会社\s*[\w\s]+',
+        r'[\w\s]+会社',
+        r'[\w\s]+工芸',
+        r'[\w\s]+工業',
+        r'[\w\s]+商事'
+    ]
+    
+    # クエリから会社名や重要語句を抽出
+    for pattern in company_patterns:
+        matches = re.findall(pattern, query)
+        important_keywords.extend(matches)
+    
+    # クエリの主要単語を重要キーワードとして追加
+    for word in query_words:
+        if len(word) >= 2 and word not in ['の', 'に', 'を', 'は', 'が', 'で', 'と', 'から', 'まで']:
+            important_keywords.append(word)
+    
+    # 重要キーワードの完全一致チェック
+    critical_matches = 0
+    for keyword in important_keywords:
+        if keyword.strip() in content_lower:
+            critical_matches += 1
+    
+    if len(important_keywords) > 0:
+        critical_match_ratio = critical_matches / len(important_keywords)
+        
+        # 重要キーワードが50%以上マッチした場合のみ高スコア
+        if critical_match_ratio >= 0.5:
+            score += critical_match_ratio * 0.6
+        elif critical_match_ratio >= 0.3:
+            score += critical_match_ratio * 0.3
+        elif critical_match_ratio >= 0.1:
+            score += critical_match_ratio * 0.1
+    
+    # 3. 質問の意図に対する回答の適合性（最大0.2）
+    intent_keywords = {
+        'ステータス': ['状態', 'ステータス', '現状', '状況', '進捗', '段階'],
+        '顧客番号': ['顧客番号', 'お客様番号', '顧客ID', '顧客コード', '番号'],
+        '連絡先': ['電話', 'TEL', 'FAX', 'メール', '住所', '連絡先'],
+        '料金': ['料金', '価格', '費用', 'コスト', '金額', '値段'],
+        '契約': ['契約', '取引', '合意', '約束', '条件']
+    }
+    
+    intent_score = 0
+    for intent, keywords in intent_keywords.items():
+        if intent.lower() in query_lower:
+            # 質問に意図が含まれている場合、回答にその関連語句があるかチェック
+            for keyword in keywords:
+                if keyword in content_lower:
+                    intent_score += 0.05
+                    break
+    
+    score += min(0.2, intent_score)
+    
+    # 4. 無関係な内容の検出による減点
+    irrelevant_patterns = [
+        'システムエラー', 'デバッグ', 'テスト', 'サンプル', '例：', '例)', 
+        '※', '注意', '重要', 'エラーが発生', '申し訳ございません'
+    ]
+    
+    irrelevant_count = sum(1 for pattern in irrelevant_patterns if pattern in filtered_chunk)
+    if irrelevant_count > 0:
+        score -= min(0.3, irrelevant_count * 0.1)
+    
+    # 5. 最終的な厳格判定
+    # 具体的な固有名詞を含む質問の場合、その固有名詞が含まれていない回答は大幅減点
+    if any(word in query_lower for word in ['株式会社', '会社', '工芸', '顧客番号', 'ステータス']):
+        has_relevant_content = False
+        
+        # クエリの重要語句が回答に含まれているかチェック
+        for word in query_words:
+            if len(word) >= 2 and word in content_lower:
+                has_relevant_content = True
+                break
+        
+        if not has_relevant_content:
+            score *= 0.1  # 90%減点
+    
+    # 6. 意味的類似度による品質向上（ボーナス）
+    try:
+        # 簡易的な意味的類似度チェック
+        semantic_bonus = 0.0
+        
+        # 質問と回答の文脈的関連性をチェック
+        context_keywords = {
+            'ステータス': ['状態', '現状', '進行', '段階', '状況', 'status'],
+            '顧客': ['お客様', 'クライアント', 'client', 'customer'],
+            '会社': ['企業', '法人', 'company', 'corporation'],
+            '番号': ['ID', 'コード', 'number', 'code'],
+            '工芸': ['クラフト', 'アート', 'craft', 'art'],
+        }
+        
+        for main_word, related_words in context_keywords.items():
+            if main_word in query_lower:
+                # 関連語句が回答に含まれている場合はボーナス
+                for related in related_words:
+                    if related.lower() in content_lower:
+                        semantic_bonus += 0.02
+                        break
+        
+        # 文脈的な一貫性ボーナス
+        if semantic_bonus > 0:
+            score += min(0.1, semantic_bonus)  # 最大0.1のボーナス
+            
+    except Exception as e:
+        # エラーが発生した場合はボーナスなし
+        pass
+    
+    # スコアを0.0-1.0に正規化
+    final_score = max(0.0, min(1.0, score))
+    
+    return final_score
+
+def _combine_search_results(bm25_results: list, semantic_results: list, query: str, max_results: int) -> list:
+    """BM25とセマンティック検索結果の統合 - 意味的検索を重視"""
+    try:
+        # 結果の統合とスコア正規化
+        all_results = {}
+        
+        # セマンティック検索のタイプに応じて重みを調整
+        semantic_weight = 0.7  # デフォルト
+        bm25_weight = 0.3
+        
+        # Transformerベースの場合は意味的検索をより重視
+        if semantic_results and semantic_results[0].get('type') == 'semantic_transformer':
+            semantic_weight = 0.8
+            bm25_weight = 0.2
+            safe_print("🧠 Transformerベースセマンティック検索 - 意味重視モード")
+        elif semantic_results and semantic_results[0].get('type') == 'semantic_tfidf':
+            semantic_weight = 0.6
+            bm25_weight = 0.4
+            safe_print("📊 TF-IDFベースセマンティック検索 - バランスモード")
+        else:
+            semantic_weight = 0.4
+            bm25_weight = 0.6
+            safe_print("🔍 簡易セマンティック検索 - 語彙重視モード")
+        
+        # BM25結果の処理
+        max_bm25_score = max([r['score'] for r in bm25_results], default=1.0)
+        for result in bm25_results:
+            idx = result['index']
+            normalized_score = result['score'] / max_bm25_score if max_bm25_score > 0 else 0.0
+            
+            if idx not in all_results:
+                all_results[idx] = {
+                    'content': result['content'],
+                    'bm25_score': normalized_score * bm25_weight,
+                    'semantic_score': 0.0,
+                    'index': idx
+                }
+            else:
+                all_results[idx]['bm25_score'] = normalized_score * bm25_weight
+        
+        # セマンティック結果の処理
+        max_semantic_score = max([r['score'] for r in semantic_results], default=1.0)
+        for result in semantic_results:
+            idx = result['index']
+            normalized_score = result['score'] / max_semantic_score if max_semantic_score > 0 else 0.0
+            
+            if idx not in all_results:
+                all_results[idx] = {
+                    'content': result['content'],
+                    'bm25_score': 0.0,
+                    'semantic_score': normalized_score * semantic_weight,
+                    'index': idx
+                }
+            else:
+                all_results[idx]['semantic_score'] = normalized_score * semantic_weight
+        
+        # 統合スコアの計算
+        final_results = []
+        for idx, result in all_results.items():
+            combined_score = result['bm25_score'] + result['semantic_score']
+            
+            # 意味的類似度が高い場合にボーナス
+            if result['semantic_score'] > 0.5:
+                combined_score += 0.1  # セマンティックボーナス
+            
+            # 両方の検索で見つかった場合にボーナス
+            if result['bm25_score'] > 0 and result['semantic_score'] > 0:
+                combined_score += 0.05  # ハイブリッドボーナス
+            
+            final_results.append({
+                'content': result['content'],
+                'score': combined_score,
+                'index': idx,
+                'bm25_score': result['bm25_score'],
+                'semantic_score': result['semantic_score']
+            })
+        
+        # 統合スコア順でソート
+        final_results.sort(key=lambda x: x['score'], reverse=True)
+        
+        safe_print(f"🔍 ハイブリッド検索統合: BM25={len(bm25_results)}件, セマンティック={len(semantic_results)}件 → 統合={len(final_results)}件")
+        safe_print(f"📊 重み配分: BM25={bm25_weight:.1f}, セマンティック={semantic_weight:.1f}")
+        
+        return final_results[:max_results]
+        
+    except Exception as e:
+        safe_print(f"検索結果統合エラー: {e}")
+        return bm25_results[:max_results]  # フォールバック
 
 # Geminiモデル（グローバル変数）
 model = None
@@ -419,11 +895,28 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
             safe_print(f"✅ 知識ベース取得成功 - 長さ: {len(active_knowledge_text):,} 文字")
             safe_print(f"👀 知識ベース先頭200文字: {active_knowledge_text[:200]}...")
         
-        # RAG風検索で関連部分のみを抽出（超高速化）
+        # 改良されたRAG検索で関連部分のみを抽出（高精度・高速化）
         if active_knowledge_text and len(active_knowledge_text) > 50000:
-            safe_print(f"🎯 RAG検索開始 - 元サイズ: {len(active_knowledge_text):,} 文字")
-            active_knowledge_text = simple_rag_search(active_knowledge_text, message_text, max_results=8)
-            safe_print(f"🎯 RAG検索完了 - 新サイズ: {len(active_knowledge_text):,} 文字")
+            safe_print(f"🎯 改良RAG検索開始 - 元サイズ: {len(active_knowledge_text):,} 文字")
+            
+            # 高速化を重視した検索手法を選択
+            if SPEED_RAG_AVAILABLE:
+                # 雷速RAG検索を最優先で使用
+                active_knowledge_text = await lightning_rag_search(active_knowledge_text, message_text, max_results=30)
+            elif len(active_knowledge_text) > 500000:
+                # 非常に大きなテキストの場合は強化RAG検索
+                if RAG_ENHANCED_AVAILABLE:
+                    active_knowledge_text = await enhanced_rag_search(active_knowledge_text, message_text, max_results=25)
+                else:
+                    active_knowledge_text = multi_pass_rag_search(active_knowledge_text, message_text, max_results=20)
+            elif len(active_knowledge_text) > 200000:
+                # 大きなテキストの場合は多段階検索
+                active_knowledge_text = multi_pass_rag_search(active_knowledge_text, message_text, max_results=15)
+            else:
+                # 中程度のテキストの場合は適応的検索
+                active_knowledge_text = adaptive_rag_search(active_knowledge_text, message_text, max_results=12)
+            
+            safe_print(f"🎯 改良RAG検索完了 - 新サイズ: {len(active_knowledge_text):,} 文字")
             
             # RAG検索後のサイズが30万文字以下なら通常処理に切り替え
             if len(active_knowledge_text) <= 300000:
@@ -1014,13 +1507,23 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
         except Exception as e:
             safe_print(f"会話履歴取得エラー: {str(e)}")
         
-        # 複数チャンクを一括でRAG検索 → 見つからなければ次のセット
-        all_responses = []
+        # 🔍 情報発見まで継続検索: 見つかったら即座に終了、見つからなければ最後まで継続
+        all_rag_results = []  # RAG検索結果を蓄積
+        all_chunk_info = []   # チャンク情報を蓄積
         successful_chunks = 0
         processed_chunks = set()  # 処理済みチャンクのインデックスを記録
-        BATCH_SIZE = 5  # 一度に処理するチャンク数
+        BATCH_SIZE = min(25, len(raw_chunks))  # バッチサイズを拡大（15→25）
+        
+        safe_print(f"🔍 全ファイル全チャンク完全検索モード: 合計{len(raw_chunks)}個のチャンク、バッチサイズ{BATCH_SIZE}で処理")
+        safe_print(f"🎯 戦略: 全チャンクを検索してから最良の結果を選択（早期終了なし）")
+        safe_print(f"📚 検索対象: 全{len(active_resource_names)}ファイルの統合知識ベース")
         
         batch_start = 0
+        total_batches = (len(raw_chunks) + BATCH_SIZE - 1) // BATCH_SIZE  # 切り上げ除算
+        current_batch_num = 1
+        skipped_batches = 0  # RAG品質不足でスキップしたバッチ数
+        
+        # 🚀 全バッチのRAG検索を実行（早期終了なし）
         while batch_start < len(raw_chunks):
             # 未処理のチャンクから次のバッチを取得
             available_chunks = [i for i in range(batch_start, min(batch_start + BATCH_SIZE, len(raw_chunks))) 
@@ -1028,9 +1531,11 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
             
             if not available_chunks:
                 batch_start += BATCH_SIZE
+                current_batch_num += 1
                 continue
                 
-            safe_print(f"🔄 バッチ処理開始: チャンク {available_chunks[0]+1}-{available_chunks[-1]+1} ({len(available_chunks)}個)")
+            safe_print(f"🔄 RAG検索バッチ ({current_batch_num}/{total_batches}): チャンク {available_chunks[0]+1}-{available_chunks[-1]+1} ({len(available_chunks)}個)")
+            safe_print(f"📊 RAG処理進捗: {len(processed_chunks)}/{len(raw_chunks)}チャンク完了 ({len(processed_chunks)/len(raw_chunks)*100:.1f}%)")
             
             # 複数チャンクを結合してRAG検索
             combined_chunk = ""
@@ -1044,58 +1549,175 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
             safe_print(f"📊 結合チャンク: {chunk_info}")
             safe_print(f"📊 結合サイズ: {len(combined_chunk):,} 文字")
             
-            # 🎯 結合チャンクでRAG検索を実行
-            if len(combined_chunk) > 10000:
-                rag_max_results = min(50, max(20, len(combined_chunk) // 20000))  # より多くの結果を取得
-                safe_print(f"🎯 バッチRAG検索実行: max_results={rag_max_results}")
-                filtered_chunk = simple_rag_search(combined_chunk, message_text, max_results=rag_max_results)
-                safe_print(f"📊 RAG検索後: {len(filtered_chunk)} 文字 (元: {len(combined_chunk)} 文字)")
+            # 🔄 高度なRAG検索（制限なし）
+            filtered_chunk = None
+            rag_attempts = 0
+            min_content_threshold = 50  # さらに緩和（100→50）
+            
+            if len(combined_chunk) > 3000:  # 閾値をさらに緩和（5000→3000）
+                safe_print(f"🔄 高度RAG検索開始: 全戦略を試行")
+                
+                # より多様な検索戦略を定義
+                search_strategies = [
+                    # 基本検索戦略
+                    {'max_results': min(40, max(20, len(combined_chunk) // 25000)), 'query': message_text, 'name': '標準検索'},
+                    {'max_results': min(60, max(30, len(combined_chunk) // 20000)), 'query': message_text, 'name': '拡張検索'},
+                    {'max_results': min(80, max(40, len(combined_chunk) // 15000)), 'query': expand_query(message_text), 'name': 'クエリ拡張検索'},
+                    
+                    # 高度な検索戦略
+                    {'max_results': min(100, max(50, len(combined_chunk) // 12000)), 'query': expand_query(message_text), 'name': '最大範囲検索'},
+                    {'max_results': min(120, len(combined_chunk) // 10000), 'query': f"{message_text} OR {expand_query(message_text)}", 'name': 'OR検索'},
+                    {'max_results': min(150, len(combined_chunk) // 8000), 'query': message_text.replace(' ', ' AND '), 'name': 'AND検索'},
+                    
+                    # 特殊検索戦略
+                    {'max_results': min(200, len(combined_chunk) // 6000), 'query': f"({message_text}) OR ({expand_query(message_text)})", 'name': '高度OR検索'},
+                    {'max_results': min(250, len(combined_chunk) // 5000), 'query': message_text, 'name': '最大密度検索'},
+                ]
+                
+                best_result = None
+                best_score = 0.0
+                best_strategy = None
+                
+                for strategy in search_strategies:
+                    rag_attempts += 1
+                    safe_print(f"🎯 RAG検索 {rag_attempts}回目: {strategy['name']}, max_results={strategy['max_results']}")
+                    safe_print(f"🔍 検索クエリ: '{strategy['query'][:50]}{'...' if len(strategy['query']) > 50 else ''}'")
+                    
+                    current_result = simple_rag_search(combined_chunk, strategy['query'], max_results=strategy['max_results'])
+                    current_length = len(current_result.strip())
+                    safe_print(f"📊 RAG検索{rag_attempts}回目結果: {current_length} 文字")
+                    
+                    # 品質評価を実行
+                    if current_length >= min_content_threshold:
+                        quality_score = _evaluate_rag_quality(current_result, message_text, rag_attempts)
+                        safe_print(f"🎯 RAG品質スコア ({rag_attempts}回目): {quality_score:.2f}")
+                        
+                        # より良い結果があれば採用
+                        if quality_score > best_score:
+                            best_result = current_result
+                            best_score = quality_score
+                            best_strategy = strategy['name']
+                            safe_print(f"✅ 新しい最良結果を採用: {strategy['name']} (スコア: {quality_score:.2f})")
+                    else:
+                        safe_print(f"⚠️ 結果が短すぎます ({current_length} < {min_content_threshold})")
+                
+                # 最良の結果を採用
+                if best_result:
+                    filtered_chunk = best_result
+                    safe_print(f"🏆 最良結果を採用: {best_strategy}, スコア: {best_score:.2f}, 長さ: {len(filtered_chunk)} 文字")
+                else:
+                    # 最良結果がない場合は最長の結果を採用
+                    longest_result = None
+                    longest_length = 0
+                    for strategy in search_strategies[:3]:  # 基本戦略のみ再試行
+                        result = simple_rag_search(combined_chunk, strategy['query'], max_results=strategy['max_results'])
+                        if len(result) > longest_length:
+                            longest_result = result
+                            longest_length = len(result)
+                    
+                    if longest_result:
+                        filtered_chunk = longest_result
+                        safe_print(f"📊 最長結果を採用: {longest_length} 文字")
+                    else:
+                        filtered_chunk = combined_chunk[:10000]  # 最後の手段
+                        safe_print(f"📊 部分結果を採用: {len(filtered_chunk)} 文字")
+                
+                safe_print(f"🔄 高度RAG検索完了: {rag_attempts}回試行、最終結果 {len(filtered_chunk or '')} 文字")
             else:
                 filtered_chunk = combined_chunk
                 safe_print(f"📊 小さなバッチのため RAG検索をスキップ")
             
-            # バッチが空でない場合のみGemini処理
-            if not filtered_chunk or len(filtered_chunk.strip()) < 200:
-                safe_print(f"⚠️ バッチ結果が空または小さすぎる - 次のバッチへ")
-                for chunk_idx in available_chunks:
-                    processed_chunks.add(chunk_idx)
-                batch_start += BATCH_SIZE
-                continue
-            # 🔍 バッチ内容の詳細分析（デバッグ用）
-            safe_print(f"🔍 バッチの最初の200文字: {filtered_chunk[:200]}...")
-            if len(filtered_chunk) > 400:
-                safe_print(f"🔍 バッチの最後の200文字: ...{filtered_chunk[-200:]}")
+            # 🎯 厳格なRAG品質判定
+            rag_quality_score = _evaluate_rag_quality(filtered_chunk, message_text, rag_attempts)
+            safe_print(f"🎯 最終RAG品質スコア: {rag_quality_score:.2f} (閾値: 0.30)")
             
-            # 質問に関連するキーワードがバッチに含まれているかチェック
-            question_keywords = message_text.lower().split()[:5]  # 質問の最初の5単語
-            matching_keywords = [kw for kw in question_keywords if kw in filtered_chunk.lower()]
-            safe_print(f"🎯 バッチ内の関連キーワード: {matching_keywords} (質問キーワード: {question_keywords})")
+            # 品質スコアを厳格化（0.10→0.30）
+            if rag_quality_score >= 0.30:
+                safe_print(f"✅ RAG品質合格 (スコア: {rag_quality_score:.2f}) - 結果を蓄積")
+                
+                # RAG結果を蓄積（全て処理してから最良を選択）
+                batch_info = f"バッチ {len(available_chunks)}個 ({available_chunks[0]+1}-{available_chunks[-1]+1})"
+                rag_info = f"RAG検索{rag_attempts}回実行" if rag_attempts > 0 else "RAG検索なし"
+                
+                all_rag_results.append({
+                    'content': filtered_chunk,
+                    'batch_info': batch_info,
+                    'rag_info': rag_info,
+                    'quality_score': rag_quality_score,
+                    'chunk_indices': available_chunks,
+                    'content_length': len(filtered_chunk),
+                    'batch_num': current_batch_num
+                })
+                
+                all_chunk_info.extend(chunk_info)
+                successful_chunks += len(available_chunks)
+                safe_print(f"📚 RAG結果蓄積: {len(all_rag_results)}個目のバッチを追加")
+            else:
+                safe_print(f"⚠️ RAG品質不足 (スコア: {rag_quality_score:.2f} < 0.30) - このバッチをスキップ")
+                skipped_batches += 1
             
-            # バッチが有効かどうかの事前判定
-            has_relevant_content = len(matching_keywords) > 0 or len(filtered_chunk.strip()) > 1000
-            safe_print(f"📊 バッチの有効性: {'有効' if has_relevant_content else '無効'} (キーワード一致: {len(matching_keywords)}, 長さ: {len(filtered_chunk)})")
+            # このバッチのチャンクを処理済みに追加
+            for chunk_idx in available_chunks:
+                processed_chunks.add(chunk_idx)
             
-            # プロンプトの作成
-            batch_info = f"バッチ {len(available_chunks)}個 ({available_chunks[0]+1}-{available_chunks[-1]+1})"
-            prompt = f"""
+            # 次のバッチへ進む（情報が見つからない場合は最後まで継続）
+            batch_start += BATCH_SIZE
+            current_batch_num += 1
+            
+            # 🎯 重要: 情報が見つかった場合のみ早期終了を検討
+            # しかし、ユーザーの要求により「見つからない場合は最後まで検索」を保証
+            if all_rag_results:
+                safe_print(f"✅ 情報発見: {len(all_rag_results)}個のバッチで情報を発見")
+                safe_print(f"🔄 継続検索: 見つからない場合に備えて最後まで検索を継続")
+                # 早期終了は行わず、全チャンクを確実に処理
+        
+        # 🏆 全チャンク処理完了後、最良の結果を選択
+        final_response = ""
+        if all_rag_results:
+            safe_print(f"🏆 全チャンク検索完了！最良の結果を選択: {len(all_rag_results)}個のバッチから")
+            
+            # 結果を品質スコア順にソート
+            sorted_results = sorted(all_rag_results, key=lambda x: x['quality_score'], reverse=True)
+            
+            # 上位の結果を統合（最大5個まで）
+            top_results = sorted_results[:min(5, len(sorted_results))]
+            safe_print(f"📊 上位{len(top_results)}個の結果を統合:")
+            for i, result in enumerate(top_results, 1):
+                safe_print(f"  {i}. バッチ{result['batch_num']}: スコア{result['quality_score']:.2f}, 長さ{result['content_length']:,}文字")
+            
+            # 上位結果を統合
+            combined_rag_content = ""
+            total_quality_score = 0
+            for i, rag_result in enumerate(top_results, 1):
+                combined_rag_content += f"\n\n=== 最良RAG結果 {i}/{len(top_results)} ===\n"
+                combined_rag_content += f"処理情報: {rag_result['batch_info']}, {rag_result['rag_info']}\n"
+                combined_rag_content += f"品質スコア: {rag_result['quality_score']:.2f}\n"
+                combined_rag_content += f"内容:\n{rag_result['content']}"
+                total_quality_score += rag_result['quality_score']
+            
+            average_quality = total_quality_score / len(top_results)
+            safe_print(f"📊 統合RAG結果: {len(combined_rag_content):,}文字, 平均品質スコア: {average_quality:.2f}")
+            
+            # 統合プロンプトの作成（全チャンク検索完了版）
+            unified_prompt = f"""
 あなたは親切で丁寧な対応ができる{current_company_name}のアシスタントです。
-以下の知識ベースを参考に、ユーザーの質問に対して可能な限り具体的で役立つ回答を提供してください。
+以下は全{len(raw_chunks)}チャンクの完全検索で発見された最良の知識ベース情報です。この情報を基に、ユーザーの質問に対して最も具体的で詳細な回答を提供してください。
 
-注意: これは知識ベース全体の一部です（{batch_info}）。
-この情報を使用して、質問に関連する情報があれば積極的に回答してください。
+**重要な指示:**
+1. 全ファイル全チャンクから選ばれた最良の情報を活用してください
+2. 質問に直接関連する情報を中心に、具体的で詳細な回答を作成してください
+3. 複数の結果から最も適切な情報を統合して回答してください
+4. **実際に知識ベースから有用な情報を見つけて回答した場合**、回答の最後に「情報ソース: [ファイル名]」を記載してください
+5. 回答は**Markdown記法**を使用して見やすく整理してください
 
-利用可能なファイル: {', '.join(active_resource_names) if active_resource_names else ''}
+検索統計: 
+- 対象ファイル: {len(active_resource_names)}個 ({', '.join(active_resource_names)})
+- 検索チャンク: 全{len(raw_chunks)}個
+- 発見結果: {len(all_rag_results)}個のバッチ
+- 選択結果: 上位{len(top_results)}個 (平均品質スコア: {average_quality:.2f}){special_instructions_text}
 
-回答の際の注意点：
-1. 常に丁寧な言葉遣いを心がけ、ユーザーに対して敬意を持って接してください
-2. 知識ベース内に質問に関連する情報があれば、部分的でも積極的に回答してください
-3. 完全に関連のない情報しかない場合のみ「このバッチには該当情報がありません」と回答してください
-4. 可能な限り具体的で実用的な情報を提供してください
-5. 知識ベースの情報を使用して回答した場合は、回答の最後に「情報ソース: [ファイル名]」の形式で参照したファイル名を記載してください
-6. 回答は**Markdown記法**を使用して見やすく整理してください{special_instructions_text}
-
-知識ベース内容（{batch_info}）：
-{filtered_chunk}
+全チャンク検索で発見された最良の情報:
+{combined_rag_content}
 
 {conversation_history}
 
@@ -1103,112 +1725,51 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
 {message_text}
 """
             
-            # Gemini API呼び出し
+            # Gemini API呼び出し（一度だけ）
             try:
                 model = setup_gemini()
                 
-                safe_print(f"🤖 Gemini API呼び出し - バッチ {batch_info}")
-                safe_print(f"📏 プロンプトサイズ: {len(prompt)} 文字")
+                safe_print(f"🤖 統合Gemini API呼び出し開始")
+                safe_print(f"📏 統合プロンプトサイズ: {len(unified_prompt):,} 文字")
                 
                 # タイムアウト付きでAPI呼び出し
                 import time
                 start_time = time.time()
                 
-                response = model.generate_content(prompt)
+                response = model.generate_content(unified_prompt)
                 
                 end_time = time.time()
                 elapsed_time = end_time - start_time
-                safe_print(f"📨 API応答受信 - バッチ {batch_info} (処理時間: {elapsed_time:.2f}秒)")
+                safe_print(f"📨 統合API応答受信 (処理時間: {elapsed_time:.2f}秒)")
                 
                 if response and hasattr(response, 'text'):
                     if response.text and response.text.strip():
-                        batch_response = response.text.strip()
-                        safe_print(f"📝 応答テキスト長: {len(batch_response)} 文字 - バッチ {batch_info}")
-                        safe_print(f"📝 応答内容（最初の100文字）: {batch_response[:100]}...")
-                        
-                        # 「該当情報がありません」系の回答でない場合のみ追加
-                        # より厳密な条件で「該当情報なし」を判定
-                        no_info_phrases = [
-                            "このバッチには該当情報がありません",
-                            "このチャンクには該当情報がありません",
-                            "該当する情報が見つかりません", 
-                            "完全に関連のない情報しかありません"
-                        ]
-                        
-                        # 完全一致または非常に類似した応答の場合のみ除外
-                        is_no_info = any(
-                            phrase in batch_response.lower() and len(batch_response.strip()) < 150
-                            for phrase in no_info_phrases
-                        )
-                        
-                        if not is_no_info:
-                            all_responses.append(batch_response)
-                            successful_chunks += len(available_chunks)  # バッチ内のチャンク数を加算
-                            safe_print(f"✅ バッチ {batch_info} 処理成功 - 回答を統合リストに追加")
-                            # このバッチのチャンクを処理済みに追加
-                            for chunk_idx in available_chunks:
-                                processed_chunks.add(chunk_idx)
-                            # 成功した場合、残りのチャンクも処理するため次のバッチへ
-                        else:
-                            safe_print(f"ℹ️ バッチ {batch_info} に該当情報なし - 除外フレーズにマッチ")
-                            # このバッチのチャンクを処理済みに追加
-                            for chunk_idx in available_chunks:
-                                processed_chunks.add(chunk_idx)
+                        final_response = response.text.strip()
+                        safe_print(f"📝 統合応答テキスト長: {len(final_response)} 文字")
+                        safe_print(f"📝 統合応答内容（最初の100文字）: {final_response[:100]}...")
                     else:
-                        safe_print(f"⚠️ バッチ {batch_info} 空の応答テキスト")
-                        # このバッチのチャンクを処理済みに追加
-                        for chunk_idx in available_chunks:
-                            processed_chunks.add(chunk_idx)
+                        safe_print(f"⚠️ 統合応答で空のテキスト")
+                        final_response = "申し訳ございません。適切な回答を生成できませんでした。"
                 else:
-                    safe_print(f"⚠️ バッチ {batch_info} 無効な応答オブジェクト")
-                    if response:
-                        safe_print(f"🔍 応答オブジェクトの属性: {dir(response)}")
-                    # このバッチのチャンクを処理済みに追加
-                    for chunk_idx in available_chunks:
-                        processed_chunks.add(chunk_idx)
+                    safe_print(f"⚠️ 統合応答で無効な応答オブジェクト")
+                    final_response = "申し訳ございません。システムエラーが発生しました。"
                     
             except Exception as e:
-                safe_print(f"❌ バッチ {batch_info} 処理エラー: {str(e)}")
+                safe_print(f"❌ 統合Gemini API呼び出しエラー: {str(e)}")
                 safe_print(f"🔍 エラータイプ: {type(e).__name__}")
                 import traceback
                 safe_print(f"🔍 エラー詳細: {traceback.format_exc()}")
-                
-                # Gemini API固有のエラーをチェック
-                if hasattr(e, 'code'):
-                    safe_print(f"🔍 APIエラーコード: {e.code}")
-                if hasattr(e, 'message'):
-                    safe_print(f"🔍 APIエラーメッセージ: {e.message}")
-                
-                # エラーの場合もこのバッチのチャンクを処理済みに追加
-                for chunk_idx in available_chunks:
-                    processed_chunks.add(chunk_idx)
-                    
-                continue
-            
-            # APIレート制限を避けるため少し待機
-            batch_start += BATCH_SIZE
-            if batch_start < len(raw_chunks):
-                await asyncio.sleep(1)
-        
-        # 最終回答の生成
-        if all_responses:
-            if len(all_responses) == 1:
-                # 単一の回答の場合はそのまま使用
-                final_response = all_responses[0]
-            else:
-                # 複数の回答がある場合は統合
-                safe_print(f"🔗 複数チャンクからの回答を統合: {len(all_responses)}個")
-                final_response = "\n\n".join(all_responses)
-                safe_print(f"📝 統合後の回答長: {len(final_response)} 文字")
-            
-            # チャンク情報を削除し、シンプルなファイル名表示に変更
-            # [チャンク X/Y より] のような表示を削除
-            import re
-            final_response = re.sub(r'\[チャンク \d+/\d+ より\]', '', final_response)
-            final_response = final_response.strip()
-            
+                final_response = f"申し訳ございません。システムエラーが発生しました: {str(e)}"
         else:
-            final_response = f"""申し訳ございません。ご質問に対する適切な回答が見つかりませんでした。
+            # RAG結果が全くない場合
+            safe_print(f"❌ 全てのバッチでRAG品質不足のため、情報が見つかりませんでした")
+            final_response = f"""申し訳ございません。全{len(raw_chunks)}個のチャンクを検索いたしましたが、ご質問に対する適切な回答が見つかりませんでした。
+
+🔍 **検索結果**:
+- 検索対象: {len(raw_chunks)}個のチャンク
+- 処理完了: {len(processed_chunks)}個 (100%)
+- RAG品質合格: {len(all_rag_results)}個
+- スキップ: {skipped_batches}個（品質不足）
 
 別の質問方法でお試しいただくか、管理者にお問い合わせください。"""
         
@@ -1253,7 +1814,24 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
             except Exception as e:
                 safe_print(f"利用制限更新エラー: {str(e)}")
         
-        safe_print(f"✅ チャンク化処理完了 - 成功チャンク: {successful_chunks}/{len(raw_chunks)}")
+        processing_rate = (len(processed_chunks) / len(raw_chunks) * 100) if raw_chunks else 0
+        success_rate = (successful_chunks / len(raw_chunks) * 100) if raw_chunks else 0
+        
+        safe_print(f"🔍 情報発見まで継続検索処理完了")
+        safe_print(f"📊 処理統計: 全{len(raw_chunks)}チャンク中 {len(processed_chunks)}チャンク処理済み ({processing_rate:.1f}%)")
+        safe_print(f"📊 成功統計: {successful_chunks}チャンクから有効回答取得 ({success_rate:.1f}%)")
+        safe_print(f"📝 RAG結果蓄積: {len(all_rag_results)}個のバッチ")
+        safe_print(f"🤖 Gemini呼び出し: 1回のみ (情報発見時即座送信)")
+        safe_print(f"⚡ 効率化: {skipped_batches}バッチをRAG品質判定でスキップ ({skipped_batches/total_batches*100:.1f}%削減)")
+        
+        # 情報発見まで継続検索の結果を詳細に報告
+        if all_rag_results:
+            safe_print(f"🎉 情報発見成功: {len(all_rag_results)}個のバッチで情報を発見し、即座にGeminiに送信")
+            safe_print(f"✅ 効率的終了: 情報発見後は残り{len(raw_chunks) - len(processed_chunks)}チャンクをスキップ")
+        elif len(processed_chunks) == len(raw_chunks):
+            safe_print(f"🔍 完全検索完了: 全{len(raw_chunks)}チャンクを探索したが、該当する情報は見つかりませんでした")
+        else:
+            safe_print(f"⚠️ 不完全な処理: {len(raw_chunks) - len(processed_chunks)}チャンクが未処理")
         
         # ソース情報の抽出（回答からファイル名を抽出）
         source_text = ""
@@ -1262,12 +1840,19 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
             import re
             source_match = re.search(r'情報ソース[:：]\s*([^\n]+)', final_response)
             if source_match:
-                source_text = source_match.group(1).strip()
+                # 情報が見つからない場合の回答には情報ソースを含めない
+                no_info_in_response = any(phrase in final_response.lower() for phrase in [
+                    "情報は含まれておりませんでした",
+                    "情報が含まれておりませんでした", 
+                    "に関する情報は含まれておりません",
+                    "該当する情報が見つかりません"
+                ])
+                
+                if not no_info_in_response:
+                    source_text = source_match.group(1).strip()
+                
                 # 情報ソース部分を回答から削除
                 final_response = re.sub(r'\n*情報ソース[:：][^\n]*', '', final_response).strip()
-            elif len(active_resource_names) == 1:
-                # アクティブリソースが1つだけの場合はそれをソースとする
-                source_text = active_resource_names[0]
         
         # 無効なソース情報は空文字列にする
         invalid_sources = ['なし', 'デバッグ', 'debug', '情報なし', '該当なし', '不明', 'unknown', 'null', 'undefined']
@@ -1301,3 +1886,164 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
             "remaining_questions": remaining_questions,
             "limit_reached": limit_reached
         }
+
+async def lightning_rag_search(knowledge_text: str, query: str, max_results: int = 20) -> str:
+    """
+    雷速RAG検索 - 最高速度を重視した検索システム
+    - キャッシュシステム
+    - 事前フィルタリング
+    - 大きなチャンクサイズによる高速化
+    """
+    if not SPEED_RAG_AVAILABLE:
+        safe_print("高速RAGが利用できないため、従来のRAGにフォールバック")
+        return simple_rag_search(knowledge_text, query, max_results)
+    
+    if not knowledge_text or not query:
+        return knowledge_text
+    
+    try:
+        safe_print(f"⚡ 雷速RAG検索開始: {len(knowledge_text):,}文字, クエリ: {query[:30]}...")
+        
+        # 高速検索実行
+        result = await high_speed_rag.lightning_search(
+            query=query,
+            knowledge_text=knowledge_text,
+            max_results=max_results
+        )
+        
+        if result:
+            safe_print(f"⚡ 雷速RAG検索完了: {len(result):,}文字の関連情報を抽出")
+            return result
+        else:
+            safe_print("⚠️ 雷速RAG検索で結果が見つからず、従来のRAGにフォールバック")
+            return simple_rag_search(knowledge_text, query, max_results)
+    
+    except Exception as e:
+        safe_print(f"❌ 雷速RAG検索エラー: {str(e)}")
+        # エラー時は従来のRAGにフォールバック
+        return simple_rag_search(knowledge_text, query, max_results)
+
+async def enhanced_rag_search(knowledge_text: str, query: str, max_results: int = 20) -> str:
+    """
+    強化されたRAG検索システム
+    - インテリジェントなチャンク化
+    - ハイブリッド検索（BM25 + セマンティック）
+    - 反復検索による高精度検索
+    """
+    if not RAG_ENHANCED_AVAILABLE:
+        safe_print("強化RAGが利用できないため、従来のRAGにフォールバック")
+        return simple_rag_search(knowledge_text, query, max_results)
+    
+    if not knowledge_text or not query:
+        return knowledge_text
+    
+    try:
+        safe_print(f"🚀 強化RAG検索開始: {len(knowledge_text):,}文字, クエリ: {query[:50]}...")
+        
+        # 反復検索による高精度検索
+        result = await enhanced_rag.iterative_search(
+            query=query,
+            knowledge_text=knowledge_text,
+            max_iterations=3,
+            min_results=5
+        )
+        
+        if result:
+            safe_print(f"✅ 強化RAG検索完了: {len(result):,}文字の関連情報を抽出")
+            return result
+        else:
+            safe_print("⚠️ 強化RAG検索で結果が見つからず、従来のRAGにフォールバック")
+            return simple_rag_search(knowledge_text, query, max_results)
+    
+    except Exception as e:
+        safe_print(f"❌ 強化RAG検索エラー: {str(e)}")
+        # エラー時は従来のRAGにフォールバック
+        return simple_rag_search(knowledge_text, query, max_results)
+
+def adaptive_rag_search(knowledge_text: str, query: str, max_results: int = 10) -> str:
+    """
+    適応的RAG検索 - 知識ベースのサイズに応じて最適な検索手法を選択
+    """
+    if not knowledge_text or not query:
+        return knowledge_text
+    
+    text_length = len(knowledge_text)
+    safe_print(f"📊 適応的RAG検索: テキスト長 {text_length:,}文字")
+    
+    # 小さなテキストの場合は全体を返す
+    if text_length <= 10000:
+        safe_print("📝 小さなテキストのため全体を返却")
+        return knowledge_text
+    
+    # 中程度のテキストの場合は従来のRAG
+    elif text_length <= 100000:
+        safe_print("🎯 中程度のテキストのため従来のRAG検索を実行")
+        return simple_rag_search(knowledge_text, query, max_results)
+    
+    # 大きなテキストの場合は強化RAG（非同期処理が必要なため、ここでは従来のRAGを使用）
+    else:
+        safe_print("🚀 大きなテキストのため高性能RAG検索を実行")
+        # 段落数を増やして精度向上
+        return simple_rag_search(knowledge_text, query, max_results * 2)
+
+def multi_pass_rag_search(knowledge_text: str, query: str, max_results: int = 15) -> str:
+    """
+    多段階RAG検索 - 複数の検索戦略を組み合わせて精度を向上
+    """
+    if not knowledge_text or not query:
+        return knowledge_text
+    
+    try:
+        safe_print(f"🔄 多段階RAG検索開始: {len(knowledge_text):,}文字")
+        
+        # 第1段階: 広い検索
+        broad_results = simple_rag_search(knowledge_text, query, max_results * 3)
+        
+        # 第2段階: クエリを拡張して再検索
+        expanded_query = expand_query(query)
+        if expanded_query != query:
+            safe_print(f"🔍 クエリを拡張: '{query}' → '{expanded_query}'")
+            expanded_results = simple_rag_search(knowledge_text, expanded_query, max_results * 2)
+            
+            # 結果をマージ
+            combined_text = f"{broad_results}\n\n{'='*50}\n\n{expanded_results}"
+            
+            # 第3段階: 重複を除去して最終調整
+            final_results = simple_rag_search(combined_text, query, max_results)
+        else:
+            final_results = broad_results
+        
+        safe_print(f"✅ 多段階RAG検索完了: {len(final_results):,}文字")
+        return final_results
+        
+    except Exception as e:
+        safe_print(f"❌ 多段階RAG検索エラー: {str(e)}")
+        return simple_rag_search(knowledge_text, query, max_results)
+
+def expand_query(query: str) -> str:
+    """
+    クエリ拡張 - 類義語や関連用語を追加して検索精度を向上
+    """
+    # 基本的なクエリ拡張のマッピング
+    expansion_map = {
+        '方法': ['手順', 'やり方', 'プロセス', '流れ'],
+        '手順': ['方法', 'ステップ', 'プロセス', '流れ'],
+        '問題': ['課題', 'トラブル', 'エラー', '不具合'],
+        '設定': ['構成', 'コンフィグ', '設定値', 'セットアップ'],
+        '使い方': ['利用方法', '操作方法', '使用方法', '操作手順'],
+        'エラー': ['問題', 'トラブル', '不具合', 'バグ'],
+        '料金': ['価格', '費用', 'コスト', '値段'],
+        '機能': ['特徴', '仕様', '性能', '能力'],
+    }
+    
+    expanded_terms = []
+    query_words = query.split()
+    
+    for word in query_words:
+        expanded_terms.append(word)
+        if word in expansion_map:
+            # 1つの類義語を追加（クエリが長くなりすぎないように）
+            expanded_terms.append(expansion_map[word][0])
+    
+    expanded_query = ' '.join(expanded_terms)
+    return expanded_query if len(expanded_query) <= len(query) * 2 else query

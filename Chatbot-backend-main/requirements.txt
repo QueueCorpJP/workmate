@@ -27,3 +27,9 @@ openpyxl>=3.0.0
 xlrd>=2.0.0
 aiohttp>=3.8.0
 python-docx>=0.8.11
+# 強化RAGシステム用
+bm25s>=0.2.0
+scikit-learn>=1.0.0
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.0
+numpy>=1.21.0
