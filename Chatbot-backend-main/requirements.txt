@@ -30,6 +30,8 @@ python-docx>=0.8.11
 # 強化RAGシステム用
 bm25s>=0.2.0
 scikit-learn>=1.0.0
-sentence-transformers>=2.2.0
+sentence-transformers==2.2.2
+# ---- Torch (CPU 版) を固定して巨大な CUDA 依存のインストールを回避 ----
+torch==1.13.1
 faiss-cpu>=1.7.0
 numpy>=1.21.0
