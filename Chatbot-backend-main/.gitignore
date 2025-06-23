@@ -7,12 +7,15 @@ __pycache__/
 # Virtual environment
 venv/
 env/
+.venv/
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
 
 # dotenv files
 .env
+.env.local
+.env.production
 
 # Database files
 *.db
@@ -63,6 +66,26 @@ data/
 *.pkl
 *.pickle
 
-# Node.js (if any frontend mixing)
+# Node.js関連（バックエンドでNode.jsツールを使用する場合）
 node_modules/
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+.yarn/
+
+# パッケージマネージャーファイル（必要に応じてコメントアウト）
+# package-lock.json
+# yarn.lock
+
+# PM2関連
+.pm2/
+ecosystem.config.js.backup
+
+# キャッシュディレクトリ
+.cache/
+.pytest_cache/
+
+# 機械学習モデルキャッシュ
+.transformers/
+.sentence_transformers/
