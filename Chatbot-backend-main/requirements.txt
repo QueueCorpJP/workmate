@@ -30,7 +30,94 @@ python-docx>=0.8.11
 # 強化RAGシステム用
 bm25s>=0.2.0
 scikit-learn>=1.0.0
-sentence-transformers==2.2.2
+ython-dotenv could not parse statement starting at line 13
+⚡ 高速化RAGシステムが利用可能です
+2025-06-23 15:26:29,150 - chatbot-assistant - INFO - バックエンドサーバーを起動しています...
+🔍 環境判定開始...
+🔍 PM2_HOME: None
+🔍 PM2_JSON_PROCESSING: None
+🔍 NODE_ENV:
+🔍 ENVIRONMENT:
+🔍 環境変数による判定失敗、追加条件をチェック...
+🔍 DYNO: None
+🔍 AWS_REGION: None
+🔍 HOST: None
+❌ 全ての条件で本番環境を検出できず -> development
+🌍 実行環境: development
+🔍 環境判定開始...
+🔍 PM2_HOME: None
+🔍 PM2_JSON_PROCESSING: None
+🔍 NODE_ENV:
+🔍 ENVIRONMENT:
+🔍 環境変数による判定失敗、追加条件をチェック...
+🔍 DYNO: None
+🔍 AWS_REGION: None
+🔍 HOST: None
+❌ 全ての条件で本番環境を検出できず -> development
+🔗 CORS許可オリジン: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:3025', 'http://127.0.0.1:3025', 'http://localhost:5173', 'http://127.0.0.1:5173']
+データベース初期化開始...
+テーブル作成中: companies
+2025-06-23 15:26:30,384 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+テーブル作成中: users
+2025-06-23 15:26:30,462 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+テーブル作成中: usage_limits
+2025-06-23 15:26:30,542 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+テーブル作成中: document_sources
+2025-06-23 15:26:30,617 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+テーブル作成中: chat_history
+2025-06-23 15:26:30,679 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+テーブル作成中: monthly_token_usage
+2025-06-23 15:26:30,745 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+テーブル作成中: company_settings
+2025-06-23 15:26:30,808 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+テーブル作成中: plan_history
+2025-06-23 15:26:30,856 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+テーブル作成中: applications
+2025-06-23 15:26:30,914 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+document_sourcesテーブルのparent_idカラム確認...
+2025-06-23 15:26:30,965 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+parent_idカラムは既に存在します
+ビュー作成中: current_month_usage
+2025-06-23 15:26:31,028 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+ビュー作成中: company_current_month_summary
+2025-06-23 15:26:31,092 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+インデックス作成中: idx_chat_history_company_timestamp
+2025-06-23 15:26:31,189 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+インデックス作成中: idx_chat_history_user_timestamp
+2025-06-23 15:26:31,247 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+インデックス作成中: idx_chat_history_tokens
+2025-06-23 15:26:31,289 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+インデックス作成中: idx_monthly_usage_company_month
+2025-06-23 15:26:31,326 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+インデックス作成中: idx_monthly_usage_user_month
+2025-06-23 15:26:31,389 - httpx - INFO - HTTP Request: POST https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/rpc/execute_sql "HTTP/2 200 OK"
+データベース初期化完了
+起動時データベース整合性チェックを実行中...
+=== データベース整合性チェック開始 ===
+2025-06-23 15:26:31,449 - httpx - INFO - HTTP Request: GET https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/users?select=id%2Cemail%2Cname%2Crole "HTTP/2 200 OK"        
+総ユーザー数: 2人
+2025-06-23 15:26:31,527 - httpx - INFO - HTTP Request: GET https://lqlswsymlyscfmnihtze.supabase.co//rest/v1/usage_limits?select=user_id "HTTP/2 200 OK"
+usage_limitsレコード数: 2件
+✓ 全ユーザーにusage_limitsレコードが存在します
+起動時整合性チェック完了。修正が必要なレコードはありませんでした
+🔍 環境判定開始...
+🔍 PM2_HOME: None
+🔍 PM2_JSON_PROCESSING: None
+🔍 NODE_ENV:
+🔍 ENVIRONMENT:
+🔍 環境変数による判定失敗、追加条件をチェック...
+🔍 DYNO: None
+🔍 AWS_REGION: None
+🔍 HOST: None
+❌ 全ての条件で本番環境を検出できず -> development
+🔍 判定された環境: development
+🔍 環境変数PORT: None
+🌐 ポート設定: 8085 (ローカル開発環境デフォルト)
+INFO:     Started server process [46532]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8085 (Press CTRL+C to quit)
+kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkksentence-transformers==2.2.2
 # ---- Torch (CPU 版) を固定して巨大な CUDA 依存のインストールを回避 ----
 torch==1.13.1
 faiss-cpu>=1.7.0
