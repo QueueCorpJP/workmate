@@ -6,6 +6,7 @@ import React, {
   ReactNode,
 } from "react";
 import api from "../api";
+import { cache } from "../utils/cache";
 
 // ユーザー情報の型定義
 interface User {

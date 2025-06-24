@@ -34,6 +34,7 @@ import CircularProgress from "@mui/material/CircularProgress";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import MonetizationOnIcon from "@mui/icons-material/MonetizationOn";
 import api from "../../api";
+import { withCache } from "../../utils/cache";
 import { useAuth } from "../../contexts/AuthContext";
 
 // Import tab components
@@ -336,15 +337,20 @@ const AdminPanel: React.FC = () => {
     setIsEmployeeUsageLoading(true);
     try {
       console.log("会社の管理者用アカウント利用状況を取得中...");
-      // 認証情報はHTTPヘッダーに含まれるため、クエリパラメータは不要
-      const response = await api.get(
-        `/admin/employee-usage`,
-        {
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Content-Type': 'application/json'
+      
+      const cacheKey = `employee-usage-${user?.id}`;
+      const response = await withCache(
+        cacheKey,
+        () => api.get(
+          `/admin/employee-usage`,
+          {
+            headers: {
+              'Access-Control-Allow-Origin': '*',
+              'Content-Type': 'application/json'
+            }
           }
-        }
+        ),
+        forceRefresh ? 0 : 3 * 60 * 1000 // 3分キャッシュ、強制更新時は0秒
       );
       console.log("会社の管理者用アカウント利用状況取得結果:", response.data);
       // レスポンスが有効なオブジェクトであることを確認

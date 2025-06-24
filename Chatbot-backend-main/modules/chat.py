@@ -90,26 +90,44 @@ def simple_rag_search(knowledge_text: str, query: str, max_results: int = 5) -> 
         processed_query = _preprocess_query(query)
         safe_print(f"🔍 クエリ前処理: '{query}' → '{processed_query}'")
         
-        # 高速化: より大きなチャンクサイズで分割
-        if len(knowledge_text) > 50000:
-            # 大きなテキストの場合は大きなチャンクで分割
-            chunk_size = 3000
+        # 高速化: より小さなチャンクサイズで分割（精度向上）
+        if len(knowledge_text) > 10000:
+            # 大きなテキストの場合は適度なサイズで分割
+            chunk_size = 1000  # 3000→1000に縮小
+            overlap = 200  # 20%のオーバーラップ
             chunks = []
-            for i in range(0, len(knowledge_text), chunk_size):
-                chunk = knowledge_text[i:i+chunk_size].strip()
+            
+            i = 0
+            while i < len(knowledge_text):
+                # チャンクの終了位置を計算
+                end = min(i + chunk_size, len(knowledge_text))
+                
+                # 最後のチャンクでない場合、文の境界で切る
+                if end < len(knowledge_text):
+                    # 最後の改行を探す
+                    last_newline = knowledge_text.rfind('\n', i, end)
+                    if last_newline > i:
+                        end = last_newline + 1
+                
+                chunk = knowledge_text[i:end].strip()
                 if chunk and len(chunk) > 100:
                     chunks.append(chunk)
+                
+                # 次の開始位置（オーバーラップを考慮）
+                i = max(i + chunk_size - overlap, end)
         else:
-            # 小さなテキストの場合は段落分割
-            chunks = re.split(r'\n\s*\n', knowledge_text)
-            chunks = [p.strip() for p in chunks if len(p.strip()) > 50]
+            # 小さなテキストの場合は段落分割（より細かく）
+            chunks = re.split(r'\n+', knowledge_text)  # 改行で分割
+            chunks = [p.strip() for p in chunks if len(p.strip()) > 30]  # 閾値を下げる
         
         if len(chunks) < 2:
-            return knowledge_text[:100000]  # チャンクが少ない場合はそのまま
+            # チャンクが少ない場合は全体を返す（最大50万文字）
+            return knowledge_text[:500000]
         
-        # 🚀 ハイブリッド検索の実行
-        bm25_results = _bm25_search(chunks, processed_query, max_results)
-        semantic_results = _semantic_search(chunks, processed_query, max_results)
+        # 🚀 ハイブリッド検索の実行（検索結果を増やす）
+        search_results_count = min(max_results * 2, len(chunks))
+        bm25_results = _bm25_search(chunks, processed_query, search_results_count)
+        semantic_results = _semantic_search(chunks, processed_query, search_results_count)
         
         # 結果の統合と再ランキング
         combined_results = _combine_search_results(bm25_results, semantic_results, processed_query, max_results)
@@ -197,24 +215,37 @@ def _bm25_search(chunks: list, query: str, max_results: int) -> list:
         return []
 
 def _semantic_search(chunks: list, query: str, max_results: int) -> list:
-    """セマンティック検索（意味ベース）- Sentence Transformersを使用"""
+    """セマンティック検索（意味ベース）- 軽量で高速な実装（Sentence Transformers不使用）"""
     try:
-        # Sentence Transformersを使った本格的なセマンティック検索
+        # TF-IDFベースのセマンティック検索（最優先）
         try:
-            from sentence_transformers import SentenceTransformer, util
-            import torch
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.metrics.pairwise import cosine_similarity
+            import numpy as np
             
-            # 日本語対応の多言語モデルを使用
-            model_name = 'paraphrase-multilingual-MiniLM-L12-v2'
-            model = SentenceTransformer(model_name)
-            safe_print(f"🤖 セマンティックモデル読み込み: {model_name}")
+            safe_print("📊 軽量TF-IDF セマンティック検索開始")
             
-            # クエリとチャンクをエンベディング化
-            query_embedding = model.encode([query])
-            chunk_embeddings = model.encode(chunks)
+            # TF-IDFベクトル化（軽量高速設定）
+            vectorizer = TfidfVectorizer(
+                ngram_range=(1, 2),  # 1-gram, 2-gramのみ
+                max_features=3000,   # 特徴量を制限
+                stop_words=None,     # 日本語のストップワードは使わない
+                analyzer='char',     # 文字レベルの解析（日本語に適している）
+                min_df=1,
+                max_df=0.85,         # 高頻度語を除外
+                sublinear_tf=True,   # TF値の対数変換で正規化
+                lowercase=True       # 小文字化
+            )
             
-            # コサイン類似度を計算
-            similarities = util.cos_sim(query_embedding, chunk_embeddings)[0]
+            # コーパス（チャンク + クエリ）をベクトル化
+            corpus = chunks + [query]
+            tfidf_matrix = vectorizer.fit_transform(corpus)
+            
+            # クエリと各チャンクの類似度を計算
+            query_vector = tfidf_matrix[-1]  # 最後がクエリ
+            chunk_vectors = tfidf_matrix[:-1]  # 最後以外がチャンク
+            
+            similarities = cosine_similarity(query_vector, chunk_vectors).flatten()
             
             # 結果を整形
             semantic_results = []
@@ -222,94 +253,77 @@ def _semantic_search(chunks: list, query: str, max_results: int) -> list:
                 semantic_results.append({
                     'content': chunks[i],
                     'score': float(similarity),
-                    'type': 'semantic_transformer',
+                    'type': 'semantic_tfidf_fast',
                     'index': i
                 })
             
             # スコア順でソート
             semantic_results.sort(key=lambda x: x['score'], reverse=True)
-            safe_print(f"🧠 Transformer セマンティック検索完了: 上位{min(max_results, len(semantic_results))}件")
+            safe_print(f"✅ 軽量TF-IDF セマンティック検索完了: 上位{min(max_results, len(semantic_results))}件")
             return semantic_results[:max_results]
             
         except ImportError:
-            safe_print("⚠️ Sentence Transformers未インストール、TF-IDFベースのセマンティック検索にフォールバック")
-            
-            # TF-IDFベースのセマンティック検索（フォールバック）
-            try:
-                from sklearn.feature_extraction.text import TfidfVectorizer
-                from sklearn.metrics.pairwise import cosine_similarity
-                import numpy as np
-                
-                # TF-IDFベクトル化
-                vectorizer = TfidfVectorizer(
-                    ngram_range=(1, 2),  # 1-gram, 2-gramを使用
-                    max_features=10000,
-                    stop_words=None,  # 日本語のストップワードは使わない
-                    analyzer='char',   # 文字レベルの解析（日本語に適している）
-                    min_df=1
-                )
-                
-                # コーパス（チャンク + クエリ）をベクトル化
-                corpus = chunks + [query]
-                tfidf_matrix = vectorizer.fit_transform(corpus)
-                
-                # クエリと各チャンクの類似度を計算
-                query_vector = tfidf_matrix[-1]  # 最後がクエリ
-                chunk_vectors = tfidf_matrix[:-1]  # 最後以外がチャンク
-                
-                similarities = cosine_similarity(query_vector, chunk_vectors).flatten()
-                
-                # 結果を整形
-                semantic_results = []
-                for i, similarity in enumerate(similarities):
-                    semantic_results.append({
-                        'content': chunks[i],
-                        'score': float(similarity),
-                        'type': 'semantic_tfidf',
-                        'index': i
-                    })
-                
-                # スコア順でソート
-                semantic_results.sort(key=lambda x: x['score'], reverse=True)
-                safe_print(f"📊 TF-IDF セマンティック検索完了: 上位{min(max_results, len(semantic_results))}件")
-                return semantic_results[:max_results]
-                
-            except ImportError:
-                safe_print("⚠️ scikit-learn未インストール、簡易セマンティック検索にフォールバック")
+            safe_print("⚠️ scikit-learn未インストール、改良簡易セマンティック検索を使用")
         
-        # 最後の手段: 改良された簡易セマンティック検索
+        # フォールバック: 改良された簡易セマンティック検索
+        safe_print("🔍 改良簡易セマンティック検索開始")
         semantic_results = []
         
-        # クエリの重要語句を抽出
+        # クエリの重要語句を抽出（日本語対応強化）
         import re
-        query_words = set(re.findall(r'\w+', query.lower()))
+        
+        # 日本語と英数字の単語を抽出
+        query_words = set()
+        # ひらがな・カタカナ・漢字の単語
+        japanese_words = re.findall(r'[ぁ-んァ-ヶ一-龯]+', query)
+        # 英数字の単語
+        alphanumeric_words = re.findall(r'[a-zA-Z0-9]+', query)
+        
+        query_words.update([w.lower() for w in japanese_words if len(w) >= 1])
+        query_words.update([w.lower() for w in alphanumeric_words if len(w) >= 2])
         
         for i, chunk in enumerate(chunks):
-            chunk_words = set(re.findall(r'\w+', chunk.lower()))
+            # チャンクからも同様に単語を抽出
+            chunk_japanese = re.findall(r'[ぁ-んァ-ヶ一-龯]+', chunk)
+            chunk_alphanumeric = re.findall(r'[a-zA-Z0-9]+', chunk)
+            chunk_words = set()
+            chunk_words.update([w.lower() for w in chunk_japanese if len(w) >= 1])
+            chunk_words.update([w.lower() for w in chunk_alphanumeric if len(w) >= 2])
             
             # 複数の類似度指標を組み合わせ
             scores = []
             
-            # 1. Jaccard類似度
+            # 1. Jaccard類似度（改良版）
             if len(query_words) > 0 and len(chunk_words) > 0:
                 intersection = len(query_words.intersection(chunk_words))
                 union = len(query_words.union(chunk_words))
                 jaccard = intersection / union if union > 0 else 0.0
                 scores.append(jaccard * 0.4)
             
-            # 2. 語句の包含度
+            # 2. 語句の包含度（重み付き）
             if len(query_words) > 0:
-                inclusion = sum(1 for word in query_words if word in chunk.lower()) / len(query_words)
-                scores.append(inclusion * 0.3)
-            
-            # 3. 文字列距離（レーベンシュタイン距離の簡易版）
-            try:
-                # 部分文字列の一致度
-                substring_match = 0
+                inclusion = 0
                 for word in query_words:
-                    if len(word) >= 2 and word in chunk.lower():
-                        substring_match += len(word) / len(query)
-                scores.append(min(1.0, substring_match) * 0.3)
+                    if word in chunk.lower():
+                        # 長い単語ほど重要視
+                        weight = min(2.0, len(word) / 2.0)
+                        inclusion += weight
+                inclusion = inclusion / len(query_words)
+                scores.append(min(1.0, inclusion) * 0.4)
+            
+            # 3. N-gram一致度（高速版）
+            try:
+                # 2-gramの一致度を計算
+                ngram_score = 0
+                query_2grams = set([query[i:i+2] for i in range(len(query)-1)])
+                chunk_2grams = set([chunk[i:i+2] for i in range(len(chunk)-1)])
+                
+                if len(query_2grams) > 0:
+                    ngram_intersection = len(query_2grams.intersection(chunk_2grams))
+                    ngram_similarity = ngram_intersection / len(query_2grams)
+                    ngram_score = ngram_similarity * 0.2
+                
+                scores.append(min(1.0, ngram_score))
             except:
                 scores.append(0.0)
             
@@ -319,13 +333,13 @@ def _semantic_search(chunks: list, query: str, max_results: int) -> list:
             semantic_results.append({
                 'content': chunk,
                 'score': total_score,
-                'type': 'semantic_simple',
+                'type': 'semantic_enhanced_fast',
                 'index': i
             })
         
         # スコア順でソート
         semantic_results.sort(key=lambda x: x['score'], reverse=True)
-        safe_print(f"🔍 簡易セマンティック検索完了: 上位{min(max_results, len(semantic_results))}件")
+        safe_print(f"✅ 改良簡易セマンティック検索完了: 上位{min(max_results, len(semantic_results))}件")
         return semantic_results[:max_results]
         
     except Exception as e:
@@ -353,30 +367,15 @@ def _evaluate_rag_quality(filtered_chunk: str, query: str, rag_attempts: int) ->
     elif content_length >= 150:   # 150文字以上で最低限
         score += 0.1
     
-    # 2. 重要キーワードの厳格マッチング（最大0.6） - 大幅強化
-    query_words = set(query.lower().split())
+    # 2. クエリのキーワードマッチング（最大0.6）
+    # シンプルにクエリの単語が含まれているかチェック
+    import re
+    query_words = re.findall(r'\w+', query.lower())
+    important_keywords = [word for word in query_words if len(word) >= 2]
     
-    # 重要キーワードの特定（会社名、固有名詞など）
-    important_keywords = []
-    company_patterns = [
-        r'株式会社\s*[\w\s]+',
-        r'有限会社\s*[\w\s]+', 
-        r'合同会社\s*[\w\s]+',
-        r'[\w\s]+会社',
-        r'[\w\s]+工芸',
-        r'[\w\s]+工業',
-        r'[\w\s]+商事'
-    ]
-    
-    # クエリから会社名や重要語句を抽出
-    for pattern in company_patterns:
-        matches = re.findall(pattern, query)
-        important_keywords.extend(matches)
-    
-    # クエリの主要単語を重要キーワードとして追加
-    for word in query_words:
-        if len(word) >= 2 and word not in ['の', 'に', 'を', 'は', 'が', 'で', 'と', 'から', 'まで']:
-            important_keywords.append(word)
+    # 助詞などの一般的な単語を除外
+    stopwords = ['の', 'に', 'を', 'は', 'が', 'で', 'と', 'から', 'まで', 'て', 'た', 'だ', 'です', 'ます']
+    important_keywords = [word for word in important_keywords if word not in stopwords]
     
     # 重要キーワードの完全一致チェック
     critical_matches = 0
@@ -484,19 +483,19 @@ def _combine_search_results(bm25_results: list, semantic_results: list, query: s
         semantic_weight = 0.7  # デフォルト
         bm25_weight = 0.3
         
-        # Transformerベースの場合は意味的検索をより重視
-        if semantic_results and semantic_results[0].get('type') == 'semantic_transformer':
-            semantic_weight = 0.8
-            bm25_weight = 0.2
-            safe_print("🧠 Transformerベースセマンティック検索 - 意味重視モード")
-        elif semantic_results and semantic_results[0].get('type') == 'semantic_tfidf':
-            semantic_weight = 0.6
-            bm25_weight = 0.4
-            safe_print("📊 TF-IDFベースセマンティック検索 - バランスモード")
+        # 軽量セマンティック検索のタイプに応じて重みを調整
+        if semantic_results and semantic_results[0].get('type') == 'semantic_tfidf_fast':
+            semantic_weight = 0.65
+            bm25_weight = 0.35
+            safe_print("📊 軽量TF-IDFセマンティック検索 - 高速バランスモード")
+        elif semantic_results and semantic_results[0].get('type') == 'semantic_enhanced_fast':
+            semantic_weight = 0.45
+            bm25_weight = 0.55
+            safe_print("🔍 改良簡易セマンティック検索 - 語彙重視モード")
         else:
-            semantic_weight = 0.4
-            bm25_weight = 0.6
-            safe_print("🔍 簡易セマンティック検索 - 語彙重視モード")
+            semantic_weight = 0.5
+            bm25_weight = 0.5
+            safe_print("⚖️ デフォルトバランスモード")
         
         # BM25結果の処理
         max_bm25_score = max([r['score'] for r in bm25_results], default=1.0)
@@ -1340,19 +1339,21 @@ def chunk_knowledge_base(text: str, chunk_size: int = 500000) -> list[str]:
     
     chunks = []
     start = 0
+    overlap = int(chunk_size * 0.1)  # 10%のオーバーラップ
     
     while start < len(text):
-        end = start + chunk_size
+        end = min(start + chunk_size, len(text))
         
         # チャンクの境界を調整（文の途中で切れないように）
         if end < len(text):
-            # 最後の改行を探す
-            last_newline = text.rfind('\n', start, end)
+            # 最後の改行を探す（検索範囲を制限）
+            search_start = max(start, end - 1000)  # 最大1000文字前から検索
+            last_newline = text.rfind('\n', search_start, end)
             if last_newline > start:
                 end = last_newline + 1
             else:
                 # 改行がない場合は最後のスペースを探す
-                last_space = text.rfind(' ', start, end)
+                last_space = text.rfind(' ', search_start, end)
                 if last_space > start:
                     end = last_space + 1
         
@@ -1360,7 +1361,11 @@ def chunk_knowledge_base(text: str, chunk_size: int = 500000) -> list[str]:
         if chunk:
             chunks.append(chunk)
         
-        start = end
+        # 次の開始位置（オーバーラップを考慮）
+        if end < len(text):
+            start = max(start + 1, end - overlap)
+        else:
+            start = end
     
     return chunks
 
@@ -1475,7 +1480,8 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
                 special_instructions_text += f"{idx}. 【{inst['name']}】: {inst['instruction']}\n"
 
         # 🔪 まず知識ベース全体をチャンク化（RAG前に実行）
-        CHUNK_SIZE = 500000  # 50万文字でチャンク化
+        # チャンクサイズを小さくして検索精度を向上
+        CHUNK_SIZE = 50000  # 5万文字でチャンク化（50万→5万に変更）
         raw_chunks = chunk_knowledge_base(active_knowledge_text, CHUNK_SIZE)
         safe_print(f"🔪 チャンク化完了: {len(raw_chunks)}個のチャンク (チャンクサイズ: {CHUNK_SIZE:,}文字)")
         
@@ -1512,7 +1518,7 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
         all_chunk_info = []   # チャンク情報を蓄積
         successful_chunks = 0
         processed_chunks = set()  # 処理済みチャンクのインデックスを記録
-        BATCH_SIZE = min(25, len(raw_chunks))  # バッチサイズを拡大（15→25）
+        BATCH_SIZE = min(5, len(raw_chunks))  # バッチサイズを縮小して精度向上（25→5）
         
         safe_print(f"🔍 全ファイル全チャンク完全検索モード: 合計{len(raw_chunks)}個のチャンク、バッチサイズ{BATCH_SIZE}で処理")
         safe_print(f"🎯 戦略: 全チャンクを検索してから最良の結果を選択（早期終了なし）")
@@ -1554,85 +1560,24 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
             rag_attempts = 0
             min_content_threshold = 50  # さらに緩和（100→50）
             
-            if len(combined_chunk) > 3000:  # 閾値をさらに緩和（5000→3000）
-                safe_print(f"🔄 高度RAG検索開始: 全戦略を試行")
+            if len(combined_chunk) > 1000:  # 閾値を大幅に緩和
+                safe_print(f"🔄 RAG検索開始")
                 
-                # より多様な検索戦略を定義
-                search_strategies = [
-                    # 基本検索戦略
-                    {'max_results': min(40, max(20, len(combined_chunk) // 25000)), 'query': message_text, 'name': '標準検索'},
-                    {'max_results': min(60, max(30, len(combined_chunk) // 20000)), 'query': message_text, 'name': '拡張検索'},
-                    {'max_results': min(80, max(40, len(combined_chunk) // 15000)), 'query': expand_query(message_text), 'name': 'クエリ拡張検索'},
-                    
-                    # 高度な検索戦略
-                    {'max_results': min(100, max(50, len(combined_chunk) // 12000)), 'query': expand_query(message_text), 'name': '最大範囲検索'},
-                    {'max_results': min(120, len(combined_chunk) // 10000), 'query': f"{message_text} OR {expand_query(message_text)}", 'name': 'OR検索'},
-                    {'max_results': min(150, len(combined_chunk) // 8000), 'query': message_text.replace(' ', ' AND '), 'name': 'AND検索'},
-                    
-                    # 特殊検索戦略
-                    {'max_results': min(200, len(combined_chunk) // 6000), 'query': f"({message_text}) OR ({expand_query(message_text)})", 'name': '高度OR検索'},
-                    {'max_results': min(250, len(combined_chunk) // 5000), 'query': message_text, 'name': '最大密度検索'},
-                ]
+                # シンプルな検索戦略
+                filtered_chunk = simple_rag_search(combined_chunk, message_text, max_results=100)
+                rag_attempts = 1
                 
-                best_result = None
-                best_score = 0.0
-                best_strategy = None
-                
-                for strategy in search_strategies:
-                    rag_attempts += 1
-                    safe_print(f"🎯 RAG検索 {rag_attempts}回目: {strategy['name']}, max_results={strategy['max_results']}")
-                    safe_print(f"🔍 検索クエリ: '{strategy['query'][:50]}{'...' if len(strategy['query']) > 50 else ''}'")
-                    
-                    current_result = simple_rag_search(combined_chunk, strategy['query'], max_results=strategy['max_results'])
-                    current_length = len(current_result.strip())
-                    safe_print(f"📊 RAG検索{rag_attempts}回目結果: {current_length} 文字")
-                    
-                    # 品質評価を実行
-                    if current_length >= min_content_threshold:
-                        quality_score = _evaluate_rag_quality(current_result, message_text, rag_attempts)
-                        safe_print(f"🎯 RAG品質スコア ({rag_attempts}回目): {quality_score:.2f}")
-                        
-                        # より良い結果があれば採用
-                        if quality_score > best_score:
-                            best_result = current_result
-                            best_score = quality_score
-                            best_strategy = strategy['name']
-                            safe_print(f"✅ 新しい最良結果を採用: {strategy['name']} (スコア: {quality_score:.2f})")
-                    else:
-                        safe_print(f"⚠️ 結果が短すぎます ({current_length} < {min_content_threshold})")
-                
-                # 最良の結果を採用
-                if best_result:
-                    filtered_chunk = best_result
-                    safe_print(f"🏆 最良結果を採用: {best_strategy}, スコア: {best_score:.2f}, 長さ: {len(filtered_chunk)} 文字")
-                else:
-                    # 最良結果がない場合は最長の結果を採用
-                    longest_result = None
-                    longest_length = 0
-                    for strategy in search_strategies[:3]:  # 基本戦略のみ再試行
-                        result = simple_rag_search(combined_chunk, strategy['query'], max_results=strategy['max_results'])
-                        if len(result) > longest_length:
-                            longest_result = result
-                            longest_length = len(result)
-                    
-                    if longest_result:
-                        filtered_chunk = longest_result
-                        safe_print(f"📊 最長結果を採用: {longest_length} 文字")
-                    else:
-                        filtered_chunk = combined_chunk[:10000]  # 最後の手段
-                        safe_print(f"📊 部分結果を採用: {len(filtered_chunk)} 文字")
-                
-                safe_print(f"🔄 高度RAG検索完了: {rag_attempts}回試行、最終結果 {len(filtered_chunk or '')} 文字")
+                safe_print(f"📊 RAG検索結果: {len(filtered_chunk)} 文字")
             else:
                 filtered_chunk = combined_chunk
                 safe_print(f"📊 小さなバッチのため RAG検索をスキップ")
             
             # 🎯 厳格なRAG品質判定
             rag_quality_score = _evaluate_rag_quality(filtered_chunk, message_text, rag_attempts)
-            safe_print(f"🎯 最終RAG品質スコア: {rag_quality_score:.2f} (閾値: 0.30)")
+            safe_print(f"🎯 最終RAG品質スコア: {rag_quality_score:.2f} (閾値: 0.10)")
             
-            # 品質スコアを厳格化（0.10→0.30）
-            if rag_quality_score >= 0.30:
+            # 品質スコアの閾値を調整（0.20→0.10）して、より多くの結果を含める
+            if rag_quality_score >= 0.10:
                 safe_print(f"✅ RAG品質合格 (スコア: {rag_quality_score:.2f}) - 結果を蓄積")
                 
                 # RAG結果を蓄積（全て処理してから最良を選択）
@@ -1653,7 +1598,7 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
                 successful_chunks += len(available_chunks)
                 safe_print(f"📚 RAG結果蓄積: {len(all_rag_results)}個目のバッチを追加")
             else:
-                safe_print(f"⚠️ RAG品質不足 (スコア: {rag_quality_score:.2f} < 0.30) - このバッチをスキップ")
+                safe_print(f"⚠️ RAG品質不足 (スコア: {rag_quality_score:.2f} < 0.10) - このバッチをスキップ")
                 skipped_batches += 1
             
             # このバッチのチャンクを処理済みに追加
