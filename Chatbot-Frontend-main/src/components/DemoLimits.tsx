@@ -91,38 +91,17 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
       ? propRemainingQuestions
       : authRemainingQuestions;
 
-  // プラン履歴を取得する関数
+  // プラン履歴を取得する関数（共有サービス使用）
   const fetchPlanHistory = async () => {
     if (!user) return;
     
     setIsPlanHistoryLoading(true);
     try {
-      console.log("プラン履歴を取得中...");
-      console.log("API URL:", `${api.defaults.baseURL}/plan-history`);
-      
-      const response = await api.get("/plan-history");
-      console.log("プラン履歴取得結果:", response.data);
-      console.log("レスポンスステータス:", response.status);
-      
-      if (response.data && response.data.history) {
-        // 自分の履歴のみフィルタリング
-        const userHistory = response.data.history.filter(
-          (item: PlanHistoryItem) => item.user_id === user.id
-        );
-        setPlanHistory(userHistory);
-      } else {
-        setPlanHistory([]);
-      }
+      const { SharedDataService } = await import('../services/sharedDataService');
+      const userHistory = await SharedDataService.getUserPlanHistory(user.id);
+      setPlanHistory(userHistory);
     } catch (error: any) {
       console.error("プラン履歴の取得に失敗しました:", error);
-      if (error.response) {
-        console.error("エラーレスポンス:", error.response.status, error.response.data);
-        console.error("エラーヘッダー:", error.response.headers);
-      } else if (error.request) {
-        console.error("リクエストエラー:", error.request);
-      } else {
-        console.error("設定エラー:", error.message);
-      }
       setPlanHistory([]);
     } finally {
       setIsPlanHistoryLoading(false);

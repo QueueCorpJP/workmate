@@ -85,26 +85,15 @@ const BillingTab: React.FC = () => {
   const [simulationData, setSimulationData] = useState<SimulationData | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
 
-  // トークン使用量データを取得
+  // トークン使用量データを取得（共有サービス使用）
   const fetchTokenUsage = async () => {
     try {
       setIsLoading(true);
-      const response = await api.get('/company-token-usage-with-prompts');
-      setTokenUsage(response.data);
+      const { SharedDataService } = await import('../services/sharedDataService');
+      const data = await SharedDataService.getTokenUsage();
+      setTokenUsage(data);
     } catch (error: any) {
       console.error('トークン使用量取得エラー:', error);
-      // フォールバック：従来のAPIを試す
-      try {
-        const fallbackResponse = await api.get('/company-token-usage');
-        setTokenUsage({
-          ...fallbackResponse.data,
-          prompt_references_total: 0,
-          input_tokens_total: 0,
-          output_tokens_total: 0
-        });
-      } catch (fallbackError) {
-        console.error('フォールバックAPIもエラー:', fallbackError);
-      }
     } finally {
       setIsLoading(false);
     }

@@ -728,9 +728,9 @@ async def get_knowledge_base(current_user = Depends(get_current_user)):
 # チャットエンドポイント
 @app.post("/chatbot/api/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
-    """チャットメッセージを処理してGeminiからの応答を返す（チャンク化対応）"""
+    """チャットメッセージを処理してGeminiからの応答を返す（シンプル高速処理）"""
     # デバッグ用：現在のユーザー情報と利用制限を出力
-    print(f"=== チャンク化チャット処理開始 ===")
+    print(f"=== シンプルチャット処理開始 ===")
     print(f"ユーザー情報: {current_user}")
     
     # 現在の利用制限を取得して表示
@@ -742,9 +742,9 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
     message.user_id = current_user["id"]
     message.employee_name = current_user["name"]
     
-    # チャンク化処理を使用
-    from modules.chat import process_chat_chunked
-    result = await process_chat_chunked(message, db, current_user)
+    # シンプルで高速なprocess_chat関数を使用
+    from modules.chat import process_chat
+    result = await process_chat(message, db, current_user)
     
     # 応答を返す
     return ChatResponse(

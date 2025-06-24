@@ -144,7 +144,17 @@ class HighSpeedRAG:
     async def _search_chunk_group(self, query: str, chunk_group: List[Dict], bm25s) -> List[FastSearchResult]:
         """チャンクグループでの検索実行"""
         try:
+            # チャンクグループが空の場合は空のリストを返す
+            if not chunk_group:
+                logger.warning(f"チャンクグループが空のためスキップ")
+                return []
+            
             texts = [chunk['content'] for chunk in chunk_group]
+            
+            # 有効なテキストがない場合はスキップ
+            if not texts or all(not text.strip() for text in texts):
+                logger.warning(f"有効なテキストがないためスキップ")
+                return []
             
             # BM25検索実行
             corpus_tokens = bm25s.tokenize(texts)
@@ -156,17 +166,18 @@ class HighSpeedRAG:
             
             # 結果をFastSearchResultに変換
             search_results = []
-            for i in range(min(results.shape[1], len(chunk_group))):
-                chunk_idx = results[0, i]
-                if chunk_idx < len(chunk_group):
-                    chunk = chunk_group[chunk_idx]
-                    score = float(scores[0, i]) if i < len(scores[0]) else 0.0
-                    
-                    search_results.append(FastSearchResult(
-                        content=chunk['content'],
-                        score=score,
-                        chunk_id=chunk['id']
-                    ))
+            if results.shape[1] > 0:  # 結果が存在する場合のみ処理
+                for i in range(min(results.shape[1], len(chunk_group))):
+                    chunk_idx = results[0, i]
+                    if chunk_idx < len(chunk_group):
+                        chunk = chunk_group[chunk_idx]
+                        score = float(scores[0, i]) if i < len(scores[0]) else 0.0
+                        
+                        search_results.append(FastSearchResult(
+                            content=chunk['content'],
+                            score=score,
+                            chunk_id=chunk['id']
+                        ))
             
             return search_results
             
@@ -193,26 +204,47 @@ class HighSpeedRAG:
         keywords = self._extract_keywords(query)
         filtered_chunks = self._pre_filter_chunks(chunks, keywords)
         
+        # フィルタリング後にチャンクが空の場合は元のチャンクを使用
+        if not filtered_chunks:
+            logger.info(f"⚠️ フィルタリング後にチャンクが空のため、全チャンクを使用")
+            filtered_chunks = chunks[:20]  # 最大20個のチャンク
+        
         # BM25検索
         try:
             import bm25s
             
-            texts = [chunk['content'] for chunk in filtered_chunks]
-            corpus_tokens = bm25s.tokenize(texts)
-            retriever = bm25s.BM25()
-            retriever.index(corpus_tokens)
-            
-            query_tokens = bm25s.tokenize([query])
-            results, scores = retriever.retrieve(query_tokens, k=min(max_results, len(filtered_chunks)))
-            
-            # 結果組み立て
-            relevant_content = []
-            for i in range(min(results.shape[1], max_results)):
-                chunk_idx = results[0, i]
-                if chunk_idx < len(filtered_chunks):
-                    relevant_content.append(filtered_chunks[chunk_idx]['content'])
-            
-            final_result = '\n\n'.join(relevant_content[:10])  # 最大10個のチャンク
+            # チャンクが存在することを確認
+            if not filtered_chunks:
+                logger.error(f"高速検索エラー: チャンクが空です")
+                final_result = knowledge_text[:20000]
+            else:
+                texts = [chunk['content'] for chunk in filtered_chunks]
+                
+                # テキストが空でないことを確認
+                if not texts or all(not text.strip() for text in texts):
+                    logger.error(f"高速検索エラー: 有効なテキストがありません")
+                    final_result = knowledge_text[:20000]
+                else:
+                    corpus_tokens = bm25s.tokenize(texts)
+                    retriever = bm25s.BM25()
+                    retriever.index(corpus_tokens)
+                    
+                    query_tokens = bm25s.tokenize([query])
+                    results, scores = retriever.retrieve(query_tokens, k=min(max_results, len(filtered_chunks)))
+                    
+                    # 結果組み立て
+                    relevant_content = []
+                    if results.shape[1] > 0:  # 結果が存在する場合のみ処理
+                        for i in range(min(results.shape[1], max_results)):
+                            chunk_idx = results[0, i]
+                            if chunk_idx < len(filtered_chunks):
+                                relevant_content.append(filtered_chunks[chunk_idx]['content'])
+                    
+                    if relevant_content:
+                        final_result = '\n\n'.join(relevant_content[:10])  # 最大10個のチャンク
+                    else:
+                        logger.info(f"⚠️ BM25検索で関連コンテンツが見つからず、フォールバック")
+                        final_result = knowledge_text[:20000]
             
         except Exception as e:
             logger.error(f"高速検索エラー: {e}")
@@ -271,8 +303,8 @@ class HighSpeedRAG:
     
     def _pre_filter_chunks(self, chunks: List[Dict], keywords: List[str]) -> List[Dict]:
         """事前フィルタリング"""
-        if not keywords:
-            return chunks
+        if not keywords or not chunks:
+            return chunks[:20] if chunks else []  # 空の場合でも最大20個までを返す
         
         filtered = []
         for chunk in chunks:
@@ -282,6 +314,11 @@ class HighSpeedRAG:
             if matching_keywords > 0:
                 chunk['score'] = matching_keywords
                 filtered.append(chunk)
+        
+        # フィルタリング結果が空の場合は、元のチャンクの一部を返す
+        if not filtered:
+            logger.info(f"⚠️ キーワードフィルタリングで結果が空のため、元のチャンクを使用")
+            return chunks[:10]  # 最大10個のチャンク
         
         # スコア順でソート
         filtered.sort(key=lambda x: x.get('score', 0), reverse=True)
@@ -299,11 +336,22 @@ class HighSpeedRAG:
         else:
             chunks = await self.fast_chunking(knowledge_text, chunk_size=len(knowledge_text))
         
+        # チャンクが空の場合はフォールバック
+        if not chunks:
+            logger.warning(f"ターボ検索: チャンクが空のためフォールバック")
+            return knowledge_text[:20000]
+        
         # 単一スレッドでの高速検索
         try:
             import bm25s
             
             texts = [chunk['content'] for chunk in chunks]
+            
+            # 有効なテキストがない場合はフォールバック
+            if not texts or all(not text.strip() for text in texts):
+                logger.warning(f"ターボ検索: 有効なテキストがないためフォールバック")
+                return knowledge_text[:20000]
+            
             corpus_tokens = bm25s.tokenize(texts)
             retriever = bm25s.BM25()
             retriever.index(corpus_tokens)
@@ -313,12 +361,17 @@ class HighSpeedRAG:
             
             # 上位結果を結合
             relevant_content = []
-            for i in range(min(results.shape[1], max_results)):
-                chunk_idx = results[0, i]
-                if chunk_idx < len(chunks):
-                    relevant_content.append(chunks[chunk_idx]['content'])
+            if results.shape[1] > 0:  # 結果が存在する場合のみ処理
+                for i in range(min(results.shape[1], max_results)):
+                    chunk_idx = results[0, i]
+                    if chunk_idx < len(chunks):
+                        relevant_content.append(chunks[chunk_idx]['content'])
             
-            final_result = '\n\n'.join(relevant_content)
+            if relevant_content:
+                final_result = '\n\n'.join(relevant_content)
+            else:
+                logger.info(f"⚠️ ターボ検索で関連コンテンツが見つからず、フォールバック")
+                final_result = knowledge_text[:20000]
             
         except Exception as e:
             logger.error(f"ターボ検索エラー: {e}")

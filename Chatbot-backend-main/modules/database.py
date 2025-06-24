@@ -16,7 +16,7 @@ from supabase_adapter import get_supabase_client, insert_data, update_data, sele
 
 # データ型変換ユーティリティ関数
 def ensure_string(value, for_db=False):
-    """値を文字列に変換する。
+    """値を文字列に変換する（NaN値処理を強化）。
     
     Args:
         value: 変換する値
@@ -30,7 +30,28 @@ def ensure_string(value, for_db=False):
             # データベース操作用の場合はNoneをそのまま返す（INTEGER型などのため）
             return None
         return ""
-    return str(value)
+    
+    # NaN値の詳細チェック
+    try:
+        # 1. pandas.isna()でNaN値をチェック
+        import pandas as pd
+        if pd.isna(value):
+            return "" if not for_db else None
+    except (ImportError, TypeError):
+        pass
+    
+    # 2. 文字列に変換してからNaN値をチェック
+    str_value = str(value)
+    
+    # 3. "nan", "NaN", "NAN"などの文字列もNaN値として扱う
+    if str_value.lower() in ['nan', 'none', 'null', '<na>', 'n/a']:
+        return "" if not for_db else None
+    
+    # 4. 空文字列や空白文字列の処理
+    if str_value.strip() == "":
+        return "" if not for_db else None
+    
+    return str_value
 
 # Supabaseクライアントを取得
 supabase = get_supabase_client()

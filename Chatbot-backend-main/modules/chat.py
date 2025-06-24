@@ -32,11 +32,11 @@ except ImportError:
     RAG_ENHANCED_AVAILABLE = False
     safe_print("⚠️ 強化RAGシステムが利用できないため、従来のRAGを使用します")
 
-# 高速化RAGシステムのインポートを追加
+# 高速化RAGシステムのインポートを追加（正確性重視のため無効化）
 try:
     from .rag_optimized import high_speed_rag
-    SPEED_RAG_AVAILABLE = True
-    safe_print("⚡ 高速化RAGシステムが利用可能です")
+    SPEED_RAG_AVAILABLE = False  # 正確性重視のため強制的に無効化
+    safe_print("⚠️ 高速化RAGシステムは正確性重視のため無効化されています")
 except ImportError:
     SPEED_RAG_AVAILABLE = False
     safe_print("⚠️ 高速化RAGシステムが利用できません")
@@ -64,24 +64,23 @@ def simple_rag_search(knowledge_text: str, query: str, max_results: int = 5) -> 
     """
     ハイブリッドRAG検索 - BM25S（語彙）+ セマンティック（意味）検索の組み合わせ
     """
+    # デバッグ: 関数開始を確認
+    safe_print(f"🚀 simple_rag_search関数開始")
+    safe_print(f"📥 入力パラメータ:")
+    safe_print(f"   knowledge_text長: {len(knowledge_text) if knowledge_text else 0} 文字")
+    safe_print(f"   query: '{query}'")
+    safe_print(f"   max_results: {max_results}")
+    
     if not knowledge_text or not query:
+        safe_print(f"❌ 早期リターン: knowledge_text={bool(knowledge_text)}, query={bool(query)}")
         return knowledge_text
     
-    # 高速化RAGが利用可能な場合は優先使用
-    if SPEED_RAG_AVAILABLE and len(knowledge_text) > 10000:
-        try:
-            import asyncio
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # 既存のイベントループがある場合
-                future = asyncio.ensure_future(high_speed_rag.lightning_search(query, knowledge_text, max_results))
-                return knowledge_text[:50000]  # 暫定的な結果を返す
-            else:
-                # 新しいイベントループを作成
-                return asyncio.run(high_speed_rag.lightning_search(query, knowledge_text, max_results))
-        except Exception as e:
-            safe_print(f"高速RAG呼び出しエラー: {e}")
+    # 詳細デバッグ情報を追加
+    safe_print(f"🔍 RAG検索デバッグ開始")
+    safe_print(f"📊 元の知識ベースサイズ: {len(knowledge_text):,}文字")
+    safe_print(f"🎯 検索クエリ: '{query}'")
     
+    # 正確性重視のため、高速RAGは使用せず従来のRAG検索のみを使用
     try:
         import bm25s
         import re
@@ -93,8 +92,8 @@ def simple_rag_search(knowledge_text: str, query: str, max_results: int = 5) -> 
         # 高速化: より小さなチャンクサイズで分割（精度向上）
         if len(knowledge_text) > 10000:
             # 大きなテキストの場合は適度なサイズで分割
-            chunk_size = 1000  # 3000→1000に縮小
-            overlap = 200  # 20%のオーバーラップ
+            chunk_size = 500  # 1000→500にさらに縮小（細かい情報も検索対象に）
+            overlap = 100  # 20%のオーバーラップ
             chunks = []
             
             i = 0
@@ -120,37 +119,74 @@ def simple_rag_search(knowledge_text: str, query: str, max_results: int = 5) -> 
             chunks = re.split(r'\n+', knowledge_text)  # 改行で分割
             chunks = [p.strip() for p in chunks if len(p.strip()) > 30]  # 閾値を下げる
         
+        safe_print(f"📊 チャンク分割結果: {len(chunks)}個のチャンク")
+        
         if len(chunks) < 2:
             # チャンクが少ない場合は全体を返す（最大50万文字）
             return knowledge_text[:500000]
         
-        # 🚀 ハイブリッド検索の実行（検索結果を増やす）
-        search_results_count = min(max_results * 2, len(chunks))
+        # 🚀 ハイブリッド検索の実行（検索結果を大幅に増やす）
+        search_results_count = min(max_results * 5, len(chunks))  # 2倍→5倍に増加
         bm25_results = _bm25_search(chunks, processed_query, search_results_count)
         semantic_results = _semantic_search(chunks, processed_query, search_results_count)
+        
+        safe_print(f"📊 BM25検索結果: {len(bm25_results)}件")
+        safe_print(f"📊 セマンティック検索結果: {len(semantic_results)}件")
+        
+        # 上位3件の検索結果をデバッグ出力
+        safe_print(f"🔍 BM25上位3件の内容プレビュー:")
+        for i, result in enumerate(bm25_results[:3]):
+            preview = result['content'][:200].replace('\n', ' ')
+            safe_print(f"  {i+1}. スコア:{result['score']:.3f} 内容: {preview}...")
+        
+        safe_print(f"🔍 セマンティック上位3件の内容プレビュー:")
+        for i, result in enumerate(semantic_results[:3]):
+            preview = result['content'][:200].replace('\n', ' ')
+            safe_print(f"  {i+1}. スコア:{result['score']:.3f} 内容: {preview}...")
         
         # 結果の統合と再ランキング
         combined_results = _combine_search_results(bm25_results, semantic_results, processed_query, max_results)
         
-        # 🔍 完全検索: 全ての関連チャンクを取得（文字数制限を大幅緩和）
+        safe_print(f"📊 統合後の結果: {len(combined_results)}件")
+        
+        # 🔍 完全検索: 全ての関連チャンクを取得（包括的検索）
         result_chunks = []
         total_length = 0
-        max_length = 500000  # 制限を50万文字に大幅拡大
+        max_length = 300000  # 30万文字制限（Gemini制限対応）
         
-        # 統合結果から最良のチャンクを選択
-        for result in combined_results:
+        # 統合結果から最良のチャンクを選択（より多くのチャンクを採用）
+        for i, result in enumerate(combined_results):
             chunk = result['content']
             score = result['score']
             
-            if total_length + len(chunk) > max_length and len(result_chunks) >= 20:
-                # 最低20個のチャンクは確保し、それ以降は制限適用
+            safe_print(f"🎯 統合結果{i+1}: スコア{score:.3f}, 長さ{len(chunk)}文字")
+            if i < 5:  # 上位5件の内容をプレビュー（デバッグ拡大）
+                preview = chunk[:300].replace('\n', ' ')
+                safe_print(f"   内容プレビュー: {preview}...")
+            
+            # より多くのチャンクを採用（最低30個→50個に増加）
+            if total_length + len(chunk) > max_length and len(result_chunks) >= 50:
                 safe_print(f"🔍 文字数制限到達: {total_length:,}文字 (制限: {max_length:,}文字)")
                 break
-            result_chunks.append(chunk)
-            total_length += len(chunk)
+            
+            # スコアが非常に低い場合のみ除外（0.05以下）
+            if score >= 0.05:  # 閾値を大幅緩和
+                result_chunks.append(chunk)
+                total_length += len(chunk)
+            else:
+                safe_print(f"   ⚠️ スコア不足でスキップ: {score:.3f}")
+                if len(result_chunks) < 10:  # 最低10個は確保
+                    result_chunks.append(chunk)
+                    total_length += len(chunk)
+                    safe_print(f"   ✅ 最低限確保のため追加")
         
         result = '\n\n'.join(result_chunks)
         safe_print(f"🚀 ハイブリッドRAG検索完了: {len(result_chunks)}個のチャンク、{len(result)}文字 (元: {len(knowledge_text)}文字)")
+        
+        # 最終結果の内容プレビューもデバッグ出力
+        result_preview = result[:500].replace('\n', ' ')
+        safe_print(f"📝 最終RAG結果プレビュー: {result_preview}...")
+        
         return result
         
     except Exception as e:
@@ -159,26 +195,27 @@ def simple_rag_search(knowledge_text: str, query: str, max_results: int = 5) -> 
         return knowledge_text[:50000]  # フォールバック時の文字数も増加
 
 def _preprocess_query(query: str) -> str:
-    """クエリの前処理 - 表記揺れや類義語に対応"""
+    """クエリの前処理 - 文字正規化と自動語句分解"""
     # 全角・半角の正規化
     import unicodedata
+    import re
     normalized = unicodedata.normalize('NFKC', query)
     
-    # 類義語の展開
-    synonyms = {
-        '顧客番号': ['お客様番号', '顧客ID', '顧客コード', '会員番号', 'カスタマーID'],
-        '会社': ['企業', '法人', '株式会社', '有限会社', '合同会社'],
-        '料金': ['価格', '費用', '金額', 'プライス', 'コスト'],
-        '契約': ['申込', '申し込み', '契約書', '合意'],
-    }
+    # 基本的な表記揺れの正規化
+    processed = normalized
+    processed = re.sub(r'[・･]', ' ', processed)  # 中点を空白に
+    processed = re.sub(r'[（）()]', ' ', processed)  # 括弧を空白に
+    processed = re.sub(r'\s+', ' ', processed)  # 連続空白を単一空白に
     
-    # クエリに類義語を追加
-    expanded_terms = [normalized]
-    for term, syns in synonyms.items():
-        if term in normalized:
-            expanded_terms.extend(syns)
+    # 複合語の自動分解（助詞で分割）
+    particles = ['について', 'に関して', 'に関する', 'における', 'での', 'による']
+    for particle in particles:
+        if particle in processed:
+            parts = processed.split(particle)
+            processed = ' '.join(parts).strip()
     
-    return ' '.join(expanded_terms)
+    safe_print(f"🔍 クエリ正規化: '{query}' → '{processed}'")
+    return processed
 
 def _bm25_search(chunks: list, query: str, max_results: int) -> list:
     """BM25検索（語彙ベース）"""
@@ -349,7 +386,7 @@ def _semantic_search(chunks: list, query: str, max_results: int) -> list:
 def _evaluate_rag_quality(filtered_chunk: str, query: str, rag_attempts: int) -> float:
     """
     RAG検索結果の品質を評価（0.0-1.0のスコア）
-    具体的な質問に対してより厳格な評価を実施
+    包括的で寛容な評価を実施（情報を見逃さないように）
     """
     if not filtered_chunk or not filtered_chunk.strip():
         return 0.0
@@ -358,118 +395,120 @@ def _evaluate_rag_quality(filtered_chunk: str, query: str, rag_attempts: int) ->
     content_lower = filtered_chunk.lower()
     query_lower = query.lower()
     
-    # 1. 文字数による基本スコア（最大0.2） - 厳格化
+    # 1. 文字数による基本スコア（最大0.3） - 緩和
     content_length = len(filtered_chunk.strip())
-    if content_length >= 500:  # 500文字以上で最高スコア
+    if content_length >= 300:  # 300文字以上で最高スコア
+        score += 0.3
+    elif content_length >= 150:  # 150文字以上で中程度
+        score += 0.25
+    elif content_length >= 50:   # 50文字以上で最低限（大幅緩和）
         score += 0.2
-    elif content_length >= 300:  # 300文字以上で中程度
-        score += 0.15
-    elif content_length >= 150:   # 150文字以上で最低限
-        score += 0.1
+    else:
+        score += 0.1  # 非常に短くても基本スコア付与
     
-    # 2. クエリのキーワードマッチング（最大0.6）
-    # シンプルにクエリの単語が含まれているかチェック
+    # 2. クエリのキーワードマッチング（最大0.5） - 緩和
     import re
     query_words = re.findall(r'\w+', query.lower())
-    important_keywords = [word for word in query_words if len(word) >= 2]
+    important_keywords = [word for word in query_words if len(word) >= 1]  # 1文字以上に緩和
     
     # 助詞などの一般的な単語を除外
     stopwords = ['の', 'に', 'を', 'は', 'が', 'で', 'と', 'から', 'まで', 'て', 'た', 'だ', 'です', 'ます']
     important_keywords = [word for word in important_keywords if word not in stopwords]
     
-    # 重要キーワードの完全一致チェック
+    # 重要キーワードの完全一致チェック（部分一致も許可）
     critical_matches = 0
+    partial_matches = 0
     for keyword in important_keywords:
         if keyword.strip() in content_lower:
             critical_matches += 1
+        elif any(keyword[:-1] in content_lower for i in range(1, len(keyword)) if len(keyword[:-i]) >= 2):
+            # 部分一致も評価
+            partial_matches += 1
     
     if len(important_keywords) > 0:
         critical_match_ratio = critical_matches / len(important_keywords)
+        partial_match_ratio = partial_matches / len(important_keywords)
         
-        # 重要キーワードが50%以上マッチした場合のみ高スコア
-        if critical_match_ratio >= 0.5:
-            score += critical_match_ratio * 0.6
-        elif critical_match_ratio >= 0.3:
+        # 完全一致の評価（大幅緩和）
+        if critical_match_ratio >= 0.2:  # 20%以上で高スコア（50%→20%に緩和）
+            score += critical_match_ratio * 0.5
+        elif critical_match_ratio >= 0.1:  # 10%以上で中スコア
             score += critical_match_ratio * 0.3
-        elif critical_match_ratio >= 0.1:
-            score += critical_match_ratio * 0.1
+        elif critical_match_ratio > 0:     # 少しでもマッチすればスコア付与
+            score += critical_match_ratio * 0.2
+        
+        # 部分一致のボーナス
+        if partial_match_ratio > 0:
+            score += partial_match_ratio * 0.1
     
-    # 3. 質問の意図に対する回答の適合性（最大0.2）
-    intent_keywords = {
-        'ステータス': ['状態', 'ステータス', '現状', '状況', '進捗', '段階'],
-        '顧客番号': ['顧客番号', 'お客様番号', '顧客ID', '顧客コード', '番号'],
-        '連絡先': ['電話', 'TEL', 'FAX', 'メール', '住所', '連絡先'],
-        '料金': ['料金', '価格', '費用', 'コスト', '金額', '値段'],
-        '契約': ['契約', '取引', '合意', '約束', '条件']
-    }
+    # 3. 質問と回答の語句重複度評価（最大0.2）
+    import re
+    query_words = set(re.findall(r'[ぁ-んァ-ヶ一-龯a-zA-Z0-9]+', query_lower))
+    content_words = set(re.findall(r'[ぁ-んァ-ヶ一-龯a-zA-Z0-9]+', content_lower))
     
-    intent_score = 0
-    for intent, keywords in intent_keywords.items():
-        if intent.lower() in query_lower:
-            # 質問に意図が含まれている場合、回答にその関連語句があるかチェック
-            for keyword in keywords:
-                if keyword in content_lower:
-                    intent_score += 0.05
-                    break
+    # 語句の重複度を計算
+    if len(query_words) > 0:
+        overlap = len(query_words.intersection(content_words))
+        overlap_ratio = overlap / len(query_words)
+        intent_score = overlap_ratio * 0.2
+        score += intent_score
     
-    score += min(0.2, intent_score)
-    
-    # 4. 無関係な内容の検出による減点
+    # 4. 無関係な内容の検出による減点（大幅緩和）
     irrelevant_patterns = [
-        'システムエラー', 'デバッグ', 'テスト', 'サンプル', '例：', '例)', 
-        '※', '注意', '重要', 'エラーが発生', '申し訳ございません'
+        'システムエラー', 'デバッグ', 'テスト用', '例外処理'
     ]
     
     irrelevant_count = sum(1 for pattern in irrelevant_patterns if pattern in filtered_chunk)
     if irrelevant_count > 0:
-        score -= min(0.3, irrelevant_count * 0.1)
+        score -= min(0.1, irrelevant_count * 0.05)  # 減点を大幅緩和
     
-    # 5. 最終的な厳格判定
-    # 具体的な固有名詞を含む質問の場合、その固有名詞が含まれていない回答は大幅減点
+    # 5. 厳格判定を大幅緩和（90%減点を削除）
+    # 具体的な固有名詞を含む質問の場合でも、厳格すぎる減点は行わない
     if any(word in query_lower for word in ['株式会社', '会社', '工芸', '顧客番号', 'ステータス']):
-        has_relevant_content = False
+        # 関連性チェックを行うが、大幅な減点はしない
+        has_any_relevance = False
         
-        # クエリの重要語句が回答に含まれているかチェック
+        # より柔軟な関連性チェック
         for word in query_words:
-            if len(word) >= 2 and word in content_lower:
-                has_relevant_content = True
-                break
+            if len(word) >= 2:
+                # 完全一致
+                if word in content_lower:
+                    has_any_relevance = True
+                    break
+                # 部分一致（3文字以上の場合）
+                if len(word) >= 3 and any(word[:-1] in content_lower for i in range(1, min(3, len(word)))):
+                    has_any_relevance = True
+                    break
         
-        if not has_relevant_content:
-            score *= 0.1  # 90%減点
+        # 関連性が全くない場合のみ軽微な減点
+        if not has_any_relevance:
+            score *= 0.7  # 30%減点（90%減点から大幅緩和）
     
-    # 6. 意味的類似度による品質向上（ボーナス）
+    # 6. 語彙レベルでの関連性評価（ボーナス）
     try:
-        # 簡易的な意味的類似度チェック
         semantic_bonus = 0.0
         
-        # 質問と回答の文脈的関連性をチェック
-        context_keywords = {
-            'ステータス': ['状態', '現状', '進行', '段階', '状況', 'status'],
-            '顧客': ['お客様', 'クライアント', 'client', 'customer'],
-            '会社': ['企業', '法人', 'company', 'corporation'],
-            '番号': ['ID', 'コード', 'number', 'code'],
-            '工芸': ['クラフト', 'アート', 'craft', 'art'],
-        }
+        # N-gram重複度の計算
+        query_bigrams = set([query_lower[i:i+2] for i in range(len(query_lower)-1)])
+        content_bigrams = set([content_lower[i:i+2] for i in range(len(content_lower)-1)])
         
-        for main_word, related_words in context_keywords.items():
-            if main_word in query_lower:
-                # 関連語句が回答に含まれている場合はボーナス
-                for related in related_words:
-                    if related.lower() in content_lower:
-                        semantic_bonus += 0.02
-                        break
+        if len(query_bigrams) > 0:
+            bigram_overlap = len(query_bigrams.intersection(content_bigrams))
+            bigram_ratio = bigram_overlap / len(query_bigrams)
+            semantic_bonus = bigram_ratio * 0.1
         
-        # 文脈的な一貫性ボーナス
-        if semantic_bonus > 0:
-            score += min(0.1, semantic_bonus)  # 最大0.1のボーナス
+        score += semantic_bonus  # 最大0.1のボーナス
             
     except Exception as e:
-        # エラーが発生した場合はボーナスなし
         pass
     
-    # スコアを0.0-1.0に正規化
-    final_score = max(0.0, min(1.0, score))
+    # 7. 包括性ボーナス（新規追加）
+    # チャンクが表形式データや構造化データを含む場合のボーナス
+    if any(indicator in content_lower for indicator in ['番号', 'id', 'コード', '名前', '会社', '顧客']):
+        score += 0.1  # 構造化データボーナス
+    
+    # スコアを0.0-1.0に正規化（最低スコアを保証）
+    final_score = max(0.1, min(1.0, score))  # 最低0.1のスコアを保証
     
     return final_score
 
@@ -571,58 +610,96 @@ def set_model(gemini_model):
     model = gemini_model
 
 def is_casual_conversation(message_text: str) -> bool:
-    """メッセージが挨拶や一般的な会話かどうかを判定する"""
+    """メッセージが挨拶や一般的な会話かどうかを判定する（ビジネス質問を除外）"""
     if not message_text:
         return False
     
     message_lower = message_text.strip().lower()
     
-    # 挨拶パターン
-    greetings = [
+    # 漢字・カタカナ・英語の専門用語を含む場合はビジネス関連として判定
+    import re
+    # 漢字を含む2文字以上の語句（専門用語の可能性）
+    has_kanji_terms = bool(re.search(r'[一-龯]{2,}', message_text))
+    # カタカナを含む3文字以上の語句（ビジネス用語の可能性）
+    has_katakana_terms = bool(re.search(r'[ァ-ヶ]{3,}', message_text))
+    # 英語の専門用語（3文字以上）
+    has_english_terms = bool(re.search(r'\b[A-Za-z]{3,}\b', message_text))
+    
+    # 専門用語を含む場合は知識ベース検索を優先
+    if has_kanji_terms or has_katakana_terms or has_english_terms:
+        # ただし、一般的な単語は除外
+        casual_exceptions = ['今日', '明日', '昨日', '時間', '場所', '天気', '元気']
+        if not any(exception in message_lower for exception in casual_exceptions):
+            return False
+    
+    # 疑問符がある場合は知識ベース検索を優先（質問の可能性が高い）
+    if "?" in message_text or "？" in message_text:
+        return False
+    
+    # 明確な挨拶パターン
+    pure_greetings = [
         "こんにちは", "こんにちわ", "おはよう", "おはようございます", "こんばんは", "こんばんわ",
         "よろしく", "よろしくお願いします", "はじめまして", "初めまして",
         "hello", "hi", "hey", "good morning", "good afternoon", "good evening"
     ]
     
-    # お礼パターン
-    thanks = [
+    # 明確なお礼パターン
+    pure_thanks = [
         "ありがとう", "ありがとうございます", "ありがとうございました", "感謝します",
         "thank you", "thanks", "thx"
     ]
     
-    # 別れの挨拶パターン
-    farewells = [
+    # 明確な別れの挨拶パターン
+    pure_farewells = [
         "さようなら", "またね", "また明日", "失礼します", "お疲れ様", "お疲れさまでした",
         "bye", "goodbye", "see you", "good bye"
     ]
     
-    # 一般的な会話パターン
-    casual_phrases = [
-        "元気", "調子", "どう", "天気", "今日", "明日", "昨日", "週末", "休み",
-        "疲れた", "忙しい", "暇", "時間", "いい天気", "寒い", "暑い", "雨",
-        "how are you", "what's up", "how's it going", "nice weather", "tired", "busy"
-    ]
-    
-    # 短い質問や相槌パターン
+    # 短い相槌パターン（単独で使われる場合のみ）
     short_responses = [
         "はい", "いいえ", "そうですね", "なるほど", "そうですか", "わかりました",
         "ok", "okay", "yes", "no", "i see", "alright"
     ]
     
-    # メッセージが短すぎる場合（3文字以下）は一般的な会話として扱う
+    # メッセージが非常に短い場合（3文字以下）
     if len(message_lower) <= 3:
+        # 英数字のみの場合（ID、API、URLなど）は除外
+        if message_lower.isalnum():
+            return False
         return True
     
-    # 各パターンをチェック
-    all_patterns = greetings + thanks + farewells + casual_phrases + short_responses
+    # 明確な挨拶・お礼・別れの挨拶をチェック
+    all_pure_patterns = pure_greetings + pure_thanks + pure_farewells
     
-    for pattern in all_patterns:
-        if pattern in message_lower:
+    for pattern in all_pure_patterns:
+        if pattern == message_lower or pattern in message_lower:
+            # ただし、他のビジネス用語と組み合わされている場合は除外
+            if len(message_lower) > len(pattern) * 2:  # パターンの2倍以上の長さがある場合
+                return False
             return True
     
-    # 疑問符がなく、短いメッセージ（20文字以下）は一般的な会話として扱う
-    if len(message_text) <= 20 and "?" not in message_text and "？" not in message_text:
-        return True
+    # 短い相槌のみの場合（他の単語と組み合わされていない）
+    for response in short_responses:
+        if message_lower == response:
+            return True
+    
+    # 天気など純粋な日常会話（ビジネス文脈なし）
+    pure_casual_phrases = [
+        "いい天気", "天気がいい", "天気悪い", "雨降り", "晴れ", "曇り",
+        "暑い", "寒い", "涼しい", "暖かい",
+        "疲れた", "眠い", "お腹空いた"
+    ]
+    
+    for phrase in pure_casual_phrases:
+        if phrase in message_lower and len(message_lower) <= len(phrase) + 5:  # 短い文章のみ
+            return True
+    
+    # 非常に短い質問ではない文（10文字以下、疑問符なし、ビジネス用語なし）
+    if len(message_text) <= 10 and "?" not in message_text and "？" not in message_text:
+        # ただし、数字や英数字が多い場合は除外（IDや番号の可能性）
+        alphanumeric_count = sum(1 for c in message_text if c.isalnum())
+        if alphanumeric_count <= len(message_text) * 0.3:  # 30%以下が英数字の場合のみ
+            return True
     
     return False
 
@@ -652,13 +729,16 @@ async def generate_casual_response(message_text: str, company_name: str) -> str:
         if response and hasattr(response, 'text') and response.text:
             return response.text.strip()
         else:
-            # フォールバック応答
+            # フォールバック応答（汎用的判定）
+            import re
             message_lower = message_text.lower()
-            if any(greeting in message_lower for greeting in ["こんにちは", "こんにちわ", "hello", "hi"]):
+            
+            # 語句の感情・意図を自動判定
+            if re.search(r'(こんにち|hello|hi)', message_lower):
                 return "こんにちは！お疲れ様です。何かお手伝いできることはありますか？"
-            elif any(thanks in message_lower for thanks in ["ありがとう", "thank you", "thanks"]):
+            elif re.search(r'(ありがとう|thank)', message_lower):
                 return "どういたしまして！他にも何かお手伝いできることがあれば、お気軽にお声がけください。"
-            elif any(farewell in message_lower for farewell in ["さようなら", "またね", "bye", "goodbye"]):
+            elif re.search(r'(さようなら|またね|bye)', message_lower):
                 return "お疲れ様でした！また何かありましたら、いつでもお声がけください。"
             else:
                 return "そうですね！何かお手伝いできることがあれば、お気軽にお声がけください。"
@@ -894,34 +974,14 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
             safe_print(f"✅ 知識ベース取得成功 - 長さ: {len(active_knowledge_text):,} 文字")
             safe_print(f"👀 知識ベース先頭200文字: {active_knowledge_text[:200]}...")
         
-        # 改良されたRAG検索で関連部分のみを抽出（高精度・高速化）
+        # 正確性重視のため、RAG検索は従来の方法のみを使用
         if active_knowledge_text and len(active_knowledge_text) > 50000:
-            safe_print(f"🎯 改良RAG検索開始 - 元サイズ: {len(active_knowledge_text):,} 文字")
+            safe_print(f"🎯 従来RAG検索開始 - 元サイズ: {len(active_knowledge_text):,} 文字")
             
-            # 高速化を重視した検索手法を選択
-            if SPEED_RAG_AVAILABLE:
-                # 雷速RAG検索を最優先で使用
-                active_knowledge_text = await lightning_rag_search(active_knowledge_text, message_text, max_results=30)
-            elif len(active_knowledge_text) > 500000:
-                # 非常に大きなテキストの場合は強化RAG検索
-                if RAG_ENHANCED_AVAILABLE:
-                    active_knowledge_text = await enhanced_rag_search(active_knowledge_text, message_text, max_results=25)
-                else:
-                    active_knowledge_text = multi_pass_rag_search(active_knowledge_text, message_text, max_results=20)
-            elif len(active_knowledge_text) > 200000:
-                # 大きなテキストの場合は多段階検索
-                active_knowledge_text = multi_pass_rag_search(active_knowledge_text, message_text, max_results=15)
-            else:
-                # 中程度のテキストの場合は適応的検索
-                active_knowledge_text = adaptive_rag_search(active_knowledge_text, message_text, max_results=12)
+            # 正確性を重視して従来のRAG検索のみを使用（検索数を大幅増加）
+            active_knowledge_text = simple_rag_search(active_knowledge_text, message_text, max_results=30)
             
-            safe_print(f"🎯 改良RAG検索完了 - 新サイズ: {len(active_knowledge_text):,} 文字")
-            
-            # RAG検索後のサイズが30万文字以下なら通常処理に切り替え
-            if len(active_knowledge_text) <= 300000:
-                safe_print(f"🔄 RAG検索後のサイズが小さいため、通常処理に切り替えます")
-                # 通常のprocess_chat関数を呼び出し
-                return await process_chat(message, db, current_user)
+            safe_print(f"🎯 従来RAG検索完了 - 新サイズ: {len(active_knowledge_text):,} 文字")
         
         # 知識ベースのサイズを制限（API制限対応のため一時的に復活）
         MAX_KNOWLEDGE_SIZE = 300000  # 30万文字制限（API制限対応）

@@ -36,6 +36,7 @@ import {
   Menu,
   MenuItem,
   Tooltip,
+  Chip,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -47,6 +48,12 @@ import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import ChatIcon from "@mui/icons-material/Chat";
 import DeleteIcon from "@mui/icons-material/Delete";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
+import DescriptionIcon from "@mui/icons-material/Description";
+import CloseIcon from "@mui/icons-material/Close";
+import LinkIcon from "@mui/icons-material/Link";
+import ArticleIcon from "@mui/icons-material/Article";
+import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
+import TableChartIcon from "@mui/icons-material/TableChart";
 import api from "./api";
 import { cache } from "./utils/cache";
 import DemoLimits from "./components/DemoLimits";
@@ -104,6 +111,10 @@ function ChatInterface() {
   const [displayedMessageCount, setDisplayedMessageCount] = useState(10); // 最初は5ペア（10件）表示
   const [showLoadMoreButton, setShowLoadMoreButton] = useState(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  
+  // フローティング参照パネルの状態
+  const [showSourcePanel, setShowSourcePanel] = useState(false);
+  const [sourceTooltipOpen, setSourceTooltipOpen] = useState(false);
 
   // メッセージエリアのスタイルを改善 - モバイル対応を強化
   const messageContainerStyles = {
@@ -227,13 +238,51 @@ function ChatInterface() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // 参照部分まで含めたスマートスクロール
+  const scrollToIncludeSource = useCallback(() => {
+    if (chatContainerRef.current) {
+      const container = chatContainerRef.current;
+      const lastMessage = container.querySelector('.message-with-source:last-child');
+      if (lastMessage) {
+        const sourceElement = lastMessage.querySelector('[data-source-citation]');
+        if (sourceElement) {
+          // 参照部分まで含めてスクロール
+          sourceElement.scrollIntoView({ 
+            behavior: "smooth", 
+            block: "end",
+            inline: "nearest"
+          });
+        } else {
+          // 参照がない場合は通常のスクロール
+          scrollToBottom();
+        }
+      } else {
+        scrollToBottom();
+      }
+    }
+  }, []);
+
+  // メッセージ送信後の自動スクロールを改善
+  const smartScrollAfterMessage = useCallback(() => {
+    // 少し遅延を入れて、レンダリング完了後にスクロール
+    setTimeout(() => {
+      scrollToIncludeSource();
+    }, 300);
+  }, [scrollToIncludeSource]);
+
   // メッセージが更新されたらローカルストレージに保存
   useEffect(() => {
     if (user?.id) {
       localStorage.setItem(`chatMessages_${user.id}`, JSON.stringify(messages));
     }
+    // 新しいメッセージにソースがある場合はスマートスクロール
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.source) {
+      smartScrollAfterMessage();
+    } else {
     scrollToBottom();
-  }, [messages, user?.id]);
+    }
+  }, [messages, user?.id, smartScrollAfterMessage]);
 
   // ユーザーが変わったらメッセージをクリア
   useEffect(() => {
@@ -457,6 +506,55 @@ function ChatInterface() {
     return messages.slice(-displayedMessageCount);
   };
 
+  // 現在の会話から参照ソース情報を抽出
+  const getSourceInfos = useCallback(() => {
+    const sourceMap = new Map();
+    
+    messages.forEach((message) => {
+      if (!message.source || message.isUser) return;
+
+      // 複数ソースを解析
+      const parseMultipleSources = (sourceText: string) => {
+        const bracketMatches = sourceText.match(/\[([^\]]+)\]/g);
+        if (bracketMatches) {
+          return bracketMatches.map(match => match.slice(1, -1));
+        }
+        if (sourceText.includes(',')) {
+          return sourceText.split(',').map(s => s.trim());
+        }
+        return [sourceText];
+      };
+
+      const sources = parseMultipleSources(message.source);
+
+      sources.forEach((source) => {
+        const pageMatch = source.match(/\((?:P\.)?(\d+(?:-\d+)?|[^)]+)\)$/);
+        const pageInfo = pageMatch ? pageMatch[1] : undefined;
+        const cleanSourceName = pageMatch
+          ? source.replace(/\s*\([^)]+\)$/, '')
+          : source;
+
+        const key = `${cleanSourceName}${pageInfo ? `-${pageInfo}` : ''}`;
+        
+        if (sourceMap.has(key)) {
+          sourceMap.get(key).count += 1;
+        } else {
+          sourceMap.set(key, {
+            name: cleanSourceName,
+            page: pageInfo,
+            isUrl: source.startsWith('http://') || source.startsWith('https://'),
+            count: 1,
+          });
+        }
+      });
+    });
+
+    return Array.from(sourceMap.values())
+      .sort((a, b) => b.count - a.count);
+  }, [messages]);
+
+  const currentSources = getSourceInfos();
+
   // AppBarコンポーネントのスタイル修正 - メニューボタン追加
   const renderAppBar = () => (
     <AppBar
@@ -514,6 +612,60 @@ function ChatInterface() {
           </Typography>
         </Box>
         <Box display="flex" alignItems="center">
+          {/* 参照ソースクイックアクセスボタン */}
+          {currentSources.length > 0 && (
+            <Tooltip title={`${currentSources.length}件の参照ソース`} placement="bottom">
+              <IconButton
+                color="inherit"
+                onClick={() => setShowSourcePanel(!showSourcePanel)}
+                sx={{
+                  ml: { xs: 0.5, sm: 0.75 },
+                  bgcolor: showSourcePanel 
+                    ? "rgba(255, 255, 255, 0.3)" 
+                    : "rgba(255, 255, 255, 0.15)",
+                  backdropFilter: "blur(4px)",
+                  p: { xs: 1.2, sm: 1.5 },
+                  width: { xs: 40, sm: 46 },
+                  height: { xs: 40, sm: 46 },
+                  position: 'relative',
+                  "&:hover": {
+                    bgcolor: "rgba(255, 255, 255, 0.25)",
+                    transform: "translateY(-2px)",
+                    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                  },
+                  transition: "all 0.2s ease",
+                  boxShadow: "0 2px 6px rgba(0, 0, 0, 0.12)",
+                  borderRadius: "14px",
+                  border: "1px solid rgba(255, 255, 255, 0.3)",
+                }}
+              >
+                <DescriptionIcon sx={{ fontSize: { xs: "1.3rem", sm: "1.5rem" } }} />
+                <Typography
+                  variant="caption"
+                  sx={{
+                    position: 'absolute',
+                    top: -4,
+                    right: -4,
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    color: 'primary.main',
+                    borderRadius: '50%',
+                    width: 18,
+                    height: 18,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.65rem',
+                    fontWeight: 700,
+                    border: '1.5px solid rgba(255, 255, 255, 0.9)',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)',
+                  }}
+                >
+                  {currentSources.length}
+                </Typography>
+              </IconButton>
+            </Tooltip>
+          )}
+          
           {messages.length > 0 && (
             <Tooltip title="チャット履歴をクリア" placement="bottom">
               <IconButton
@@ -811,16 +963,22 @@ function ChatInterface() {
           {getDisplayedMessages().map((message, index) => {
             // 元のインデックスを計算（キーとして使用）
             const originalIndex = messages.length - displayedMessageCount + index;
+            const isLastMessage = index === getDisplayedMessages().length - 1;
             return (
               <Box
                 key={originalIndex}
+                className={message.source ? 'message-with-source' : 'message-normal'}
                 sx={message.isUser ? userMessageStyles : botMessageStyles}
               >
                 <MarkdownRenderer 
                   content={message.text} 
                   isUser={message.isUser}
                 />
-                {message.source && <SourceCitation source={message.source} />}
+                {message.source && (
+                  <Box data-source-citation>
+                    <SourceCitation source={message.source} />
+                  </Box>
+                )}
               </Box>
             );
           })}
@@ -1187,6 +1345,203 @@ function ChatInterface() {
         open={applicationOpen}
         onClose={handleCloseApplication}
       />
+
+      {/* フローティング参照ソースパネル */}
+      {showSourcePanel && currentSources.length > 0 && (
+        <Paper
+          elevation={8}
+          sx={{
+            position: 'fixed',
+            bottom: isMobile ? 80 : 100,
+            right: isMobile ? 16 : 24,
+            width: isMobile ? 280 : 350,
+            maxHeight: isMobile ? 350 : 450,
+            zIndex: 1000,
+            borderRadius: 3,
+            overflow: 'hidden',
+            background: 'rgba(255, 255, 255, 0.98)',
+            backdropFilter: 'blur(16px)',
+            border: '1px solid rgba(37, 99, 235, 0.1)',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)',
+          }}
+        >
+          {/* ヘッダー */}
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              p: 2,
+              background: 'linear-gradient(135deg, #2563eb, #3b82f6)',
+              color: 'white',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <DescriptionIcon fontSize="small" />
+              <Typography variant="subtitle2" fontWeight={600}>
+                参照ソース
+              </Typography>
+              <Chip
+                label={currentSources.length}
+                size="small"
+                sx={{
+                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                  color: 'white',
+                  fontSize: '0.7rem',
+                  height: 20,
+                }}
+              />
+            </Box>
+            <IconButton
+              size="small"
+              onClick={() => setShowSourcePanel(false)}
+              sx={{ color: 'white' }}
+            >
+              <CloseIcon />
+            </IconButton>
+          </Box>
+
+          {/* ソース一覧 */}
+          <Box sx={{ maxHeight: 350, overflow: 'auto' }}>
+            {currentSources.map((sourceInfo, index) => (
+              <Box
+                key={index}
+                onClick={() => {
+                  if (sourceInfo.isUrl) {
+                    window.open(sourceInfo.name, '_blank');
+                  }
+                }}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  p: 2,
+                  borderBottom: '1px solid rgba(0, 0, 0, 0.05)',
+                  cursor: sourceInfo.isUrl ? 'pointer' : 'default',
+                  transition: 'all 0.2s ease',
+                  '&:hover': sourceInfo.isUrl ? {
+                    backgroundColor: 'rgba(37, 99, 235, 0.04)',
+                  } : {},
+                }}
+              >
+                {/* ファイルアイコン */}
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 36,
+                    height: 36,
+                    borderRadius: 2,
+                    backgroundColor: sourceInfo.isUrl ? '#e3f2fd' : '#fff3e0',
+                    mr: 2,
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                  }}
+                >
+                  {sourceInfo.isUrl ? (
+                    <LinkIcon sx={{ color: '#1976d2', fontSize: '1.2rem' }} />
+                  ) : sourceInfo.name.endsWith('.pdf') ? (
+                    <PictureAsPdfIcon sx={{ color: '#f44336', fontSize: '1.2rem' }} />
+                  ) : sourceInfo.name.endsWith('.xlsx') || sourceInfo.name.endsWith('.xls') ? (
+                    <TableChartIcon sx={{ color: '#2e7d32', fontSize: '1.2rem' }} />
+                  ) : (
+                    <ArticleIcon sx={{ color: '#ed6c02', fontSize: '1.2rem' }} />
+                  )}
+                </Box>
+                
+                {/* ファイル情報 */}
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      fontWeight: 600,
+                      color: 'text.primary',
+                      fontSize: '0.9rem',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      mb: 0.5,
+                    }}
+                    title={sourceInfo.name}
+                  >
+                    {sourceInfo.name.length > 25 
+                      ? `${sourceInfo.name.substring(0, 25)}...`
+                      : sourceInfo.name
+                    }
+                  </Typography>
+                  
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography
+                      variant="caption"
+                      sx={{ 
+                        color: 'text.secondary', 
+                        fontSize: '0.75rem',
+                        backgroundColor: 'rgba(37, 99, 235, 0.08)',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: 1,
+                      }}
+                    >
+                      {sourceInfo.isUrl ? 'ウェブサイト' : 
+                       sourceInfo.name.endsWith('.pdf') ? 'PDF文書' :
+                       sourceInfo.name.endsWith('.xlsx') || sourceInfo.name.endsWith('.xls') ? 'Excel文書' :
+                       '文書'}
+                    </Typography>
+                    
+                    {sourceInfo.page && (
+                      <Typography
+                        variant="caption"
+                        sx={{ 
+                          color: 'text.secondary', 
+                          fontSize: '0.75rem',
+                          backgroundColor: 'rgba(67, 56, 202, 0.08)',
+                          px: 1,
+                          py: 0.25,
+                          borderRadius: 1,
+                        }}
+                      >
+                        P.{sourceInfo.page}
+                      </Typography>
+                    )}
+                    
+                    {sourceInfo.count > 1 && (
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: 'white',
+                          fontSize: '0.7rem',
+                          backgroundColor: '#2563eb',
+                          px: 1,
+                          py: 0.25,
+                          borderRadius: 1,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {sourceInfo.count}回参照
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+              </Box>
+            ))}
+          </Box>
+
+          {/* フッター */}
+          <Box
+            sx={{
+              p: 2,
+              backgroundColor: 'rgba(248, 250, 252, 0.8)',
+              borderTop: '1px solid rgba(0, 0, 0, 0.05)',
+            }}
+          >
+            <Typography
+              variant="caption"
+              sx={{ color: 'text.secondary', fontSize: '0.75rem', textAlign: 'center', display: 'block' }}
+            >
+              ソースをクリックして詳細を確認 • {currentSources.reduce((sum, s) => sum + s.count, 0)}回の参照
+            </Typography>
+          </Box>
+        </Paper>
+      )}
     </Box>
   );
 }

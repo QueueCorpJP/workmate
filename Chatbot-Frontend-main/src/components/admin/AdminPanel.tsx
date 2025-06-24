@@ -330,29 +330,18 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  // 会社の管理者用アカウント利用状況の取得
+  // 会社の管理者用アカウント利用状況の取得（共有サービス使用）
   const fetchEmployeeUsage = async (forceRefresh = false) => {
-    if (employeeUsage.length > 0 && !forceRefresh) return; // 既に有効なデータがある場合は何もしない（強制更新フラグがない場合）
+    if (employeeUsage.length > 0 && !forceRefresh) return;
 
     setIsEmployeeUsageLoading(true);
     try {
-      console.log("会社の管理者用アカウント利用状況を取得中...");
-      
-      const cacheKey = `employee-usage-${user?.id}`;
-      const response = await withCache(
-        cacheKey,
-        () => api.get(
-          `/admin/employee-usage`,
-          {
-            headers: {
-              'Access-Control-Allow-Origin': '*',
-              'Content-Type': 'application/json'
-            }
-          }
-        ),
-        forceRefresh ? 0 : 3 * 60 * 1000 // 3分キャッシュ、強制更新時は0秒
-      );
-      console.log("会社の管理者用アカウント利用状況取得結果:", response.data);
+      const { SharedDataService } = await import('../../services/sharedDataService');
+      if (forceRefresh) {
+        SharedDataService.clearCache('employee-usage-shared');
+      }
+      const data = await SharedDataService.getEmployeeUsage();
+      console.log("従業員利用状況取得結果:", data);
       // レスポンスが有効なオブジェクトであることを確認
       if (
         response.data &&

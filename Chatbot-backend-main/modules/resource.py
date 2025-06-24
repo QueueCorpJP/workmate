@@ -1,6 +1,31 @@
 from psycopg2.extensions import connection as Connection
 from .database import ensure_string
 
+def _clean_nan_values(text: str) -> str:
+    """テキストからNaN値や無効な文字列を除去する"""
+    if not text:
+        return ""
+    
+    import re
+    
+    # 1. NaN値の除去
+    text = re.sub(r'\bnan\b', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bNaN\b', '', text)
+    text = re.sub(r'\bNAN\b', '', text)
+    text = re.sub(r'\bnone\b', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bnull\b', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\b<na>\b', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bn/a\b', '', text, flags=re.IGNORECASE)
+    
+    # 2. 連続するnanを除去
+    text = re.sub(r'(\s*nan\s*){2,}', ' ', text, flags=re.IGNORECASE)
+    
+    # 3. 余分な空白の除去
+    text = re.sub(r'\s+', ' ', text)
+    text = text.strip()
+    
+    return text
+
 async def get_uploaded_resources_by_company_id(company_id: str, db: Connection, uploaded_by: str = None):
     """会社IDに基づいてアップロードされたリソースの詳細情報を取得します"""
     try:
@@ -386,21 +411,37 @@ async def get_active_resources_content_by_ids(resource_ids: list[str], db: Conne
                             
                             # 結合されたコンテンツを使用
                             processed_content = ensure_string(full_content, for_db=True)
+                            
+                            # 追加のNaN値処理
+                            processed_content = _clean_nan_values(processed_content)
+                            
                             combined_content.append(f"=== {resource_name} ===\n{processed_content}")
                             print(f"✅ チャンク結合完了: {resource_name}")
                         else:
                             print(f"⚠️ チャンクが見つかりません - 要約版を使用: {resource_name}")
                             # チャンクが見つからない場合は要約版を使用
                             processed_content = ensure_string(content, for_db=True)
+                            
+                            # 追加のNaN値処理
+                            processed_content = _clean_nan_values(processed_content)
+                            
                             combined_content.append(f"=== {resource_name} ===\n{processed_content}")
                     except Exception as chunk_error:
                         print(f"❌ チャンク取得エラー: {str(chunk_error)} - 要約版を使用")
                         # チャンク取得エラーの場合は要約版を使用
                         processed_content = ensure_string(content, for_db=True)
+                        
+                        # 追加のNaN値処理
+                        processed_content = _clean_nan_values(processed_content)
+                        
                         combined_content.append(f"=== {resource_name} ===\n{processed_content}")
                 else:
                     # 通常のドキュメント（チャンク分割されていない）
                     processed_content = ensure_string(content, for_db=True)
+                    
+                    # 追加のNaN値処理
+                    processed_content = _clean_nan_values(processed_content)
+                    
                     combined_content.append(f"=== {resource_name} ===\n{processed_content}")
                     print(f"✅ 通常ドキュメント処理完了: {resource_name}")
                 
