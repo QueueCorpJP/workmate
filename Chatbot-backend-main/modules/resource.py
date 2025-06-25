@@ -41,9 +41,9 @@ async def get_uploaded_resources_by_company_id(company_id: str, db: Connection, 
         supabase = get_supabase_client()
         print(f"🔍 [DEBUG] Supabaseクライアント取得完了: {supabase}")
         
-        # document_sourcesテーブルから直接データを取得
-        query = supabase.table("document_sources").select("*")
-        print(f"🔍 [DEBUG] 基本クエリ作成完了")
+        # document_sourcesテーブルから必要なフィールドのみ取得（contentは除外）
+        query = supabase.table("document_sources").select("id,name,type,page_count,uploaded_at,active,uploaded_by,special")
+        print(f"🔍 [DEBUG] 基本クエリ作成完了（contentフィールド除外で高速化）")
         
         # 会社IDに基づいてフィルタリング
         if company_id is not None:

@@ -1,5 +1,5 @@
 import api from '../api';
-import { withSharedCache } from '../utils/cache';
+import { withSharedCache, cache } from '../utils/cache';
 
 // 共通で使用されるデータタイプ
 export interface PlanHistoryItem {
@@ -230,7 +230,6 @@ export class SharedDataService {
    * キャッシュを強制クリア
    */
   static clearCache(key?: string): void {
-    const { cache } = require('../utils/cache');
     if (key) {
       cache.clear(key);
       console.log(`🗑️ キャッシュクリア: ${key}`);

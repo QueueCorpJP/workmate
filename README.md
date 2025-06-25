@@ -1,6 +1,6 @@
-# Workmate - 企業向けAIチャットボットシステム
+# Workmate AI チャットボットシステム
 
-![Workmate Logo](https://via.placeholder.com/400x100/0066cc/ffffff?text=WORKMATE)
+このプロジェクトは、企業向けAIチャットボットシステム「Workmate」です。
 
 ## 📋 目次
 
@@ -61,30 +61,16 @@
 ## 技術スタック
 
 ### フロントエンド
-```json
-{
-  "フレームワーク": "React 18.2.0 + TypeScript",
-  "ビルドツール": "Vite 5.1.3",
-  "UIライブラリ": "Material-UI 5.15.10",
-  "ルーティング": "React Router 6.22.1",
-  "HTTP通信": "Axios 1.6.7",
-  "チャート": "Chart.js 4.4.1",
-  "その他": "レスポンシブデザイン、PWA対応"
-}
-```
+- **React** + **TypeScript**
+- **Vite** (ビルドツール)
+- **Material-UI** (UIコンポーネント)
+- **React Router** (ルーティング)
 
-### バックエンド
-```python
-{
-  "フレームワーク": "FastAPI 0.109.2",
-  "サーバー": "Uvicorn 0.27.1",
-  "AI": "Google Generative AI 0.3.2 (Gemini)",
-  "データ処理": "Pandas 2.2.0",
-  "ドキュメント処理": "PyPDF2, PyMuPDF, Pillow",
-  "Web処理": "Playwright, BeautifulSoup4",
-  "その他": "非同期処理、CORS対応"
-}
-```
+### バックエンド  
+- **FastAPI** (Python Web フレームワーク)
+- **Supabase** (データベース・認証)
+- **Google Gemini API** (AI チャット機能)
+- **RAG** (文書検索・回答生成)
 
 ### データベース・インフラ
 ```yaml
@@ -110,50 +96,65 @@ graph TB
     H --> I[AWS EC2<br/>本番環境]
 ```
 
-## プロジェクト構成
+## 📁 プロジェクト構成
 
 ```
 workmate/
-├── 📁 Chatbot-Frontend-main/          # フロントエンド (React + TypeScript)
-│   ├── src/
-│   │   ├── components/               # UIコンポーネント
-│   │   │   ├── admin/               # 管理者パネル
-│   │   │   └── DemoLimits.tsx       # 利用制限表示
-│   │   ├── contexts/                # React Context
-│   │   ├── App.tsx                  # メインアプリケーション
-│   │   ├── api.ts                   # API通信
-│   │   └── main.tsx                 # エントリーポイント
-│   ├── public/                      # 静的ファイル
-│   ├── package.json                 # 依存関係
-│   ├── vite.config.ts              # Vite設定
-│   └── vercel.json                  # Vercelデプロイ設定
-│
-├── 📁 Chatbot-backend-main/           # バックエンド (Python + FastAPI)
-│   ├── modules/                     # コアモジュール
-│   │   ├── auth.py                  # 認証機能
-│   │   ├── chat.py                  # チャット処理
-│   │   ├── company.py               # 会社管理
-│   │   ├── admin.py                 # 管理者機能
-│   │   ├── database.py              # データベース接続
-│   │   ├── models.py                # データモデル
-│   │   └── knowledge/               # ドキュメント処理
-│   │       ├── pdf.py               # PDF処理
-│   │       ├── excel.py             # Excel処理
-│   │       ├── ocr.py               # OCR処理
-│   │       └── url.py               # URL処理
-│   ├── main.py                      # FastAPIアプリケーション
-│   ├── requirements.txt             # Python依存関係
-│   └── .env                         # 環境変数
-│
-├── 📁 .github/workflows/              # GitHub Actions
-│   ├── backend_deploy.yml           # バックエンドデプロイ
-│   └── front_deploy.yml             # フロントエンドデプロイ
-│
-├── 📄 README.md                       # プロジェクトドキュメント
-├── 📄 run_all.bat                     # 一括起動スクリプト（Windows）
-├── 📄 setup_backend.bat               # バックエンドセットアップ
-└── 📄 setup_frontend.bat              # フロントエンドセットアップ
+├── Chatbot-Backend-main/     # バックエンドAPI（FastAPI + Supabase）
+├── Chatbot-Frontend-main/    # フロントエンドUI（React + Vite）
+├── docs/                     # ドキュメント類
+│   ├── README.md            # プロジェクト概要
+│   ├── WORKMATE_USER_GUIDE.md
+│   ├── admin-manual.md
+│   └── guide-analysis.md
+├── scripts/                  # 実行スクリプト類
+│   ├── start-production.sh
+│   └── start-local.bat
+├── public/                   # 静的ファイル
+├── supabase/                # Supabaseスキーマ
+└── package.json            # プロジェクト設定
 ```
+
+## 🚀 クイックスタート
+
+### フロントエンド開発サーバー起動
+```bash
+npm run dev
+```
+
+### バックエンド開発サーバー起動
+```bash
+cd Chatbot-backend-main
+python main.py
+```
+
+### 本番環境実行
+```bash
+# Windows
+scripts/start-local.bat
+
+# Linux/Mac
+scripts/start-production.sh
+```
+
+## 📚 ドキュメント
+
+詳細なドキュメントは `docs/` フォルダを参照してください：
+
+- **[ユーザーガイド](docs/WORKMATE_USER_GUIDE.md)** - エンドユーザー向け操作説明
+- **[管理者マニュアル](docs/admin-manual.md)** - 管理者向け設定・管理方法
+- **[開発ガイド](docs/guide-analysis.md)** - 開発者向け技術情報
+- **[プロジェクト分析](docs/data.md)** - システム分析・仕様詳細
+
+## 📝 最近の更新
+
+- ✅ RAGパフォーマンス最適化（チャンクサイズ、コンテキストキャッシュ）
+- ✅ プロジェクト構造整理・クリーンアップ
+- ✅ ドキュメント統合・整理
+
+## 🤝 開発・サポート
+
+プロジェクトに関する質問や問題は、該当するドキュメントを参照するか、開発チームまでお問い合わせください。
 
 ## セットアップ
 

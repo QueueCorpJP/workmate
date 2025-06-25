@@ -10,11 +10,11 @@ from typing import Dict, List, Optional
 class RAGConfig:
     """RAGシステムの設定クラス"""
     
-    # チャンク化設定
-    default_chunk_size: int = 1000
-    default_overlap: int = 200
+    # チャンク化設定（task.yaml推奨値）
+    default_chunk_size: int = 1200
+    default_overlap: int = 600  # 50%オーバーラップ（1200文字 × 0.5）
     max_chunk_size: int = 2000
-    min_chunk_size: int = 500
+    min_chunk_size: int = 1000  # 最小サイズも1000文字に引き上げ
     
     # 検索設定
     default_top_k: int = 20
@@ -50,8 +50,8 @@ class RAGConfig:
     def from_env(cls) -> 'RAGConfig':
         """環境変数から設定を読み込み"""
         return cls(
-            default_chunk_size=int(os.getenv('RAG_CHUNK_SIZE', 1000)),
-            default_overlap=int(os.getenv('RAG_OVERLAP', 200)),
+            default_chunk_size=int(os.getenv('RAG_CHUNK_SIZE', 1200)),
+            default_overlap=int(os.getenv('RAG_OVERLAP', 600)),
             default_top_k=int(os.getenv('RAG_TOP_K', 20)),
             max_iterations=int(os.getenv('RAG_MAX_ITERATIONS', 3)),
             enable_caching=os.getenv('RAG_ENABLE_CACHING', 'true').lower() == 'true',

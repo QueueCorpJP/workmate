@@ -30,7 +30,7 @@ class EnhancedRAGSystem:
         self.chunk_cache = {}
         self.search_history = []
         
-    async def smart_chunking(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[Dict]:
+    async def smart_chunking(self, text: str, chunk_size: int = 1200, overlap: int = 600) -> List[Dict]:
         """
         インテリジェントなチャンク化
         - セマンティックな境界を考慮

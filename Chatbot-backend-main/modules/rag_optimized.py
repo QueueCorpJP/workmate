@@ -42,7 +42,7 @@ class HighSpeedRAG:
             return False
         return time.time() - cache_entry.get('timestamp', 0) < self.cache_ttl
     
-    async def fast_chunking(self, text: str, chunk_size: int = 2000, overlap: int = 200) -> List[Dict]:
+    async def fast_chunking(self, text: str, chunk_size: int = 2000, overlap: int = 1000) -> List[Dict]:
         """
         高速チャンク化 - 大きなチャンクサイズで処理数を削減
         """

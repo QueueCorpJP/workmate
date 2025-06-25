@@ -89,41 +89,19 @@ def simple_rag_search(knowledge_text: str, query: str, max_results: int = 5) -> 
         processed_query = _preprocess_query(query)
         safe_print(f"🔍 クエリ前処理: '{query}' → '{processed_query}'")
         
-        # 高速化: より小さなチャンクサイズで分割（精度向上）
-        if len(knowledge_text) > 10000:
-            # 大きなテキストの場合は適度なサイズで分割
-            chunk_size = 500  # 1000→500にさらに縮小（細かい情報も検索対象に）
-            overlap = 100  # 20%のオーバーラップ
-            chunks = []
-            
-            i = 0
-            while i < len(knowledge_text):
-                # チャンクの終了位置を計算
-                end = min(i + chunk_size, len(knowledge_text))
-                
-                # 最後のチャンクでない場合、文の境界で切る
-                if end < len(knowledge_text):
-                    # 最後の改行を探す
-                    last_newline = knowledge_text.rfind('\n', i, end)
-                    if last_newline > i:
-                        end = last_newline + 1
-                
-                chunk = knowledge_text[i:end].strip()
-                if chunk and len(chunk) > 100:
-                    chunks.append(chunk)
-                
-                # 次の開始位置（オーバーラップを考慮）
-                i = max(i + chunk_size - overlap, end)
-        else:
-            # 小さなテキストの場合は段落分割（より細かく）
-            chunks = re.split(r'\n+', knowledge_text)  # 改行で分割
-            chunks = [p.strip() for p in chunks if len(p.strip()) > 30]  # 閾値を下げる
+        # ⚡ 修正: 既に500文字でチャンク化されたテキストをそのまま使用
+        # 改行ベースで軽微な分割のみ実行（大きな再分割は不要）
+        chunks = [chunk.strip() for chunk in knowledge_text.split('\n\n') if chunk.strip()]
         
-        safe_print(f"📊 チャンク分割結果: {len(chunks)}個のチャンク")
+        # チャンクが空の場合は行分割にフォールバック
+        if not chunks:
+            chunks = [line.strip() for line in knowledge_text.split('\n') if len(line.strip()) > 30]
+        
+        safe_print(f"📊 軽微分割結果: {len(chunks)}個のセクション (800文字チャンク済み)")
         
         if len(chunks) < 2:
-            # チャンクが少ない場合は全体を返す（最大50万文字）
-            return knowledge_text[:500000]
+            # チャンクが少ない場合は全体を返す（最大20万文字）
+            return knowledge_text[:200000]
         
         # 🚀 ハイブリッド検索の実行（検索結果を大幅に増やす）
         search_results_count = min(max_results * 5, len(chunks))  # 2倍→5倍に増加
@@ -192,7 +170,7 @@ def simple_rag_search(knowledge_text: str, query: str, max_results: int = 5) -> 
     except Exception as e:
         safe_print(f"RAG検索エラー: {str(e)}")
         # エラーの場合は最初の部分を返す
-        return knowledge_text[:50000]  # フォールバック時の文字数も増加
+        return knowledge_text[:50000]  # フォールバック時は5万文字（精度重視）
 
 def _preprocess_query(query: str) -> str:
     """クエリの前処理 - 文字正規化と自動語句分解"""
@@ -974,20 +952,26 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
             safe_print(f"✅ 知識ベース取得成功 - 長さ: {len(active_knowledge_text):,} 文字")
             safe_print(f"👀 知識ベース先頭200文字: {active_knowledge_text[:200]}...")
         
-        # 正確性重視のため、RAG検索は従来の方法のみを使用
-        if active_knowledge_text and len(active_knowledge_text) > 50000:
-            safe_print(f"🎯 従来RAG検索開始 - 元サイズ: {len(active_knowledge_text):,} 文字")
+        # ⚡ 1200文字チャンク化をRAG検索前に実行（task.yaml推奨サイズ）
+        if active_knowledge_text and len(active_knowledge_text) > 1000:  # 1000文字を超える場合のみチャンク化
+            safe_print(f"🔪 1200文字チャンク化開始 - 元サイズ: {len(active_knowledge_text):,} 文字")
             
-            # 正確性を重視して従来のRAG検索のみを使用（検索数を大幅増加）
-            active_knowledge_text = simple_rag_search(active_knowledge_text, message_text, max_results=30)
+            # 1200文字でチャンク化（task.yaml推奨：1000-1200文字）
+            CHUNK_SIZE = 1200
+            chunks = chunk_knowledge_base(active_knowledge_text, CHUNK_SIZE)
+            safe_print(f"🔪 チャンク化完了: {len(chunks)}個のチャンク (チャンクサイズ: {CHUNK_SIZE}文字)")
             
-            safe_print(f"🎯 従来RAG検索完了 - 新サイズ: {len(active_knowledge_text):,} 文字")
+            # チャンク化されたテキストを結合してRAG検索（精度重視）
+            chunked_text = '\n\n'.join(chunks[:100])  # 最大100チャンク（80,000文字）まで使用
+            active_knowledge_text = simple_rag_search(chunked_text, message_text, max_results=30)
+            
+            safe_print(f"🎯 800文字チャンク+RAG検索完了 - 新サイズ: {len(active_knowledge_text):,} 文字")
         
-        # 知識ベースのサイズを制限（API制限対応のため一時的に復活）
-        MAX_KNOWLEDGE_SIZE = 300000  # 30万文字制限（API制限対応）
+        # 知識ベースのサイズを制限（精度とスピードのバランス）
+        MAX_KNOWLEDGE_SIZE = 200000  # 20万文字制限（800文字×250チャンク相当）
         if active_knowledge_text and len(active_knowledge_text) > MAX_KNOWLEDGE_SIZE:
             safe_print(f"⚠️ 知識ベースが大きすぎます ({len(active_knowledge_text)} 文字)。{MAX_KNOWLEDGE_SIZE} 文字に制限します。")
-            active_knowledge_text = active_knowledge_text[:MAX_KNOWLEDGE_SIZE] + "\n\n[注意: 知識ベースが大きいため、一部のみ表示しています]"
+            active_knowledge_text = active_knowledge_text[:MAX_KNOWLEDGE_SIZE] + "\n\n[注意: 精度を保ちつつ効率化のため、最も関連性の高い部分のみ表示しています]"
         # アクティブな知識ベースが空の場合はエラーメッセージを返す
         if not active_knowledge_text or (isinstance(active_knowledge_text, str) and not active_knowledge_text.strip()):
             response_text = f"申し訳ございません。アクティブな知識ベースの内容が空です。管理画面で別のリソースを有効にしてください。"
@@ -1095,44 +1079,38 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
             for idx, inst in enumerate(special_instructions, 1):
                 special_instructions_text += f"{idx}. 【{inst['name']}】: {inst['instruction']}\n"
 
-        # プロンプトの作成
-        prompt = f"""
-        あなたは親切で丁寧な対応ができる{current_company_name}のアシスタントです。
-        以下の知識ベースを参考に、ユーザーの質問に対して可能な限り具体的で役立つ回答を提供してください。
-
-        利用可能なファイル: {', '.join(active_resource_names) if active_resource_names else ''}
-
-        回答の際の注意点：
-        1. 常に丁寧な言葉遣いを心がけ、ユーザーに対して敬意を持って接してください
-        2. 知識ベースに情報がない場合でも、一般的な文脈で回答できる場合は適切に対応してください
-        3. ユーザーが「もっと詳しく」などと質問した場合は、前回の回答内容に関連する詳細情報を提供してください。「どのような情報について詳しく知りたいですか？」などと聞き返さないでください。
-        4. 可能な限り具体的で実用的な情報を提供してください
-        5. 知識ベースにOCRで抽出されたテキスト（PDF (OCR)と表示されている部分）が含まれている場合は、それが画像から抽出されたテキストであることを考慮してください
-        6. OCRで抽出されたテキストには多少の誤りがある可能性がありますが、文脈から適切に解釈して回答してください
-        7. 知識ベースの情報を使用して回答した場合は、回答の最後に「情報ソース: [ファイル名]」の形式で参照したファイル名を記載してください。
-        8. 「こんにちは」「おはよう」などの単純な挨拶のみの場合は、情報ソースを記載しないでください。それ以外の質問には基本的に情報ソースを記載してください。
-        9. 回答可能かどうかが判断できる質問に対しては、最初に「はい」または「いいえ」で簡潔に答えてから、具体的な説明や補足情報を記載してください
-        10. 回答は**Markdown記法**を使用して見やすく整理してください。見出し（#、##、###）、箇条書き（-、*）、番号付きリスト（1.、2.）、強調（**太字**、*斜体*）、コードブロック（```）、表（|）、引用（>）などを適切に使用してください
-        11. 手順や説明が複数ある場合は、番号付きリストや箇条書きを使用して構造化してください
-        12. 重要な情報は**太字**で強調してください
-        13. コードやファイル名、設定値などは`バッククォート`で囲んでください{special_instructions_text}
+        # コンテキストキャッシュ対応プロンプトの作成
+        from .prompt_cache import (
+            build_context_cached_prompt, gemini_context_cache,
+            generate_content_with_cache
+        )
+        from .config import setup_gemini_with_cache
         
-        利用可能なデータ列：
-        {', '.join(knowledge_base.columns) if knowledge_base and hasattr(knowledge_base, 'columns') and knowledge_base.columns else ""}
+        # データベース列情報を取得
+        data_columns = ', '.join(knowledge_base.columns) if knowledge_base and hasattr(knowledge_base, 'columns') and knowledge_base.columns else ""
+        image_info = f"画像情報：PDFから抽出された画像が{len(knowledge_base.images)}枚あります。" if knowledge_base and hasattr(knowledge_base, 'images') and knowledge_base.images and isinstance(knowledge_base.images, list) else ""
+        
+        # 知識ベース情報を統合（コンテキストキャッシュの対象）
+        full_knowledge_context = f"""利用可能なデータ列：
+{data_columns}
 
-        知識ベース内容（アクティブなリソースのみ）：
-        {active_knowledge_text}
+知識ベース内容（アクティブなリソースのみ）：
+{active_knowledge_text}
 
-        {f"画像情報：PDFから抽出された画像が{len(knowledge_base.images)}枚あります。" if knowledge_base and hasattr(knowledge_base, 'images') and knowledge_base.images and isinstance(knowledge_base.images, list) else ""}
+{image_info}"""
 
-        {conversation_history}
+        # コンテキストキャッシュ対応プロンプト構築
+        prompt, cached_content_id = build_context_cached_prompt(
+            company_name=current_company_name,
+            active_resource_names=active_resource_names,
+            active_knowledge_text=full_knowledge_context,
+            conversation_history=conversation_history,
+            message_text=message_text,
+            special_instructions_text=special_instructions_text
+        )
 
-        ユーザーの質問：
-        {message_text}
-        """
-
-        # プロンプトサイズの最終チェック（トークン制限対応）
-        MAX_PROMPT_SIZE = 400000  # 40万文字制限（API制限対応）
+        # プロンプトサイズの最終チェック（精度とスピードのバランス）
+        MAX_PROMPT_SIZE = 250000  # 25万文字制限（精度重視）
         if len(prompt) > MAX_PROMPT_SIZE:
             safe_print(f"⚠️ プロンプトが大きすぎます ({len(prompt)} 文字)。知識ベースをさらに制限します。")
             # 知識ベースをさらに制限
@@ -1178,12 +1156,28 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
                     "limit_reached": limit_reached
                 }
 
-        # Geminiによる応答生成
+        # コンテキストキャッシュ対応Geminiによる応答生成
         try:
-            safe_print(f"🤖 Gemini API呼び出し開始 - モデル: {model}")
-            safe_print(f"📝 プロンプト長: {len(prompt)} 文字")
-            
-            response = model.generate_content(prompt)
+            if cached_content_id:
+                # キャッシュヒット：キャッシュ対応モデルを使用
+                cache_model = setup_gemini_with_cache()
+                safe_print(f"🎯 Gemini API（キャッシュ使用）呼び出し開始 - キャッシュID: {cached_content_id}")
+                safe_print(f"📝 プロンプト長: {len(prompt)} 文字（キャッシュ利用で短縮済み）")
+                
+                response = generate_content_with_cache(cache_model, prompt, cached_content_id)
+            else:
+                # キャッシュミス：通常のモデルを使用、将来のキャッシュ用にコンテキストを保存
+                safe_print(f"🤖 Gemini API（新規）呼び出し開始 - モデル: {model}")
+                safe_print(f"📝 プロンプト長: {len(prompt)} 文字")
+                
+                response = model.generate_content(prompt)
+                
+                # コンテキストキャッシュに保存（仮想的な実装）
+                # 実際のGemini APIでは、レスポンスからcontent_idを取得する
+                if gemini_context_cache.should_cache_context(full_knowledge_context):
+                    virtual_content_id = f"cache_{hash(full_knowledge_context) % 100000}"
+                    gemini_context_cache.store_context_cache(full_knowledge_context, virtual_content_id)
+                    safe_print(f"💾 新規コンテキストキャッシュ保存完了: {virtual_content_id}")
             
             safe_print(f"📨 Gemini API応答受信: {response}")
             
@@ -1192,7 +1186,8 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
                 raise ValueError("AIモデルからの応答が無効です")
             
             response_text = response.text
-            safe_print(f"✅ 応答テキスト取得成功: {len(response_text)} 文字")
+            cache_status = "キャッシュ使用" if cached_content_id else "新規作成"
+            safe_print(f"✅ 応答テキスト取得成功: {len(response_text)} 文字 ({cache_status})")
             
         except Exception as model_error:
             error_str = str(model_error)
@@ -1383,13 +1378,13 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
         safe_print(f"チャットエラー: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-def chunk_knowledge_base(text: str, chunk_size: int = 500000) -> list[str]:
+def chunk_knowledge_base(text: str, chunk_size: int = 1200) -> list[str]:
     """
     知識ベースを指定されたサイズでチャンク化する
     
     Args:
         text: チャンク化するテキスト
-        chunk_size: チャンクのサイズ（文字数）
+        chunk_size: チャンクのサイズ（文字数）デフォルト1200文字（task.yaml推奨）
     
     Returns:
         チャンク化されたテキストのリスト
@@ -1399,15 +1394,15 @@ def chunk_knowledge_base(text: str, chunk_size: int = 500000) -> list[str]:
     
     chunks = []
     start = 0
-    overlap = int(chunk_size * 0.1)  # 10%のオーバーラップ
+    overlap = int(chunk_size * 0.5)  # 50%のオーバーラップ（task.yaml推奨）
     
     while start < len(text):
         end = min(start + chunk_size, len(text))
         
         # チャンクの境界を調整（文の途中で切れないように）
         if end < len(text):
-            # 最後の改行を探す（検索範囲を制限）
-            search_start = max(start, end - 1000)  # 最大1000文字前から検索
+            # 最後の改行を探す
+            search_start = max(start, end - 200)  # 200文字前から検索（1200文字チャンクに適正化）
             last_newline = text.rfind('\n', search_start, end)
             if last_newline > start:
                 end = last_newline + 1
@@ -1539,9 +1534,8 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
             for idx, inst in enumerate(special_instructions, 1):
                 special_instructions_text += f"{idx}. 【{inst['name']}】: {inst['instruction']}\n"
 
-        # 🔪 まず知識ベース全体をチャンク化（RAG前に実行）
-        # チャンクサイズを小さくして検索精度を向上
-        CHUNK_SIZE = 50000  # 5万文字でチャンク化（50万→5万に変更）
+        # 🔪 最初から1200文字でチャンク化（task.yaml推奨サイズ）
+        CHUNK_SIZE = 1200  # 1200文字でチャンク化（task.yaml推奨：1000-1200文字）
         raw_chunks = chunk_knowledge_base(active_knowledge_text, CHUNK_SIZE)
         safe_print(f"🔪 チャンク化完了: {len(raw_chunks)}個のチャンク (チャンクサイズ: {CHUNK_SIZE:,}文字)")
         
@@ -1866,13 +1860,161 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
         
         safe_print(f"📄 最終ソース情報: '{source_text}'")
         
+        # =============================================================
+        # 🔍 最終分析レポート - RAG精度と参照状況の詳細分析
+        # =============================================================
+        safe_print(f"\n{'='*80}")
+        safe_print(f"🔍 最終分析レポート - RAG精度と参照状況")
+        safe_print(f"{'='*80}")
+        
+        # 1. 検索範囲と処理統計
+        safe_print(f"📊 【検索範囲】")
+        safe_print(f"  └ 対象ファイル: {len(active_resource_names)}個")
+        for i, file_name in enumerate(active_resource_names, 1):
+            safe_print(f"    {i}. {file_name}")
+        safe_print(f"  └ 総チャンク数: {len(raw_chunks)}個")
+        safe_print(f"  └ 処理完了チャンク: {len(processed_chunks)}個 ({processing_rate:.1f}%)")
+        safe_print(f"  └ 成功チャンク: {successful_chunks}個 ({success_rate:.1f}%)")
+        
+        # 2. RAG検索品質分析
+        safe_print(f"\n📈 【RAG検索品質分析】")
+        if all_rag_results:
+            safe_print(f"  └ 品質合格バッチ: {len(all_rag_results)}個")
+            safe_print(f"  └ 品質不足スキップ: {skipped_batches}個")
+            safe_print(f"  └ 品質合格率: {len(all_rag_results)/(len(all_rag_results)+skipped_batches)*100:.1f}%")
+            
+            # 品質スコア分布
+            quality_scores = [result['quality_score'] for result in all_rag_results]
+            min_score = min(quality_scores)
+            max_score = max(quality_scores)
+            avg_score = sum(quality_scores) / len(quality_scores)
+            safe_print(f"  └ 品質スコア分布:")
+            safe_print(f"    ├ 最高スコア: {max_score:.3f}")
+            safe_print(f"    ├ 最低スコア: {min_score:.3f}")
+            safe_print(f"    └ 平均スコア: {avg_score:.3f}")
+            
+            # 上位5個の詳細
+            safe_print(f"  └ 上位品質バッチ詳細:")
+            sorted_results = sorted(all_rag_results, key=lambda x: x['quality_score'], reverse=True)
+            for i, result in enumerate(sorted_results[:5], 1):
+                safe_print(f"    {i}. バッチ{result['batch_num']}: スコア{result['quality_score']:.3f}, {result['content_length']:,}文字")
+        else:
+            safe_print(f"  └ ⚠️ 品質合格バッチ: 0個（全バッチが品質基準未満）")
+            safe_print(f"  └ 全バッチがスキップ: {skipped_batches}個")
+            safe_print(f"  └ 品質基準: 0.10以上が必要")
+        
+        # 3. データカバレッジ分析
+        safe_print(f"\n📋 【データカバレッジ分析】")
+        total_chars = sum(len(chunk) for chunk in raw_chunks)
+        processed_chars = sum(len(raw_chunks[i]) for i in processed_chunks)
+        coverage_rate = (processed_chars / total_chars * 100) if total_chars > 0 else 0
+        
+        safe_print(f"  └ 総データ量: {total_chars:,}文字")
+        safe_print(f"  └ 処理データ量: {processed_chars:,}文字")
+        safe_print(f"  └ カバレッジ率: {coverage_rate:.1f}%")
+        
+        if all_rag_results:
+            used_chars = sum(result['content_length'] for result in all_rag_results)
+            utilization_rate = (used_chars / total_chars * 100) if total_chars > 0 else 0
+            safe_print(f"  └ 回答利用データ: {used_chars:,}文字")
+            safe_print(f"  └ データ利用率: {utilization_rate:.1f}%")
+        
+        # 4. 検索精度評価
+        safe_print(f"\n🎯 【検索精度評価】")
+        query_keywords = set(message_text.lower().split())
+        if all_rag_results and final_response:
+            # キーワード一致率計算
+            response_words = set(final_response.lower().split())
+            keyword_matches = len(query_keywords.intersection(response_words))
+            keyword_match_rate = (keyword_matches / len(query_keywords) * 100) if query_keywords else 0
+            
+            safe_print(f"  └ クエリキーワード数: {len(query_keywords)}個")
+            safe_print(f"  └ 回答内一致キーワード: {keyword_matches}個")
+            safe_print(f"  └ キーワード一致率: {keyword_match_rate:.1f}%")
+            
+            # 情報発見状況
+            has_source = bool(source_text and source_text.strip())
+            safe_print(f"  └ 情報ソース特定: {'✅ 成功' if has_source else '❌ 失敗'}")
+            if has_source:
+                safe_print(f"    └ ソース: {source_text}")
+        
+        # 5. 処理効率分析
+        safe_print(f"\n⚡ 【処理効率分析】")
+        safe_print(f"  └ 総バッチ数: {total_batches}個")
+        safe_print(f"  └ 効率的スキップ: {skipped_batches}個 ({skipped_batches/total_batches*100:.1f}%)")
+        safe_print(f"  └ Gemini API呼び出し: 1回（最適化済み）")
+        
+        # 6. 最終回答品質判定
+        safe_print(f"\n✅ 【最終回答品質判定】")
+        if final_response:
+            response_length = len(final_response)
+            safe_print(f"  └ 回答文字数: {response_length:,}文字")
+            
+            # 回答品質の判定
+            quality_indicators = {
+                "具体的な情報": any(word in final_response for word in ['手順', '方法', '設定', '場合', '必要', '確認']),
+                "データベース情報": source_text and source_text.strip(),
+                "構造化された回答": '##' in final_response or '###' in final_response or '- ' in final_response,
+                "適切な長さ": 50 <= response_length <= 5000,
+                "エラー回答でない": not any(phrase in final_response for phrase in ['申し訳', 'エラー', '見つかりません'])
+            }
+            
+            safe_print(f"  └ 回答品質チェック:")
+            quality_score = 0
+            for indicator, result in quality_indicators.items():
+                status = "✅" if result else "❌"
+                safe_print(f"    ├ {indicator}: {status}")
+                if result:
+                    quality_score += 1
+            
+            final_quality = (quality_score / len(quality_indicators)) * 100
+            safe_print(f"    └ 総合品質スコア: {final_quality:.1f}% ({quality_score}/{len(quality_indicators)})")
+        
+        # 7. 問題・改善提案
+        safe_print(f"\n🔧 【問題・改善提案】")
+        if len(all_rag_results) == 0:
+            safe_print(f"  ⚠️ 問題: 全バッチでRAG品質が基準未満（スコア < 0.10）")
+            safe_print(f"     └ 提案: 検索クエリの見直しまたは知識ベースの拡充が必要")
+        elif success_rate < 50:
+            safe_print(f"  ⚠️ 問題: チャンク成功率が低い（{success_rate:.1f}% < 50%）")
+            safe_print(f"     └ 提案: チャンクサイズまたは検索アルゴリズムの調整を検討")
+        elif coverage_rate < 80:
+            safe_print(f"  ⚠️ 問題: データカバレッジが不完全（{coverage_rate:.1f}% < 80%）")
+            safe_print(f"     └ 提案: より包括的な検索戦略の実装を検討")
+        else:
+            safe_print(f"  ✅ 良好: RAG検索システムは正常に動作しています")
+        
+        # 8. 処理完了サマリー
+        safe_print(f"\n🏁 【処理完了サマリー】")
+        safe_print(f"  └ 検索実行: {'✅ 完了' if len(processed_chunks) > 0 else '❌ 失敗'}")
+        safe_print(f"  └ 情報発見: {'✅ 成功' if all_rag_results else '❌ 失敗'}")
+        safe_print(f"  └ 回答生成: {'✅ 成功' if final_response and len(final_response) > 20 else '❌ 失敗'}")
+        safe_print(f"  └ ソース特定: {'✅ 成功' if source_text and source_text.strip() else '❌ 失敗'}")
+        
+        safe_print(f"{'='*80}")
+        safe_print(f"🔍 最終分析レポート完了")
+        safe_print(f"{'='*80}\n")
+        
         return {
             "response": final_response,
             "source": source_text,
             "remaining_questions": remaining_questions,
             "limit_reached": limit_reached,
             "chunks_processed": len(raw_chunks),
-            "successful_chunks": successful_chunks
+            "successful_chunks": successful_chunks,
+            # 分析データを追加
+            "analysis": {
+                "total_chunks": len(raw_chunks),
+                "processed_chunks": len(processed_chunks),
+                "successful_chunks": successful_chunks,
+                "processing_rate": processing_rate,
+                "success_rate": success_rate,
+                "coverage_rate": coverage_rate,
+                "quality_batches": len(all_rag_results),
+                "skipped_batches": skipped_batches,
+                "data_coverage": f"{processed_chars:,}/{total_chars:,} chars",
+                "final_quality": final_quality if 'final_quality' in locals() else 0
+            }
         }
         
     except Exception as e:

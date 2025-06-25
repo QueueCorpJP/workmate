@@ -43,6 +43,27 @@ def setup_gemini():
     model = genai.GenerativeModel('gemini-2.5-flash')
     return model
 
+def setup_gemini_with_cache():
+    """コンテキストキャッシュ対応のGemini APIの設定"""
+    import google.generativeai as genai
+    
+    # GEMINI_API_KEY（推奨）またはGOOGLE_API_KEY（後方互換）をサポート
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY環境変数が設定されていません")
+    
+    genai.configure(api_key=api_key)
+    
+    # コンテキストキャッシュ機能を有効化したGemini 2.5 Flashモデル
+    model = genai.GenerativeModel(
+        'gemini-2.5-flash',
+        generation_config=genai.GenerationConfig(
+            temperature=0.3,  # 一貫性のある回答のために温度を下げる
+        ),
+        # キャッシュ設定は実際のコンテンツ生成時に適用
+    )
+    return model
+
 def get_db_params():
     """SQLiteデータベースのパラメータを取得します"""
     # SQLiteデータベースのパスを返す

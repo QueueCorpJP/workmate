@@ -817,23 +817,37 @@ def create_user(email: str, password: str, name: str, role: str = "user", compan
 
 def authenticate_user(email: str, password: str, db: SupabaseConnection) -> dict:
     """ユーザー認証を行います"""
-    # Supabaseでは複雑なJOINクエリが難しいため、2つのクエリを実行
-    user_result = select_data("users", filters={"email": email, "password": password})
-    
-    if not user_result.data:
+    try:
+        # まずメールアドレスでユーザーを取得
+        user_result = select_data("users", filters={"email": email})
+        
+        if not user_result.data:
+            print(f"ユーザーが見つかりません: {email}")
+            return None
+        
+        user = user_result.data[0]
+        
+        # パスワードを比較
+        stored_password = user.get("password")
+        if stored_password != password:
+            print(f"パスワードが一致しません: {email}")
+            return None
+        
+        print(f"認証成功: {email}")
+        
+        # 会社情報を取得
+        if user.get("company_id"):
+            company_result = select_data("companies", filters={"id": user["company_id"]})
+            company_name = company_result.data[0]["name"] if company_result.data else None
+            user["company_name"] = company_name
+        else:
+            user["company_name"] = None
+            
+        return user
+        
+    except Exception as e:
+        print(f"認証エラー: {e}")
         return None
-        
-    user = user_result.data[0]
-    
-    # 会社情報を取得
-    if user.get("company_id"):
-        company_result = select_data("companies", filters={"id": user["company_id"]})
-        company_name = company_result.data[0]["name"] if company_result.data else None
-        user["company_name"] = company_name
-    else:
-        user["company_name"] = None
-        
-    return user
 
 def get_users_by_company(company_id: str, db: SupabaseConnection) -> list:
     """会社に所属するユーザーを取得します"""
