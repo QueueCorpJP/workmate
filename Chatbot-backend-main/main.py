@@ -502,6 +502,172 @@ async def admin_delete_user(user_id: str, current_user = Depends(get_user_with_d
     
     return {"message": f"ユーザー {target_user['email']} を削除しました", "deleted_user_id": user_id}
 
+# チャット履歴をCSV形式でダウンロードするエンドポイント
+@app.get("/chatbot/api/admin/chat-history/csv")
+async def download_chat_history_csv(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
+    """チャット履歴をCSV形式でダウンロードする"""
+    try:
+        print(f"CSVダウンロード開始 - ユーザー: {current_user['email']}")
+        
+        # 権限チェック（user、employeeロールも許可）
+        is_admin = current_user["role"] == "admin"
+        is_admin_user = current_user["role"] == "admin_user"
+        is_user = current_user["role"] == "user"
+        is_employee = current_user["role"] == "employee"
+        is_special_admin = current_user["email"] == "queue@queueu-tech.jp"
+        
+        # チャット履歴を複数の方法で取得を試行
+        chat_history = []
+        try:
+            if is_special_admin:
+                print("特別管理者として全ユーザーのチャット履歴を取得")
+                # 特別な管理者の場合は全ユーザーのチャットを取得
+                try:
+                    chat_history = get_chat_history(None, db)
+                    print(f"get_chat_history結果: {len(chat_history) if chat_history else 0}件")
+                except Exception as e1:
+                    print(f"get_chat_history失敗: {e1}")
+                    # フォールバック：直接Supabaseから取得
+                    from supabase_adapter import select_data
+                    result = select_data("chat_history")
+                    chat_history = result.data if result and result.data else []
+                    print(f"直接取得結果: {len(chat_history)}件")
+                    
+            elif is_admin or is_user:
+                print(f"{current_user['role']}ロールとして会社のチャット履歴を取得")
+                # 管理者/ユーザーの場合は自分の会社のチャットを取得
+                company_id = current_user.get("company_id")
+                print(f"company_id: {company_id}")
+                if company_id:
+                    try:
+                        chat_history = get_chat_history_by_company(company_id, db)
+                        print(f"get_chat_history_by_company結果: {len(chat_history) if chat_history else 0}件")
+                    except Exception as e2:
+                        print(f"get_chat_history_by_company失敗: {e2}")
+                        # フォールバック：ページネーション版を試行
+                        try:
+                            chat_history, total_count = get_chat_history_by_company_paginated(company_id, db, limit=10000, offset=0)
+                            print(f"get_chat_history_by_company_paginated結果: {len(chat_history) if chat_history else 0}件")
+                        except Exception as e3:
+                            print(f"get_chat_history_by_company_paginated失敗: {e3}")
+                            # さらなるフォールバック：直接取得
+                            from supabase_adapter import select_data
+                            company_users_result = select_data("users", filters={"company_id": company_id})
+                            if company_users_result and company_users_result.data:
+                                user_ids = [user["id"] for user in company_users_result.data]
+                                print(f"会社のユーザーID: {user_ids}")
+                                # 各ユーザーのチャット履歴を個別に取得
+                                all_chats = []
+                                for user_id in user_ids:
+                                    user_chat_result = select_data("chat_history", filters={"employee_id": user_id})
+                                    if user_chat_result and user_chat_result.data:
+                                        all_chats.extend(user_chat_result.data)
+                                chat_history = all_chats
+                                print(f"個別取得結果: {len(chat_history)}件")
+                else:
+                    print("company_idがないため自分のチャットのみ取得")
+                    chat_history = get_chat_history(current_user["id"], db)
+                    print(f"個人チャット結果: {len(chat_history) if chat_history else 0}件")
+            else:
+                print(f"通常ユーザーとして個人のチャット履歴を取得: {current_user['id']}")
+                # その他の場合は自分のチャットのみを取得
+                chat_history = get_chat_history(current_user["id"], db)
+                print(f"個人チャット結果: {len(chat_history) if chat_history else 0}件")
+                
+        except Exception as e:
+            print(f"チャット履歴取得エラー: {e}")
+            import traceback
+            print(traceback.format_exc())
+            chat_history = []
+        
+        print(f"取得したチャット履歴数: {len(chat_history)}")
+        
+        # デバッグ：データ内容の確認
+        if chat_history and len(chat_history) > 0:
+            print(f"最初のデータサンプル: {chat_history[0]}")
+            print(f"データの型: {type(chat_history[0])}")
+        else:
+            print("⚠️ チャット履歴が空です。データベースを直接確認します...")
+            # 直接データベースをチェック
+            from supabase_adapter import select_data
+            direct_check = select_data("chat_history", limit=5)
+            if direct_check and direct_check.data:
+                print(f"データベースには {len(direct_check.data)} 件のデータが存在します")
+                print(f"サンプル: {direct_check.data[0] if direct_check.data else 'なし'}")
+            else:
+                print("データベースに全くデータが存在しません")
+        
+        # CSV形式に変換
+        csv_data = io.StringIO()
+        csv_writer = csv.writer(csv_data)
+        
+        # ヘッダー行を書き込み
+        csv_writer.writerow([
+            "ID",
+            "日時",
+            "ユーザーの質問",
+            "ボットの回答",
+            "カテゴリ",
+            "感情",
+            "社員ID",
+            "社員名",
+            "参考文献",
+            "ページ番号"
+        ])
+        
+        # データ行を書き込み
+        rows_written = 0
+        for i, chat in enumerate(chat_history):
+            try:
+                # デバッグ：最初の数行の内容を表示
+                if i < 3:
+                    print(f"処理中のデータ {i+1}: {chat}")
+                
+                csv_writer.writerow([
+                    chat.get("id", ""),
+                    chat.get("timestamp", ""),
+                    chat.get("user_message", ""),
+                    chat.get("bot_response", ""),
+                    chat.get("category", ""),
+                    chat.get("sentiment", ""),
+                    chat.get("employee_id", ""),
+                    chat.get("employee_name", ""),
+                    chat.get("source_document", ""),
+                    chat.get("source_page", "")
+                ])
+                rows_written += 1
+            except Exception as row_error:
+                print(f"行 {i+1} の書き込みでエラー: {row_error}")
+                print(f"問題のあるデータ: {chat}")
+        
+        print(f"CSVに書き込まれた行数: {rows_written} (ヘッダー除く)")
+        
+        # CSV内容を取得
+        csv_content = csv_data.getvalue()
+        csv_data.close()
+        
+        # UTF-8 BOM付きでエンコード（Excelでの文字化け防止）
+        csv_bytes = '\ufeff' + csv_content
+        
+        # ファイル名に日時を含める
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"chat_history_{timestamp}.csv"
+        
+        print(f"CSVファイル生成完了: {filename}")
+        
+        # StreamingResponseでCSVファイルとして返す
+        return StreamingResponse(
+            io.BytesIO(csv_bytes.encode('utf-8')),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except Exception as e:
+        print(f"CSVダウンロードエラー: {e}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"CSVダウンロード中にエラーが発生しました: {str(e)}")
+
 @app.get("/chatbot/api/admin/users", response_model=List[UserResponse])
 async def admin_get_users(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """全ユーザー一覧を取得"""
@@ -1461,7 +1627,7 @@ async def admin_update_resource_special(resource_id: str, request: dict, current
         
         if update_result:
             return {
-                "success": True,
+                "success": True, 
                 "message": "リソースが正常に更新されました",
                 "resource_id": decoded_id,
                 "updated_fields": list(update_fields.keys())
@@ -2255,6 +2421,111 @@ async def simulate_token_cost_with_prompts(request: dict, current_user = Depends
         import traceback
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"料金シミュレーション中にエラーが発生しました: {str(e)}")
+
+# プラン履歴を取得するエンドポイント
+@app.get("/chatbot/api/plan-history", response_model=dict)
+async def admin_get_plan_history(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
+    """プラン変更履歴を取得する"""
+    try:
+        print(f"プラン履歴取得開始 - ユーザー: {current_user['email']} (ロール: {current_user['role']})")
+        
+        # 権限チェック
+        is_admin = current_user["role"] == "admin"
+        is_admin_user = current_user["role"] == "admin_user"
+        is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
+        
+        # 特定のcompany_idのユーザーも料金タブアクセスを許可
+        is_special_company_user = current_user.get("company_id") == "77acc2e2-ce67-458d-bd38-7af0476b297a"
+        
+        if not (is_admin or is_admin_user or is_special_admin or is_special_company_user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="この操作には管理者の権限が必要です"
+            )
+        
+        from supabase_adapter import select_data
+        
+        # プラン履歴を取得（会社によってフィルタリング）
+        if is_special_company_user and not (is_admin or is_admin_user or is_special_admin):
+            # 特定の会社のユーザーは自分の会社の履歴のみを取得
+            company_id = current_user.get("company_id")
+            print(f"特定会社のユーザー向け履歴取得: company_id={company_id}")
+            
+            # 同じ会社のユーザーIDを取得
+            company_users_result = select_data(
+                "users",
+                columns="id",
+                filters={"company_id": company_id}
+            )
+            
+            if company_users_result and company_users_result.data:
+                user_ids = [user["id"] for user in company_users_result.data]
+                print(f"対象ユーザーID: {user_ids}")
+                
+                # 会社のユーザーのプラン履歴のみを取得
+                user_ids_str = ','.join(f"'{uid}'" for uid in user_ids)
+                plan_history_result = select_data(
+                    "plan_history",
+                    columns="id, user_id, from_plan, to_plan, changed_at, duration_days",
+                    filters={"user_id": f"in.({user_ids_str})"},
+                    order="changed_at.desc"
+                )
+            else:
+                # 会社のユーザーが見つからない場合は空の結果
+                plan_history_result = None
+        else:
+            # 管理者は全ての履歴を取得
+            plan_history_result = select_data(
+                "plan_history",
+                columns="id, user_id, from_plan, to_plan, changed_at, duration_days",
+                order="changed_at.desc"
+            )
+        
+        history_list = []
+        if plan_history_result and plan_history_result.data:
+            for record in plan_history_result.data:
+                # ユーザー情報を取得
+                user_result = select_data(
+                    "users",
+                    columns="name, email",
+                    filters={"id": record["user_id"]}
+                )
+                
+                user_name = "不明なユーザー"
+                user_email = "unknown@example.com"
+                if user_result and user_result.data:
+                    user_data = user_result.data[0]
+                    user_name = user_data.get("name", "名前なし")
+                    user_email = user_data.get("email", "unknown@example.com")
+                
+                history_item = {
+                    "id": record["id"],
+                    "user_id": record["user_id"],
+                    "user_name": user_name,
+                    "user_email": user_email,
+                    "from_plan": record["from_plan"],
+                    "to_plan": record["to_plan"],
+                    "changed_at": record["changed_at"],
+                    "duration_days": record.get("duration_days")
+                }
+                history_list.append(history_item)
+        
+        print(f"プラン履歴取得完了: {len(history_list)}件")
+        
+        return {
+            "success": True,
+            "history": history_list,
+            "count": len(history_list)
+        }
+        
+    except Exception as e:
+        print(f"プラン履歴取得エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"プラン履歴の取得中にエラーが発生しました: {str(e)}"
+        )
 
 # Google Drive連携エンドポイント
 @app.post("/chatbot/api/upload-from-drive")
