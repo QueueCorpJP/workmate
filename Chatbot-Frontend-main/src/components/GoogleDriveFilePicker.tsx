@@ -339,11 +339,8 @@ export const GoogleDriveFilePicker: React.FC<GoogleDriveFilePickerProps> = ({
                       </Box>
                     }
                     secondary={
-                      <Typography variant="caption" color="text.secondary">
-                        {formatFileSize(file.size)}
-                        {file.modifiedTime && (
-                          ` • ${new Date(file.modifiedTime).toLocaleDateString('ja-JP')}`
-                        )}
+                      <Typography variant="caption" color="pink.main">
+                        {file.modifiedTime ? new Date(file.modifiedTime).toLocaleDateString('ja-JP') : '日付不明'}
                       </Typography>
                     }
                   />

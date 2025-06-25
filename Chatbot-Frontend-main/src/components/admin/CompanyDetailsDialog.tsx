@@ -252,13 +252,13 @@ const CompanyDetailsDialog: React.FC<CompanyDetailsDialogProps> = ({
                                 }
                                 secondary={
                                   <Stack spacing={0.5}>
-                                    <Typography variant="caption" color="text.secondary">
+                                    <Typography variant="caption" color="pink.main">
                                       📧 {user.email}
                                     </Typography>
-                                    <Typography variant="caption" color="text.secondary">
+                                    <Typography variant="caption" color="pink.main">
                                       🗓️ 作成日: {formatDate(user.created_at)}
                                     </Typography>
-                                    <Typography variant="caption" color="text.secondary">
+                                    <Typography variant="caption" color="pink.main">
                                       🆔 ID: {user.id}
                                     </Typography>
                                   </Stack>
@@ -313,13 +313,13 @@ const CompanyDetailsDialog: React.FC<CompanyDetailsDialogProps> = ({
                                 }
                                 secondary={
                                   <Stack spacing={0.5}>
-                                    <Typography variant="caption" color="text.secondary">
+                                    <Typography variant="caption" color="pink.main">
                                       📧 {user.email}
                                     </Typography>
-                                    <Typography variant="caption" color="text.secondary">
+                                    <Typography variant="caption" color="pink.main">
                                       🗓️ 作成日: {formatDate(user.created_at)}
                                     </Typography>
-                                    <Typography variant="caption" color="text.secondary">
+                                    <Typography variant="caption" color="pink.main">
                                       🆔 ID: {user.id}
                                     </Typography>
                                     <Typography variant="caption" color="orange" sx={{ fontWeight: 500 }}>

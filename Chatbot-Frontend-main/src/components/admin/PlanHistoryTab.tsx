@@ -847,7 +847,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                 {/* 基本統計 */}
                 <Stack direction="row" spacing={3} flexWrap="wrap">
                   <Box>
-                    <Typography variant="body2" color="text.secondary">
+                    <Typography variant="body2" color="pink.main">
                       総変更回数
                     </Typography>
                     <Typography variant="h5" sx={{ fontWeight: 600 }}>
@@ -855,7 +855,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                     </Typography>
                   </Box>
                   <Box>
-                    <Typography variant="body2" color="text.secondary">
+                    <Typography variant="body2" color="pink.main">
                       対象管理者数
                     </Typography>
                     <Typography variant="h5" sx={{ fontWeight: 600 }}>
@@ -863,7 +863,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                     </Typography>
                   </Box>
                   <Box>
-                    <Typography variant="body2" color="text.secondary">
+                    <Typography variant="body2" color="pink.main">
                       デモ→本番への変更
                     </Typography>
                     <Typography variant="h5" sx={{ fontWeight: 600, color: "success.main" }}>
@@ -871,7 +871,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                     </Typography>
                   </Box>
                   <Box>
-                    <Typography variant="body2" color="text.secondary">
+                    <Typography variant="body2" color="pink.main">
                       本番→デモへの変更
                     </Typography>
                     <Typography variant="h5" sx={{ fontWeight: 600, color: "warning.main" }}>
@@ -885,7 +885,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                 {/* 利用期間統計 */}
                 <Stack direction="row" spacing={3} flexWrap="wrap">
                   <Box>
-                    <Typography variant="body2" color="text.secondary">
+                    <Typography variant="body2" color="pink.main">
                       累計利用期間
                     </Typography>
                     <Typography variant="h6" sx={{ fontWeight: 600 }}>
@@ -894,7 +894,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                   </Box>
                   {stats.avgDemoUsage && (
                     <Box>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography variant="body2" color="pink.main">
                         デモ版平均利用期間
                       </Typography>
                       <Typography variant="h6" sx={{ fontWeight: 600, color: "warning.main" }}>
@@ -904,7 +904,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                   )}
                   {stats.avgProdUsage && (
                     <Box>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography variant="body2" color="pink.main">
                         本番版平均利用期間
                       </Typography>
                       <Typography variant="h6" sx={{ fontWeight: 600, color: "success.main" }}>
@@ -920,7 +920,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                     <Divider />
                     <Stack direction="row" spacing={3} flexWrap="wrap">
                       <Box>
-                        <Typography variant="body2" color="text.secondary">
+                        <Typography variant="body2" color="pink.main">
                           本番移行率
                         </Typography>
                         <Typography variant="h6" sx={{ fontWeight: 600, color: "info.main" }}>
@@ -928,7 +928,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
                         </Typography>
                       </Box>
                       <Box>
-                        <Typography variant="body2" color="text.secondary">
+                        <Typography variant="body2" color="pink.main">
                           管理者あたり平均変更回数
                         </Typography>
                         <Typography variant="h6" sx={{ fontWeight: 600 }}>

@@ -211,14 +211,29 @@ def select_data(table, columns="*", filters=None, order=None, limit=None, offset
     # Add ordering if specified
     if order:
         # print(f"Adding order: {order}")
-        if " desc" in order.lower():
-            column_name = order.replace(" desc", "").strip()
+        # Clean order string to prevent invalid syntax
+        clean_order = order.strip()
+        
+        # Remove any duplicate or invalid patterns
+        if ".desc.asc" in clean_order or ".asc.desc" in clean_order:
+            print(f"⚠️ 不正なorder構文を検出: {clean_order}")
+            # Extract column name and use desc as default
+            column_name = clean_order.split('.')[0]
             query = query.order(column_name, desc=True)
-        elif " asc" in order.lower():
-            column_name = order.replace(" asc", "").strip()
+        elif " desc" in clean_order.lower():
+            column_name = clean_order.replace(" desc", "").strip()
+            query = query.order(column_name, desc=True)
+        elif " asc" in clean_order.lower():
+            column_name = clean_order.replace(" asc", "").strip()
+            query = query.order(column_name, desc=False)
+        elif ".desc" in clean_order:
+            column_name = clean_order.replace(".desc", "").strip()
+            query = query.order(column_name, desc=True)
+        elif ".asc" in clean_order:
+            column_name = clean_order.replace(".asc", "").strip()
             query = query.order(column_name, desc=False)
         else:
-            query = query.order(order, desc=False)
+            query = query.order(clean_order, desc=False)
     
     # Add limit and offset using range method
     if offset is not None or limit is not None:

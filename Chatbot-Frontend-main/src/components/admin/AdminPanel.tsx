@@ -260,8 +260,14 @@ const AdminPanel: React.FC = () => {
 
   // 分析データの取得（共有サービス使用、強化分析も並行取得）
   const fetchAnalysis = async (forceRefresh = false) => {
-    if (analysis && Object.keys(analysis.category_distribution).length > 0 && !forceRefresh)
+    console.log("🔍 [DEBUG] fetchAnalysis 開始");
+    console.log("🔍 [DEBUG] 現在の analysis:", analysis);
+    console.log("🔍 [DEBUG] forceRefresh:", forceRefresh);
+    
+    if (analysis && Object.keys(analysis.category_distribution).length > 0 && !forceRefresh) {
+      console.log("🔍 [DEBUG] 既に有効なデータがあるためスキップ");
       return; // 既に有効なデータがある場合は何もしない
+    }
 
     // 既存の分析処理をキャンセル
     if (analysisAbortController) {
@@ -273,71 +279,99 @@ const AdminPanel: React.FC = () => {
     const newAbortController = new AbortController();
     setAnalysisAbortController(newAbortController);
 
+    console.log("🔍 [DEBUG] ローディング状態を開始");
     setIsAnalysisLoading(true);
     setIsEnhancedAnalysisLoading(true);
     
     try {
+      console.log("🔍 [DEBUG] SharedDataService をインポート");
       const { SharedDataService } = await import('../../services/sharedDataService');
+      
       if (forceRefresh) {
+        console.log("🔍 [DEBUG] キャッシュをクリア");
         SharedDataService.clearCache('analysis-shared');
         SharedDataService.clearCache('enhanced-analysis-database-shared');
         SharedDataService.clearCache('ai-insights-shared');
       }
       
+      console.log("🔍 [DEBUG] 基本分析とデータベース強化分析を並行取得開始");
       // 基本分析とデータベース強化分析を並行取得（高速）
       const [basicData, enhancedDatabaseData] = await Promise.allSettled([
         SharedDataService.getAnalysis(newAbortController.signal),
         SharedDataService.getEnhancedAnalysisDatabase(newAbortController.signal)
       ]);
       
+      console.log("🔍 [DEBUG] Promise.allSettled 完了");
+      console.log("🔍 [DEBUG] basicData.status:", basicData.status);
+      console.log("🔍 [DEBUG] enhancedDatabaseData.status:", enhancedDatabaseData.status);
+      
       // 基本分析データの処理
       if (basicData.status === 'fulfilled') {
         const data = basicData.value;
-        console.log("チャット分析取得結果:", data);
+        console.log("🔍 [DEBUG] チャット分析取得結果:", data);
+        console.log("🔍 [DEBUG] データ型:", typeof data);
+        console.log("🔍 [DEBUG] データのキー:", data ? Object.keys(data) : "null/undefined");
         
         if (data && typeof data === "object") {
           const analysisData = data as any;
           
           // 必要なプロパティがない場合は初期化
           if (!("category_distribution" in analysisData)) {
+            console.log("🔍 [DEBUG] category_distribution を初期化");
             analysisData.category_distribution = {};
           }
           if (!("sentiment_distribution" in analysisData)) {
+            console.log("🔍 [DEBUG] sentiment_distribution を初期化");
             analysisData.sentiment_distribution = {};
           }
           if (!("common_questions" in analysisData)) {
+            console.log("🔍 [DEBUG] common_questions を初期化");
             analysisData.common_questions = [];
           } else if (!Array.isArray(analysisData.common_questions)) {
+            console.log("🔍 [DEBUG] common_questions を配列に変換");
             analysisData.common_questions = [];
           }
           if (!("daily_usage" in analysisData)) {
+            console.log("🔍 [DEBUG] daily_usage を初期化");
             analysisData.daily_usage = [];
           }
           
-          console.log("チャット分析データを設定:", analysisData);
+          console.log("🔍 [DEBUG] 最終的な analysisData:", analysisData);
+          console.log("🔍 [DEBUG] setAnalysis を実行");
           setAnalysis(analysisData);
         } else {
-          console.error("チャット分析のレスポンスが有効なオブジェクトではありません:", data);
-          setAnalysis({
+          console.error("🔍 [ERROR] チャット分析のレスポンスが有効なオブジェクトではありません:", data);
+          const fallbackData = {
             category_distribution: {},
             sentiment_distribution: {},
             common_questions: [],
             insights: "データの取得に失敗しました。",
-          });
+          };
+          console.log("🔍 [DEBUG] フォールバックデータを設定:", fallbackData);
+          setAnalysis(fallbackData);
         }
       } else {
-        console.error("基本分析の取得に失敗:", basicData.reason);
+        console.error("🔍 [ERROR] 基本分析の取得に失敗:", basicData.reason);
       }
       
       // データベース強化分析データの処理（AI洞察なし）
       if (enhancedDatabaseData.status === 'fulfilled') {
-        console.log("データベース強化分析取得結果:", enhancedDatabaseData.value);
+        console.log("🔍 [DEBUG] データベース強化分析取得結果:", enhancedDatabaseData.value);
         const databaseAnalysis = enhancedDatabaseData.value;
+        console.log("🔍 [DEBUG] databaseAnalysis 型:", typeof databaseAnalysis);
+        console.log("🔍 [DEBUG] databaseAnalysis キー:", databaseAnalysis ? Object.keys(databaseAnalysis) : "null/undefined");
+        
         // AI洞察は空文字列で設定（後で追加可能）
-        databaseAnalysis.ai_insights = databaseAnalysis.ai_insights || "";
-        setEnhancedAnalysis(databaseAnalysis);
+        if (databaseAnalysis) {
+          databaseAnalysis.ai_insights = databaseAnalysis.ai_insights || "";
+          console.log("🔍 [DEBUG] setEnhancedAnalysis を実行");
+          setEnhancedAnalysis(databaseAnalysis);
+        } else {
+          console.log("🔍 [DEBUG] databaseAnalysis が null のため setEnhancedAnalysis(null) を実行");
+          setEnhancedAnalysis(null);
+        }
       } else {
-        console.error("データベース強化分析の取得に失敗:", enhancedDatabaseData.reason);
+        console.error("🔍 [ERROR] データベース強化分析の取得に失敗:", enhancedDatabaseData.reason);
         setEnhancedAnalysis(null);
       }
       
@@ -348,16 +382,19 @@ const AdminPanel: React.FC = () => {
         return;
       }
       
-      console.error("分析データの取得に失敗しました:", error);
+      console.error("🔍 [ERROR] 分析データの取得に失敗しました:", error);
+      console.error("🔍 [ERROR] エラーの詳細:", error.stack);
       // エラーメッセージを表示
       alert(
         "分析データの取得に失敗しました。バックエンドサーバーが起動しているか確認してください。"
       );
     } finally {
+      console.log("🔍 [DEBUG] ローディング状態を終了");
       setIsAnalysisLoading(false);
       setIsEnhancedAnalysisLoading(false);
       // 完了したらAbortControllerをクリア
       setAnalysisAbortController(null);
+      console.log("🔍 [DEBUG] fetchAnalysis 完了");
     }
   };
 
@@ -947,10 +984,26 @@ const AdminPanel: React.FC = () => {
         }
         break;
       case 1: // 分析
-        // 手動開始に変更：自動分析を停止
-        // if (!analysis || Object.keys(analysis.category_distribution).length === 0) {
-        //   fetchAnalysis();
-        // }
+        console.log("📋 [TAB_CHANGE] 分析タブに切り替え");
+        console.log("📋 [TAB_CHANGE] 現在の analysis:", analysis);
+        console.log("📋 [TAB_CHANGE] analysis?.category_distribution:", analysis?.category_distribution);
+        console.log("📋 [TAB_CHANGE] Object.keys(analysis?.category_distribution || {}).length:", Object.keys(analysis?.category_distribution || {}).length);
+        
+        // 基本分析データがない場合は自動で取得
+        if (!analysis || Object.keys(analysis.category_distribution).length === 0) {
+          console.log("📋 [TAB_CHANGE] 分析データがないため fetchAnalysis() を実行");
+          fetchAnalysis();
+        } else {
+          console.log("📋 [TAB_CHANGE] 分析データが既に存在するためスキップ");
+        }
+        
+        // 強化分析データがない場合も自動で取得
+        if (!enhancedAnalysis) {
+          console.log("📋 [TAB_CHANGE] 強化分析データがないため fetchAnalysis() を実行");
+          fetchAnalysis();
+        } else {
+          console.log("📋 [TAB_CHANGE] 強化分析データが既に存在:", enhancedAnalysis);
+        }
         break;
       case 2: // 社員管理
         if (employeeUsage.length === 0) {

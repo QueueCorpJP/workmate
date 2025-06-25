@@ -222,7 +222,9 @@ export const GoogleDriveAuth: React.FC<GoogleDriveAuthProps> = ({
           }
           sx={{ borderRadius: 2 }}
         >
-          Google Driveに接続済み
+          <Typography variant="caption" color="pink.main">
+            認証済み
+          </Typography>
         </Alert>
       )}
     </Box>

@@ -621,7 +621,7 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
               display: "block",
               textAlign: "right",
               mt: 0.5,
-              color: "text.secondary",
+              color: "pink.main",
               fontSize: "0.7rem",
             }}
           >
@@ -722,7 +722,7 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
               display: "block",
               textAlign: "right",
               mt: 0.5,
-              color: "text.secondary",
+              color: "pink.main",
               fontSize: "0.7rem",
             }}
           >

@@ -232,6 +232,12 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
   onStartAnalysis,
   onStartAIInsights
 }) => {
+  console.log("🎯 [ANALYSIS_TAB] コンポーネント開始");
+  console.log("🎯 [ANALYSIS_TAB] analysis:", analysis);
+  console.log("🎯 [ANALYSIS_TAB] isLoading:", isLoading);
+  console.log("🎯 [ANALYSIS_TAB] propEnhancedAnalysis:", propEnhancedAnalysis);
+  console.log("🎯 [ANALYSIS_TAB] propIsEnhancedLoading:", propIsEnhancedLoading);
+  
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'md'));
@@ -242,12 +248,47 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [expandedSections, setExpandedSections] = useState<Set<number>>(new Set([0, 1, 2])); // デフォルトで最初の3つを展開
 
+  console.log("🎯 [ANALYSIS_TAB] enhancedAnalysis (最終):", enhancedAnalysis);
+  console.log("🎯 [ANALYSIS_TAB] isEnhancedLoading (最終):", isEnhancedLoading);
+
   // propsのデータが更新されたら最終更新時刻を更新
   useEffect(() => {
+    console.log("🎯 [ANALYSIS_TAB] useEffect propEnhancedAnalysis変化:", propEnhancedAnalysis);
     if (propEnhancedAnalysis) {
+      console.log("🎯 [ANALYSIS_TAB] lastRefresh を更新");
       setLastRefresh(new Date());
     }
   }, [propEnhancedAnalysis]);
+
+  // レンダリング条件のデバッグ
+  useEffect(() => {
+    console.log("🎯 [RENDER] レンダリング条件チェック");
+    console.log("🎯 [RENDER] isEnhancedLoading:", isEnhancedLoading);
+    console.log("🎯 [RENDER] enhancedAnalysis:", enhancedAnalysis);
+    console.log("🎯 [RENDER] !!enhancedAnalysis:", !!enhancedAnalysis);
+    
+    if (isEnhancedLoading) {
+      console.log("🎯 [RENDER] → ローディング画面を表示予定");
+    } else if (!enhancedAnalysis) {
+      console.log("🎯 [RENDER] → 分析開始ボタンを表示予定");
+    } else {
+      console.log("🎯 [RENDER] → 分析データを表示予定");
+      
+      // 詳細データ構造をチェック
+      console.log("🔍 [DATA_CHECK] resource_reference_count:", enhancedAnalysis.resource_reference_count);
+      console.log("🔍 [DATA_CHECK] resource_reference_count.resources:", enhancedAnalysis.resource_reference_count?.resources);
+      console.log("🔍 [DATA_CHECK] resource_reference_count.summary:", enhancedAnalysis.resource_reference_count?.summary);
+      
+      console.log("🔍 [DATA_CHECK] category_distribution_analysis:", enhancedAnalysis.category_distribution_analysis);
+      console.log("🔍 [DATA_CHECK] category_distribution_analysis.summary:", enhancedAnalysis.category_distribution_analysis?.summary);
+      
+      console.log("🔍 [DATA_CHECK] active_user_trends:", enhancedAnalysis.active_user_trends);
+      console.log("🔍 [DATA_CHECK] active_user_trends.daily_trends:", enhancedAnalysis.active_user_trends?.daily_trends);
+      console.log("🔍 [DATA_CHECK] active_user_trends.summary:", enhancedAnalysis.active_user_trends?.summary);
+      
+      console.log("🔍 [DATA_CHECK] expandedSections:", expandedSections);
+    }
+  }, [isEnhancedLoading, enhancedAnalysis, expandedSections]);
 
   // コンポーネントがアンマウントされる際のクリーンアップ
   useEffect(() => {
@@ -260,12 +301,19 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
 
   // セクション展開/折りたたみの処理
   const toggleSection = (index: number) => {
+    console.log("🔀 [TOGGLE] セクション", index, "をクリック");
+    console.log("🔀 [TOGGLE] 現在の expandedSections:", expandedSections);
+    
     const newExpanded = new Set(expandedSections);
     if (newExpanded.has(index)) {
+      console.log("🔀 [TOGGLE] セクション", index, "を折りたたみ");
       newExpanded.delete(index);
     } else {
+      console.log("🔀 [TOGGLE] セクション", index, "を展開");
       newExpanded.add(index);
     }
+    
+    console.log("🔀 [TOGGLE] 新しい expandedSections:", newExpanded);
     setExpandedSections(newExpanded);
   };
 
@@ -276,31 +324,60 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
 
   // 資料参照回数チャートのデータを生成
   const getResourceReferenceChartData = (resources: any[]) => {
-    if (!resources || resources.length === 0) return null;
+    console.log("📊 [CHART] getResourceReferenceChartData 呼び出し");
+    console.log("📊 [CHART] resources:", resources);
+    console.log("📊 [CHART] resources.length:", resources?.length);
+    
+    if (!resources || resources.length === 0) {
+      console.log("📊 [CHART] リソースデータなし、nullを返す");
+      return null;
+    }
 
     const top10Resources = resources.slice(0, 10);
+    console.log("📊 [CHART] top10Resources:", top10Resources);
     
-    return {
+    // 参照回数の合計をチェック
+    const totalReferences = top10Resources.reduce((sum, r) => sum + (r.reference_count || 0), 0);
+    console.log("📊 [CHART] totalReferences:", totalReferences);
+    
+    // 参照回数が0の場合はダミーデータを表示
+    if (totalReferences === 0) {
+      console.log("📊 [CHART] 参照回数が0のため、メッセージ表示用のnullを返す");
+      return null;
+    }
+    
+    const chartData = {
       labels: top10Resources.map(r => r.name.length > 20 ? r.name.substring(0, 20) + '...' : r.name),
       datasets: [
         {
           label: '参照回数',
-          data: top10Resources.map(r => r.reference_count),
+          data: top10Resources.map(r => r.reference_count || 0),
           backgroundColor: 'rgba(54, 162, 235, 0.6)',
           borderColor: 'rgba(54, 162, 235, 1)',
           borderWidth: 2,
         },
       ],
     };
+    
+    console.log("📊 [CHART] 生成されたchartData:", chartData);
+    return chartData;
   };
 
   // アクティブユーザー推移チャートのデータを生成
   const getUserTrendsChartData = (dailyTrends: any[]) => {
-    if (!dailyTrends || dailyTrends.length === 0) return null;
+    console.log("📈 [CHART] getUserTrendsChartData 呼び出し");
+    console.log("📈 [CHART] dailyTrends:", dailyTrends);
+    console.log("📈 [CHART] dailyTrends.length:", dailyTrends?.length);
+    
+    if (!dailyTrends || dailyTrends.length === 0) {
+      console.log("📈 [CHART] 日次トレンドデータなし、nullを返す");
+      return null;
+    }
 
     const last30Days = dailyTrends.slice(-30);
+    console.log("📈 [CHART] last30Days:", last30Days);
     
-    return {
+    const chartData = {
       labels: last30Days.map(d => new Date(d.date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })),
       datasets: [
         {
@@ -321,6 +398,9 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
         },
       ],
     };
+    
+    console.log("📈 [CHART] 生成されたchartData:", chartData);
+    return chartData;
   };
 
   return (
@@ -468,7 +548,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
         {/* ローディング状態 */}
         {isEnhancedLoading ? (
           <Box sx={{ py: 8 }}>
-          <LoadingIndicator />
+            <LoadingIndicator />
             <Typography
               variant="h6"
               sx={{
@@ -826,7 +906,12 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                                 border: '1px solid rgba(0, 0, 0, 0.06)'
                               }}
                             >
-                              <MarkdownRenderer content={section.content.summary || 'データを解析中です...'} />
+                              {(() => {
+                                const content = section.content.summary || 'データを解析中です...';
+                                console.log(`📝 [MARKDOWN] セクション${index} summary内容:`, content);
+                                console.log(`📝 [MARKDOWN] content.length:`, content.length);
+                                return <MarkdownRenderer content={content} />;
+                              })()}
                             </Paper>
                             {'resources' in section.content && section.content.resources.length > 0 && (
                               <Box>
@@ -840,47 +925,57 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                                   borderRadius: 1,
                                   border: '1px solid rgba(0, 0, 0, 0.06)'
                                 }}>
-                                  <Bar
-                                    data={getResourceReferenceChartData(section.content.resources)}
-                                    options={{
-                                      responsive: true,
-                                      maintainAspectRatio: false,
-                                      plugins: {
-                                        title: {
-                                          display: true,
-                                          text: '資料別参照回数（上位10件）',
-                                          font: { size: 14, weight: 'normal' }
-                                        },
-                                        legend: { display: false },
-                                        tooltip: {
-                                          backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                                          titleColor: 'white',
-                                          bodyColor: 'white',
-                                          cornerRadius: 4,
-                                          padding: 8
-                                        }
-                                      },
-                                      scales: {
-                                        y: {
-                                          beginAtZero: true,
-                                          grid: { color: 'rgba(0, 0, 0, 0.1)' },
-                                          ticks: {
-                                            color: '#666',
-                                            callback: function(value: any) {
-                                              return value + '回';
+                                  {(() => {
+                                    const chartData = getResourceReferenceChartData(section.content.resources);
+                                    console.log("📊 [BAR_CHART] チャート描画:", chartData);
+                                    if (!chartData) {
+                                      console.log("📊 [BAR_CHART] チャートデータなし");
+                                      return <div>チャートデータがありません</div>;
+                                    }
+                                    return (
+                                      <Bar
+                                        data={chartData}
+                                        options={{
+                                          responsive: true,
+                                          maintainAspectRatio: false,
+                                          plugins: {
+                                            title: {
+                                              display: true,
+                                              text: '資料別参照回数（上位10件）',
+                                              font: { size: 14, weight: 'normal' }
+                                            },
+                                            legend: { display: false },
+                                            tooltip: {
+                                              backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                              titleColor: 'white',
+                                              bodyColor: 'white',
+                                              cornerRadius: 4,
+                                              padding: 8
+                                            }
+                                          },
+                                          scales: {
+                                            y: {
+                                              beginAtZero: true,
+                                              grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                                              ticks: {
+                                                color: '#666',
+                                                callback: function(value: any) {
+                                                  return value + '回';
+                                                }
+                                              }
+                                            },
+                                            x: {
+                                              grid: { display: false },
+                                              ticks: {
+                                                color: '#666',
+                                                maxRotation: 45
+                                              }
                                             }
                                           }
-                                        },
-                                        x: {
-                                          grid: { display: false },
-                                          ticks: {
-                                            color: '#666',
-                                            maxRotation: 45
-                                          }
-                                        }
-                                      }
-                                    }}
-                                  />
+                                        }}
+                                      />
+                                    );
+                                  })()}
                                 </Box>
                               </Box>
                             )}

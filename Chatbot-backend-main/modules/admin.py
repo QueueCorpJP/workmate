@@ -634,6 +634,7 @@ async def get_employee_details(employee_id: str, db = None, current_user_id: str
         # 特別な管理者またはadminロールかどうかを確認
         is_special_admin = False
         is_admin = False
+        is_admin_user = False
         is_user = False
         current_user_company_id = None
         target_user_company_id = None
@@ -646,27 +647,32 @@ async def get_employee_details(employee_id: str, db = None, current_user_id: str
                 user_role = user_data.get("role")
                 current_user_company_id = user_data.get("company_id")
                 
+                print(f"🔍 [権限チェック] ユーザー: {user_email}, ロール: {user_role}")
+                
                 if user_email == "queue@queueu-tech.jp":
                     is_special_admin = True
                     print("特別な管理者として社員詳細情報を取得します")
                 elif user_role == "admin":
                     is_admin = True
                     print("adminロールとして社員詳細情報を取得します")
+                elif user_role == "admin_user":
+                    is_admin_user = True
+                    print("admin_userロールとして社員詳細情報を取得します")
                 elif user_role == "user":
                     is_user = True
                     print("userロールとして社員詳細情報を取得します")
         
         # 対象ユーザーの会社IDを取得（同じ会社かチェックするため）
-        if not is_special_admin and not is_admin and employee_id != current_user_id:
+        if not is_special_admin and not is_admin and not is_admin_user and employee_id != current_user_id:
             target_result = select_data("users", columns="company_id", filters={"id": employee_id})
             if target_result and target_result.data and len(target_result.data) > 0:
                 target_user_company_id = target_result.data[0].get("company_id")
         
         # 権限チェック
-        # 1. 特別な管理者またはadminロールは全てアクセス可能
+        # 1. 特別な管理者、adminロール、admin_userロールは全てアクセス可能
         # 2. userロールは同じ会社のユーザーのみアクセス可能
         # 3. その他は自分のデータのみアクセス可能
-        if not is_special_admin and not is_admin:
+        if not is_special_admin and not is_admin and not is_admin_user:
             if is_user:
                 # userロールの場合、同じ会社のユーザーならアクセス可能
                 if current_user_company_id and target_user_company_id and current_user_company_id == target_user_company_id:
@@ -679,6 +685,9 @@ async def get_employee_details(employee_id: str, db = None, current_user_id: str
                 # employeeロールなどは自分のデータのみ
                 if employee_id != current_user_id:
                     raise HTTPException(status_code=403, detail="他の社員の詳細情報を取得する権限がありません")
+        else:
+            # admin、admin_user、special_adminの場合
+            print(f"管理者権限でアクセス: special_admin={is_special_admin}, admin={is_admin}, admin_user={is_admin_user}")
         
         # 社員のチャット履歴を取得
         chat_history_result = select_data("chat_history", columns="*", filters={"employee_id": employee_id})
@@ -1013,32 +1022,54 @@ def get_chat_history_by_company_paginated(company_id: str, db = None, limit: int
         print(f"🔍 [COMPANY CHAT DEBUG] 会社のユーザーID一覧: {user_ids}")
         
         # 会社のユーザーのチャット履歴を取得（ページネーション対応）
-        # IN句でフィルタリング
-        user_ids_str = ','.join([f"'{uid}'" for uid in user_ids])
+        # 複数のユーザーのデータを取得するため、各ユーザーごとに取得して結合
+        all_chat_data = []
+        total_count = 0
         
-        # 全件数を取得
-        count_result = select_data(
-            "chat_history", 
-            columns="id", 
-            filters={"employee_id": f"in.({user_ids_str})"}
-        )
-        total_count = len(count_result.data) if count_result and count_result.data else 0
+        for user_id in user_ids:
+            try:
+                # 各ユーザーのチャット履歴の全件数を取得
+                user_count_result = select_data(
+                    "chat_history", 
+                    columns="id", 
+                    filters={"employee_id": user_id}
+                )
+                user_count = len(user_count_result.data) if user_count_result and user_count_result.data else 0
+                total_count += user_count
+                
+                # 各ユーザーのチャット履歴を取得
+                user_result = select_data(
+                    "chat_history", 
+                    columns="*", 
+                    filters={"employee_id": user_id},
+                    order="timestamp desc"
+                )
+                
+                if user_result and user_result.data:
+                    all_chat_data.extend(user_result.data)
+                    print(f"🔍 [COMPANY CHAT DEBUG] ユーザー {user_id}: {len(user_result.data)}件のチャット")
+                
+            except Exception as e:
+                print(f"🔍 [COMPANY CHAT DEBUG] ユーザー {user_id} のデータ取得エラー: {e}")
+                continue
         
-        # ページネーション付きでデータ取得
-        result = select_data(
-            "chat_history", 
-            columns="*", 
-            filters={"employee_id": f"in.({user_ids_str})"},
-            order="timestamp desc",
-            limit=limit,
-            offset=offset
-        )
+        print(f"🔍 [COMPANY CHAT DEBUG] 全ユーザーのチャット合計: {len(all_chat_data)}件")
         
-        if not result or not result.data:
+        # タイムスタンプでソート（降順）
+        all_chat_data.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        
+        # ページネーション適用
+        start_idx = offset
+        end_idx = offset + limit
+        result_data = all_chat_data[start_idx:end_idx]
+        
+        print(f"🔍 [COMPANY CHAT DEBUG] ページネーション後: {len(result_data)}件 (offset: {offset}, limit: {limit})")
+        
+        if not result_data:
             print(f"🔍 [COMPANY CHAT DEBUG] 会社のチャット履歴が見つかりません")
             return [], total_count
         
-        chat_history = result.data
+        chat_history = result_data
         print(f"🔍 [COMPANY CHAT DEBUG] チャット履歴取得結果: {len(chat_history)}件 (全体: {total_count}件)")
         
         # ユーザー名を取得してマッピング
@@ -1095,7 +1126,6 @@ def get_chat_history_by_company(company_id: str, db = None):
         user_ids = [user["id"] for user in users_result.data]
         print(f"🔍 [COMPANY CHAT DEBUG] 会社のユーザーID一覧: {user_ids}")
         
-        # 会社のユーザーのチャット履歴を取得
         # IN句でフィルタリング
         user_ids_str = ','.join([f"'{uid}'" for uid in user_ids])
         

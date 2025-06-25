@@ -805,8 +805,8 @@ const PlanHistorySection: React.FC = () => {
                           </TableCell>
                           <TableCell>
                             <Box>
-                              <Typography variant="caption" sx={{ fontWeight: 500 }}>
-                                {user.user_name || "管理者"}
+                              <Typography variant="caption" color="pink.main" sx={{ display: 'block', fontSize: '0.7rem' }}>
+                                {user.user_name || 'ユーザー'}
                               </Typography>
                               {user.user_email && (
                                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>

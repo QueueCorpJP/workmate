@@ -358,7 +358,7 @@ const FloatingSourcePanel: React.FC<FloatingSourcePanelProps> = ({
                   />
                 ))}
                 {sourceInfos.length > 3 && (
-                  <Typography variant="caption" sx={{ color: 'text.secondary', alignSelf: 'center' }}>
+                  <Typography variant="caption" sx={{ color: 'pink.main', alignSelf: 'center' }}>
                     他{sourceInfos.length - 3}件
                   </Typography>
                 )}

@@ -1441,19 +1441,19 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                               
                               <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                  <Typography variant="caption" color="text.secondary">メッセージ数:</Typography>
+                                  <Typography variant="caption" color="pink.main">メッセージ数:</Typography>
                                   <Typography variant="caption" sx={{ fontWeight: 500 }}>
                                     {admin.message_count || 0}回
                                   </Typography>
                                 </Box>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                  <Typography variant="caption" color="text.secondary">作成日:</Typography>
+                                  <Typography variant="caption" color="pink.main">作成日:</Typography>
                                   <Typography variant="caption" sx={{ fontWeight: 500 }}>
                                     {new Date(admin.created_at).toLocaleDateString('ja-JP')}
                                   </Typography>
                                 </Box>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                  <Typography variant="caption" color="text.secondary">最終利用:</Typography>
+                                  <Typography variant="caption" color="pink.main">最終利用:</Typography>
                                   <Typography variant="caption" sx={{ fontWeight: 500 }}>
                                     {admin.last_activity 
                                       ? new Date(admin.last_activity).toLocaleDateString('ja-JP')
@@ -1462,7 +1462,7 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                                 </Box>
                                 {!admin.usage_limits?.is_unlimited && (
                                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <Typography variant="caption" color="text.secondary">利用制限:</Typography>
+                                    <Typography variant="caption" color="pink.main">利用制限:</Typography>
                                     <Typography variant="caption" sx={{ fontWeight: 500 }}>
                                       {admin.usage_limits?.questions_used || 0}/{admin.usage_limits?.questions_limit || 0}
                                     </Typography>
@@ -1548,19 +1548,19 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                           
                           <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <Typography variant="caption" color="text.secondary">メッセージ数:</Typography>
+                              <Typography variant="caption" color="pink.main">メッセージ数:</Typography>
                               <Typography variant="caption" sx={{ fontWeight: 500 }}>
                                 {employee.message_count || 0}回
                               </Typography>
                             </Box>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <Typography variant="caption" color="text.secondary">作成日:</Typography>
+                              <Typography variant="caption" color="pink.main">作成日:</Typography>
                               <Typography variant="caption" sx={{ fontWeight: 500 }}>
                                 {new Date(employee.created_at).toLocaleDateString('ja-JP')}
                               </Typography>
                             </Box>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <Typography variant="caption" color="text.secondary">最終利用:</Typography>
+                              <Typography variant="caption" color="pink.main">最終利用:</Typography>
                               <Typography variant="caption" sx={{ fontWeight: 500 }}>
                                 {employee.last_activity 
                                   ? new Date(employee.last_activity).toLocaleDateString('ja-JP')
@@ -1569,7 +1569,7 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                             </Box>
                             {!employee.usage_limits?.is_unlimited && (
                               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <Typography variant="caption" color="text.secondary">利用制限:</Typography>
+                                <Typography variant="caption" color="pink.main">利用制限:</Typography>
                                 <Typography variant="caption" sx={{ fontWeight: 500 }}>
                                   {employee.usage_limits?.questions_used || 0}/{employee.usage_limits?.questions_limit || 0}
                                 </Typography>
