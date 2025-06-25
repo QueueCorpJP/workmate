@@ -1246,11 +1246,11 @@ async def admin_enhanced_analysis(
         
         # Gemini分析はオプション
         if include_ai_insights:
-        print(f"🔍 [ENHANCED ANALYSIS] Gemini洞察生成開始")
+            print(f"🔍 [ENHANCED ANALYSIS] Gemini洞察生成開始")
             from modules.analytics import generate_gemini_insights
-        ai_insights = await generate_gemini_insights(analytics_data, db, company_id)
-        analytics_data["ai_insights"] = ai_insights
-        print(f"🔍 [ENHANCED ANALYSIS] Gemini洞察生成完了")
+            ai_insights = await generate_gemini_insights(analytics_data, db, company_id)
+            analytics_data["ai_insights"] = ai_insights
+            print(f"🔍 [ENHANCED ANALYSIS] Gemini洞察生成完了")
         else:
             # AI分析なしの場合はプレースホルダーを設定
             analytics_data["ai_insights"] = ""
@@ -1458,10 +1458,10 @@ async def admin_update_resource_special(resource_id: str, request: dict, current
         
         # リソースを更新
         update_result = update_data("document_sources", update_fields, "id", decoded_id)
-            
-            if update_result:
+        
+        if update_result:
             return {
-                "success": True, 
+                "success": True,
                 "message": "リソースが正常に更新されました",
                 "resource_id": decoded_id,
                 "updated_fields": list(update_fields.keys())
