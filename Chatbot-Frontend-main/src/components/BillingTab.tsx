@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import {
   Box,
   Typography,
@@ -23,16 +23,22 @@ import {
   TableRow,
   Paper,
   Tooltip,
-  IconButton
+  IconButton,
+  Container,
+  Stack
 } from '@mui/material';
 import {
   MonetizationOn as MoneyIcon,
   TrendingUp as TrendingUpIcon,
   Warning as WarningIcon,
   Calculate as CalculateIcon,
-  Info as InfoIcon
+  Info as InfoIcon,
+  Diamond as DiamondIcon,
+  CheckCircle as CheckIcon,
+  Star as StarIcon
 } from '@mui/icons-material';
 import api from '../api';
+import { useAuth } from '../contexts/AuthContext';
 
 interface TokenUsageData {
   total_tokens_used: number;
@@ -77,6 +83,7 @@ interface SimulationData {
 const BillingTab: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const { user } = useAuth();
   
   const [tokenUsage, setTokenUsage] = useState<TokenUsageData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -84,6 +91,10 @@ const BillingTab: React.FC = () => {
   const [simulationPrompts, setSimulationPrompts] = useState(1000); // 1000 prompt references
   const [simulationData, setSimulationData] = useState<SimulationData | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
+  const [currentCompanyId, setCurrentCompanyId] = useState<string | null>(null);
+
+  // 特定のcompany_id用の専用表示フラグ
+  const isSpecialCompany = currentCompanyId === '77acc2e2-ce67-458d-bd38-7af0476b297a';
 
   // トークン使用量データを取得（共有サービス使用）
   const fetchTokenUsage = async () => {
@@ -91,7 +102,23 @@ const BillingTab: React.FC = () => {
       setIsLoading(true);
       const { SharedDataService } = await import('../services/sharedDataService');
       const data = await SharedDataService.getTokenUsage();
-      setTokenUsage(data);
+      
+      // company_idを取得・設定（ログから確認可能）
+      if (user?.id) {
+        // ユーザーのcompany_idを取得するために認証情報を確認
+        try {
+          const response = await api.get('/auth/user');
+          const userData = response.data;
+          if (userData.company_id) {
+            setCurrentCompanyId(userData.company_id);
+            console.log('🏢 Company ID設定:', userData.company_id);
+          }
+        } catch (companyError) {
+          console.error('Company ID取得エラー:', companyError);
+        }
+      }
+      
+      setTokenUsage(data as any);
     } catch (error: any) {
       console.error('トークン使用量取得エラー:', error);
     } finally {
@@ -176,12 +203,261 @@ const BillingTab: React.FC = () => {
     return 'primary';
   };
 
+  // 専用料金表示コンポーネント
+  const SpecialPricingDisplay = () => (
+    <Fade in={true} timeout={600}>
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        {/* ヘッダー */}
+        <Box sx={{ textAlign: 'center', mb: 6 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
+            <Box
+              sx={{
+                p: 3,
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 8px 32px rgba(102, 126, 234, 0.3)',
+              }}
+            >
+              <DiamondIcon sx={{ fontSize: '3rem', color: 'white' }} />
+            </Box>
+          </Box>
+          <Typography
+            variant="h3"
+            sx={{
+              fontWeight: 800,
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              backgroundClip: 'text',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              mb: 2,
+              fontSize: { xs: '2rem', md: '3rem' }
+            }}
+          >
+            プレミアムプラン
+          </Typography>
+          <Typography
+            variant="h6"
+            sx={{
+              color: 'text.secondary',
+              fontSize: '1.2rem',
+              maxWidth: '600px',
+              mx: 'auto',
+              lineHeight: 1.6
+            }}
+          >
+            株式会社No.1専用の特別料金プラン
+          </Typography>
+        </Box>
+
+        {/* メイン料金カード */}
+        <Grid container spacing={4} justifyContent="center">
+          <Grid item xs={12} md={8} lg={6}>
+            <Card
+              elevation={0}
+              sx={{
+                borderRadius: 4,
+                overflow: 'hidden',
+                position: 'relative',
+                background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%)',
+                border: '2px solid',
+                borderColor: 'transparent',
+                backgroundImage: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                backgroundOrigin: 'border-box',
+                backgroundClip: 'padding-box, border-box',
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: '6px',
+                  background: 'linear-gradient(90deg, #667eea, #764ba2)',
+                  zIndex: 1
+                }
+              }}
+            >
+              <CardContent sx={{ p: 4, position: 'relative', zIndex: 2, background: 'white' }}>
+                {/* 価格表示 */}
+                <Box sx={{ textAlign: 'center', mb: 4 }}>
+                  <Typography
+                    variant="h2"
+                    sx={{
+                      fontWeight: 900,
+                      color: '#667eea',
+                      mb: 1,
+                      fontSize: { xs: '3rem', md: '4rem' }
+                    }}
+                  >
+                    ¥90,000
+                  </Typography>
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      color: 'text.secondary',
+                      mb: 2,
+                      fontSize: '1.1rem'
+                    }}
+                  >
+                    3ヶ月契約（税込）
+                  </Typography>
+                  <Box
+                    sx={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1))',
+                      borderRadius: 3,
+                      px: 3,
+                      py: 1.5,
+                      mb: 3
+                    }}
+                  >
+                    <Typography
+                      variant="h5"
+                      sx={{
+                        fontWeight: 700,
+                        color: '#667eea',
+                        mr: 1
+                      }}
+                    >
+                      月額 ¥30,000
+                    </Typography>
+                    <StarIcon sx={{ color: '#ffd700', fontSize: '1.5rem' }} />
+                  </Box>
+                </Box>
+
+                <Divider sx={{ mb: 4 }} />
+
+                {/* 特典一覧 */}
+                <Typography
+                  variant="h6"
+                  sx={{
+                    fontWeight: 600,
+                    mb: 3,
+                    textAlign: 'center',
+                    color: 'text.primary'
+                  }}
+                >
+                  プラン特典
+                </Typography>
+
+                <Stack spacing={2.5}>
+                  {[
+                    '無制限のAI質問・回答',
+                    '専用サポート対応',
+                    'プレミアム機能へのアクセス',
+                    '3ヶ月間の継続利用保証',
+                    '月額一律30,000円の明朗会計'
+                  ].map((feature, index) => (
+                    <Box
+                      key={index}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        p: 2,
+                        borderRadius: 2,
+                        background: 'rgba(102, 126, 234, 0.03)',
+                        border: '1px solid rgba(102, 126, 234, 0.1)',
+                        transition: 'all 0.3s ease',
+                        '&:hover': {
+                          background: 'rgba(102, 126, 234, 0.08)',
+                          transform: 'translateX(4px)'
+                        }
+                      }}
+                    >
+                      <CheckIcon
+                        sx={{
+                          color: '#667eea',
+                          mr: 2,
+                          fontSize: '1.5rem',
+                          flexShrink: 0
+                        }}
+                      />
+                      <Typography
+                        variant="body1"
+                        sx={{
+                          fontWeight: 500,
+                          color: 'text.primary',
+                          fontSize: '1.1rem'
+                        }}
+                      >
+                        {feature}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Stack>
+
+                {/* 契約情報 */}
+                <Box
+                  sx={{
+                    mt: 4,
+                    p: 3,
+                    borderRadius: 3,
+                    background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.08), rgba(118, 75, 162, 0.08))',
+                    border: '1px solid rgba(102, 126, 234, 0.2)',
+                    textAlign: 'center'
+                  }}
+                >
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      fontWeight: 600,
+                      color: '#667eea',
+                      mb: 1
+                    }}
+                  >
+                    契約期間: 3ヶ月
+                  </Typography>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: 'text.secondary',
+                      fontSize: '1rem',
+                      lineHeight: 1.6
+                    }}
+                  >
+                    安心の固定料金制で、予算管理も簡単です。<br />
+                    継続利用により、さらなる特典をご用意いたします。
+                  </Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+
+        {/* お問い合わせセクション */}
+        <Box sx={{ textAlign: 'center', mt: 6 }}>
+          <Typography
+            variant="body1"
+            sx={{
+              color: 'text.secondary',
+              fontSize: '1.1rem',
+              maxWidth: '500px',
+              mx: 'auto',
+              lineHeight: 1.8
+            }}
+          >
+            ご質問やご不明点がございましたら、
+            <br />お気軽にサポートチームまでお問い合わせください。
+          </Typography>
+        </Box>
+      </Container>
+    </Fade>
+  );
+
   if (isLoading) {
     return (
       <Box sx={{ p: 3, textAlign: 'center' }}>
         <Typography>料金情報を読み込み中...</Typography>
       </Box>
     );
+  }
+
+  // 特定のcompany_idの場合は専用表示
+  if (isSpecialCompany) {
+    return <SpecialPricingDisplay />;
   }
 
   return (

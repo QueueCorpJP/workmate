@@ -156,7 +156,7 @@ const AdminPanel: React.FC = () => {
 
   // チャット履歴の取得とユーザー情報の確認
   useEffect(() => {
-    fetchChatHistory();
+    console.log("Admin Panel mounted");
 
     // 特別な管理者またはadminロールかどうかを確認
     const storedUser = localStorage.getItem("user");
@@ -167,83 +167,71 @@ const AdminPanel: React.FC = () => {
       }
     }
 
-    // 初期データの読み込み
-    fetchCompanyEmployees();
-    fetchEmployeeUsage();
+    // 初期データは最初のタブ（チャット履歴）のみ読み込み
+    // 他のタブのデータは必要に応じて遅延読み込み
+    fetchChatHistory();
   }, []);
 
-  // チャット履歴の取得（ページネーション対応）
-  const fetchChatHistory = async (loadMore: boolean = false) => {
+  // チャット履歴の取得（共有サービス使用、ページネーション対応）
+  const fetchChatHistory = async (loadMore: boolean = false, forceRefresh = false) => {
     setIsLoading(true);
     try {
-      console.log("チャット履歴を取得中...");
-      const storedUser = localStorage.getItem("user");
-      const userId = storedUser ? JSON.parse(storedUser).id : null;
+      const { SharedDataService } = await import('../../services/sharedDataService');
       
       // ページネーションパラメータ
       const limit = 30;
       const offset = loadMore ? chatHistory.length : 0;
       
-      const baseUrl = isSpecialAdmin
-        ? `/admin/chat-history`
-        : `/admin/chat-history`;
+      const cacheKey = `chat-history-${limit}-${offset}`;
       
-      const params = new URLSearchParams({
-        limit: limit.toString(),
-        offset: offset.toString()
-      });
-      
-      if (!isSpecialAdmin && userId) {
-        params.append('user_id', userId);
+      if (forceRefresh) {
+        SharedDataService.clearCache(cacheKey);
       }
       
-      const url = `${baseUrl}?${params.toString()}`;
-      
-      const response = await api.get(url, {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Content-Type': 'application/json'
-        }
+      const data = await SharedDataService.getChatHistory({
+        limit,
+        offset,
+        user_id: !isSpecialAdmin ? JSON.parse(localStorage.getItem("user") || "{}").id : undefined
       });
       
-      console.log("チャット履歴取得結果:", response.data);
+      console.log("チャット履歴取得結果:", data);
       
-      // 新しいレスポンス形式に対応
-      if (response.data && response.data.data && Array.isArray(response.data.data)) {
+      // SharedDataServiceから取得したデータを処理
+      if (data && data.data && Array.isArray(data.data)) {
         if (loadMore) {
           // 既存のデータに追加
-          setChatHistory(prev => [...prev, ...response.data.data]);
+          setChatHistory(prev => [...prev, ...data.data]);
         } else {
           // 新しいデータで置き換え
-          setChatHistory(response.data.data);
+          setChatHistory(data.data);
         }
         
-        // ページネーション情報を保存 (新しい構造に対応)
-        const pagination = response.data.pagination || {};
+        // ページネーション情報を保存
+        const pagination = data.pagination || {};
         const newOffset = loadMore ? 
-          (chatPagination.offset + response.data.data.length) : 
-          (pagination.offset || response.data.offset || 0) + response.data.data.length;
+          (chatPagination.offset + data.data.length) : 
+          (pagination.offset || data.offset || 0) + data.data.length;
         
         setChatPagination({
-          total_count: pagination.total_count || response.data.total_count || 0,
-          limit: pagination.limit || response.data.limit || 30,
+          total_count: pagination.total_count || data.total_count || 0,
+          limit: pagination.limit || data.limit || 30,
           offset: newOffset,
-          has_more: pagination.has_more !== undefined ? pagination.has_more : response.data.has_more || false
+          has_more: pagination.has_more !== undefined ? pagination.has_more : data.has_more || false
         });
         
-      } else if (Array.isArray(response.data)) {
+      } else if (Array.isArray(data)) {
         // 後方互換性のため古い形式にも対応
-        setChatHistory(response.data);
+        setChatHistory(data);
         setChatPagination({
-          total_count: response.data.length,
-          limit: response.data.length,
-          offset: response.data.length,
+          total_count: data.length,
+          limit: data.length,
+          offset: data.length,
           has_more: false
         });
       } else {
         console.error(
           "チャット履歴のレスポンスが想定される形式ではありません:",
-          response.data
+          data
         );
         setChatHistory([]);
         setChatPagination({
@@ -263,70 +251,186 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  // 分析データの取得
-  const fetchAnalysis = async () => {
-    if (analysis && Object.keys(analysis.category_distribution).length > 0)
+  // 強化分析データの状態
+  const [enhancedAnalysis, setEnhancedAnalysis] = useState<any>(null);
+  const [isEnhancedAnalysisLoading, setIsEnhancedAnalysisLoading] = useState(false);
+  
+  // 分析処理のAbortController
+  const [analysisAbortController, setAnalysisAbortController] = useState<AbortController | null>(null);
+
+  // 分析データの取得（共有サービス使用、強化分析も並行取得）
+  const fetchAnalysis = async (forceRefresh = false) => {
+    if (analysis && Object.keys(analysis.category_distribution).length > 0 && !forceRefresh)
       return; // 既に有効なデータがある場合は何もしない
 
+    // 既存の分析処理をキャンセル
+    if (analysisAbortController) {
+      console.log('🛑 既存の分析処理をキャンセルします...');
+      analysisAbortController.abort();
+    }
+
+    // 新しいAbortControllerを作成
+    const newAbortController = new AbortController();
+    setAnalysisAbortController(newAbortController);
+
     setIsAnalysisLoading(true);
+    setIsEnhancedAnalysisLoading(true);
+    
     try {
-      console.log("チャット分析を取得中...");
-      // 特別な管理者でない場合は、ユーザーIDをクエリパラメータとして渡す
-      const storedUser = localStorage.getItem("user");
-      const userId = storedUser ? JSON.parse(storedUser).id : null;
-      const url = isSpecialAdmin
-        ? `/admin/analyze-chats`
-        : `/admin/analyze-chats?user_id=${userId}`;
-      const response = await api.get(url, {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Content-Type': 'application/json'
-        }
-      });
-      console.log("チャット分析取得結果:", response.data);
-      // レスポンスが有効なオブジェクトであることを確認
-      if (
-        response.data &&
-        typeof response.data === "object"
-      ) {
-        // 必要なプロパティがない場合は初期化
-        if (!("category_distribution" in response.data)) {
-          response.data.category_distribution = {};
-        }
-        if (!("sentiment_distribution" in response.data)) {
-          response.data.sentiment_distribution = {};
-        }
-        if (!("common_questions" in response.data)) {
-          response.data.common_questions = [];
-        } else if (!Array.isArray(response.data.common_questions)) {
-          response.data.common_questions = [];
-        }
-        if (!("daily_usage" in response.data)) {
-          response.data.daily_usage = [];
-        }
-        
-        console.log("チャット分析データを設定:", response.data);
-        setAnalysis(response.data);
-      } else {
-        console.error(
-          "チャット分析のレスポンスが有効なオブジェクトではありません:",
-          response.data
-        );
-        setAnalysis({
-          category_distribution: {},
-          sentiment_distribution: {},
-          common_questions: [],
-          insights: "データの取得に失敗しました。",
-        });
+      const { SharedDataService } = await import('../../services/sharedDataService');
+      if (forceRefresh) {
+        SharedDataService.clearCache('analysis-shared');
+        SharedDataService.clearCache('enhanced-analysis-database-shared');
+        SharedDataService.clearCache('ai-insights-shared');
       }
-    } catch (error) {
-      console.error("チャット分析の取得に失敗しました:", error);
+      
+      // 基本分析とデータベース強化分析を並行取得（高速）
+      const [basicData, enhancedDatabaseData] = await Promise.allSettled([
+        SharedDataService.getAnalysis(newAbortController.signal),
+        SharedDataService.getEnhancedAnalysisDatabase(newAbortController.signal)
+      ]);
+      
+      // 基本分析データの処理
+      if (basicData.status === 'fulfilled') {
+        const data = basicData.value;
+        console.log("チャット分析取得結果:", data);
+        
+        if (data && typeof data === "object") {
+          const analysisData = data as any;
+          
+          // 必要なプロパティがない場合は初期化
+          if (!("category_distribution" in analysisData)) {
+            analysisData.category_distribution = {};
+          }
+          if (!("sentiment_distribution" in analysisData)) {
+            analysisData.sentiment_distribution = {};
+          }
+          if (!("common_questions" in analysisData)) {
+            analysisData.common_questions = [];
+          } else if (!Array.isArray(analysisData.common_questions)) {
+            analysisData.common_questions = [];
+          }
+          if (!("daily_usage" in analysisData)) {
+            analysisData.daily_usage = [];
+          }
+          
+          console.log("チャット分析データを設定:", analysisData);
+          setAnalysis(analysisData);
+        } else {
+          console.error("チャット分析のレスポンスが有効なオブジェクトではありません:", data);
+          setAnalysis({
+            category_distribution: {},
+            sentiment_distribution: {},
+            common_questions: [],
+            insights: "データの取得に失敗しました。",
+          });
+        }
+      } else {
+        console.error("基本分析の取得に失敗:", basicData.reason);
+      }
+      
+      // データベース強化分析データの処理（AI洞察なし）
+      if (enhancedDatabaseData.status === 'fulfilled') {
+        console.log("データベース強化分析取得結果:", enhancedDatabaseData.value);
+        const databaseAnalysis = enhancedDatabaseData.value;
+        // AI洞察は空文字列で設定（後で追加可能）
+        databaseAnalysis.ai_insights = databaseAnalysis.ai_insights || "";
+        setEnhancedAnalysis(databaseAnalysis);
+      } else {
+        console.error("データベース強化分析の取得に失敗:", enhancedDatabaseData.reason);
+        setEnhancedAnalysis(null);
+      }
+      
+    } catch (error: any) {
+      // AbortErrorの場合はユーザーによるキャンセルなので静かに処理
+      if (error.name === 'AbortError' || (error.message && error.message.includes('aborted'))) {
+        console.log('🛑 分析処理がユーザーによってキャンセルされました');
+        return;
+      }
+      
+      console.error("分析データの取得に失敗しました:", error);
       // エラーメッセージを表示
       alert(
-        "チャット分析の取得に失敗しました。バックエンドサーバーが起動しているか確認してください。"
+        "分析データの取得に失敗しました。バックエンドサーバーが起動しているか確認してください。"
       );
     } finally {
       setIsAnalysisLoading(false);
+      setIsEnhancedAnalysisLoading(false);
+      // 完了したらAbortControllerをクリア
+      setAnalysisAbortController(null);
+    }
+  };
+
+  // AI洞察のみを取得する関数
+  const fetchAIInsights = async () => {
+    if (!enhancedAnalysis) {
+      console.warn('データベース分析が完了していないため、AI洞察を取得できません');
+      return;
+    }
+    
+    // 既にAI洞察がある場合はスキップ
+    if (enhancedAnalysis.ai_insights && enhancedAnalysis.ai_insights.trim()) {
+      console.log('AI洞察は既に取得済みです');
+      return;
+    }
+    
+    // 既に進行中の分析処理がある場合はキャンセル
+    if (analysisAbortController) {
+      console.log('🛑 既存の分析処理をキャンセル');
+      analysisAbortController.abort();
+    }
+    
+    // 新しいAbortControllerを作成
+    const newAbortController = new AbortController();
+    setAnalysisAbortController(newAbortController);
+    
+    setIsEnhancedAnalysisLoading(true);
+    
+    try {
+      console.log("🤖 AI洞察生成開始...");
+      const { SharedDataService } = await import('../../services/sharedDataService');
+      
+      const aiInsightsData = await SharedDataService.getAIInsights(newAbortController.signal);
+      
+      // 分析がキャンセルされた場合は処理を中断
+      if (newAbortController.signal.aborted) {
+        console.log('🛑 AI洞察生成がキャンセルされました');
+        return;
+      }
+      
+      console.log("🤖 AI洞察取得結果:", aiInsightsData);
+      
+      // 既存の強化分析データにAI洞察を追加
+      if (enhancedAnalysis && aiInsightsData.ai_insights) {
+        const updatedAnalysis = {
+          ...enhancedAnalysis,
+          ai_insights: aiInsightsData.ai_insights
+        };
+        setEnhancedAnalysis(updatedAnalysis);
+        console.log("🤖 AI洞察が正常に統合されました");
+      }
+      
+    } catch (error: any) {
+      // AbortErrorの場合はユーザーによるキャンセルなので静かに処理
+      if (error.name === 'AbortError' || (error.message && error.message.includes('aborted'))) {
+        console.log('🛑 AI洞察生成がユーザーによってキャンセルされました');
+        return;
+      }
+      
+      console.error("AI洞察の生成に失敗しました:", error);
+      
+      // エラー時は既存のデータにエラーメッセージを設定
+      if (enhancedAnalysis) {
+        const updatedAnalysis = {
+          ...enhancedAnalysis,
+          ai_insights: `AI洞察の生成に失敗しました: ${error.message || 'ネットワークエラー'}`
+        };
+        setEnhancedAnalysis(updatedAnalysis);
+      }
+    } finally {
+      setIsEnhancedAnalysisLoading(false);
+      // 完了したらAbortControllerをクリア
+      setAnalysisAbortController(null);
     }
   };
 
@@ -342,18 +446,22 @@ const AdminPanel: React.FC = () => {
       }
       const data = await SharedDataService.getEmployeeUsage();
       console.log("従業員利用状況取得結果:", data);
-      // レスポンスが有効なオブジェクトであることを確認
+      
+      // SharedDataServiceから取得したデータを直接使用
       if (
-        response.data &&
-        typeof response.data === "object" &&
-        "employee_usage" in response.data &&
-        Array.isArray(response.data.employee_usage)
+        data &&
+        typeof data === "object" &&
+        "employee_usage" in data &&
+        Array.isArray(data.employee_usage)
       ) {
-        setEmployeeUsage(response.data.employee_usage);
+        setEmployeeUsage(data.employee_usage);
+      } else if (Array.isArray(data)) {
+        // 直接配列が返される場合
+        setEmployeeUsage(data);
       } else {
         console.error(
           "社員利用状況のレスポンスが有効なオブジェクトではありません:",
-          response.data
+          data
         );
         setEmployeeUsage([]);
       }
@@ -371,45 +479,34 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  // 会社の全社員情報を取得
+  // 会社の全社員情報を取得（共有サービス使用）
   const fetchCompanyEmployees = async (forceRefresh = false) => {
     if (companyEmployees.length > 0 && !forceRefresh) return; // 既に有効なデータがある場合は何もしない（強制更新フラグがない場合）
 
     setIsCompanyEmployeesLoading(true);
     try {
-      console.log("会社の全社員情報を取得中...");
-      // ユーザーIDをクエリパラメータとして渡す
-      const storedUser = localStorage.getItem("user");
-      const userId = storedUser ? JSON.parse(storedUser).id : null;
-      const response = await api.get(
-        `/admin/company-employees?user_id=${userId}`,
-        {
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-      console.log("会社の全社員情報取得結果:", response.data);
+      const { SharedDataService } = await import('../../services/sharedDataService');
+      if (forceRefresh) {
+        SharedDataService.clearCache('company-employees-shared');
+      }
+      const data = await SharedDataService.getCompanyEmployees();
+      console.log("会社の全社員情報取得結果:", data);
 
-      // レスポンスが有効なオブジェクトであることを確認
-      if (
-        response.data &&
-        Array.isArray(response.data)
-      ) {
-        setCompanyEmployees(response.data);
+      // SharedDataServiceから取得したデータを直接使用
+      if (Array.isArray(data)) {
+        setCompanyEmployees(data);
       } else if (
-        response.data &&
-        typeof response.data === "object" &&
-        "employees" in response.data &&
-        Array.isArray(response.data.employees)
+        data &&
+        typeof data === "object" &&
+        "employees" in data &&
+        Array.isArray((data as any).employees)
       ) {
         // 後方互換性のために残す
-        setCompanyEmployees(response.data.employees);
+        setCompanyEmployees((data as any).employees);
       } else {
         console.error(
           "会社の全社員情報のレスポンスが有効なオブジェクトではありません:",
-          response.data
+          data
         );
         setCompanyEmployees([]);
       }
@@ -425,52 +522,39 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  // アップロードされたリソースの取得
-  const fetchResources = async () => {
+  // アップロードされたリソースの取得（共有サービス使用）
+  const fetchResources = async (forceRefresh = false) => {
     console.log("🔍 [FRONTEND DEBUG] fetchResources 開始");
     setIsResourcesLoading(true);
     try {
-      console.log("🔍 [FRONTEND DEBUG] APIエンドポイント: /admin/resources");
-      console.log("🔍 [FRONTEND DEBUG] API呼び出し前のユーザー情報:", { user });
-      console.log("アップロードされたリソースを取得中...");
+      const { SharedDataService } = await import('../../services/sharedDataService');
+      if (forceRefresh) {
+        SharedDataService.clearCache('resources-shared');
+      }
+      const data = await SharedDataService.getResources();
+      console.log("リソース取得結果:", data);
       
-      const response = await api.get("/admin/resources");
-      
-      console.log("🔍 [FRONTEND DEBUG] APIレスポンス詳細:");
-      console.log("  - status:", response.status);
-      console.log("  - statusText:", response.statusText);
-      console.log("  - headers:", response.headers);
-      console.log("  - data type:", typeof response.data);
-      console.log("  - data:", response.data);
-      console.log("  - data stringify:", JSON.stringify(response.data, null, 2));
-      
-      console.log("リソース取得結果:", response.data);
-      
-      // レスポンスが有効なオブジェクトであることを確認
-      if (
-        response.data &&
-        typeof response.data === "object" &&
-        "resources" in response.data &&
-        Array.isArray(response.data.resources)
+      // SharedDataServiceから取得したデータを直接使用
+      if (Array.isArray(data)) {
+        console.log("🔍 [FRONTEND DEBUG] リソース配列の長さ:", data.length);
+        setResources(data);
+        console.log("🔍 [FRONTEND DEBUG] setResources 完了");
+      } else if (
+        data &&
+        typeof data === "object" &&
+        "resources" in data &&
+        Array.isArray((data as any).resources)
       ) {
-        console.log("🔍 [FRONTEND DEBUG] レスポンス検証OK");
-        console.log("🔍 [FRONTEND DEBUG] リソース配列の長さ:", response.data.resources.length);
-        console.log("🔍 [FRONTEND DEBUG] リソース配列詳細:");
-        response.data.resources.forEach((resource: Resource, index: number) => {
-          console.log(`  [${index + 1}] ${JSON.stringify(resource, null, 2)}`);
-        });
-        
-        setResources(response.data.resources);
+        console.log("🔍 [FRONTEND DEBUG] リソース配列の長さ:", (data as any).resources.length);
+        setResources((data as any).resources);
         console.log("🔍 [FRONTEND DEBUG] setResources 完了");
       } else {
         console.error("🔍 [FRONTEND DEBUG] レスポンス検証失敗");
-        console.error("  - response.data存在:", !!response.data);
-        console.error("  - response.dataタイプ:", typeof response.data);
-        console.error("  - 'resources'プロパティ存在:", response.data && "resources" in response.data);
-        console.error("  - resourcesが配列:", response.data && Array.isArray(response.data.resources));
+        console.error("  - dataタイプ:", typeof data);
+        console.error("  - 'resources'プロパティ存在:", data && "resources" in data);
         console.error(
           "リソースのレスポンスが有効なオブジェクトではありません:",
-          response.data
+          data
         );
         setResources([]);
       }
@@ -493,14 +577,17 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  // デモ利用状況の取得
-  const fetchDemoStats = async () => {
+  // デモ利用状況の取得（共有サービス使用）
+  const fetchDemoStats = async (forceRefresh = false) => {
     setIsDemoStatsLoading(true);
     try {
-      console.log("デモ利用状況を取得中...");
-      const response = await api.get("/admin/demo-stats");
-      console.log("デモ利用状況取得結果:", response.data);
-      setDemoStats(response.data);
+      const { SharedDataService } = await import('../../services/sharedDataService');
+      if (forceRefresh) {
+        SharedDataService.clearCache('demo-stats-shared');
+      }
+      const data = await SharedDataService.getDemoStats();
+      console.log("デモ利用状況取得結果:", data);
+      setDemoStats(data);
     } catch (error) {
       console.error("デモ利用状況の取得に失敗しました:", error);
       alert(
@@ -583,6 +670,17 @@ const AdminPanel: React.FC = () => {
       fetchCompanies();
     }
   }, [isSpecialAdmin]);
+
+  // コンポーネントがアンマウントされる際のクリーンアップ
+  useEffect(() => {
+    return () => {
+      // 進行中の分析処理をキャンセル
+      if (analysisAbortController) {
+        console.log('🧹 AdminPanel: コンポーネントアンマウント - 進行中の分析をキャンセル');
+        analysisAbortController.abort();
+      }
+    };
+  }, [analysisAbortController]);
 
   // 会社詳細情報の取得
   const fetchCompanyDetails = async () => {
@@ -823,25 +921,49 @@ const AdminPanel: React.FC = () => {
     return visibleIndex;
   };
 
-  // タブが変更されたときのハンドラ
+  // タブが変更されたときのハンドラ（キャッシュ活用で高速化）
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
+    const previousTabIndex = getActualTabIndex(tabValue);
+    const nextTabIndex = getActualTabIndex(newValue);
+    
+    // 分析タブから他のタブに移動する場合、進行中の分析処理をキャンセル
+    if (previousTabIndex === 1 && nextTabIndex !== 1 && analysisAbortController) {
+      console.log('🛑 分析タブから離れるため、進行中の分析をキャンセルします');
+      analysisAbortController.abort();
+      setAnalysisAbortController(null);
+      // ローディング状態もリセット
+      setIsAnalysisLoading(false);
+      setIsEnhancedAnalysisLoading(false);
+    }
+    
     setTabValue(newValue);
 
-    // タブに応じてデータを取得
+    // タブに応じてデータを取得（キャッシュがあれば即座に表示）
     const actualTabIndex = getActualTabIndex(newValue);
     switch (actualTabIndex) {
       case 0: // チャット履歴
-        fetchChatHistory();
+        if (chatHistory.length === 0) {
+          fetchChatHistory();
+        }
         break;
       case 1: // 分析
-        fetchAnalysis();
+        // 手動開始に変更：自動分析を停止
+        // if (!analysis || Object.keys(analysis.category_distribution).length === 0) {
+        //   fetchAnalysis();
+        // }
         break;
       case 2: // 社員管理
-        fetchEmployeeUsage(true);
-        fetchCompanyEmployees(true);
+        if (employeeUsage.length === 0) {
+          fetchEmployeeUsage(); // forceRefresh削除でキャッシュ活用
+        }
+        if (companyEmployees.length === 0) {
+          fetchCompanyEmployees(); // forceRefresh削除でキャッシュ活用
+        }
         break;
       case 3: // リソース
-        fetchResources();
+        if (resources.length === 0) {
+          fetchResources();
+        }
         break;
       case 4: // プラン履歴
         // プラン履歴は内部で自動読み込みするため何もしない
@@ -850,7 +972,7 @@ const AdminPanel: React.FC = () => {
         // 料金管理は内部で自動読み込みするため何もしない
         break;
       case 6: // デモ統計 (queue@queueu-tech.jpのみ)
-        if (isQueueTechAdmin) {
+        if (isQueueTechAdmin && (!demoStats || Object.keys(demoStats).length === 0)) {
           fetchDemoStats();
         }
         break;
@@ -1208,7 +1330,7 @@ const AdminPanel: React.FC = () => {
                 <ChatHistoryTab
                   chatHistory={chatHistory}
                   isLoading={isLoading}
-                  onRefresh={() => fetchChatHistory(false)}
+                  onRefresh={() => fetchChatHistory(false, true)} // 強制更新
                   onLoadMore={() => fetchChatHistory(true)}
                   hasMore={chatPagination.has_more}
                   totalCount={chatPagination.total_count}
@@ -1220,7 +1342,11 @@ const AdminPanel: React.FC = () => {
                 <AnalysisTab
                   analysis={analysis}
                   isLoading={isAnalysisLoading}
-                  onRefresh={fetchAnalysis}
+                  enhancedAnalysis={enhancedAnalysis}
+                  isEnhancedLoading={isEnhancedAnalysisLoading}
+                  onRefresh={() => fetchAnalysis(true)} // 強制更新
+                  onStartAnalysis={() => fetchAnalysis(true)} // 手動分析開始
+                  onStartAIInsights={fetchAIInsights} // AI洞察開始
                 />
               )}
 
@@ -1267,7 +1393,7 @@ const AdminPanel: React.FC = () => {
                 <ResourcesTab
                   resources={resources}
                   isLoading={isResourcesLoading}
-                  onRefresh={fetchResources}
+                  onRefresh={() => fetchResources(true)} // 強制更新
                 />
               )}
 

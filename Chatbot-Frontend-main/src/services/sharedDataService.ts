@@ -139,30 +139,72 @@ export class SharedDataService {
   /**
    * 分析データを取得（共有キャッシュ使用）
    */
-  static async getAnalysis(): Promise<any> {
+  static async getAnalysis(abortSignal?: AbortSignal): Promise<any> {
     return withSharedCache(
       'analysis-shared',
       async () => {
         console.log('🔄 分析データを取得中（共有）...');
-        const response = await api.get('/admin/analyze-chats');
+        const response = await api.get('/admin/analyze-chats', {
+          signal: abortSignal
+        });
         return response.data;
       },
-      10 * 60 * 1000 // 10分キャッシュ（計算コストが高い）
+      10 * 60 * 1000, // 10分キャッシュ（計算コストが高い）
+      abortSignal // AbortSignalをwithSharedCacheに渡す
     );
   }
 
   /**
-   * 強化分析データを取得（共有キャッシュ使用）
+   * 強化分析データを取得（データベース分析のみ・高速）
    */
-  static async getEnhancedAnalysis(): Promise<any> {
+  static async getEnhancedAnalysisDatabase(abortSignal?: AbortSignal): Promise<any> {
     return withSharedCache(
-      'enhanced-analysis-shared',
+      'enhanced-analysis-database-shared',
       async () => {
-        console.log('🔄 強化分析データを取得中（共有）...');
-        const response = await api.get('/admin/enhanced-analysis');
+        console.log('🔄 強化分析データを取得中（データベース分析のみ・共有）...');
+        const response = await api.get('/admin/enhanced-analysis?include_ai_insights=false', {
+          signal: abortSignal
+        });
         return response.data;
       },
-      10 * 60 * 1000 // 10分キャッシュ
+      10 * 60 * 1000, // 10分キャッシュ
+      abortSignal
+    );
+  }
+
+  /**
+   * AI洞察データを取得（Gemini分析・20秒程度）
+   */
+  static async getAIInsights(abortSignal?: AbortSignal): Promise<any> {
+    return withSharedCache(
+      'ai-insights-shared',
+      async () => {
+        console.log('🤖 AI洞察を生成中（Gemini分析・共有）...');
+        const response = await api.get('/admin/ai-insights', {
+          signal: abortSignal
+        });
+        return response.data;
+      },
+      30 * 60 * 1000, // 30分キャッシュ（Gemini処理が重いため長期保持）
+      abortSignal
+    );
+  }
+
+  /**
+   * 強化分析データを取得（AI洞察も含む・従来互換）
+   */
+  static async getEnhancedAnalysis(abortSignal?: AbortSignal): Promise<any> {
+    return withSharedCache(
+      'enhanced-analysis-full-shared',
+      async () => {
+        console.log('🔄 強化分析データを取得中（AI洞察含む・共有）...');
+        const response = await api.get('/admin/enhanced-analysis?include_ai_insights=true', {
+          signal: abortSignal
+        });
+        return response.data;
+      },
+      15 * 60 * 1000, // 15分キャッシュ
+      abortSignal
     );
   }
 
@@ -258,9 +300,15 @@ export class SharedDataService {
         break;
       case 'analysis':
         this.clearCache('analysis-shared');
-        this.clearCache('enhanced-analysis-shared');
+        this.clearCache('enhanced-analysis-database-shared');
+        this.clearCache('enhanced-analysis-full-shared');
+        this.clearCache('ai-insights-shared');
         await this.getAnalysis();
-        await this.getEnhancedAnalysis();
+        await this.getEnhancedAnalysisDatabase();
+        break;
+      case 'ai-insights':
+        this.clearCache('ai-insights-shared');
+        await this.getAIInsights();
         break;
       default:
         console.warn(`未知のデータタイプ: ${dataType}`);

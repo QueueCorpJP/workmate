@@ -114,12 +114,18 @@ class Cache {
 // グローバルキャッシュインスタンス
 export const cache = new Cache();
 
-// 共有データ用のスマートキャッシュラッパー
+// 共有データ用のスマートキャッシュラッパー（AbortSignal対応）
 export const withSharedCache = async <T>(
   key: string,
   fetcher: () => Promise<T>,
-  ttl: number = 5 * 60 * 1000
+  ttl: number = 5 * 60 * 1000,
+  abortSignal?: AbortSignal
 ): Promise<T> => {
+  // AbortSignalがキャンセル済みかチェック
+  if (abortSignal?.aborted) {
+    throw new DOMException('The operation was aborted.', 'AbortError');
+  }
+
   // キャッシュからデータを取得を試行
   const cached = cache.get<T>(key);
   if (cached) {
@@ -129,7 +135,19 @@ export const withSharedCache = async <T>(
 
   // キャッシュにない場合はAPIを呼び出し
   console.log(`🌐 共有データをAPIから取得: ${key}`);
+  
+  // AbortSignalのチェックを再度実施
+  if (abortSignal?.aborted) {
+    throw new DOMException('The operation was aborted.', 'AbortError');
+  }
+  
   const data = await fetcher();
+  
+  // 完了後に再度AbortSignalをチェック（レスポンス処理中にキャンセルされた場合）
+  if (abortSignal?.aborted) {
+    throw new DOMException('The operation was aborted.', 'AbortError');
+  }
+  
   cache.set(key, data, ttl);
   return data;
 };

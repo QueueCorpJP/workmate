@@ -51,7 +51,6 @@ import {
 } from 'chart.js';
 import { AnalysisResult, categoryColors, sentimentColors } from './types';
 import LoadingIndicator from './LoadingIndicator';
-import EmptyState from './EmptyState';
 import { getCategoryChartData, getSentimentChartData, exportAnalysisToCSV } from './utils';
 import MarkdownRenderer from '../MarkdownRenderer';
 import InsightsIcon from '@mui/icons-material/Insights';
@@ -74,7 +73,7 @@ import QueryStatsIcon from '@mui/icons-material/QueryStats';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import RepeatIcon from '@mui/icons-material/Repeat';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
-import api from '../../api';
+// api importを削除 - 独自API呼び出しを停止したため不要
 
 // Chart.jsのデフォルト設定をリセット
 defaults.font.family = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
@@ -217,63 +216,47 @@ interface EnhancedAnalysisResult {
 interface AnalysisTabProps {
   analysis: AnalysisResult | null;
   isLoading: boolean;
+  enhancedAnalysis?: any;
+  isEnhancedLoading?: boolean;
   onRefresh: () => void;
+  onStartAnalysis?: () => void; // 手動分析開始用
+  onStartAIInsights?: () => void; // AI洞察開始用
 }
 
 const AnalysisTab: React.FC<AnalysisTabProps> = ({
   analysis,
   isLoading,
-  onRefresh
+  enhancedAnalysis: propEnhancedAnalysis,
+  isEnhancedLoading: propIsEnhancedLoading,
+  onRefresh,
+  onStartAnalysis,
+  onStartAIInsights
 }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'md'));
 
-  // 強化分析データ
-  const [enhancedAnalysis, setEnhancedAnalysis] = useState<EnhancedAnalysisResult | null>(null);
-  const [isEnhancedLoading, setIsEnhancedLoading] = useState<boolean>(false);
+  // AdminPanelから渡されるデータを使用（独自API呼び出しを停止）
+  const enhancedAnalysis = propEnhancedAnalysis;
+  const isEnhancedLoading = propIsEnhancedLoading || false;
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [expandedSections, setExpandedSections] = useState<Set<number>>(new Set([0, 1, 2])); // デフォルトで最初の3つを展開
 
-  // 初回ロード時に強化分析データを取得
+  // propsのデータが更新されたら最終更新時刻を更新
   useEffect(() => {
-    fetchEnhancedAnalysis();
+    if (propEnhancedAnalysis) {
+      setLastRefresh(new Date());
+    }
+  }, [propEnhancedAnalysis]);
+
+  // コンポーネントがアンマウントされる際のクリーンアップ
+  useEffect(() => {
+    return () => {
+      console.log('🧹 AnalysisTab: コンポーネントアンマウント - AdminPanelによる分析キャンセル機能が有効');
+    };
   }, []);
 
-  // 強化分析データを取得する関数
-  const fetchEnhancedAnalysis = async () => {
-    try {
-      setIsEnhancedLoading(true);
-      console.log('🔍 強化分析データ取得開始...');
-
-      const response = await api.get('/admin/enhanced-analysis');
-      console.log('✅ 強化分析レスポンス:', response.data);
-
-      if (response.data) {
-        setEnhancedAnalysis(response.data);
-        setLastRefresh(new Date());
-        console.log('🎯 強化分析データ設定完了');
-      } else {
-        console.error('❌ 強化分析レスポンスのデータが空です');
-      }
-    } catch (error: any) {
-      console.error('💥 強化分析データ取得エラー:', error);
-      
-      // エラー処理を改善
-      if (error.response?.status === 401) {
-        // 認証エラーの場合、リダイレクトやログイン画面へ
-        console.error('認証エラー: ログインが必要です');
-      } else if (error.response?.status === 403) {
-        console.error('権限エラー: 管理者権限が必要です');
-      } else if (error.response?.status >= 500) {
-        console.error('サーバーエラー: システム管理者に連絡してください');
-      } else {
-        console.error('その他のエラー:', error.message);
-      }
-    } finally {
-      setIsEnhancedLoading(false);
-    }
-  };
+  // 独自API呼び出しを削除 - AdminPanelから渡されるデータを使用
 
   // セクション展開/折りたたみの処理
   const toggleSection = (index: number) => {
@@ -286,10 +269,9 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
     setExpandedSections(newExpanded);
   };
 
-  // 更新ボタンのハンドラ
+  // 更新ボタンのハンドラ（AdminPanelのonRefreshを使用）
   const handleRefresh = () => {
-    onRefresh();
-    fetchEnhancedAnalysis();
+    onRefresh(); // AdminPanelで基本分析と強化分析の両方を更新
   };
 
   // 資料参照回数チャートのデータを生成
@@ -427,58 +409,60 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
             </Box>
           </Box>
 
-          <Stack direction="row" spacing={2}>
-            <Tooltip title="分析データをCSV形式で出力">
-              <span>
-                <Button
-                  variant="outlined"
-                  color="secondary"
-                  onClick={() => enhancedAnalysis && exportAnalysisToCSV(analysis)}
-                  disabled={isLoading || isEnhancedLoading || !enhancedAnalysis}
-                  startIcon={<FileDownloadIcon />}
-                  sx={{
-                    borderRadius: 2,
-                    px: 3,
-                    py: 1.2,
-                    fontWeight: 600,
-                    textTransform: 'none',
-                    fontSize: '0.95rem',
-                    '&:hover': {
-                      backgroundColor: 'rgba(156, 39, 176, 0.08)',
-                    }
-                  }}
-                >
-                  {!isMobile && 'CSV出力'}
-                </Button>
-              </span>
-            </Tooltip>
+          {enhancedAnalysis && (
+            <Stack direction="row" spacing={2}>
+              <Tooltip title="分析データをCSV形式で出力">
+                <span>
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    onClick={() => enhancedAnalysis && exportAnalysisToCSV(analysis)}
+                    disabled={isLoading || isEnhancedLoading || !enhancedAnalysis}
+                    startIcon={<FileDownloadIcon />}
+                    sx={{
+                      borderRadius: 2,
+                      px: 3,
+                      py: 1.2,
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      fontSize: '0.95rem',
+                      '&:hover': {
+                        backgroundColor: 'rgba(156, 39, 176, 0.08)',
+                      }
+                    }}
+                  >
+                    {!isMobile && 'CSV出力'}
+                  </Button>
+                </span>
+              </Tooltip>
 
-            <Tooltip title="最新データに更新">
-              <span>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={handleRefresh}
-                  disabled={isLoading || isEnhancedLoading}
-                  startIcon={isEnhancedLoading ? <CircularProgress size={20} color="inherit" /> : <RefreshIcon />}
-                  sx={{
-                    borderRadius: 2,
-                    px: 3,
-                    py: 1.2,
-                    fontWeight: 600,
-                    textTransform: 'none',
-                    fontSize: '0.95rem',
-                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
-                    '&:hover': {
-                      boxShadow: '0 6px 16px rgba(37, 99, 235, 0.4)',
-                    }
-                  }}
-                >
-                  {isEnhancedLoading ? '更新中...' : '更新'}
-                </Button>
-              </span>
-            </Tooltip>
-          </Stack>
+              <Tooltip title="分析を再実行">
+                <span>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={handleRefresh}
+                    disabled={isLoading || isEnhancedLoading}
+                    startIcon={isEnhancedLoading ? <CircularProgress size={20} color="inherit" /> : <RefreshIcon />}
+                    sx={{
+                      borderRadius: 2,
+                      px: 3,
+                      py: 1.2,
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      fontSize: '0.95rem',
+                      boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
+                      '&:hover': {
+                        boxShadow: '0 6px 16px rgba(37, 99, 235, 0.4)',
+                      }
+                    }}
+                  >
+                    {isEnhancedLoading ? '分析中...' : '再分析'}
+                  </Button>
+                </span>
+              </Tooltip>
+            </Stack>
+          )}
         </Box>
 
         {/* ローディング状態 */}
@@ -497,7 +481,92 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
             </Typography>
           </Box>
         ) : !enhancedAnalysis ? (
-          <EmptyState message="強化分析データがありません。更新ボタンを押してデータを取得してください。" />
+          // 分析データがない場合：分析開始ボタンを表示
+          <Container maxWidth="md" sx={{ py: 8, textAlign: 'center' }}>
+            <Box
+              sx={{
+                p: 4,
+                borderRadius: 3,
+                background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.05), rgba(59, 130, 246, 0.08))',
+                border: '2px solid rgba(37, 99, 235, 0.12)',
+                mb: 4
+              }}
+            >
+              <SmartToyIcon 
+                sx={{ 
+                  fontSize: '4rem', 
+                  color: '#2563eb', 
+                  mb: 2,
+                  opacity: 0.8
+                }} 
+              />
+              <Typography
+                variant="h4"
+                sx={{
+                  fontWeight: 700,
+                  mb: 2,
+                  background: 'linear-gradient(135deg, #1e293b, #475569)',
+                  backgroundClip: 'text',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                }}
+              >
+                AI分析を開始
+              </Typography>
+              <Typography
+                variant="body1"
+                sx={{
+                  color: 'text.secondary',
+                  mb: 4,
+                  fontSize: '1.1rem',
+                  lineHeight: 1.6,
+                  maxWidth: '500px',
+                  mx: 'auto'
+                }}
+              >
+                チャット履歴の高度な分析とAIによる洞察を生成します。
+                <br />
+                分析には数十秒かかる場合があります。
+              </Typography>
+              
+              <Button
+                variant="contained"
+                size="large"
+                onClick={onStartAnalysis}
+                disabled={!onStartAnalysis}
+                startIcon={<AutoFixHighIcon />}
+                sx={{
+                  px: 4,
+                  py: 1.5,
+                  fontSize: '1.1rem',
+                  fontWeight: 600,
+                  borderRadius: 3,
+                  background: 'linear-gradient(135deg, #2563eb, #3b82f6)',
+                  boxShadow: '0 4px 16px rgba(37, 99, 235, 0.3)',
+                  '&:hover': {
+                    background: 'linear-gradient(135deg, #1d4ed8, #2563eb)',
+                    boxShadow: '0 6px 20px rgba(37, 99, 235, 0.4)',
+                    transform: 'translateY(-2px)',
+                  },
+                  transition: 'all 0.3s ease'
+                }}
+              >
+                AI分析を開始
+              </Button>
+              
+              <Typography
+                variant="caption"
+                sx={{
+                  display: 'block',
+                  mt: 3,
+                  color: 'text.secondary',
+                  fontSize: '0.9rem'
+                }}
+              >
+                ✨ 最新の Gemini AI による高度な分析
+              </Typography>
+            </Box>
+          </Container>
         ) : (
           <Grid container spacing={3}>
             {/* AI洞察カード */}
@@ -566,7 +635,78 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                       boxShadow: '0 2px 8px rgba(25, 118, 210, 0.08)'
                     }}
                   >
-                    <MarkdownRenderer content={enhancedAnalysis.ai_insights || 'AI分析を実行中です...'} />
+                    {!enhancedAnalysis.ai_insights || !enhancedAnalysis.ai_insights.trim() ? (
+                      // AI洞察がない場合：分析開始ボタンを表示
+                      <Box sx={{ textAlign: 'center', py: 4 }}>
+                        <AutoFixHighIcon 
+                          sx={{ 
+                            fontSize: '3rem', 
+                            color: '#1976d2', 
+                            mb: 2,
+                            opacity: 0.7
+                          }} 
+                        />
+                        <Typography
+                          variant="h6"
+                          sx={{
+                            fontWeight: 600,
+                            mb: 2,
+                            color: 'text.primary'
+                          }}
+                        >
+                          AI分析を開始しますか？
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: 'text.secondary',
+                            mb: 3,
+                            maxWidth: '400px',
+                            mx: 'auto',
+                            lineHeight: 1.6
+                          }}
+                        >
+                          Gemini AIがチャット履歴を分析して、
+                          <br />
+                          詳細な洞察とアドバイスを生成します。
+                        </Typography>
+                        <Button
+                          variant="contained"
+                          onClick={onStartAIInsights}
+                          disabled={isEnhancedLoading || !onStartAIInsights}
+                          startIcon={isEnhancedLoading ? <CircularProgress size={20} color="inherit" /> : <SmartToyIcon />}
+                          sx={{
+                            px: 4,
+                            py: 1.2,
+                            fontSize: '1rem',
+                            fontWeight: 600,
+                            borderRadius: 2,
+                            background: 'linear-gradient(135deg, #1976d2, #42a5f5)',
+                            boxShadow: '0 4px 12px rgba(25, 118, 210, 0.3)',
+                            '&:hover': {
+                              background: 'linear-gradient(135deg, #1565c0, #1976d2)',
+                              boxShadow: '0 6px 16px rgba(25, 118, 210, 0.4)',
+                            }
+                          }}
+                        >
+                          {isEnhancedLoading ? 'AI分析中...' : 'AI分析を開始'}
+                        </Button>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            display: 'block',
+                            mt: 2,
+                            color: 'text.secondary',
+                            fontSize: '0.85rem'
+                          }}
+                        >
+                          ⏱️ 約20〜30秒で完了します
+                        </Typography>
+                      </Box>
+                    ) : (
+                      // AI洞察がある場合：内容を表示
+                      <MarkdownRenderer content={enhancedAnalysis.ai_insights} />
+                    )}
                       </Paper>
                     </CardContent>
                   </Card>
