@@ -1,6 +1,7 @@
 """
 🧠 バッチエンベディング生成モジュール
 チャンクを10件ずつまとめてバッチで送信し、エラー回復機能付きでembeddingを生成
+text-embedding-004使用（768次元）
 """
 
 import os
@@ -24,7 +25,7 @@ class BatchEmbeddingGenerator:
     
     def __init__(self):
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.embedding_model = os.getenv("EMBEDDING_MODEL", "models/text-embedding-005")
+        self.embedding_model = "models/text-embedding-004"  # 固定でtext-embedding-004を使用（768次元）
         self.auto_generate = os.getenv("AUTO_GENERATE_EMBEDDINGS", "false").lower() == "true"
         self.supabase = None
         
@@ -44,10 +45,6 @@ class BatchEmbeddingGenerator:
             "start_time": None,
             "end_time": None
         }
-        
-        # モデル名の正規化
-        if not self.embedding_model.startswith("models/"):
-            self.embedding_model = f"models/{self.embedding_model}"
     
     def _init_clients(self):
         """APIクライアントを初期化"""
@@ -62,7 +59,7 @@ class BatchEmbeddingGenerator:
             # Supabaseクライアント初期化
             self.supabase = get_supabase_client()
             
-            logger.info(f"🧠 バッチエンベディング生成初期化完了: {self.embedding_model}")
+            logger.info(f"🧠 バッチエンベディング生成初期化完了: {self.embedding_model} (768次元)")
             return True
         except Exception as e:
             logger.error(f"❌ APIクライアント初期化エラー: {e}")
@@ -116,6 +113,9 @@ class BatchEmbeddingGenerator:
                     return None
                 
                 if embedding_vector and len(embedding_vector) > 0:
+                    # 768次元であることを確認
+                    if len(embedding_vector) != 768:
+                        logger.warning(f"⚠️ 予期しない次元数: {len(embedding_vector)}次元（期待値: 768次元）")
                     logger.debug(f"✅ embedding生成成功: {chunk_id} (次元: {len(embedding_vector)})")
                     return embedding_vector
                 else:

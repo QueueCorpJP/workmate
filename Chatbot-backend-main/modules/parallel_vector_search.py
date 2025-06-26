@@ -28,16 +28,8 @@ class ParallelVectorSearchSystem:
     def __init__(self):
         """初期化"""
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        model_name = os.getenv("EMBEDDING_MODEL", "models/text-embedding-005")
+        self.model = "models/text-embedding-004"  # 固定でtext-embedding-004を使用（768次元）
         
-        # モデル名が正しい形式かチェックし、必要に応じて修正
-        if not model_name.startswith(("models/", "tunedModels/")):
-            if model_name in ["gemini-embedding-exp-03-07", "text-embedding-004", "text-embedding-005"]:
-                model_name = f"models/{model_name}"
-            else:
-                model_name = "models/text-embedding-005"  # デフォルトにフォールバック
-        
-        self.model = model_name
         self.db_url = self._get_db_url()
         
         if not self.api_key:
@@ -48,6 +40,8 @@ class ParallelVectorSearchSystem:
         
         # 並列処理用のExecutor
         self.executor = ThreadPoolExecutor(max_workers=4)
+        
+        logger.info(f"✅ 並列ベクトル検索システム初期化: {self.model} (768次元)")
         
         logger.info(f"✅ 並列ベクトル検索システム初期化: モデル={self.model}")
         

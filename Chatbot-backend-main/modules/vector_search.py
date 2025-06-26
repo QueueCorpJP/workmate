@@ -1,6 +1,6 @@
 """
 ベクトル検索モジュール
-Vertex AI gemini-embedding-001 または Gemini Embeddingを使用した類似検索機能を提供
+Gemini text-embedding-004を使用した類似検索機能を提供（768次元）
 """
 
 import os
@@ -11,7 +11,6 @@ import google.generativeai as genai
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import numpy as np
-from .vertex_ai_embedding import get_vertex_ai_embedding_client, vertex_ai_embedding_available
 
 # 環境変数の読み込み
 load_dotenv()
@@ -24,22 +23,11 @@ class VectorSearchSystem:
     def __init__(self):
         """初期化"""
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.model = os.getenv("EMBEDDING_MODEL", "models/text-embedding-005")
-        self.use_vertex_ai = os.getenv("USE_VERTEX_AI", "false").lower() == "true"
-        self.vertex_ai_client = None
+        self.model = "models/text-embedding-004"  # 固定でtext-embedding-004を使用（768次元）
         
-        # Vertex AI使用時はクライアントを初期化
-        if self.use_vertex_ai and vertex_ai_embedding_available():
-            self.vertex_ai_client = get_vertex_ai_embedding_client()
-            logger.info(f"🧠 Vertex AI Embedding使用: {self.model}")
-        else:
-            # 標準Gemini API使用時のモデル名正規化
-            if not self.model.startswith(("models/", "tunedModels/")):
-                if self.model in ["gemini-embedding-exp-03-07", "gemini-embedding-001", "text-embedding-004", "text-embedding-005"]:
-                    self.model = f"models/{self.model}"
-                else:
-                    self.model = "models/text-embedding-005"  # デフォルトにフォールバック
-            logger.info(f"🧠 標準Gemini API使用: {self.model}")
+        # モデル名の正規化
+        if not self.model.startswith(("models/", "tunedModels/")):
+            self.model = f"models/{self.model}"
         
         self.db_url = self._get_db_url()
         
@@ -49,7 +37,7 @@ class VectorSearchSystem:
         # Gemini APIクライアントの初期化
         genai.configure(api_key=self.api_key)
         
-        logger.info(f"✅ ベクトル検索システム初期化: エンベディング={self.model}")
+        logger.info(f"✅ ベクトル検索システム初期化: エンベディング={self.model} (768次元)")
         
     def _get_db_url(self) -> str:
         """データベースURLを構築"""
@@ -71,31 +59,30 @@ class VectorSearchSystem:
             return db_url
     
     def generate_query_embedding(self, query: str) -> List[float]:
-        """クエリの埋め込みベクトルを生成"""
+        """クエリの埋め込みベクトルを生成（text-embedding-004使用、768次元）"""
         try:
             logger.info(f"クエリの埋め込み生成中: {query[:50]}...")
-            embedding_vector = None
             
-            if self.use_vertex_ai and self.vertex_ai_client:
-                # Vertex AI使用
-                embedding_vector = self.vertex_ai_client.generate_embedding(query)
+            # Gemini API使用
+            response = genai.embed_content(
+                model=self.model,
+                content=query
+            )
+            
+            # レスポンスからエンベディングベクトルを取得
+            embedding_vector = None
+            if isinstance(response, dict) and 'embedding' in response:
+                embedding_vector = response['embedding']
+            elif hasattr(response, 'embedding') and response.embedding:
+                embedding_vector = response.embedding
             else:
-                # 標準Gemini API使用
-                response = genai.embed_content(
-                    model=self.model,
-                    content=query
-                )
-                
-                # レスポンスからエンベディングベクトルを取得
-                if isinstance(response, dict) and 'embedding' in response:
-                    embedding_vector = response['embedding']
-                elif hasattr(response, 'embedding') and response.embedding:
-                    embedding_vector = response.embedding
-                else:
-                    logger.error(f"予期しないレスポンス形式: {type(response)}")
-                    return []
+                logger.error(f"予期しないレスポンス形式: {type(response)}")
+                return []
             
             if embedding_vector and len(embedding_vector) > 0:
+                # 768次元であることを確認
+                if len(embedding_vector) != 768:
+                    logger.warning(f"予期しない次元数: {len(embedding_vector)}次元（期待値: 768次元）")
                 logger.info(f"埋め込み生成完了: {len(embedding_vector)}次元")
                 return embedding_vector
             else:

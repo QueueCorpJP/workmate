@@ -34,11 +34,8 @@ def main():
         
         # Gemini API初期化
         genai.configure(api_key=api_key)
-        # 768次元のembeddingモデルを使用（環境変数から取得）
-        embedding_model = os.getenv("EMBEDDING_MODEL", "models/text-embedding-005")
-        # 環境変数で設定されたモデルを使用
-        if not embedding_model.startswith("models/"):
-            embedding_model = f"models/{embedding_model}"
+        # 固定でtext-embedding-004を使用（768次元）
+        embedding_model = "models/text-embedding-004"
         logger.info(f"🧠 Gemini API初期化完了: {embedding_model} (768次元)")
         
         # Supabaseクライアント取得
