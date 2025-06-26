@@ -7,7 +7,7 @@ import {
   Grid, 
   Button, 
   Card, 
-  CardContent,
+  CardContent, 
   Divider,
   List,
   ListItem,
@@ -212,17 +212,17 @@ const GuideBook = () => {
       <Container maxWidth="lg" sx={{ py: { xs: 4, md: 6 } }}>
         {/* Tabs Section */}
         <Box sx={{ mb: 4, borderBottom: 1, borderColor: 'divider', bgcolor: 'white', borderRadius: 2, p: 1 }}>
-          <Tabs
-            value={activeTab}
-            onChange={(event, newValue) => setActiveTab(newValue)}
-            centered
+            <Tabs
+              value={activeTab}
+              onChange={(event, newValue) => setActiveTab(newValue)}
+              centered
             indicatorColor="primary"
             textColor="primary"
             variant="fullWidth"
           >
             <Tab value="forAll" label="全従業員向け" icon={<GroupIcon />} iconPosition="start" />
             <Tab value="forAdmin" label="管理者向け" icon={<AdminPanelSettingsIcon />} iconPosition="start" />
-          </Tabs>
+            </Tabs>
         </Box>
 
         {/* Content based on tab */}
@@ -244,23 +244,23 @@ const GuideBook = () => {
                   <ListItem>
                     <ListItemIcon><AdminPanelSettingsIcon color="error" /></ListItemIcon>
                     <ListItemText primary="運営者" secondary="システム全体の最高管理者。会社の追加や管理、全機能へのアクセスが可能です。" />
-                  </ListItem>
+                </ListItem>
                   <ListItem>
                     <ListItemIcon><AdminPanelSettingsIcon color="warning" /></ListItemIcon>
                     <ListItemText primary="社長" secondary="自社の管理者を追加・管理できます。会社のすべての情報にアクセス可能です。" />
-                  </ListItem>
+                </ListItem>
                   <ListItem>
                     <ListItemIcon><AdminPanelSettingsIcon color="primary" /></ListItemIcon>
                     <ListItemText primary="管理者" secondary="管理画面にアクセスし、資料のアップロードや従業員の招待、利用状況の分析ができます。" />
-                  </ListItem>
+                </ListItem>
                   <ListItem>
                     <ListItemIcon><GroupIcon color="action" /></ListItemIcon>
                     <ListItemText primary="従業員" secondary="チャット機能を利用して、AIに質問することができます。" />
-                  </ListItem>
-                </List>
+                </ListItem>
+              </List>
               </>
-            )}
-
+          )}
+          
             {renderSection("基本操作：チャット画面", <TouchAppIcon color="primary" />,
               <Box>
                 <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
@@ -269,17 +269,17 @@ const GuideBook = () => {
                 <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, borderColor: 'primary.light' }}>
                   <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>画面中央：チャット履歴</Typography>
                   <Typography variant="body2" color="text.secondary">AIとの会話が時系列で表示されます。過去のやり取りをスクロールして確認できます。AIの回答の下には、根拠となった資料名やページ番号が「引用元」として表示されます。クリックすると情報の正確性を確認できます。</Typography>
-                </Paper>
+            </Paper>
                 <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, borderColor: 'primary.light' }}>
                   <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>画面下部：メッセージ入力欄</Typography>
                   <Typography variant="body2" color="text.secondary">質問を入力し、右側の送信ボタン（紙飛行機アイコン）を押してAIに質問を送信します。</Typography>
-                </Paper>
+            </Paper>
                 <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, borderColor: 'primary.light' }}>
                   <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>画面右上：メニューボタン（三点リーダー）</Typography>
                   <Typography variant="body2" color="text.secondary">クリックするとメニューが開き、「チャット履歴のクリア」「使い方ガイド」「設定」「ログアウト」が選択できます。管理者権限を持つ従業員には、ここに「管理画面」へのリンクが表示されます。</Typography>
-                </Paper>
-              </Box>
-            )}
+          </Paper>
+          </Box>
+        )}
 
             {renderSection("効果的な質問のコツ", <SearchIcon color="primary" />,
               <List>
@@ -312,7 +312,7 @@ const GuideBook = () => {
         )}
 
         {activeTab === 'forAdmin' && (
-          <Box>
+        <Box>
             {renderSection("管理画面の歩き方", <AdminPanelSettingsIcon color="primary" />,
               <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.8, mb: 2 }}>
                 管理者権限を持つ従業員は、チャット画面右上のメニューから「管理画面」にアクセスできます。管理画面は、画面上部に並んだタブで各機能ページに切り替えて使用します。各タブの機能は以下の通りです。
@@ -329,7 +329,7 @@ const GuideBook = () => {
               <>
                 <Typography variant="body1" color="text.secondary" sx={{ mb: 2, lineHeight: 1.8 }}>
                   このタブ（上部メニュー左から2番目）では、従業員の利用動向を様々な角度から可視化し、分析できます。
-                </Typography>
+              </Typography>
                 <Accordion>
                   <AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight="bold">カテゴリ・感情分析</Typography></AccordionSummary>
                   <AccordionDetails>
@@ -349,7 +349,7 @@ const GuideBook = () => {
               <>
                 <Typography variant="body1" color="text.secondary" sx={{ mb: 2, lineHeight: 1.8 }}>
                   会社のメンバーを招待し、利用状況を確認します。このタブは管理画面の**上部メニュー、左から3番目**にあります。
-                </Typography>
+              </Typography>
                 <Accordion>
                   <AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight="bold">新しい従業員を追加・招待する方法</Typography></AccordionSummary>
                   <AccordionDetails>
@@ -379,7 +379,7 @@ const GuideBook = () => {
               <>
                 <Typography variant="body1" color="text.secondary" sx={{ mb: 2, lineHeight: 1.8 }}>
                   AIの知識源となる資料（リソース）を管理します。このタブは管理画面の**上部メニュー、左から4番目**にあります。
-                </Typography>
+              </Typography>
                 <Accordion>
                   <AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight="bold">資料をアップロードする方法</Typography></AccordionSummary>
                   <AccordionDetails>
@@ -409,7 +409,7 @@ const GuideBook = () => {
                 「プラン履歴」や「料金管理」のタブでは、現在の契約プランの詳細、利用料金、支払い履歴などを確認することができます。
               </Typography>
             )}
-          </Box>
+            </Box>
         )}
       </Container>
       
@@ -417,8 +417,8 @@ const GuideBook = () => {
       <Box component="footer" sx={{ py: 4, borderTop: '1px solid #e0e0e0', backgroundColor: 'white' }}>
         <Container>
           <Typography variant="body2" color="text.secondary" align="center">
-            © 2025 ワークメイトAI. All rights reserved.
-          </Typography>
+              © 2025 ワークメイトAI. All rights reserved.
+            </Typography>
         </Container>
       </Box>
     </Box>
