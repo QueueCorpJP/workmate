@@ -73,7 +73,7 @@ async def check_pending_chunks():
         supabase = get_supabase_client()
         
         # embedding未生成のチャンクを取得
-        chunks_query = supabase.table("chunks").select("id,content,chunk_index,doc_id").is_("embedding", "null").eq("active", True).limit(5)
+        chunks_query = supabase.table("chunks").select("id,content,chunk_index,doc_id").is_("embedding", "null").limit(5)
         chunks_result = chunks_query.execute()
         
         if chunks_result.data:

@@ -724,11 +724,11 @@ async def submit_url(submission: UrlSubmission, current_user = Depends(get_curre
 
 @app.post("/chatbot/api/upload-knowledge")
 async def upload_knowledge(
-    file: UploadFile = File(..., description="アップロードするファイル（最大100MB）"), 
-    current_user = Depends(get_current_user), 
+    file: UploadFile = File(..., description="アップロードするファイル（最大100MB）"),
+    current_user = Depends(get_current_user),
     db: SupabaseConnection = Depends(get_db)
 ):
-    """ファイルをアップロードして知識ベースを更新"""
+    """ファイルをアップロードして知識ベースを更新（embedding生成対応）"""
     try:
         # ファイル名が存在することを確認
         if not file or not file.filename:
@@ -758,12 +758,84 @@ async def upload_knowledge(
                 detail="無効なファイル形式です。Excel、PDF、Word、CSV、テキスト、画像、動画ファイルのみ対応しています"
             )
             
-        # ファイル処理実施
+        # 🔧 修正: 新しいdocument_processorを使用してembedding生成を含む処理を実行
+        from modules.document_processor import DocumentProcessor
+        from modules.auth import check_usage_limits
+        
+        user_id = current_user.get("id")
         company_id = current_user.get("company_id")
-        print(f"🔍 [UPLOAD DEBUG] ファイルアップロード時のcompany_id: {company_id}")
-        print(f"🔍 [UPLOAD DEBUG] current_user: {current_user}")
-        result = await process_file(file, request=None, user_id=current_user["id"], company_id=company_id, db=db)
-        return result
+        user_role = current_user.get("role", "user")
+        
+        logger.info(f"📤 embedding対応アップロード開始: {file.filename}")
+        logger.info(f"🔍 [UPLOAD DEBUG] ファイルアップロード時のcompany_id: {company_id}")
+        logger.info(f"🔍 [UPLOAD DEBUG] current_user: {current_user}")
+        
+        # 社員アカウントのアップロード制限
+        if user_role == "employee":
+            raise HTTPException(
+                status_code=403,
+                detail="社員アカウントはドキュメントをアップロードできません。管理者にお問い合わせください。"
+            )
+        
+        # 利用制限チェック
+        try:
+            limits_check = check_usage_limits(user_id, "document_upload", db)
+            
+            if not limits_check["is_unlimited"] and not limits_check["allowed"]:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"ドキュメントアップロード制限に達しました（上限: {limits_check['limit']}回）"
+                )
+        except HTTPException:
+            raise
+        except Exception as limit_error:
+            logger.warning(f"利用制限チェックエラー: {limit_error}")
+            # 制限チェックエラーの場合は処理を続行
+        
+        # 新しいdocument_processorでembedding生成を含む処理を実行
+        document_processor = DocumentProcessor()
+        processing_result = await document_processor.process_uploaded_file(
+            file=file,
+            user_id=user_id,
+            company_id=company_id
+        )
+        
+        # 利用回数更新
+        try:
+            from modules.database import update_usage_count
+            update_usage_count(user_id, "document_uploads_used", db)
+            db.commit()
+        except Exception as usage_error:
+            logger.warning(f"利用回数更新エラー: {usage_error}")
+        
+        # レスポンス準備（従来のAPIと互換性を保つ）
+        message = f"✅ {file.filename} のアップロード・embedding生成が完了しました"
+        if processing_result.get("successful_embeddings", 0) > 0:
+            message += f"（Embedding: {processing_result.get('successful_embeddings', 0)}個生成）"
+        
+        # 従来のAPIレスポンス形式に合わせる
+        response_data = {
+            "message": message,
+            "file": file.filename,
+            "total_rows": processing_result.get("total_chunks", 0),
+            "embedding_stats": {
+                "successful_embeddings": processing_result.get("successful_embeddings", 0),
+                "failed_embeddings": processing_result.get("failed_embeddings", 0),
+                "total_chunks": processing_result.get("total_chunks", 0)
+            },
+            "document": {
+                "id": processing_result["document_id"],
+                "filename": processing_result["filename"],
+                "file_size_mb": processing_result["file_size_mb"],
+                "text_length": processing_result["text_length"],
+                "total_chunks": processing_result.get("total_chunks"),
+                "saved_chunks": processing_result.get("saved_chunks")
+            },
+            "remaining_uploads": limits_check.get("remaining") if 'limits_check' in locals() else None
+        }
+        
+        logger.info(f"✅ embedding対応アップロード完了: {file.filename}")
+        return response_data
     except Exception as e:
         logger.error(f"ファイルアップロードエラー: {str(e)}")
         logger.error(traceback.format_exc())

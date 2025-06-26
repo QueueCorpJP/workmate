@@ -49,7 +49,7 @@ def main():
         limit = int(sys.argv[1]) if len(sys.argv) > 1 else 10
         logger.info(f"📋 処理制限: {limit}チャンク")
         
-        chunks_query = supabase.table("chunks").select("id,content,chunk_index,doc_id").is_("embedding", "null").eq("active", True).limit(limit)
+        chunks_query = supabase.table("chunks").select("id,content,chunk_index,doc_id").is_("embedding", "null").limit(limit)
         chunks_result = chunks_query.execute()
         
         if not chunks_result.data:
