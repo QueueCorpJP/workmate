@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     doc_id TEXT NOT NULL,                           -- 紐づく document_sources.id（親）
     chunk_index INTEGER NOT NULL,                   -- チャンクの順序（0, 1, 2, …）
     content TEXT NOT NULL,                          -- チャンク本文（300-500トークン）
-    embedding VECTOR(3072),                         -- チャンクのベクトル（3072次元）
+    embedding VECTOR(768),                          -- チャンクのベクトル（768次元）
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 登録日時
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 更新日時
     company_id TEXT,                                -- 所属企業ID
@@ -31,7 +31,7 @@ COMMENT ON COLUMN chunks.id IS 'チャンク一意ID（UUID）';
 COMMENT ON COLUMN chunks.doc_id IS '親ドキュメントID（document_sources.id）';
 COMMENT ON COLUMN chunks.chunk_index IS 'ドキュメント内でのチャンク順序';
 COMMENT ON COLUMN chunks.content IS 'チャンクのテキスト内容（300-500トークン）';
-COMMENT ON COLUMN chunks.embedding IS 'Gemini Flash生成の3072次元ベクトル（gemini-embedding-exp-03-07）';
+COMMENT ON COLUMN chunks.embedding IS 'Gemini Flash生成の768次元ベクトル（text-embedding-004）';
 COMMENT ON COLUMN chunks.company_id IS '所属企業ID';
 
 -- document_sourcesテーブルからcontentカラムを削除（最適化）

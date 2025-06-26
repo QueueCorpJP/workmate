@@ -28,14 +28,14 @@ class ParallelVectorSearchSystem:
     def __init__(self):
         """初期化"""
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        model_name = os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
+        model_name = os.getenv("EMBEDDING_MODEL", "models/text-embedding-005")
         
         # モデル名が正しい形式かチェックし、必要に応じて修正
         if not model_name.startswith(("models/", "tunedModels/")):
-            if model_name in ["gemini-embedding-exp-03-07", "text-embedding-004"]:
+            if model_name in ["gemini-embedding-exp-03-07", "text-embedding-004", "text-embedding-005"]:
                 model_name = f"models/{model_name}"
             else:
-                model_name = "models/text-embedding-004"  # デフォルトにフォールバック
+                model_name = "models/text-embedding-005"  # デフォルトにフォールバック
         
         self.model = model_name
         self.db_url = self._get_db_url()

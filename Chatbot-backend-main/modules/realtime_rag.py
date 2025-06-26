@@ -4,7 +4,7 @@
 
 ステップ:
 ✏️ Step 1. 質問入力 - ユーザーがチャットボットに質問を入力
-🧠 Step 2. embedding 生成 - Gemini Vectors API（gemini-embedding-exp-03-07）を使って、質問文を3072次元のベクトルに変換
+🧠 Step 2. embedding 生成 - Vertex AI gemini-embedding-001 または Gemini API を使って、質問文をベクトルに変換
 🔍 Step 3. 類似チャンク検索（Top-K） - Supabaseの chunks テーブルから、ベクトル距離が近いチャンクを pgvector を用いて取得
 💡 Step 4. LLMへ送信 - Top-K チャンクと元の質問を Gemini Flash 2.5 に渡して、要約せずに「原文ベース」で回答を生成
 ⚡️ Step 5. 回答表示
@@ -20,6 +20,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import json
 from datetime import datetime
+from .vertex_ai_embedding import get_vertex_ai_embedding_client, vertex_ai_embedding_available
 
 # 環境変数の読み込み
 load_dotenv()
@@ -32,16 +33,23 @@ class RealtimeRAGProcessor:
     def __init__(self):
         """初期化"""
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        model_name = os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
+        self.embedding_model = os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
+        self.use_vertex_ai = os.getenv("USE_VERTEX_AI", "false").lower() == "true"
+        self.vertex_ai_client = None
         
-        # モデル名が正しい形式かチェックし、必要に応じて修正
-        if not model_name.startswith(("models/", "tunedModels/")):
-            if model_name in ["gemini-embedding-exp-03-07", "text-embedding-004"]:
-                model_name = f"models/{model_name}"
-            else:
-                model_name = "models/text-embedding-004"  # デフォルトにフォールバック
+        # Vertex AI使用時はクライアントを初期化
+        if self.use_vertex_ai and vertex_ai_embedding_available():
+            self.vertex_ai_client = get_vertex_ai_embedding_client()
+            logger.info(f"🧠 Vertex AI Embedding使用: {self.embedding_model}")
+        else:
+            # 標準Gemini API使用時のモデル名正規化
+            if not self.embedding_model.startswith(("models/", "tunedModels/")):
+                if self.embedding_model in ["gemini-embedding-exp-03-07", "gemini-embedding-001", "text-embedding-004"]:
+                    self.embedding_model = f"models/{self.embedding_model}"
+                else:
+                    self.embedding_model = "models/text-embedding-004"  # デフォルトにフォールバック
+            logger.info(f"🧠 標準Gemini API使用: {self.embedding_model}")
         
-        self.embedding_model = model_name
         self.chat_model = "gemini-2.5-flash"  # 最新のGemini Flash 2.5
         self.db_url = self._get_db_url()
         
@@ -52,7 +60,7 @@ class RealtimeRAGProcessor:
         genai.configure(api_key=self.api_key)
         self.chat_client = genai.GenerativeModel(self.chat_model)
         
-        logger.info(f"✅ リアルタイムRAGプロセッサ初期化完了: モデル={self.embedding_model}")
+        logger.info(f"✅ リアルタイムRAGプロセッサ初期化完了: エンベディング={self.embedding_model}")
     
     def _get_db_url(self) -> str:
         """データベースURLを構築"""
@@ -97,32 +105,43 @@ class RealtimeRAGProcessor:
     async def step2_generate_embedding(self, question: str) -> List[float]:
         """
         🧠 Step 2. embedding 生成
-        Gemini Vectors API（gemini-embedding-exp-03-07）を使って、質問文を3072次元のベクトルに変換
+        Vertex AI gemini-embedding-001 または Gemini API を使って、質問文をベクトルに変換
         """
         logger.info(f"🧠 Step 2: エンベディング生成中...")
         
         try:
-            # Gemini Embedding API呼び出し
-            response = genai.embed_content(
-                model=self.embedding_model,
-                content=question
-            )
-            
-            # レスポンスからエンベディングベクトルを取得
             embedding_vector = None
             
-            if isinstance(response, dict) and 'embedding' in response:
-                embedding_vector = response['embedding']
-            elif hasattr(response, 'embedding') and response.embedding:
-                embedding_vector = response.embedding
+            if self.use_vertex_ai and self.vertex_ai_client:
+                # Vertex AI使用
+                embedding_vector = self.vertex_ai_client.generate_embedding(question)
+                if not embedding_vector:
+                    raise ValueError("Vertex AI エンベディング生成に失敗しました")
             else:
-                logger.error(f"予期しないレスポンス形式: {type(response)}")
-                raise ValueError("エンベディング生成に失敗しました")
+                # 標準Gemini API使用
+                response = genai.embed_content(
+                    model=self.embedding_model,
+                    content=question
+                )
+                
+                # レスポンスからエンベディングベクトルを取得
+                if isinstance(response, dict) and 'embedding' in response:
+                    embedding_vector = response['embedding']
+                elif hasattr(response, 'embedding') and response.embedding:
+                    embedding_vector = response.embedding
+                else:
+                    logger.error(f"予期しないレスポンス形式: {type(response)}")
+                    raise ValueError("エンベディング生成に失敗しました")
             
-            if not embedding_vector or len(embedding_vector) != 3072:
-                raise ValueError(f"無効なエンベディング次元: {len(embedding_vector) if embedding_vector else 0}")
+            if not embedding_vector:
+                raise ValueError("エンベディングベクトルが空です")
             
-            logger.info(f"✅ Step 2完了: 3072次元のエンベディング生成成功")
+            # 次元数チェック（text-embedding-004は768次元）
+            expected_dims = [768]  # 768次元のみ許可
+            if len(embedding_vector) not in expected_dims:
+                logger.warning(f"予期しない次元数: {len(embedding_vector)}次元（期待値: {expected_dims}）")
+            
+            logger.info(f"✅ Step 2完了: {len(embedding_vector)}次元のエンベディング生成成功")
             return embedding_vector
             
         except Exception as e:

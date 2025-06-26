@@ -122,8 +122,8 @@ async def test_step_by_step():
         embedding = await processor.step2_generate_embedding(test_question)
         print(f"エンベディング次元: {len(embedding) if embedding else 0}")
         
-        if embedding and len(embedding) == 3072:
-            print("✅ 3072次元のエンベディング生成成功")
+        if embedding and len(embedding) == 768:
+            print("✅ 768次元のエンベディング生成成功")
             
             # Step 3: 類似チャンク検索
             print("\n🔍 Step 3: 類似チャンク検索")

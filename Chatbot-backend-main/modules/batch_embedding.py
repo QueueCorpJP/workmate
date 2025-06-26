@@ -24,7 +24,7 @@ class BatchEmbeddingGenerator:
     
     def __init__(self):
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.embedding_model = os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
+        self.embedding_model = os.getenv("EMBEDDING_MODEL", "models/text-embedding-005")
         self.auto_generate = os.getenv("AUTO_GENERATE_EMBEDDINGS", "false").lower() == "true"
         self.supabase = None
         

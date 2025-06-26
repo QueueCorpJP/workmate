@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-全埋め込みベクトルを gemini-embedding-exp-03-07 (3072次元) で再生成
+全埋め込みベクトルを text-embedding-004 (768次元) で再生成
 - chunksテーブルの全埋め込みを再生成
-- 3072次元に統一
+- 768次元に統一
 - 並列処理で高速化
 """
 
@@ -36,7 +36,7 @@ class EmbeddingRegenerator:
     def __init__(self):
         """初期化"""
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.model = "models/gemini-embedding-exp-03-07"  # 3072次元モデル
+        self.model = "models/text-embedding-004"  # 768次元モデル
         self.db_url = self._get_db_url()
         
         if not self.api_key:
@@ -65,7 +65,7 @@ class EmbeddingRegenerator:
             return db_url
 
     def generate_embedding(self, text: str) -> Optional[List[float]]:
-        """テキストの埋め込みベクトルを生成 (3072次元)"""
+        """テキストの埋め込みベクトルを生成 (768次元)"""
         try:
             if not text or len(text.strip()) == 0:
                 logger.warning("空のテキストが渡されました")
@@ -311,7 +311,7 @@ def main():
         print("="*60)
         print(f"使用モデル: {regenerator.model}")
         print("対象: chunksテーブルの全レコード")
-        print("予想次元: 3072次元")
+        print("予想次元: 768次元")
         print("処理時間: 数分〜数十分（データ量による）")
         print("="*60)
         

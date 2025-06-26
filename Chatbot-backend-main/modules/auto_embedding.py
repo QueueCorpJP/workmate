@@ -10,6 +10,7 @@ from typing import List, Optional
 from dotenv import load_dotenv
 import google.generativeai as genai
 from supabase_adapter import get_supabase_client, select_data, update_data
+from .vertex_ai_embedding import get_vertex_ai_embedding_client, vertex_ai_embedding_available
 
 # ロギング設定
 logger = logging.getLogger(__name__)
@@ -24,11 +25,19 @@ class AutoEmbeddingGenerator:
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         self.embedding_model = os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
         self.auto_generate = os.getenv("AUTO_GENERATE_EMBEDDINGS", "false").lower() == "true"
+        self.use_vertex_ai = os.getenv("USE_VERTEX_AI", "false").lower() == "true"
         self.supabase = None
+        self.vertex_ai_client = None
         
-        # モデル名の正規化（gemini-embedding-exp-03-07は3072次元）
-        if not self.embedding_model.startswith("models/"):
-            self.embedding_model = f"models/{self.embedding_model}"
+        # Vertex AI使用時はクライアントを初期化
+        if self.use_vertex_ai and vertex_ai_embedding_available():
+            self.vertex_ai_client = get_vertex_ai_embedding_client()
+            logger.info(f"🧠 Vertex AI Embedding使用: {self.embedding_model}")
+        else:
+            # 標準Gemini API使用時のモデル名正規化
+            if not self.embedding_model.startswith("models/"):
+                self.embedding_model = f"models/{self.embedding_model}"
+            logger.info(f"🧠 標準Gemini API使用: {self.embedding_model}")
     
     def _init_clients(self):
         """APIクライアントを初期化"""
@@ -96,20 +105,25 @@ class AutoEmbeddingGenerator:
                     # エンベディング生成
                     logger.info(f"  - チャンク {chunk_index} のエンベディング生成中...")
                     
-                    response = genai.embed_content(
-                        model=self.embedding_model,
-                        content=content
-                    )
-                    
                     embedding_vector = None
                     
-                    # gemini-embedding-exp-03-07は辞書形式で{'embedding': [...]}を返す
-                    if isinstance(response, dict) and 'embedding' in response:
-                        embedding_vector = response['embedding']
-                    elif hasattr(response, 'embedding') and response.embedding:
-                        embedding_vector = response.embedding
+                    if self.use_vertex_ai and self.vertex_ai_client:
+                        # Vertex AI使用
+                        embedding_vector = self.vertex_ai_client.generate_embedding(content)
                     else:
-                        logger.error(f"  🔍 予期しないレスポンス形式: {type(response)}")
+                        # 標準Gemini API使用
+                        response = genai.embed_content(
+                            model=self.embedding_model,
+                            content=content
+                        )
+                        
+                        # gemini-embedding-exp-03-07は辞書形式で{'embedding': [...]}を返す
+                        if isinstance(response, dict) and 'embedding' in response:
+                            embedding_vector = response['embedding']
+                        elif hasattr(response, 'embedding') and response.embedding:
+                            embedding_vector = response.embedding
+                        else:
+                            logger.error(f"  🔍 予期しないレスポンス形式: {type(response)}")
                     
                     if embedding_vector and len(embedding_vector) > 0:
                         # データベースに保存
@@ -180,20 +194,25 @@ class AutoEmbeddingGenerator:
                     # エンベディング生成
                     logger.info(f"  - チャンク {chunk_index} (ID: {chunk_id}) のエンベディング生成中...")
                     
-                    response = genai.embed_content(
-                        model=self.embedding_model,
-                        content=content
-                    )
-                    
                     embedding_vector = None
                     
-                    # gemini-embedding-exp-03-07は辞書形式で{'embedding': [...]}を返す
-                    if isinstance(response, dict) and 'embedding' in response:
-                        embedding_vector = response['embedding']
-                    elif hasattr(response, 'embedding') and response.embedding:
-                        embedding_vector = response.embedding
+                    if self.use_vertex_ai and self.vertex_ai_client:
+                        # Vertex AI使用
+                        embedding_vector = self.vertex_ai_client.generate_embedding(content)
                     else:
-                        logger.error(f"  🔍 予期しないレスポンス形式: {type(response)}")
+                        # 標準Gemini API使用
+                        response = genai.embed_content(
+                            model=self.embedding_model,
+                            content=content
+                        )
+                        
+                        # gemini-embedding-exp-03-07は辞書形式で{'embedding': [...]}を返す
+                        if isinstance(response, dict) and 'embedding' in response:
+                            embedding_vector = response['embedding']
+                        elif hasattr(response, 'embedding') and response.embedding:
+                            embedding_vector = response.embedding
+                        else:
+                            logger.error(f"  🔍 予期しないレスポンス形式: {type(response)}")
                     
                     if embedding_vector and len(embedding_vector) > 0:
                         # データベースに保存

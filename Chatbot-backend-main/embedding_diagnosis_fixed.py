@@ -28,7 +28,7 @@ class EmbeddingDiagnostics:
     def __init__(self):
         self.supabase = get_supabase_client()
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.embedding_model = os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
+        self.embedding_model = os.getenv("EMBEDDING_MODEL", "models/text-embedding-005")
         
         if not self.embedding_model.startswith("models/"):
             self.embedding_model = f"models/{self.embedding_model}"
@@ -303,8 +303,8 @@ class EmbeddingDiagnostics:
         if not diagnosis_results['api_connectivity']:
             issues_found.append("② Gemini APIが呼び出されていない")
         
-        if diagnosis_results['embedding_dimensions'] != 3072:
-            issues_found.append(f"③ 次元数不一致 (期待: 3072, 実際: {diagnosis_results['embedding_dimensions']})")
+        if diagnosis_results['embedding_dimensions'] != 768:
+            issues_found.append(f"③ 次元数不一致 (期待: 768, 実際: {diagnosis_results['embedding_dimensions']})")
         
         if diagnosis_results['embedding_nullable']:
             issues_found.append("④ embeddingカラムがnull許容で失敗が目立たない")
