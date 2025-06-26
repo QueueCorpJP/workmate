@@ -301,7 +301,7 @@ async def toggle_document_active(
             from supabase_adapter import get_supabase_client
             supabase = get_supabase_client()
             
-            # chunksテーブルのactive状態を同期
+            # chunksテーブルの更新日時を同期（activeフラグはdocument_sourcesで管理）
             chunks_update = supabase.table("chunks").update({
                 "updated_at": "now()"
             }).eq("doc_id", doc_id)
@@ -335,7 +335,7 @@ async def _get_document_chunk_info(doc_id: str, db: Connection) -> Dict[str, Any
         supabase = get_supabase_client()
         
         # chunksテーブルから統計情報を取得
-        chunks_query = supabase.table("chunks").select("id,chunk_index,active").eq("doc_id", doc_id)
+        chunks_query = supabase.table("chunks").select("id,chunk_index").eq("doc_id", doc_id)
         chunks_result = chunks_query.execute()
         
         if chunks_result.data:

@@ -11,7 +11,7 @@ from typing import List, Dict, Tuple, Optional, Set
 from concurrent.futures import ThreadPoolExecutor
 import time
 from dotenv import load_dotenv
-from google import genai
+import google.generativeai as genai
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import numpy as np
@@ -28,17 +28,28 @@ class ParallelVectorSearchSystem:
     def __init__(self):
         """初期化"""
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-exp-03-07")
+        model_name = os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
+        
+        # モデル名が正しい形式かチェックし、必要に応じて修正
+        if not model_name.startswith(("models/", "tunedModels/")):
+            if model_name in ["gemini-embedding-exp-03-07", "text-embedding-004"]:
+                model_name = f"models/{model_name}"
+            else:
+                model_name = "models/text-embedding-004"  # デフォルトにフォールバック
+        
+        self.model = model_name
         self.db_url = self._get_db_url()
         
         if not self.api_key:
             raise ValueError("GOOGLE_API_KEY または GEMINI_API_KEY 環境変数が設定されていません")
         
         # Gemini APIクライアントの初期化
-        self.client = genai.Client(api_key=self.api_key)
+        genai.configure(api_key=self.api_key)
         
         # 並列処理用のExecutor
         self.executor = ThreadPoolExecutor(max_workers=4)
+        
+        logger.info(f"✅ 並列ベクトル検索システム初期化: モデル={self.model}")
         
     def _get_db_url(self) -> str:
         """データベースURLを構築"""
@@ -63,15 +74,22 @@ class ParallelVectorSearchSystem:
         
         async def generate_single_embedding(query: str) -> List[float]:
             try:
-                response = self.client.models.embed_content(
-                    model=self.model, 
-                    contents=query
+                response = genai.embed_content(
+                    model=self.model,
+                    content=query
                 )
                 
-                if response.embeddings and len(response.embeddings) > 0:
-                    full_embedding = response.embeddings[0].values
+                # レスポンスからエンベディングベクトルを取得
+                embedding_vector = None
+                
+                if isinstance(response, dict) and 'embedding' in response:
+                    embedding_vector = response['embedding']
+                elif hasattr(response, 'embedding') and response.embedding:
+                    embedding_vector = response.embedding
+                
+                if embedding_vector and len(embedding_vector) > 0:
                     # MRL（次元削減）: 3072 → 1536次元に削減
-                    embedding = full_embedding[:1536]
+                    embedding = embedding_vector[:1536]
                     return embedding
                 else:
                     logger.error(f"埋め込み生成失敗: {query}")

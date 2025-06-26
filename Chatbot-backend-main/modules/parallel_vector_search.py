@@ -11,7 +11,7 @@ from typing import List, Dict, Tuple, Optional, Set
 from concurrent.futures import ThreadPoolExecutor
 import time
 from dotenv import load_dotenv
-from google import genai
+import google.generativeai as genai
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
@@ -28,17 +28,28 @@ class ParallelVectorSearchSystem:
     def __init__(self):
         """初期化"""
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-exp-03-07")
+        model_name = os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
+        
+        # モデル名が正しい形式かチェックし、必要に応じて修正
+        if not model_name.startswith(("models/", "tunedModels/")):
+            if model_name in ["gemini-embedding-exp-03-07", "text-embedding-004"]:
+                model_name = f"models/{model_name}"
+            else:
+                model_name = "models/text-embedding-004"  # デフォルトにフォールバック
+        
+        self.model = model_name
         self.db_url = self._get_db_url()
         
         if not self.api_key:
             raise ValueError("GOOGLE_API_KEY または GEMINI_API_KEY 環境変数が設定されていません")
         
         # Gemini APIクライアントの初期化
-        self.client = genai.Client(api_key=self.api_key)
+        genai.configure(api_key=self.api_key)
         
         # 並列処理用のExecutor
         self.executor = ThreadPoolExecutor(max_workers=4)
+        
+        logger.info(f"✅ 並列ベクトル検索システム初期化: モデル={self.model}")
         
     def _get_db_url(self) -> str:
         """データベースURLを構築"""
@@ -124,12 +135,24 @@ class ParallelVectorSearchSystem:
         """複数クエリの埋め込みを並列生成"""
         async def generate_single(query: str) -> List[float]:
             try:
-                response = self.client.models.embed_content(
-                    model=self.model, contents=query
+                response = genai.embed_content(
+                    model=self.model,
+                    content=query
                 )
-                if response.embeddings and len(response.embeddings) > 0:
-                    full_embedding = response.embeddings[0].values
-                    return full_embedding[:1536]  # MRL削減
+                
+                # レスポンスからエンベディングベクトルを取得
+                embedding_vector = None
+                
+                if isinstance(response, dict) and 'embedding' in response:
+                    embedding_vector = response['embedding']
+                elif hasattr(response, 'embedding') and response.embedding:
+                    embedding_vector = response.embedding
+                else:
+                    logger.error(f"予期しないレスポンス形式: {type(response)}")
+                    return []
+                
+                if embedding_vector and len(embedding_vector) > 0:
+                    return embedding_vector  # 次元削減なし
                 return []
             except Exception as e:
                 logger.error(f"埋め込み生成エラー: {e}")
@@ -156,59 +179,64 @@ class ParallelVectorSearchSystem:
         return top_results, bottom_results
 
     def _execute_vector_search(self, query_vector: List[float], company_id: str, limit: int, order: str) -> List[Dict]:
-        """ベクトル検索の実行"""
+        """ベクトル検索の実行（chunksテーブル対応版）"""
         try:
             with psycopg2.connect(self.db_url, cursor_factory=RealDictCursor) as conn:
                 with conn.cursor() as cur:
+                    # 新しいchunksテーブルを使用したSQL
                     sql = """
-                    SELECT 
-                        de.document_id as chunk_id,
-                        CASE 
-                            WHEN de.document_id LIKE '%_chunk_%' THEN 
-                                SPLIT_PART(de.document_id, '_chunk_', 1)
-                            ELSE de.document_id
-                        END as original_doc_id,
+                    SELECT
+                        c.id as chunk_id,
+                        c.doc_id as document_id,
+                        c.chunk_index,
+                        c.content as snippet,
                         ds.name,
                         ds.special,
                         ds.type,
-                        de.snippet,
-                        1 - (de.embedding <=> %s) as similarity
-                    FROM document_embeddings de
-                    LEFT JOIN document_sources ds ON ds.id = CASE 
-                        WHEN de.document_id LIKE '%_chunk_%' THEN 
-                            SPLIT_PART(de.document_id, '_chunk_', 1)
-                        ELSE de.document_id
-                    END
-                    WHERE de.embedding IS NOT NULL
+                        1 - (c.embedding <=> %s::vector) as similarity
+                    FROM chunks c
+                    LEFT JOIN document_sources ds ON ds.id = c.doc_id
+                    WHERE c.embedding IS NOT NULL
                     """
                     
                     params = [query_vector]
                     
-                    # 🔍 デバッグ: company_idフィルタを一時的に無効化
-                    logger.info(f"🔍 デバッグ: 並列検索でcompany_idフィルタを無効化")
-                    # if company_id:
-                    #     sql += " AND ds.company_id = %s"
-                    #     params.append(company_id)
+                    # 会社IDフィルタ（有効化）
+                    if company_id:
+                        sql += " AND c.company_id = %s"
+                        params.append(company_id)
+                        logger.info(f"🔍 並列検索: 会社IDフィルタ適用 - {company_id}")
+                    else:
+                        logger.info(f"🔍 並列検索: 会社IDフィルタなし（全データ検索）")
                     
                     sql += f" ORDER BY similarity {order} LIMIT %s"
                     params.append(limit)
                     
+                    logger.info(f"並列ベクトル検索実行: {order} order, limit={limit}")
                     cur.execute(sql, params)
                     results = cur.fetchall()
                     
-                    return [{
-                        'chunk_id': row['chunk_id'],
-                        'document_id': row['original_doc_id'],
-                        'document_name': row['name'],
-                        'document_type': row['type'],
-                        'special': row['special'],
-                        'snippet': row['snippet'],
-                        'similarity_score': float(row['similarity']),
-                        'search_type': f'vector_{order.lower()}'
-                    } for row in results]
+                    search_results = []
+                    for row in results:
+                        search_results.append({
+                            'chunk_id': row['chunk_id'],
+                            'document_id': row['document_id'],
+                            'chunk_index': row['chunk_index'],
+                            'document_name': row['name'],
+                            'document_type': row['type'],
+                            'special': row['special'],
+                            'snippet': row['snippet'],
+                            'similarity_score': float(row['similarity']),
+                            'search_type': f'vector_parallel_{order.lower()}'
+                        })
+                    
+                    logger.info(f"✅ 並列ベクトル検索完了: {len(search_results)}件 ({order})")
+                    return search_results
         
         except Exception as e:
-            logger.error(f"ベクトル検索実行エラー: {e}")
+            logger.error(f"❌ 並列ベクトル検索実行エラー: {e}")
+            import traceback
+            logger.error(f"詳細エラー: {traceback.format_exc()}")
             return []
 
     def merge_and_optimize_results(self, all_results: List[Tuple[List[Dict], List[Dict]]]) -> List[Dict]:
@@ -239,32 +267,43 @@ class ParallelVectorSearchSystem:
         return unique_results
 
     def build_content_from_results(self, results: List[Dict], max_results: int) -> str:
-        """結果からコンテンツを構築"""
+        """結果からコンテンツを構築（chunksテーブル対応版）"""
         if not results:
             return ""
         
         relevant_content = []
         total_length = 0
-        max_total_length = 20000
+        max_total_length = 50000  # 制限を拡大（20000 → 50000）
+        
+        logger.info(f"📝 コンテンツ構築開始: {len(results)}件の結果から最大{max_results}件を処理")
         
         for i, result in enumerate(results[:max_results]):
             similarity = result['similarity_score']
             snippet = result['snippet'] or ""
+            chunk_index = result.get('chunk_index', 'N/A')
             
-            # 🔍 デバッグ: 類似度閾値を緩和（0.3 → 0.05）
-            if similarity < 0.05:  # 閾値フィルタ
+            # 類似度閾値を緩和（0.05 → 0.02）
+            if similarity < 0.02:
+                logger.info(f"  {i+1}. 類似度が低いためスキップ: {similarity:.3f}")
                 continue
             
             if snippet and len(snippet.strip()) > 0:
-                content_piece = f"\n=== {result['document_name']} (類似度: {similarity:.3f}) ===\n{snippet}\n"
+                content_piece = f"\n=== {result['document_name']} - チャンク{chunk_index} (類似度: {similarity:.3f}) ===\n{snippet}\n"
                 
                 if total_length + len(content_piece) <= max_total_length:
                     relevant_content.append(content_piece)
                     total_length += len(content_piece)
+                    logger.info(f"  {i+1}. 追加: {result['document_name']} [チャンク{chunk_index}] ({len(content_piece)}文字)")
                 else:
+                    logger.info(f"  {i+1}. 文字数制限により終了")
                     break
+            else:
+                logger.info(f"  {i+1}. 空のコンテンツのためスキップ")
         
-        return "\n".join(relevant_content)
+        final_content = "\n".join(relevant_content)
+        logger.info(f"✅ 並列検索コンテンツ構築完了: {len(relevant_content)}個のチャンク、{len(final_content)}文字")
+        
+        return final_content
 
     def parallel_comprehensive_search_sync(self, query: str, company_id: str = None, max_results: int = 15) -> str:
         """包括的並列検索の同期版 - イベントループ問題を回避"""
@@ -296,15 +335,15 @@ class ParallelVectorSearchSystem:
                 for query_text, embedding in valid_embeddings:
                     # 上位検索のFuture
                     future_top = executor.submit(
-                        self._execute_vector_search, 
-                        embedding, company_id, max_results // len(valid_embeddings), "similarity DESC"
+                        self._execute_vector_search,
+                        embedding, company_id, max_results // len(valid_embeddings), "DESC"
                     )
                     future_to_embedding[future_top] = (query_text, embedding, "top")
                     
                     # 下位検索のFuture
                     future_bottom = executor.submit(
-                        self._execute_vector_search, 
-                        embedding, company_id, max_results // len(valid_embeddings), "similarity ASC"
+                        self._execute_vector_search,
+                        embedding, company_id, max_results // len(valid_embeddings), "ASC"
                     )
                     future_to_embedding[future_bottom] = (query_text, embedding, "bottom")
                 
@@ -376,14 +415,24 @@ class ParallelVectorSearchSystem:
         """複数クエリの埋め込みを同期並列生成"""
         def generate_single_embedding(query: str) -> List[float]:
             try:
-                response = self.client.models.embed_content(
-                    model=self.model, 
-                    contents=query
+                response = genai.embed_content(
+                    model=self.model,
+                    content=query
                 )
                 
-                if response.embeddings and len(response.embeddings) > 0:
-                    full_embedding = response.embeddings[0].values
-                    return full_embedding[:1536]  # MRL削減
+                # レスポンスからエンベディングベクトルを取得
+                embedding_vector = None
+                
+                if isinstance(response, dict) and 'embedding' in response:
+                    embedding_vector = response['embedding']
+                elif hasattr(response, 'embedding') and response.embedding:
+                    embedding_vector = response.embedding
+                else:
+                    logger.error(f"予期しないレスポンス形式: {type(response)}")
+                    return []
+                
+                if embedding_vector and len(embedding_vector) > 0:
+                    return embedding_vector  # 次元削減なし
                 else:
                     logger.error(f"埋め込み生成失敗: {query}")
                     return []

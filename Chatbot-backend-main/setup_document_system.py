@@ -218,7 +218,7 @@ class DocumentSystemSetup:
             indexes = [
                 ("idx_chunks_doc_id", "CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON chunks(doc_id);"),
                 ("idx_chunks_company_id", "CREATE INDEX IF NOT EXISTS idx_chunks_company_id ON chunks(company_id);"),
-                ("idx_chunks_active", "CREATE INDEX IF NOT EXISTS idx_chunks_active ON chunks(active);"),
+                # Note: chunks table doesn't have active column - active status is managed in document_sources
                 ("idx_chunks_doc_chunk_index", "CREATE INDEX IF NOT EXISTS idx_chunks_doc_chunk_index ON chunks(doc_id, chunk_index);"),
             ]
             
@@ -308,15 +308,14 @@ class DocumentSystemSetup:
                     # chunksテーブルに保存
                     for chunk_data in chunks:
                         insert_sql = """
-                            INSERT INTO chunks (doc_id, chunk_index, content, company_id, active)
-                            VALUES (%s, %s, %s, %s, %s)
+                            INSERT INTO chunks (doc_id, chunk_index, content, company_id)
+                            VALUES (%s, %s, %s, %s)
                         """
                         cursor.execute(insert_sql, (
                             doc['id'],
                             chunk_data['chunk_index'],
                             chunk_data['content'],
-                            doc['company_id'],
-                            True
+                            doc['company_id']
                         ))
                     
                     migrated_count += 1

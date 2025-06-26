@@ -7,7 +7,7 @@ import os
 import logging
 from typing import List, Dict, Tuple, Optional
 from dotenv import load_dotenv
-from google import genai
+import google.generativeai as genai
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import numpy as np
@@ -23,14 +23,25 @@ class VectorSearchSystem:
     def __init__(self):
         """初期化"""
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-exp-03-07")
+        model_name = os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
+        
+        # モデル名が正しい形式かチェックし、必要に応じて修正
+        if not model_name.startswith(("models/", "tunedModels/")):
+            if model_name in ["gemini-embedding-exp-03-07", "text-embedding-004"]:
+                model_name = f"models/{model_name}"
+            else:
+                model_name = "models/text-embedding-004"  # デフォルトにフォールバック
+        
+        self.model = model_name
         self.db_url = self._get_db_url()
         
         if not self.api_key:
             raise ValueError("GOOGLE_API_KEY または GEMINI_API_KEY 環境変数が設定されていません")
         
         # Gemini APIクライアントの初期化
-        self.client = genai.Client(api_key=self.api_key)
+        genai.configure(api_key=self.api_key)
+        
+        logger.info(f"✅ ベクトル検索システム初期化: モデル={self.model}")
         
     def _get_db_url(self) -> str:
         """データベースURLを構築"""
@@ -55,18 +66,26 @@ class VectorSearchSystem:
         """クエリの埋め込みベクトルを生成"""
         try:
             logger.info(f"クエリの埋め込み生成中: {query[:50]}...")
-            response = self.client.models.embed_content(
-                model=self.model, 
-                contents=query
+            response = genai.embed_content(
+                model=self.model,
+                content=query
             )
             
-            if response.embeddings and len(response.embeddings) > 0:
-                # 3072次元のベクトルを取得
-                full_embedding = response.embeddings[0].values
-                # MRL（次元削減）: 3072 → 1536次元に削減
-                embedding = full_embedding[:1536]
-                logger.info(f"埋め込み生成完了 (元次元: {len(full_embedding)} → 削減後: {len(embedding)})")
-                return embedding
+            # レスポンスからエンベディングベクトルを取得
+            embedding_vector = None
+            
+            if isinstance(response, dict) and 'embedding' in response:
+                embedding_vector = response['embedding']
+            elif hasattr(response, 'embedding') and response.embedding:
+                embedding_vector = response.embedding
+            else:
+                logger.error(f"予期しないレスポンス形式: {type(response)}")
+                return []
+            
+            if embedding_vector and len(embedding_vector) > 0:
+                # 3072次元のベクトルをそのまま使用（次元削減なし）
+                logger.info(f"埋め込み生成完了: {len(embedding_vector)}次元")
+                return embedding_vector
             else:
                 logger.error("埋め込み生成に失敗しました")
                 return []
@@ -83,7 +102,7 @@ class VectorSearchSystem:
         return chunk_id
     
     def vector_similarity_search(self, query: str, company_id: str = None, limit: int = 5) -> List[Dict]:
-        """ベクトル類似検索を実行"""
+        """ベクトル類似検索を実行（chunksテーブル対応版）"""
         try:
             # クエリの埋め込み生成
             query_vector = self.generate_query_embedding(query)
@@ -94,42 +113,38 @@ class VectorSearchSystem:
             # データベース接続
             with psycopg2.connect(self.db_url, cursor_factory=RealDictCursor) as conn:
                 with conn.cursor() as cur:
-                    # ベクトル類似検索のSQL（チャンク対応版）
+                    # 新しいchunksテーブルを使用したベクトル類似検索SQL
                     sql = """
-                    SELECT 
-                        de.document_id as chunk_id,
-                        CASE 
-                            WHEN de.document_id LIKE '%_chunk_%' THEN 
-                                SPLIT_PART(de.document_id, '_chunk_', 1)
-                            ELSE de.document_id
-                        END as original_doc_id,
+                    SELECT
+                        c.id as chunk_id,
+                        c.doc_id as document_id,
+                        c.chunk_index,
+                        c.content as snippet,
                         ds.name,
                         ds.special,
                         ds.type,
-                        de.snippet,
-                        1 - (de.embedding <=> %s) as similarity_score
-                    FROM document_embeddings de
-                    LEFT JOIN document_sources ds ON ds.id = CASE 
-                        WHEN de.document_id LIKE '%_chunk_%' THEN 
-                            SPLIT_PART(de.document_id, '_chunk_', 1)
-                        ELSE de.document_id
-                    END
-                    WHERE de.embedding IS NOT NULL
+                        1 - (c.embedding <=> %s) as similarity_score
+                    FROM chunks c
+                    LEFT JOIN document_sources ds ON ds.id = c.doc_id
+                    WHERE c.embedding IS NOT NULL
                     """
                     
                     params = [query_vector]
                     
-                    # 🔍 デバッグ: company_idフィルタを一時的に無効化
-                    logger.info(f"🔍 デバッグ: company_idフィルタを無効化してテスト")
-                    # if company_id:
-                    #     sql += " AND ds.company_id = %s"
-                    #     params.append(company_id)
+                    # 会社IDフィルタ（有効化）
+                    if company_id:
+                        sql += " AND c.company_id = %s"
+                        params.append(company_id)
+                        logger.info(f"🔍 会社IDフィルタ適用: {company_id}")
+                    else:
+                        logger.info(f"🔍 会社IDフィルタなし（全データ検索）")
                     
                     # 類似度順でソート
-                    sql += " ORDER BY de.embedding <=> %s LIMIT %s"
+                    sql += " ORDER BY c.embedding <=> %s LIMIT %s"
                     params.extend([query_vector, limit])
                     
                     logger.info(f"ベクトル検索実行中... (limit: {limit})")
+                    logger.info(f"使用テーブル: chunks")
                     cur.execute(sql, params)
                     results = cur.fetchall()
                     
@@ -138,24 +153,32 @@ class VectorSearchSystem:
                     for row in results:
                         search_results.append({
                             'chunk_id': row['chunk_id'],
-                            'document_id': row['original_doc_id'],
+                            'document_id': row['document_id'],
+                            'chunk_index': row['chunk_index'],
                             'document_name': row['name'],
                             'document_type': row['type'],
                             'special': row['special'],
                             'snippet': row['snippet'],
                             'similarity_score': float(row['similarity_score']),
-                            'search_type': 'vector'
+                            'search_type': 'vector_chunks'
                         })
                     
-                    logger.info(f"ベクトル検索完了: {len(search_results)}件の結果")
+                    logger.info(f"✅ ベクトル検索完了: {len(search_results)}件の結果")
+                    
+                    # デバッグ: 上位3件の類似度を表示
+                    for i, result in enumerate(search_results[:3]):
+                        logger.info(f"  {i+1}. {result['document_name']} [チャンク{result['chunk_index']}] 類似度: {result['similarity_score']:.3f}")
+                    
                     return search_results
         
         except Exception as e:
-            logger.error(f"ベクトル検索エラー: {e}")
+            logger.error(f"❌ ベクトル検索エラー: {e}")
+            import traceback
+            logger.error(f"詳細エラー: {traceback.format_exc()}")
             return []
     
     def get_document_content_by_similarity(self, query: str, company_id: str = None, max_results: int = 10) -> str:
-        """類似度に基づいてドキュメントの内容を取得"""
+        """類似度に基づいてドキュメントの内容を取得（chunksテーブル対応版）"""
         try:
             # ベクトル検索実行
             search_results = self.vector_similarity_search(query, company_id, limit=max_results)
@@ -167,30 +190,28 @@ class VectorSearchSystem:
             # 結果を組み立て
             relevant_content = []
             total_length = 0
-            max_total_length = 15000  # 最大文字数制限
+            max_total_length = 50000  # 最大文字数制限を拡大（15000 → 50000）
             
-            logger.info(f"類似度順に{len(search_results)}件のドキュメントを処理中...")
+            logger.info(f"類似度順に{len(search_results)}件のチャンクを処理中...")
             
             for i, result in enumerate(search_results):
                 doc_id = result['document_id']
                 chunk_id = result['chunk_id']
+                chunk_index = result.get('chunk_index', 'N/A')
                 similarity = result['similarity_score']
                 snippet = result['snippet'] or ""
                 
                 # チャンク情報を含むログ
-                if chunk_id != doc_id:
-                    logger.info(f"  {i+1}. {result['document_name']} [チャンク: {chunk_id}] (類似度: {similarity:.3f})")
-                else:
-                    logger.info(f"  {i+1}. {result['document_name']} (類似度: {similarity:.3f})")
+                logger.info(f"  {i+1}. {result['document_name']} [チャンク{chunk_index}] (類似度: {similarity:.3f})")
                 
-                # 🔍 デバッグ: 類似度閾値を大幅に緩和（0.3 → 0.05）
-                if similarity < 0.05:
-                    logger.info(f"    - 類似度が低いため除外 ({similarity:.3f} < 0.05)")
+                # 類似度閾値を緩和（0.05 → 0.02）
+                if similarity < 0.02:
+                    logger.info(f"    - 類似度が低いため除外 ({similarity:.3f} < 0.02)")
                     continue
                 
                 # スニペットを追加
                 if snippet and len(snippet.strip()) > 0:
-                    content_piece = f"\n=== {result['document_name']} (類似度: {similarity:.3f}) ===\n{snippet}\n"
+                    content_piece = f"\n=== {result['document_name']} - チャンク{chunk_index} (類似度: {similarity:.3f}) ===\n{snippet}\n"
                     
                     if total_length + len(content_piece) <= max_total_length:
                         relevant_content.append(content_piece)
@@ -199,14 +220,18 @@ class VectorSearchSystem:
                     else:
                         logger.info(f"    - 文字数制限により除外")
                         break
+                else:
+                    logger.info(f"    - 空のコンテンツのためスキップ")
             
             final_content = "\n".join(relevant_content)
-            logger.info(f"最終的な関連コンテンツ: {len(final_content)}文字")
+            logger.info(f"✅ 最終的な関連コンテンツ: {len(final_content)}文字")
             
             return final_content
         
         except Exception as e:
-            logger.error(f"ドキュメント内容取得エラー: {e}")
+            logger.error(f"❌ ドキュメント内容取得エラー: {e}")
+            import traceback
+            logger.error(f"詳細エラー: {traceback.format_exc()}")
             return ""
 
     def hybrid_search(self, query: str, company_id: str = None, max_results: int = 10) -> str:

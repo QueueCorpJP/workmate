@@ -24,7 +24,19 @@ import google.generativeai as genai
 from .config import setup_gemini
 from .utils import safe_print, safe_safe_print
 
-# 新しいRAGシステムのインポートを追加
+# 🚀 新しいリアルタイムRAGシステムのインポートを追加（最優先）
+try:
+    from .realtime_rag import process_question_realtime, realtime_rag_available
+    REALTIME_RAG_AVAILABLE = realtime_rag_available()
+    if REALTIME_RAG_AVAILABLE:
+        safe_print("✅ リアルタイムRAGシステムが利用可能です")
+    else:
+        safe_print("⚠️ リアルタイムRAGシステムの設定が不完全です")
+except ImportError as e:
+    REALTIME_RAG_AVAILABLE = False
+    safe_print(f"⚠️ リアルタイムRAGシステムが利用できません: {e}")
+
+# 新しいRAGシステムのインポートを追加（フォールバック用）
 try:
     from .rag_enhanced import enhanced_rag, SearchResult
     RAG_ENHANCED_AVAILABLE = True
@@ -41,7 +53,7 @@ except ImportError:
     SPEED_RAG_AVAILABLE = False
     safe_print("⚠️ 高速化RAGシステムが利用できません")
 
-# ベクトル検索システムのインポートを追加
+# ベクトル検索システムのインポートを追加（フォールバック用）
 try:
     from .vector_search import get_vector_search_instance, vector_search_available
     VECTOR_SEARCH_AVAILABLE = vector_search_available()
@@ -53,7 +65,7 @@ except ImportError as e:
     VECTOR_SEARCH_AVAILABLE = False
     safe_print(f"⚠️ ベクトル検索システムが利用できません: {e}")
 
-# 並列ベクトル検索システムのインポートを追加
+# 並列ベクトル検索システムのインポートを追加（フォールバック用）
 try:
     from .parallel_vector_search import get_parallel_vector_search_instance_sync, ParallelVectorSearchSystem
     PARALLEL_VECTOR_SEARCH_AVAILABLE = True
@@ -81,21 +93,70 @@ def safe_safe_print(text):
     """Windows環境でのUnicode文字エンコーディング問題を回避する安全なsafe_print関数"""
     safe_print(text)
 
-def simple_rag_search(knowledge_text: str, query: str, max_results: int = 5, company_id: str = None) -> str:
+async def realtime_rag_search(query: str, company_id: str = None, company_name: str = "お客様の会社", max_results: int = 10) -> str:
     """
-    🚀 並列高速RAG検索 - 並列ベクトル検索優先、フォールバックで従来検索
+    🚀 リアルタイムRAG検索 - 新しい最適化されたRAGフロー
+    Step 1〜5の完全なリアルタイム処理
+    """
+    safe_print(f"🚀 リアルタイムRAG検索開始: '{query[:50]}...'")
+    
+    if not query or not query.strip():
+        safe_print("❌ 空のクエリ")
+        return "質問を入力してください。"
+    
+    # 🚀 【最優先】リアルタイムRAGシステムを実行
+    if REALTIME_RAG_AVAILABLE:
+        try:
+            safe_print("⚡ リアルタイムRAGシステム実行中...")
+            
+            # リアルタイムRAG処理を実行
+            result = await process_question_realtime(
+                question=query,
+                company_id=company_id,
+                company_name=company_name,
+                top_k=max_results
+            )
+            
+            if result and result.get("answer"):
+                answer = result["answer"]
+                status = result.get("status", "unknown")
+                
+                if status == "completed":
+                    safe_print(f"✅ リアルタイムRAG成功: {len(answer)}文字の回答を取得")
+                    safe_print(f"📊 使用チャンク数: {result.get('chunks_used', 0)}")
+                    safe_print(f"📊 最高類似度: {result.get('top_similarity', 0.0):.3f}")
+                    return answer
+                else:
+                    safe_print(f"⚠️ リアルタイムRAGエラー: {result.get('error', 'Unknown error')}")
+                    # エラーでも回答があれば返す
+                    return answer
+            else:
+                safe_print("❌ リアルタイムRAG結果が空")
+        
+        except Exception as e:
+            safe_print(f"❌ リアルタイムRAGエラー: {e}")
+    else:
+        safe_print("❌ リアルタイムRAGシステムが利用できません")
+    
+    # フォールバック: 従来のRAG検索システムを使用
+    safe_print("⚠️ フォールバック: 従来のRAG検索システムを使用")
+    return simple_rag_search_fallback("", query, max_results, company_id)
+
+def simple_rag_search_fallback(knowledge_text: str, query: str, max_results: int = 5, company_id: str = None) -> str:
+    """
+    🔄 フォールバック用の従来RAG検索 - 並列ベクトル検索優先、フォールバックで従来検索
     """
     # デバッグ: 関数開始を確認
-    safe_print(f"🚀 simple_rag_search関数開始 (並列検索対応)")
+    safe_print(f"🔄 フォールバックRAG検索開始 (並列検索対応)")
     safe_print(f"📥 入力パラメータ:")
     safe_print(f"   knowledge_text長: {len(knowledge_text) if knowledge_text else 0} 文字")
     safe_print(f"   query: '{query}'")
     safe_print(f"   max_results: {max_results}")
     safe_print(f"   company_id: {company_id}")
     
-    if not knowledge_text or not query:
-        safe_print(f"❌ 早期リターン: knowledge_text={bool(knowledge_text)}, query={bool(query)}")
-        return knowledge_text
+    if not query:
+        safe_print(f"❌ 早期リターン: query={bool(query)}")
+        return "質問を入力してください。"
     
     # 🚀 【優先】並列ベクトル検索を実行
     if PARALLEL_VECTOR_SEARCH_AVAILABLE:
@@ -156,6 +217,25 @@ def simple_rag_search(knowledge_text: str, query: str, max_results: int = 5, com
     else:
         safe_print("❌ ベクトル検索が利用できません")
         return "❌ ベクトル検索システムが利用できません。設定を確認してください。"
+
+def simple_rag_search(knowledge_text: str, query: str, max_results: int = 5, company_id: str = None) -> str:
+    """
+    🚀 RAG検索のメインエントリーポイント - リアルタイムRAG優先
+    """
+    # 非同期処理が必要な場合は、同期ラッパーを使用
+    try:
+        # イベントループが既に実行中かチェック
+        loop = asyncio.get_running_loop()
+        # 既にイベントループが実行中の場合は、フォールバックを使用
+        safe_print("⚠️ イベントループ実行中のため、フォールバックRAGを使用")
+        return simple_rag_search_fallback(knowledge_text, query, max_results, company_id)
+    except RuntimeError:
+        # イベントループが実行されていない場合は、新しいループで実行
+        try:
+            return asyncio.run(realtime_rag_search(query, company_id, "お客様の会社", max_results))
+        except Exception as e:
+            safe_print(f"❌ リアルタイムRAG実行エラー: {e}")
+            return simple_rag_search_fallback(knowledge_text, query, max_results, company_id)
     
     # 詳細デバッグ情報を追加
     safe_print(f"🔍 RAG検索デバッグ開始")

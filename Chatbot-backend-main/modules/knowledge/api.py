@@ -292,27 +292,27 @@ async def _save_content_to_chunks(doc_id: str, content: str, doc_name: str, comp
         
         logger.info(f"✅ {len(chunks_list)}個のチャンク保存完了: {doc_name}")
         
-        # 🧠 自動エンベディング生成を実行
+        # 🧠 バッチエンベディング生成を実行
         try:
-            from .auto_embedding import auto_generate_embeddings_for_document
+            from ..batch_embedding import batch_generate_embeddings_for_document
             
             # AUTO_GENERATE_EMBEDDINGS設定をチェック
             auto_embed_enabled = os.getenv("AUTO_GENERATE_EMBEDDINGS", "false").lower() == "true"
             
             if auto_embed_enabled:
-                logger.info(f"🧠 自動エンベディング生成開始: {doc_name}")
-                embedding_success = await auto_generate_embeddings_for_document(doc_id, len(chunks_list))
+                logger.info(f"🧠 バッチエンベディング生成開始: {doc_name}")
+                embedding_success = await batch_generate_embeddings_for_document(doc_id, len(chunks_list))
                 
                 if embedding_success:
-                    logger.info(f"🎉 自動エンベディング生成完了: {doc_name}")
+                    logger.info(f"🎉 バッチエンベディング生成完了: {doc_name}")
                 else:
-                    logger.warning(f"⚠️ 自動エンベディング生成で一部エラーが発生: {doc_name}")
+                    logger.warning(f"⚠️ バッチエンベディング生成で一部エラーが発生: {doc_name}")
             else:
                 logger.info(f"🔄 AUTO_GENERATE_EMBEDDINGS=false のため、エンベディング生成をスキップ: {doc_name}")
                 
         except Exception as embedding_error:
             # エンベディング生成エラーは警告として記録し、メイン処理は継続
-            logger.warning(f"⚠️ 自動エンベディング生成エラー（処理は継続）: {embedding_error}")
+            logger.warning(f"⚠️ バッチエンベディング生成エラー（処理は継続）: {embedding_error}")
         
     except Exception as e:
         logger.error(f"チャンク保存エラー: {str(e)}")

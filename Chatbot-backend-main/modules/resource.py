@@ -437,8 +437,17 @@ async def get_active_resources_content_by_ids(resource_ids: list[str], db: Conne
 async def _get_content_from_chunks(doc_id: str, supabase) -> str:
     """chunksテーブルからドキュメントのコンテンツを取得して結合する"""
     try:
-        # chunksテーブルからコンテンツを取得
-        chunks_query = supabase.table("chunks").select("content,chunk_index").eq("doc_id", doc_id).eq("active", True).order("chunk_index")
+        # chunksテーブルからコンテンツを取得（document_sourcesのactiveフラグでフィルタ）
+        # まずdocument_sourcesでactiveかどうかをチェック
+        doc_query = supabase.table("document_sources").select("active").eq("id", doc_id).single()
+        doc_result = doc_query.execute()
+        
+        if not doc_result.data or not doc_result.data.get("active", False):
+            print(f"⚠️ ドキュメントが非アクティブまたは存在しません: {doc_id}")
+            return ""
+        
+        # アクティブなドキュメントの場合のみchunksを取得
+        chunks_query = supabase.table("chunks").select("content,chunk_index").eq("doc_id", doc_id).order("chunk_index")
         chunks_result = chunks_query.execute()
         
         if not chunks_result.data or len(chunks_result.data) == 0:

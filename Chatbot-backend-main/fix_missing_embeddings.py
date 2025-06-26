@@ -10,7 +10,7 @@ import asyncio
 import logging
 from datetime import datetime
 from dotenv import load_dotenv
-from modules.auto_embedding import auto_generate_embeddings_for_document
+from modules.batch_embedding import batch_generate_embeddings_for_document
 from supabase_adapter import get_supabase_client, select_data
 
 # ロギング設定
@@ -90,9 +90,9 @@ async def fix_missing_embeddings():
                 chunk_count = len(doc_chunks_result.data)
                 logger.info(f"  📊 未処理チャンク数: {chunk_count}")
                 
-                # エンベディング生成実行
-                logger.info(f"  🧠 エンベディング生成開始: {doc_name}")
-                success = await auto_generate_embeddings_for_document(doc_id, chunk_count)
+                # バッチエンベディング生成実行
+                logger.info(f"  🧠 バッチエンベディング生成開始: {doc_name}")
+                success = await batch_generate_embeddings_for_document(doc_id, chunk_count)
                 
                 if success:
                     logger.info(f"  🎉 エンベディング生成完了: {doc_name}")

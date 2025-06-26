@@ -188,20 +188,37 @@ class DocumentProcessor:
         
         return chunks
     
-    async def _generate_embeddings_batch(self, texts: List[str]) -> List[Optional[List[float]]]:
+    async def _generate_embeddings_batch(self, texts: List[str], failed_indices: List[int] = None) -> List[Optional[List[float]]]:
         """Gemini Flash APIでテキストのembeddingを個別生成（バッチ処理風）"""
-        logger.info(f"🧠 embedding生成開始: {len(texts)}件, モデル={self.embedding_model}")
+        if failed_indices is None:
+            logger.info(f"🧠 embedding生成開始: {len(texts)}件, モデル={self.embedding_model}")
+        else:
+            logger.info(f"🔄 embedding再生成開始: {len(failed_indices)}件の失敗分, モデル={self.embedding_model}")
+        
         try:
             self._init_gemini_client()
             
             all_embeddings = []
+            failed_embeddings = []  # 失敗したインデックスを記録
+            
+            # 処理対象のインデックスを決定
+            if failed_indices is None:
+                # 全件処理
+                process_indices = list(range(len(texts)))
+                all_embeddings = [None] * len(texts)
+            else:
+                # 失敗分のみ処理
+                process_indices = failed_indices
+                all_embeddings = [None] * len(texts)
             
             # Gemini APIは個別処理が推奨されるため、1つずつ処理
-            for i, text in enumerate(texts):
+            for idx, i in enumerate(process_indices):
                 try:
+                    text = texts[i]
                     if not text or not text.strip():
                         logger.warning(f"⚠️ 空のテキストをスキップ: インデックス {i}")
-                        all_embeddings.append(None)
+                        all_embeddings[i] = None
+                        failed_embeddings.append(i)
                         continue
                     
                     response = await asyncio.to_thread(
@@ -212,21 +229,33 @@ class DocumentProcessor:
                     
                     if response and 'embedding' in response:
                         embedding_vector = response['embedding']
-                        all_embeddings.append(embedding_vector)
-                        logger.info(f"✅ embedding生成成功: {i + 1}/{len(texts)} (次元: {len(embedding_vector)})")
+                        all_embeddings[i] = embedding_vector
+                        logger.info(f"✅ embedding生成成功: {idx + 1}/{len(process_indices)} (インデックス {i}, 次元: {len(embedding_vector)})")
                     else:
                         logger.warning(f"⚠️ embedding生成レスポンスが不正です: インデックス {i}")
-                        all_embeddings.append(None)
+                        all_embeddings[i] = None
+                        failed_embeddings.append(i)
                     
                     # API制限対策
                     await asyncio.sleep(0.2)
                     
                 except Exception as e:
                     logger.error(f"❌ embedding生成エラー (インデックス {i}): {e}")
-                    all_embeddings.append(None)
+                    all_embeddings[i] = None
+                    failed_embeddings.append(i)
 
             success_count = len([e for e in all_embeddings if e is not None])
-            logger.info(f"🎉 embedding生成完了: {success_count}/{len(texts)} 成功")
+            total_count = len(texts)
+            
+            if failed_indices is None:
+                logger.info(f"🎉 embedding生成完了: {success_count}/{total_count} 成功")
+            else:
+                logger.info(f"🎉 embedding再生成完了: {success_count - (total_count - len(failed_indices))}/{len(failed_indices)} 成功")
+            
+            # 失敗したインデックスを記録
+            if failed_embeddings:
+                logger.warning(f"⚠️ 失敗したインデックス: {failed_embeddings}")
+            
             return all_embeddings
 
         except Exception as e:
@@ -318,8 +347,8 @@ class DocumentProcessor:
                 raise main_error
     
     async def _save_chunks_to_database(self, doc_id: str, chunks: List[Dict[str, Any]],
-                                     company_id: str, doc_name: str) -> Dict[str, Any]:
-        """chunksテーブルにチャンクデータとembeddingをバッチで保存"""
+                                     company_id: str, doc_name: str, max_retries: int = 3) -> Dict[str, Any]:
+        """chunksテーブルにチャンクデータとembeddingをバッチで保存（リトライ機能付き）"""
         try:
             from supabase_adapter import get_supabase_client
             supabase = get_supabase_client()
@@ -328,23 +357,58 @@ class DocumentProcessor:
                 "total_chunks": len(chunks),
                 "saved_chunks": 0,
                 "successful_embeddings": 0,
-                "failed_embeddings": 0
+                "failed_embeddings": 0,
+                "retry_attempts": 0
             }
 
             if not chunks:
                 return stats
 
-            # バッチでembeddingを生成
+            # 初回のembedding生成
             contents = [chunk["content"] for chunk in chunks]
             embeddings = await self._generate_embeddings_batch(contents)
 
-            records_to_insert = []
-            for i, chunk_data in enumerate(chunks):
-                embedding_vector = embeddings[i]
+            # 失敗したインデックスを特定
+            failed_indices = [i for i, emb in enumerate(embeddings) if emb is None]
+            
+            # リトライ処理
+            retry_count = 0
+            while failed_indices and retry_count < max_retries:
+                retry_count += 1
+                stats["retry_attempts"] = retry_count
+                
+                logger.info(f"🔄 embedding再生成 (試行 {retry_count}/{max_retries}): {len(failed_indices)}件")
+                
+                # 失敗分のみ再実行
+                retry_embeddings = await self._generate_embeddings_batch(contents, failed_indices)
+                
+                # 結果をマージ
+                for i in failed_indices:
+                    if retry_embeddings[i] is not None:
+                        embeddings[i] = retry_embeddings[i]
+                
+                # 再度失敗したインデックスを特定
+                failed_indices = [i for i in failed_indices if embeddings[i] is None]
+                
+                if failed_indices:
+                    logger.warning(f"⚠️ 再試行後も失敗: {len(failed_indices)}件 - {failed_indices}")
+                    # 次のリトライまで少し待機
+                    await asyncio.sleep(1.0)
+                else:
+                    logger.info(f"✅ 再試行成功: 全てのembeddingが生成されました")
+                    break
+
+            # 最終統計
+            for i, embedding_vector in enumerate(embeddings):
                 if embedding_vector:
                     stats["successful_embeddings"] += 1
                 else:
                     stats["failed_embeddings"] += 1
+
+            # データベースに保存するレコードを準備
+            records_to_insert = []
+            for i, chunk_data in enumerate(chunks):
+                embedding_vector = embeddings[i]
                 
                 records_to_insert.append({
                     "doc_id": doc_id,
@@ -362,6 +426,12 @@ class DocumentProcessor:
                 if result.data:
                     stats["saved_chunks"] = len(result.data)
                     logger.info(f"✅ {doc_name}: {stats['saved_chunks']}/{len(chunks)} チャンク保存完了")
+                    
+                    # 最終結果のサマリー
+                    if stats["failed_embeddings"] > 0:
+                        logger.warning(f"⚠️ 最終結果: {stats['successful_embeddings']}/{stats['total_chunks']} embedding成功, {stats['retry_attempts']}回再試行")
+                    else:
+                        logger.info(f"🎉 全embedding生成成功: {stats['successful_embeddings']}/{stats['total_chunks']}")
                 else:
                     logger.error(f"❌ チャンク一括保存エラー: {result.error}")
 
@@ -465,28 +535,54 @@ class DocumentProcessor:
             raise
     
     async def _extract_text_from_pdf(self, content: bytes) -> str:
-        """PDFからテキストを抽出"""
+        """PDFからテキストを抽出（文字化け対応強化版）"""
         try:
-            import PyPDF2
-            from io import BytesIO
+            from .knowledge.pdf_enhanced import process_pdf_file_enhanced
             
-            pdf_reader = PyPDF2.PdfReader(BytesIO(content))
-            text_parts = []
+            logger.info("強化版PDF処理を使用してテキストを抽出")
             
-            for page_num, page in enumerate(pdf_reader.pages):
-                try:
-                    page_text = page.extract_text()
-                    if page_text.strip():
-                        text_parts.append(f"=== ページ {page_num + 1} ===\n{page_text}")
-                except Exception as e:
-                    logger.warning(f"PDF ページ {page_num + 1} 抽出エラー: {e}")
-                    continue
+            # 強化版PDF処理を使用
+            result_df, sections, extracted_text = await process_pdf_file_enhanced(content, "uploaded_pdf")
             
-            return "\n\n".join(text_parts)
+            if extracted_text and extracted_text.strip():
+                logger.info(f"✅ 強化版PDF処理成功: {len(extracted_text)} 文字")
+                return extracted_text
+            else:
+                logger.warning("強化版PDF処理からテキストを取得できませんでした")
+                raise Exception("PDFからテキストを抽出できませんでした")
             
         except Exception as e:
-            logger.error(f"PDF処理エラー: {e}")
-            raise
+            logger.error(f"強化版PDF処理エラー: {e}")
+            
+            # フォールバック: 従来のPyPDF2処理
+            try:
+                logger.info("フォールバック: 従来のPyPDF2処理を実行")
+                import PyPDF2
+                from io import BytesIO
+                from .knowledge.pdf_enhanced import fix_mojibake_text
+                
+                pdf_reader = PyPDF2.PdfReader(BytesIO(content))
+                text_parts = []
+                
+                for page_num, page in enumerate(pdf_reader.pages):
+                    try:
+                        page_text = page.extract_text()
+                        if page_text and page_text.strip():
+                            # 文字化け修復を適用
+                            fixed_text = fix_mojibake_text(page_text)
+                            text_parts.append(f"=== ページ {page_num + 1} ===\n{fixed_text}")
+                    except Exception as page_error:
+                        logger.warning(f"PDF ページ {page_num + 1} 抽出エラー: {page_error}")
+                        continue
+                
+                if text_parts:
+                    return "\n\n".join(text_parts)
+                else:
+                    raise Exception("PDFからテキストを抽出できませんでした")
+                
+            except Exception as fallback_error:
+                logger.error(f"フォールバックPDF処理エラー: {fallback_error}")
+                raise Exception(f"PDF処理に失敗しました: {fallback_error}")
     
     async def _extract_text_from_excel(self, content: bytes) -> str:
         """Excelファイルからテキストを抽出"""
