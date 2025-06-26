@@ -755,7 +755,7 @@ function ChatInterface() {
               <HelpOutlineIcon fontSize="small" color="primary" />
               <Typography>使い方ガイド</Typography>
             </MenuItem>
-            {(isAdmin || (user && user.role === "user")) && (
+            {(isAdmin || (user && (user.role === "user" || user.role === "admin_user"))) && (
               <MenuItem onClick={handleGoToAdmin} sx={{ gap: 1 }}>
                 <AdminPanelSettingsIcon fontSize="small" color="primary" />
                 <Typography>管理画面</Typography>

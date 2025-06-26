@@ -31,3 +31,6 @@ python-docx>=0.8.11
 bm25s>=0.2.0
 scikit-learn>=1.0.0
 numpy>=1.21.0
+# エンベディングシステム用
+google-genai>=0.2.2
+pgvector>=0.2.0

@@ -41,6 +41,27 @@ except ImportError:
     SPEED_RAG_AVAILABLE = False
     safe_print("⚠️ 高速化RAGシステムが利用できません")
 
+# ベクトル検索システムのインポートを追加
+try:
+    from .vector_search import get_vector_search_instance, vector_search_available
+    VECTOR_SEARCH_AVAILABLE = vector_search_available()
+    if VECTOR_SEARCH_AVAILABLE:
+        safe_print("✅ ベクトル検索システムが利用可能です")
+    else:
+        safe_print("⚠️ ベクトル検索システムの設定が不完全です")
+except ImportError as e:
+    VECTOR_SEARCH_AVAILABLE = False
+    safe_print(f"⚠️ ベクトル検索システムが利用できません: {e}")
+
+# 並列ベクトル検索システムのインポートを追加
+try:
+    from .parallel_vector_search import get_parallel_vector_search_instance_sync, ParallelVectorSearchSystem
+    PARALLEL_VECTOR_SEARCH_AVAILABLE = True
+    safe_print("✅ 並列ベクトル検索システムが利用可能です")
+except ImportError as e:
+    PARALLEL_VECTOR_SEARCH_AVAILABLE = False
+    safe_print(f"⚠️ 並列ベクトル検索システムが利用できません: {e}")
+
 logger = logging.getLogger(__name__)
 
 def safe_print(text):
@@ -60,20 +81,81 @@ def safe_safe_print(text):
     """Windows環境でのUnicode文字エンコーディング問題を回避する安全なsafe_print関数"""
     safe_print(text)
 
-def simple_rag_search(knowledge_text: str, query: str, max_results: int = 5) -> str:
+def simple_rag_search(knowledge_text: str, query: str, max_results: int = 5, company_id: str = None) -> str:
     """
-    ハイブリッドRAG検索 - BM25S（語彙）+ セマンティック（意味）検索の組み合わせ
+    🚀 並列高速RAG検索 - 並列ベクトル検索優先、フォールバックで従来検索
     """
     # デバッグ: 関数開始を確認
-    safe_print(f"🚀 simple_rag_search関数開始")
+    safe_print(f"🚀 simple_rag_search関数開始 (並列検索対応)")
     safe_print(f"📥 入力パラメータ:")
     safe_print(f"   knowledge_text長: {len(knowledge_text) if knowledge_text else 0} 文字")
     safe_print(f"   query: '{query}'")
     safe_print(f"   max_results: {max_results}")
+    safe_print(f"   company_id: {company_id}")
     
     if not knowledge_text or not query:
         safe_print(f"❌ 早期リターン: knowledge_text={bool(knowledge_text)}, query={bool(query)}")
         return knowledge_text
+    
+    # 🚀 【優先】並列ベクトル検索を実行
+    if PARALLEL_VECTOR_SEARCH_AVAILABLE:
+        try:
+            safe_print("⚡ 並列ベクトル検索システム実行中...")
+            
+            # 同期版並列検索を使用（イベントループ問題を回避）
+            from .parallel_vector_search import get_parallel_vector_search_instance_sync
+            
+            parallel_search_system = get_parallel_vector_search_instance_sync()
+            if parallel_search_system:
+                safe_print("✅ 並列ベクトル検索インスタンス取得成功")
+                parallel_result = parallel_search_system.parallel_comprehensive_search_sync(
+                    query, company_id, max_results
+                )
+                
+                if parallel_result and len(parallel_result.strip()) > 0:
+                    safe_print(f"✅ 並列ベクトル検索成功: {len(parallel_result)}文字の結果を取得")
+                    return parallel_result
+                else:
+                    safe_print("⚠️ 並列ベクトル検索結果が空 - 従来検索にフォールバック")
+            else:
+                safe_print("❌ 並列ベクトル検索インスタンス取得失敗")
+        
+        except Exception as e:
+            safe_print(f"❌ 並列ベクトル検索エラー: {e}")
+            safe_print("⚠️ 従来検索にフォールバック")
+    
+    # 🔍 【フォールバック】単一ベクトル検索を試行
+    if VECTOR_SEARCH_AVAILABLE:
+        try:
+            safe_print("🔍 ベクトル検索を強制実行中...")
+            safe_print(f"   company_id: {company_id}")
+            
+            vector_search_system = get_vector_search_instance()
+            if vector_search_system:
+                safe_print("✅ ベクトル検索インスタンス取得成功")
+                
+                # company_idなしでも実行（デバッグ用）
+                vector_result = vector_search_system.get_document_content_by_similarity(
+                    query, company_id, max_results * 2
+                )
+                
+                safe_print(f"🔍 ベクトル検索結果: {len(vector_result) if vector_result else 0}文字")
+                
+                if vector_result and len(vector_result.strip()) > 0:
+                    safe_print(f"✅ ベクトル検索成功: {len(vector_result)}文字の結果を取得")
+                    return vector_result
+                else:
+                    safe_print("❌ ベクトル検索結果が空 - エラーとして処理")
+                    return "❌ ベクトル検索でデータが見つかりませんでした。データベース接続やエンベディングデータを確認してください。"
+            else:
+                safe_print("❌ ベクトル検索インスタンス取得失敗")
+                return "❌ ベクトル検索システムの初期化に失敗しました。"
+        except Exception as e:
+            safe_print(f"❌ ベクトル検索エラー: {e}")
+            return f"❌ ベクトル検索エラー: {e}"
+    else:
+        safe_print("❌ ベクトル検索が利用できません")
+        return "❌ ベクトル検索システムが利用できません。設定を確認してください。"
     
     # 詳細デバッグ情報を追加
     safe_print(f"🔍 RAG検索デバッグ開始")
@@ -963,7 +1045,7 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
             
             # チャンク化されたテキストを結合してRAG検索（精度重視）
             chunked_text = '\n\n'.join(chunks[:100])  # 最大100チャンク（80,000文字）まで使用
-            active_knowledge_text = simple_rag_search(chunked_text, message_text, max_results=30)
+            active_knowledge_text = simple_rag_search(chunked_text, message_text, max_results=30, company_id=company_id)
             
             safe_print(f"🎯 800文字チャンク+RAG検索完了 - 新サイズ: {len(active_knowledge_text):,} 文字")
         
@@ -1618,7 +1700,18 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
                 safe_print(f"🔄 RAG検索開始")
                 
                 # シンプルな検索戦略
-                filtered_chunk = simple_rag_search(combined_chunk, message_text, max_results=100)
+                # company_idを取得（process_chat_chunked内で利用可能なように）
+                user_company_id = None
+                if message.user_id:
+                    try:
+                        from supabase_adapter import select_data
+                        user_result = select_data("users", filters={"id": message.user_id})
+                        if user_result and user_result.data:
+                            user_company_id = user_result.data[0].get("company_id")
+                    except Exception:
+                        pass
+                
+                filtered_chunk = simple_rag_search(combined_chunk, message_text, max_results=100, company_id=user_company_id)
                 rag_attempts = 1
                 
                 safe_print(f"📊 RAG検索結果: {len(filtered_chunk)} 文字")

@@ -105,7 +105,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const userData = response.data;
       setUser(userData);
       setIsAuthenticated(true);
-      setIsAdmin(userData.role === "admin" || 
+      setIsAdmin(userData.role === "admin" || userData.role === "admin_user" || 
         (userData.email && ["queue@queuefood.co.jp", "queue@queueu-tech.jp"].includes(userData.email)));
       setIsEmployee(userData.role === "employee");
 
@@ -222,7 +222,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const userData = response.data;
       setUser(userData);
       setIsAuthenticated(true);
-      setIsAdmin(userData.role === "admin" || 
+      setIsAdmin(userData.role === "admin" || userData.role === "admin_user" || 
         (userData.email && ["queue@queuefood.co.jp", "queue@queueu-tech.jp"].includes(userData.email)));
       setIsEmployee(userData.role === "employee");
 

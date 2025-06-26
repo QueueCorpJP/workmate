@@ -94,11 +94,45 @@ async def process_chat_fast(message, db, current_user: dict = None) -> Dict[str,
         # Special指示を並列取得
         special_instructions_text = await get_special_instructions_async(active_sources, db)
         
-        # 5. 高速RAG検索（条件付き）
+        # 5. 🚀 並列高速RAG検索（最優先）
         if active_knowledge_text and len(active_knowledge_text) > 50000:
-            safe_print(f"🔄 高速RAG検索開始: {len(active_knowledge_text):,}文字")
+            safe_print(f"🔄 並列高速RAG検索開始: {len(active_knowledge_text):,}文字")
             
             try:
+                # 【最優先】並列ベクトル検索を試行
+                from .chat import PARALLEL_VECTOR_SEARCH_AVAILABLE
+                
+                if PARALLEL_VECTOR_SEARCH_AVAILABLE:
+                    safe_print(f"⚡ 並列ベクトル検索使用試行")
+                    
+                    try:
+                        from .parallel_vector_search import get_parallel_vector_search_instance_sync
+                        
+                        parallel_search_system = get_parallel_vector_search_instance_sync()
+                        if parallel_search_system:
+                            safe_print(f"✅ 並列ベクトル検索システム取得成功")
+                            parallel_result = parallel_search_system.parallel_comprehensive_search_sync(
+                                message_text, company_id, max_results=50
+                            )
+                            
+                            if parallel_result and len(parallel_result.strip()) > 0:
+                                active_knowledge_text = parallel_result
+                                safe_print(f"✅ 並列ベクトル検索成功: {len(active_knowledge_text):,}文字")
+                            else:
+                                safe_print(f"⚠️ 並列ベクトル検索結果が空 - フォールバック")
+                                raise ValueError("並列ベクトル検索結果が空")
+                        else:
+                            safe_print(f"❌ 並列ベクトル検索システム取得失敗")
+                            raise ValueError("並列ベクトル検索システム取得失敗")
+                            
+                    except Exception as parallel_error:
+                        safe_print(f"❌ 並列ベクトル検索失敗: {parallel_error}")
+                        safe_print(f"🔄 従来RAGにフォールバック")
+                        raise parallel_error
+                else:
+                    safe_print(f"⚠️ 並列ベクトル検索利用不可 - フォールバック")
+                    
+                # 【フォールバック1】高速RAG検索
                 from .chat import SPEED_RAG_AVAILABLE
                 
                 if SPEED_RAG_AVAILABLE and len(active_knowledge_text) > 100000:
@@ -123,13 +157,13 @@ async def process_chat_fast(message, db, current_user: dict = None) -> Dict[str,
                         safe_print(f"🔄 従来RAGにフォールバック")
                         from .chat import simple_rag_search
                         active_knowledge_text = simple_rag_search(
-                            active_knowledge_text, message_text, max_results=50
+                            active_knowledge_text, message_text, max_results=50, company_id=company_id
                         )
                 else:
                     safe_print(f"🔍 従来RAG使用（条件: SPEED_RAG={SPEED_RAG_AVAILABLE}, サイズ={len(active_knowledge_text):,}）")
                     from .chat import simple_rag_search
                     active_knowledge_text = simple_rag_search(
-                        active_knowledge_text, message_text, max_results=50
+                        active_knowledge_text, message_text, max_results=50, company_id=company_id
                     )
                 
                 safe_print(f"✅ RAG検索完了: {len(active_knowledge_text):,}文字")
@@ -140,7 +174,7 @@ async def process_chat_fast(message, db, current_user: dict = None) -> Dict[str,
                 try:
                     from .chat import simple_rag_search
                     active_knowledge_text = simple_rag_search(
-                        active_knowledge_text, message_text, max_results=50
+                        active_knowledge_text, message_text, max_results=50, company_id=company_id
                     )
                     safe_print(f"✅ フォールバックRAG成功")
                 except Exception as fallback_error:
