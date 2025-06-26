@@ -2653,6 +2653,9 @@ async def list_drive_files(
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"ファイル一覧取得エラー: {str(e)}")
 
+# フロントエンドのビルドディレクトリを指定
+frontend_build_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
 # その他のルートパスをindex.htmlにリダイレクト！
 # SPAのルーティング用の
 # 注意：これを最後に登録することで、他のAPIエンドポイントを優先する
