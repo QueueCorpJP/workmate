@@ -5,7 +5,7 @@
 ALTER TABLE chat_history ADD COLUMN IF NOT EXISTS input_tokens INTEGER DEFAULT 0;
 ALTER TABLE chat_history ADD COLUMN IF NOT EXISTS output_tokens INTEGER DEFAULT 0;
 ALTER TABLE chat_history ADD COLUMN IF NOT EXISTS total_tokens INTEGER DEFAULT 0;
-ALTER TABLE chat_history ADD COLUMN IF NOT EXISTS model_name VARCHAR(50) DEFAULT 'gpt-4o-mini';
+ALTER TABLE chat_history ADD COLUMN IF NOT EXISTS model_name VARCHAR(50) DEFAULT 'gemini-2.5-flash';
 ALTER TABLE chat_history ADD COLUMN IF NOT EXISTS cost_usd NUMERIC(10,6) DEFAULT 0.000000;
 ALTER TABLE chat_history ADD COLUMN IF NOT EXISTS user_id VARCHAR(255);
 ALTER TABLE chat_history ADD COLUMN IF NOT EXISTS company_id VARCHAR(255);
@@ -76,7 +76,7 @@ SET
     input_tokens = CAST((LENGTH(user_message) * 1.3) AS INTEGER),
     output_tokens = CAST((LENGTH(bot_response) * 1.3) AS INTEGER),
     total_tokens = CAST(((LENGTH(user_message) + LENGTH(bot_response)) * 1.3) AS INTEGER),
-    model_name = 'gpt-4o-mini',
+    model_name = 'gemini-2.5-flash',
     cost_usd = CAST(((LENGTH(user_message) + LENGTH(bot_response)) * 1.3 * 0.00000015) AS NUMERIC(10,6))
 WHERE input_tokens IS NULL OR input_tokens = 0;
 

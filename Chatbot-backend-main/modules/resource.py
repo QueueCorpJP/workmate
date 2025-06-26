@@ -155,8 +155,7 @@ async def get_uploaded_resources_by_company_id(company_id: str, db: Connection, 
                 "uploaded_by": uploader_id or "",
                 "uploader_name": uploader_name,
                 "usage_count": usage_count,
-                "last_used": last_used,
-                "special": source.get("special", "")
+                "last_used": last_used
             }
             print(f"🔍 [DEBUG] 構築されたリソースデータ: {resource_data}")
             resources.append(resource_data)
@@ -357,8 +356,8 @@ async def get_active_resources_content_by_ids(resource_ids: list[str], db: Conne
             print(f"🔍 [{i+1}/{len(resource_ids)}] リソースID {resource_id} の処理開始")
             
             try:
-                # まずリソースの基本情報を確認
-                info_query = supabase.table("document_sources").select("id,name,active,content").eq("id", resource_id)
+                # まずリソースの基本情報を確認（contentカラム除外）
+                info_query = supabase.table("document_sources").select("id,name,active").eq("id", resource_id)
                 info_result = info_query.execute()
                 
                 if not info_result.data or len(info_result.data) == 0:
@@ -369,7 +368,9 @@ async def get_active_resources_content_by_ids(resource_ids: list[str], db: Conne
                 resource_info = info_result.data[0]
                 resource_name = resource_info.get("name", "不明")
                 is_active = resource_info.get("active", False)
-                content = resource_info.get("content")
+                
+                # ✅ 修正: chunksテーブルからコンテンツを取得
+                content = await _get_content_from_chunks(resource_id, supabase)
                 
                 print(f"📄 リソース名: {resource_name}")
                 print(f"🔘 アクティブ状態: {is_active}")
@@ -391,59 +392,14 @@ async def get_active_resources_content_by_ids(resource_ids: list[str], db: Conne
                 print(f"📊 コンテンツ長: {content_length:,} 文字")
                 print(f"👀 コンテンツ先頭: {content_preview}")
                 
-                # チャンク分割されたドキュメントかチェック
-                if "[このドキュメントは" in str(content) and "個のチャンクに分割されています" in str(content):
-                    print(f"🧩 チャンク分割されたドキュメントを検出: {resource_name}")
-                    
-                    # 子レコード（チャンク）を取得して結合
-                    try:
-                        chunk_query = supabase.table("document_sources").select("name,content").eq("parent_id", resource_id).eq("active", True).order("name")
-                        chunk_result = chunk_query.execute()
-                        
-                        if chunk_result.data and len(chunk_result.data) > 0:
-                            print(f"📦 {len(chunk_result.data)}個のチャンクを発見")
-                            
-                            # チャンクを名前順に結合（chunk_1, chunk_2, ...）
-                            chunks = sorted(chunk_result.data, key=lambda x: x.get("name", ""))
-                            full_content = "".join([chunk.get("content", "") for chunk in chunks])
-                            
-                            print(f"🔗 チャンク結合後のサイズ: {len(full_content):,} 文字")
-                            
-                            # 結合されたコンテンツを使用
-                            processed_content = ensure_string(full_content, for_db=True)
-                            
-                            # 追加のNaN値処理
-                            processed_content = _clean_nan_values(processed_content)
-                            
-                            combined_content.append(f"=== {resource_name} ===\n{processed_content}")
-                            print(f"✅ チャンク結合完了: {resource_name}")
-                        else:
-                            print(f"⚠️ チャンクが見つかりません - 要約版を使用: {resource_name}")
-                            # チャンクが見つからない場合は要約版を使用
-                            processed_content = ensure_string(content, for_db=True)
-                            
-                            # 追加のNaN値処理
-                            processed_content = _clean_nan_values(processed_content)
-                            
-                            combined_content.append(f"=== {resource_name} ===\n{processed_content}")
-                    except Exception as chunk_error:
-                        print(f"❌ チャンク取得エラー: {str(chunk_error)} - 要約版を使用")
-                        # チャンク取得エラーの場合は要約版を使用
-                        processed_content = ensure_string(content, for_db=True)
-                        
-                        # 追加のNaN値処理
-                        processed_content = _clean_nan_values(processed_content)
-                        
-                        combined_content.append(f"=== {resource_name} ===\n{processed_content}")
-                else:
-                    # 通常のドキュメント（チャンク分割されていない）
-                    processed_content = ensure_string(content, for_db=True)
-                    
-                    # 追加のNaN値処理
-                    processed_content = _clean_nan_values(processed_content)
-                    
-                    combined_content.append(f"=== {resource_name} ===\n{processed_content}")
-                    print(f"✅ 通常ドキュメント処理完了: {resource_name}")
+                # ✅ 修正: chunksテーブルから取得したコンテンツを直接使用
+                processed_content = ensure_string(content, for_db=True)
+                
+                # 追加のNaN値処理
+                processed_content = _clean_nan_values(processed_content)
+                
+                combined_content.append(f"=== {resource_name} ===\n{processed_content}")
+                print(f"✅ chunksテーブルからコンテンツ取得完了: {resource_name}")
                 
             except Exception as resource_error:
                 print(f"❌ リソースID {resource_id} 処理中にエラー: {str(resource_error)}")
@@ -476,4 +432,26 @@ async def get_active_resources_content_by_ids(resource_ids: list[str], db: Conne
         print(f"❌ リソースコンテンツ取得で重大エラー: {str(e)}")
         import traceback
         print(f"🔍 エラー詳細:\n{traceback.format_exc()}")
+        return ""
+
+async def _get_content_from_chunks(doc_id: str, supabase) -> str:
+    """chunksテーブルからドキュメントのコンテンツを取得して結合する"""
+    try:
+        # chunksテーブルからコンテンツを取得
+        chunks_query = supabase.table("chunks").select("content,chunk_index").eq("doc_id", doc_id).eq("active", True).order("chunk_index")
+        chunks_result = chunks_query.execute()
+        
+        if not chunks_result.data or len(chunks_result.data) == 0:
+            print(f"⚠️ chunksテーブルにコンテンツが見つかりません: {doc_id}")
+            return ""
+        
+        # チャンクをインデックス順に結合
+        chunks = sorted(chunks_result.data, key=lambda x: x.get("chunk_index", 0))
+        full_content = "".join([chunk.get("content", "") for chunk in chunks])
+        
+        print(f"📦 {len(chunks)}個のチャンクを結合: {doc_id}")
+        return full_content
+        
+    except Exception as e:
+        print(f"❌ chunksテーブルからのコンテンツ取得エラー: {str(e)}")
         return ""

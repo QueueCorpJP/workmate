@@ -25,7 +25,7 @@ class TokenCounter:
                 "input": 0.0025,   # $2.50 per 1M tokens
                 "output": 0.01     # $10.00 per 1M tokens
             },
-            "gpt-4o-mini": {
+            "gemini-2.5-flash": {
                 "input": 0.00015,  # $0.15 per 1M tokens
                 "output": 0.0006   # $0.60 per 1M tokens
             },
@@ -56,7 +56,7 @@ class TokenCounter:
         # プロンプト参照による追加料金（USD per reference）
         self.prompt_reference_cost = 0.001  # $0.001 per prompt reference
     
-    def count_tokens(self, text: str, model: str = "gpt-4o-mini") -> int:
+    def count_tokens(self, text: str, model: str = "gemini-2.5-flash") -> int:
         """指定されたモデルでテキストのトークン数を計算"""
         try:
             if TIKTOKEN_AVAILABLE:
@@ -83,7 +83,7 @@ class TokenCounter:
         self, 
         input_text: str, 
         output_text: str, 
-        model: str = "gpt-4o-mini"
+        model: str = "gemini-2.5-flash"
     ) -> Dict:
         """入力と出力テキストからトークン数とコストを計算"""
         
@@ -92,7 +92,7 @@ class TokenCounter:
         total_tokens = input_tokens + output_tokens
         
         # コスト計算
-        pricing = self.pricing.get(model, self.pricing["gpt-4o-mini"])
+        pricing = self.pricing.get(model, self.pricing["gemini-2.5-flash"])
         input_cost = (input_tokens / 1000) * pricing["input"]
         output_cost = (output_tokens / 1000) * pricing["output"]
         total_cost = input_cost + output_cost
@@ -162,7 +162,7 @@ class TokenUsageTracker:
         sentiment: Optional[str] = None,
         source_document: Optional[str] = None,
         source_page: Optional[str] = None,
-        model: str = "gpt-4o-mini"
+        model: str = "gemini-2.5-flash"
     ) -> str:
         """チャット履歴をトークン情報と共にデータベースに保存"""
         

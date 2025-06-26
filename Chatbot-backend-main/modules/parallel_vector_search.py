@@ -179,7 +179,7 @@ class ParallelVectorSearchSystem:
                             SPLIT_PART(de.document_id, '_chunk_', 1)
                         ELSE de.document_id
                     END
-                    WHERE ds.active = true AND de.embedding IS NOT NULL
+                    WHERE de.embedding IS NOT NULL
                     """
                     
                     params = [query_vector]
@@ -455,8 +455,7 @@ class ParallelVectorSearchSystem:
                             SPLIT_PART(de.document_id, '_chunk_', 1)
                         ELSE de.document_id
                     END
-                    WHERE ds.active = true
-                      AND de.embedding IS NOT NULL
+                    WHERE de.embedding IS NOT NULL
                       AND (1 - (de.embedding <=> %s)) {condition}
                     """
                     

@@ -862,7 +862,7 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
                 employee_name=getattr(message, 'employee_name', None),
                 category="一般会話",
                 sentiment="neutral",
-                model="gemini-pro"
+                model="gemini-2.5-flash"
             )
             
             # 利用制限の処理（一般会話でも質問回数にカウント）
@@ -1006,7 +1006,7 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
         try:
             from supabase_adapter import select_data
             for source_id in active_sources:
-                source_result = select_data("document_sources", columns="name,special", filters={"id": source_id})
+                source_result = select_data("document_sources", columns="name", filters={"id": source_id})
                 if source_result.data and len(source_result.data) > 0:
                     source_data = source_result.data[0]
                     if source_data.get('special') and source_data['special'].strip():
@@ -1081,7 +1081,7 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
                 employee_name=getattr(message, 'employee_name', None),
                 category="設定エラー",
                 sentiment="neutral",
-                model="gemini-pro"
+                model="gemini-2.5-flash"
             )
             
             # ユーザーIDがある場合は質問カウントを更新（知識ベースが空でも利用制限は更新する）
@@ -1410,7 +1410,7 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
                 sentiment=sentiment,
                 source_document=source_doc,
                 source_page=source_page,
-                model="gemini-pro"  # Gemini料金体系を使用
+                model="gemini-2.5-flash"  # Gemini料金体系を使用
             )
             safe_print(f"✅ トークン追跡保存成功: {chat_id}")
         except Exception as token_error:
@@ -1591,7 +1591,7 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
         try:
             from supabase_adapter import select_data
             for source_id in active_sources:
-                source_result = select_data("document_sources", columns="name,special", filters={"id": source_id})
+                source_result = select_data("document_sources", columns="name", filters={"id": source_id})
                 if source_result.data and len(source_result.data) > 0:
                     source_data = source_result.data[0]
                     source_name = source_data.get('name', 'Unknown')
@@ -1888,7 +1888,7 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
                 employee_name=message.employee_name,
                 category="チャンク処理",
                 sentiment="neutral",
-                model="gemini-pro"
+                model="gemini-2.5-flash"
             )
             safe_print(f"💾 チャット履歴保存完了 - ID: {chat_id}, プロンプト参照: {prompt_references}")
         except Exception as e:
