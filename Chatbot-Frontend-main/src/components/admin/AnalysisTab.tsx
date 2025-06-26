@@ -247,6 +247,8 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
   const isEnhancedLoading = propIsEnhancedLoading || false;
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [expandedSections, setExpandedSections] = useState<Set<number>>(new Set([0, 1, 2])); // デフォルトで最初の3つを展開
+  const [sourceReferences, setSourceReferences] = useState<SourceReferenceItem[]>([]);
+  const [isSourceReferencesLoading, setIsSourceReferencesLoading] = useState(false);
 
   console.log("🎯 [ANALYSIS_TAB] enhancedAnalysis (最終):", enhancedAnalysis);
   console.log("🎯 [ANALYSIS_TAB] isEnhancedLoading (最終):", isEnhancedLoading);
@@ -402,6 +404,22 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
     console.log("📈 [CHART] 生成されたchartData:", chartData);
     return chartData;
   };
+
+  const fetchSourceReferences = async () => {
+    setIsSourceReferencesLoading(true);
+    try {
+      const response = await api.get('/admin/analysis/source_references');
+      setSourceReferences(response.data);
+    } catch (error) {
+      console.error("Failed to fetch source references:", error);
+    } finally {
+      setIsSourceReferencesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSourceReferences();
+  }, []);
 
   return (
     <Fade in={true} timeout={600}>
@@ -1084,6 +1102,36 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                 </Card>
               </Grid>
             ))}
+
+            <Grid item xs={12} md={6}>
+              <Paper sx={{ p: 2, borderRadius: 2, height: "100%", boxShadow: 1 }}>
+                <Typography variant="h6" gutterBottom>資料参照回数ランキング</Typography>
+                {isSourceReferencesLoading ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                    <CircularProgress />
+                  </Box>
+                ) : (
+                  <TableContainer sx={{ maxHeight: 400 }}>
+                    <Table stickyHeader size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 'bold' }}>資料タイトル</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 'bold' }}>参照回数</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {sourceReferences.map((item) => (
+                          <TableRow key={item.source_title} hover>
+                            <TableCell component="th" scope="row">{item.source_title}</TableCell>
+                            <TableCell align="right">{item.count}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                )}
+              </Paper>
+            </Grid>
           </Grid>
         )}
       </Container>

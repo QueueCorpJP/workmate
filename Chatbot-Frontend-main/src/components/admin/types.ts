@@ -99,3 +99,12 @@ export const sentimentColors: Record<string, string> = {
   ニュートラル: "rgba(255, 206, 86, 0.6)",
   neutral: "rgba(255, 206, 86, 0.6)",
 };
+
+export interface SourceReferenceItem {
+  source_title: string;
+  count: number;
+}
+
+const AdminPanel: React.FC = () => {
+  // ... (rest of the file)
+};

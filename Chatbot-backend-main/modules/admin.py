@@ -10,7 +10,11 @@ from typing import List, Dict, Any, Optional
 from io import BytesIO
 from psycopg2.extensions import connection as Connection
 from psycopg2.extras import RealDictCursor
-from fastapi import HTTPException, Depends, UploadFile
+from fastapi import HTTPException, Depends, UploadFile, APIRouter
+from sqlalchemy.orm import Session
+from collections import Counter
+import re
+from pydantic import BaseModel
 from .database import get_db
 from .models import ChatHistoryItem, AnalysisResult, EmployeeUsageResult
 from .company import DEFAULT_COMPANY_NAME
@@ -21,6 +25,10 @@ from .knowledge.excel_sheets_processor import process_excel_file_with_sheets_api
 from .knowledge.pdf import process_pdf_file
 from .knowledge.text import process_txt_file
 from supabase_adapter import select_data, insert_data, update_data, delete_data
+from .auth import get_current_admin
+
+# APIルーターの初期化
+router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
@@ -1178,3 +1186,71 @@ def get_chat_history_by_company(company_id: str, db = None):
         import traceback
         print(traceback.format_exc())
         return []
+
+class DocumentReference(BaseModel):
+    source_title: str
+    count: int
+
+@router.get("/analysis/source_references", response_model=List[DocumentReference])
+async def get_source_references(db: Session = Depends(get_db), current_user: dict = Depends(get_current_admin)):
+    try:
+        from supabase_adapter import select_data
+        
+        # current_userがdictであることを前提とする
+        user_email = current_user.get('email') if isinstance(current_user, dict) else getattr(current_user, 'email', None)
+        user_company_id = current_user.get('company_id') if isinstance(current_user, dict) else getattr(current_user, 'company_id', None)
+        
+        # 特殊管理者（例：queue@queueu-tech.jp）の場合は全社のデータを取得
+        if user_email == "queue@queueu-tech.jp":
+            chat_histories_result = select_data("chat_history", columns="sources")
+        else:
+            if not user_company_id:
+                raise HTTPException(status_code=403, detail="User has no company ID")
+            
+            # 会社のユーザー一覧を取得
+            users_result = select_data("users", columns="id", filters={"company_id": user_company_id})
+            if not users_result or not users_result.data:
+                return []
+            
+            user_ids = [user["id"] for user in users_result.data]
+            
+            # 各ユーザーのチャット履歴を取得
+            all_histories = []
+            for user_id in user_ids:
+                user_histories = select_data("chat_history", columns="sources", filters={"employee_id": user_id})
+                if user_histories and user_histories.data:
+                    all_histories.extend(user_histories.data)
+            
+            chat_histories_result = type('obj', (object,), {'data': all_histories})
+
+        if not chat_histories_result or not chat_histories_result.data:
+            return []
+
+        all_sources = []
+        for history in chat_histories_result.data:
+            sources = history.get("sources")
+            if sources:
+                # "doc1.pdf (P.1), doc2.pdf" のような文字列を分割
+                sources_list = sources.split(',')
+                for source in sources_list:
+                    # "doc1.pdf (P.1)" から "doc1.pdf" を抽出
+                    clean_source = re.sub(r'\s*\([^)]*\)$', '', source.strip()).strip()
+                    if clean_source:
+                        all_sources.append(clean_source)
+
+        source_counts = Counter(all_sources)
+
+        # 結果をレスポンスモデルの形式に変換
+        result = [
+            DocumentReference(source_title=title, count=count)
+            for title, count in source_counts.items()
+        ]
+
+        # 参照回数でソート
+        result.sort(key=lambda x: x.count, reverse=True)
+
+        return result
+
+    except Exception as e:
+        print(f"Error getting source references: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get source reference data")
