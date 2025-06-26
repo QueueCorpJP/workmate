@@ -1878,13 +1878,13 @@ async def test_youtube_connection():
         return {
             "success": success,
             "message": message,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.datetime.now().isoformat()
         }
     except Exception as e:
         return {
             "success": False,
             "message": f"チェックト実行エラー: {str(e)}",
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.datetime.now().isoformat()
         }
 
 @app.get("/chatbot/api/admin/companies", response_model=List[dict])
@@ -2736,15 +2736,23 @@ async def catch_all(full_path: str):
     print(f"catch_all handler called with path: {full_path}")
     
     # APIエンドポイントの場合は404を返す（より厳密なチェック）
-    # ただし、既に処理済みのAPIリクエストは除外
+    # ただし、すでに処理済みのAPIリクエストのみここに到達するはず
     if full_path.startswith("chatbot/api/"):
-        print(f"API endpoint not found: {full_path}")
-        raise HTTPException(status_code=404, detail="API endpoint not found")
+        print(f"⚠️ 未定義のAPIエンドポイント: {full_path}")
+        # 定義済みAPIエンドポイントの一覧をログ出力
+        print("定義済みエンドポイント例:")
+        print("  - chatbot/api/auth/login")
+        print("  - chatbot/api/auth/register") 
+        print("  - chatbot/api/test-youtube")
+        raise HTTPException(status_code=404, detail=f"API endpoint not found: {full_path}")
     
-    # SPAルーチェックング用にindex.htmlを返す
+    # SPAルーティング用にindex.htmlを返す
     index_path = os.path.join(frontend_build_dir, "index.html")
     if os.path.exists(index_path):
+        print(f"SPA fallback: {full_path} -> index.html")
         return FileResponse(index_path)
+    
+    print(f"❌ ファイルが見つかりません: {full_path}")
     raise HTTPException(status_code=404, detail="Not Found")
 
 # アプリケーションの実行
