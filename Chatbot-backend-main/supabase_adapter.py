@@ -206,7 +206,11 @@ def select_data(table, columns="*", filters=None, order=None, limit=None, offset
     if filters:
         for column, value in filters.items():
             # print(f"Adding filter: {column} = {value}")
-            query = query.eq(column, value)
+            if value is None:
+                # Use is_ method for NULL checks (especially for vector columns)
+                query = query.is_(column, 'null')
+            else:
+                query = query.eq(column, value)
     
     # Add ordering if specified
     if order:

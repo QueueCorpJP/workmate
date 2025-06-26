@@ -11,7 +11,7 @@ from typing import List, Dict, Tuple, Optional, Set
 from concurrent.futures import ThreadPoolExecutor
 import time
 from dotenv import load_dotenv
-from google import genai
+import google.generativeai as genai
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import numpy as np
@@ -28,17 +28,22 @@ class ParallelVectorSearchSystem:
     def __init__(self):
         """初期化"""
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-exp-03-07")
+        self.model = "models/text-embedding-004"  # 固定でtext-embedding-004を使用（768次元）
+        
         self.db_url = self._get_db_url()
         
         if not self.api_key:
             raise ValueError("GOOGLE_API_KEY または GEMINI_API_KEY 環境変数が設定されていません")
         
         # Gemini APIクライアントの初期化
-        self.client = genai.Client(api_key=self.api_key)
+        genai.configure(api_key=self.api_key)
         
         # 並列処理用のExecutor
         self.executor = ThreadPoolExecutor(max_workers=4)
+        
+        logger.info(f"✅ 並列ベクトル検索システム初期化: {self.model} (768次元)")
+        
+        logger.info(f"✅ 並列ベクトル検索システム初期化: モデル={self.model}")
         
     def _get_db_url(self) -> str:
         """データベースURLを構築"""
@@ -63,15 +68,22 @@ class ParallelVectorSearchSystem:
         
         async def generate_single_embedding(query: str) -> List[float]:
             try:
-                response = self.client.models.embed_content(
-                    model=self.model, 
-                    contents=query
+                response = genai.embed_content(
+                    model=self.model,
+                    content=query
                 )
                 
-                if response.embeddings and len(response.embeddings) > 0:
-                    full_embedding = response.embeddings[0].values
-                    # MRL（次元削減）: 3072 → 1536次元に削減
-                    embedding = full_embedding[:1536]
+                # レスポンスからエンベディングベクトルを取得
+                embedding_vector = None
+                
+                if isinstance(response, dict) and 'embedding' in response:
+                    embedding_vector = response['embedding']
+                elif hasattr(response, 'embedding') and response.embedding:
+                    embedding_vector = response.embedding
+                
+                if embedding_vector and len(embedding_vector) > 0:
+                    # 768次元のベクトルをそのまま使用
+                    embedding = embedding_vector
                     return embedding
                 else:
                     logger.error(f"埋め込み生成失敗: {query}")
@@ -174,8 +186,7 @@ class ParallelVectorSearchSystem:
                             SPLIT_PART(de.document_id, '_chunk_', 1)
                         ELSE de.document_id
                     END
-                    WHERE ds.active = true
-                      AND de.embedding IS NOT NULL
+                    WHERE de.embedding IS NOT NULL
                     """
                     
                     params = [query_vector]
@@ -274,8 +285,7 @@ class ParallelVectorSearchSystem:
                             SPLIT_PART(de.document_id, '_chunk_', 1)
                         ELSE de.document_id
                     END
-                    WHERE ds.active = true
-                      AND de.embedding IS NOT NULL
+                    WHERE de.embedding IS NOT NULL
                       AND (1 - (de.embedding <=> %s)) {condition}
                     """
                     

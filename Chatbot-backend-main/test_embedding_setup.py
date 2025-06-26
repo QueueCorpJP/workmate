@@ -174,10 +174,8 @@ def test_gemini_api():
         )
         
         if response.embeddings and len(response.embeddings) > 0:
-            # 3072次元のベクトルを取得
-            full_embedding = response.embeddings[0].values
-            # MRL（次元削減）: 3072 → 1536次元に削減
-            embedding = full_embedding[:1536]
+            # 768次元のベクトルを取得
+            embedding = response.embeddings[0].values
             print(f"  ✅ エンベディング生成: 成功 (元次元: {len(full_embedding)} → 削減後: {len(embedding)})")
             return True
         else:

@@ -169,7 +169,7 @@ async def _record_document_source(
     company_id: str, 
     db: Connection
 ) -> None:
-    """ドキュメントソースをデータベースに記録する（大きなコンテンツ対応）"""
+    """ドキュメントソースをデータベースに記録する（chunksテーブル対応）"""
     import time
     
     try:
@@ -182,210 +182,74 @@ async def _record_document_source(
         
         logger.info(f"ドキュメント保存開始: {name}, サイズ: {content_size_mb:.2f}MB")
         
-        # 2MB以上の場合は最初から分割保存（statement timeout対策）
-        if content_size_mb > 2:  # 2MB以上の場合
-            logger.info(f"大きなコンテンツを分割保存します: {content_size_mb:.2f}MB")
+        # ✅ 修正: document_sourcesにはメタデータのみ保存
+        from supabase_adapter import insert_data
+        main_record = {
+            "id": document_id,
+            "name": name,
+            "type": doc_type,
+            "page_count": page_count,
+            # ❌ "content": content_str,  # contentカラム削除済み
+            "uploaded_by": user_id,
+            "company_id": company_id,
+            "uploaded_at": datetime.now().isoformat()
+        }
+        
+        try:
+            # メタデータをdocument_sourcesに保存
+            insert_data("document_sources", main_record)
+            logger.info(f"メタデータ保存完了: {document_id}")
             
-            # コンテンツを分割（1MB程度のチャンク）
-            chunk_size = 800000  # 800KB程度のチャンク（安全マージン）
-            content_chunks = []
-            for i in range(0, len(content_str), chunk_size):
-                chunk = content_str[i:i + chunk_size]
-                content_chunks.append(chunk)
+            # ✅ 新規: コンテンツをchunksテーブルに保存
+            await _save_content_to_chunks(document_id, content_str, name, company_id)
+            logger.info(f"チャンク保存完了: {document_id}")
             
-            logger.info(f"コンテンツを{len(content_chunks)}個のチャンクに分割")
+        except Exception as main_error:
+            logger.error(f"ドキュメント保存エラー: {str(main_error)}")
             
-            # メインレコードを先に保存（完全なコンテンツを保存）
-            # Supabaseアダプターを使用してメインレコードを保存
-            from supabase_adapter import insert_data
-            main_record = {
-                "id": document_id,
-                "name": name,
-                "type": doc_type,
-                "page_count": page_count,
-                "content": content_str,  # 完全なコンテンツを保存
-                "uploaded_by": user_id,
-                "company_id": company_id,
-                "uploaded_at": datetime.now().isoformat(),
-                "active": True
-            }
-            
-            try:
-                insert_data("document_sources", main_record)
-                logger.info(f"メインレコード保存完了: {document_id} (完全なコンテンツ: {content_size_mb:.2f}MB)")
-                doc_id = document_id  # 成功時にdoc_idを設定
-            except Exception as main_error:
-                logger.error(f"メインレコード保存エラー: {str(main_error)}")
-                doc_id = None  # 初期化
-                
-                # statement timeoutの場合はチャンク分割保存を試行
-                error_str = str(main_error)
-                if "statement timeout" in error_str.lower() or "57014" in error_str:
-                    logger.warning("Statement timeoutが発生 - チャンク分割保存に切り替え")
-                    
-                    # メインレコードは要約版で保存
-                    summary_content = content_str[:1000] + f"...\n\n[このドキュメントは{len(content_chunks)}個のチャンクに分割されています。総サイズ: {content_size_mb:.2f}MB]"
-                    main_record["content"] = summary_content
-                    
-                    try:
-                        result = insert_data("document_sources", main_record)
-                        if result and result.data:
-                            doc_id = result.data[0]["id"]
-                            logger.info(f"要約版メインレコード保存成功: {doc_id}")
-                        else:
-                            logger.error("要約版メインレコード保存に失敗")
-                            doc_id = None
-                    except Exception as summary_error:
-                        logger.error(f"要約版メインレコード保存エラー: {str(summary_error)}")
-                        doc_id = None
-                
-                elif "document_sources_uploaded_by_fkey" in error_str:
-                    logger.warning(f"ユーザー '{user_id}' が存在しません - company_idで代替保存を試行")
-                    try:
-                        # company_idから代替ユーザーを検索
-                        from supabase_adapter import select_data
-                        company_users = select_data(
-                            "users", 
-                            columns="id", 
-                            filters={"company_id": company_id}
-                        )
-                        
-                        if company_users.data and len(company_users.data) > 0:
-                            alternative_user_id = company_users.data[0]["id"]
-                            logger.info(f"代替ユーザーを発見: {alternative_user_id}")
-                            
-                            # 代替ユーザーIDで再保存
-                            main_record["uploaded_by"] = alternative_user_id
-                            result = insert_data("document_sources", main_record)
-                            
-                            if result and result.data:
-                                logger.info(f"代替ユーザーIDでメインレコード保存成功: {alternative_user_id}")
-                                doc_id = result.data[0]["id"]
-                            else:
-                                logger.error("代替ユーザーIDでもメインレコード保存に失敗")
-                                doc_id = None
-                        else:
-                            logger.error(f"Company ID {company_id} に関連するユーザーが見つかりません")
-                            doc_id = None
-                            
-                    except Exception as alt_error:
-                        logger.error(f"代替ユーザー検索エラー: {str(alt_error)}")
-                        doc_id = None
-            
-            # チャンク保存処理（メインレコードが要約版の場合のみ）
-            if doc_id and "[このドキュメントは" in main_record.get("content", ""):
-                logger.info(f"チャンク保存開始: {len(content_chunks)} 個のチャンク")
-                successful_chunks = 0
-                for i, chunk in enumerate(content_chunks):
-                    try:
-                        chunk_record = {
-                            "id": str(uuid.uuid4()),
-                            "name": f"{name}_chunk_{i+1}",
-                            "type": f"{doc_type}_CHUNK",
-                            "page_count": 0,
-                            "content": chunk,
-                            "uploaded_by": main_record["uploaded_by"],  # メインレコードと同じuser_idを使用
-                            "company_id": company_id,
-                            "uploaded_at": datetime.now().isoformat(),
-                            "active": True,
-                            "parent_id": doc_id  # メインレコードへの参照
-                        }
-                        
-                        chunk_result = insert_data("document_sources", chunk_record)
-                        if not chunk_result or not chunk_result.data:
-                            logger.warning(f"チャンク {i+1} の保存に失敗")
-                        else:
-                            successful_chunks += 1
-                            logger.info(f"チャンク {i+1}/{len(content_chunks)} 保存完了")
-                            
-                    except Exception as chunk_error:
-                        logger.error(f"チャンク {i+1} 保存エラー: {str(chunk_error)}")
-                        continue
-                
-                logger.info(f"チャンク保存完了: {successful_chunks}/{len(content_chunks)} 個成功")
-            elif doc_id and "[このドキュメントは" not in main_record.get("content", ""):
-                logger.info("完全なコンテンツが保存されたため、チャンク保存は不要")
-            elif not doc_id:
-                logger.error("メインレコード保存に失敗したため、チャンク保存をスキップ")
-            
-            # データベースコミット（dbがNoneの場合は安全にスキップ）
-            if db is not None:
+            # 外部キー制約エラーの場合はユーザー情報を確認
+            error_str = str(main_error)
+            if "document_sources_uploaded_by_fkey" in error_str:
+                logger.warning(f"ユーザー '{user_id}' が存在しません - company_idで代替保存を試行")
                 try:
-                    db.commit()
-                except AttributeError:
-                    # dbオブジェクトにcommitメソッドがない場合はスキップ
-                    logger.debug("データベースオブジェクトにcommitメソッドがありません")
-            else:
-                logger.debug("データベース接続がNullのためcommitをスキップ")
-            
-            logger.info(f"分割保存完了: {time.time() - start_time:.1f}秒")
-            
-        else:
-            # 通常サイズの場合は一括保存
-            try:
-                from supabase_adapter import insert_data
-                record = {
-                    "id": document_id,
-                    "name": name,
-                    "type": doc_type,
-                    "page_count": page_count,
-                    "content": content_str,
-                    "uploaded_by": user_id,
-                    "company_id": company_id,
-                    "uploaded_at": datetime.now().isoformat(),
-                    "active": True
-                }
-                
-                insert_data("document_sources", record)
-                logger.info(f"通常保存完了: {time.time() - start_time:.1f}秒")
-                
-            except Exception as normal_error:
-                logger.error(f"通常保存エラー: {str(normal_error)}")
-                
-                # 外部キー制約エラーの場合はユーザー情報を確認
-                error_str = str(normal_error)
-                if "document_sources_uploaded_by_fkey" in error_str:
-                    logger.warning(f"ユーザー '{user_id}' が存在しません - company_idで代替保存を試行")
-                    try:
-                        # company_idから代替ユーザーを検索
-                        from supabase_adapter import select_data
-                        company_users = select_data(
-                            "users", 
-                            columns="id", 
-                            filters={"company_id": company_id}
-                        )
+                    # company_idから代替ユーザーを検索
+                    from supabase_adapter import select_data
+                    company_users = select_data(
+                        "users", 
+                        columns="id", 
+                        filters={"company_id": company_id}
+                    )
+                    
+                    if company_users.data and len(company_users.data) > 0:
+                        alternative_user_id = company_users.data[0]["id"]
+                        logger.info(f"代替ユーザーを発見: {alternative_user_id}")
                         
-                        if company_users.data and len(company_users.data) > 0:
-                            alternative_user_id = company_users.data[0]["id"]
-                            logger.info(f"代替ユーザーを発見: {alternative_user_id}")
-                            
-                            # 代替ユーザーIDで再保存
-                            record["uploaded_by"] = alternative_user_id
-                            result = insert_data("document_sources", record)
-                            
-                            if result and result.data:
-                                logger.info(f"代替ユーザーIDで通常保存成功: {alternative_user_id}")
-                                doc_id = result.data[0]["id"]
-                            else:
-                                logger.error("代替ユーザーIDでも通常保存に失敗")
-                                doc_id = None
+                        # 代替ユーザーIDで再保存
+                        main_record["uploaded_by"] = alternative_user_id
+                        result = insert_data("document_sources", main_record)
+                        
+                        if result and result.data:
+                            logger.info(f"代替ユーザーIDでメタデータ保存成功: {alternative_user_id}")
+                            # チャンク保存も実行
+                            await _save_content_to_chunks(document_id, content_str, name, company_id)
                         else:
-                            logger.error(f"Company ID {company_id} に関連するユーザーが見つかりません")
-                            doc_id = None
-                            
-                    except Exception as alt_error:
-                        logger.error(f"代替ユーザー検索エラー: {str(alt_error)}")
-                        doc_id = None
-                
-                # データベースコミット（dbがNoneの場合は安全にスキップ）
-                if db is not None:
-                    try:
-                        db.commit()
-                    except AttributeError:
-                        # dbオブジェクトにcommitメソッドがない場合はスキップ
-                        logger.debug("データベースオブジェクトにcommitメソッドがありません")
-                else:
-                    logger.debug("データベース接続がNullのためcommitをスキップ")
+                            logger.error("代替ユーザーIDでもメタデータ保存に失敗")
+                    else:
+                        logger.error(f"Company ID {company_id} に関連するユーザーが見つかりません")
+                        
+                except Exception as alt_error:
+                    logger.error(f"代替ユーザー検索エラー: {str(alt_error)}")
+            else:
+                raise main_error
+        
+        # データベースコミット
+        if db is not None:
+            try:
+                db.commit()
+            except AttributeError:
+                logger.debug("データベースオブジェクトにcommitメソッドがありません")
+        else:
+            logger.debug("データベース接続がNullのためcommitをスキップ")
         
         # 会社のソースリストに追加
         if company_id:
@@ -393,11 +257,66 @@ async def _record_document_source(
                 knowledge_base.company_sources[company_id] = []
             if name not in knowledge_base.company_sources[company_id]:
                 knowledge_base.company_sources[company_id].append(name)
+        
+        logger.info(f"ドキュメント保存完了: {time.time() - start_time:.1f}秒")
                 
     except Exception as e:
         logger.error(f"ドキュメントソース保存エラー: {str(e)}")
-        # データベースエラーでも処理は継続（知識ベースは更新済み）
         raise HTTPException(status_code=500, detail=f"ドキュメントの保存中にエラーが発生しました: {str(e)}")
+
+async def _save_content_to_chunks(doc_id: str, content: str, doc_name: str, company_id: str) -> None:
+    """コンテンツをchunksテーブルに分割保存し、自動エンベディング生成を実行する"""
+    try:
+        from supabase_adapter import insert_data
+        
+        # チャンクサイズ設定（300-500トークン ≈ 1200-2000文字）
+        chunk_size = 1500  # 約400トークン相当
+        chunks_list = []
+        
+        # コンテンツを分割
+        for i in range(0, len(content), chunk_size):
+            chunk_content = content[i:i + chunk_size]
+            if chunk_content.strip():  # 空のチャンクは除外
+                chunks_list.append({
+                    "doc_id": doc_id,
+                    "chunk_index": i // chunk_size,
+                    "content": chunk_content,
+                    "company_id": company_id
+                })
+        
+        logger.info(f"コンテンツを{len(chunks_list)}個のチャンクに分割: {doc_name}")
+        
+        # チャンクを一括保存
+        for chunk_data in chunks_list:
+            insert_data("chunks", chunk_data)
+        
+        logger.info(f"✅ {len(chunks_list)}個のチャンク保存完了: {doc_name}")
+        
+        # 🧠 バッチエンベディング生成を実行
+        try:
+            from ..batch_embedding import batch_generate_embeddings_for_document
+            
+            # AUTO_GENERATE_EMBEDDINGS設定をチェック
+            auto_embed_enabled = os.getenv("AUTO_GENERATE_EMBEDDINGS", "false").lower() == "true"
+            
+            if auto_embed_enabled:
+                logger.info(f"🧠 バッチエンベディング生成開始: {doc_name}")
+                embedding_success = await batch_generate_embeddings_for_document(doc_id, len(chunks_list))
+                
+                if embedding_success:
+                    logger.info(f"🎉 バッチエンベディング生成完了: {doc_name}")
+                else:
+                    logger.warning(f"⚠️ バッチエンベディング生成で一部エラーが発生: {doc_name}")
+            else:
+                logger.info(f"🔄 AUTO_GENERATE_EMBEDDINGS=false のため、エンベディング生成をスキップ: {doc_name}")
+                
+        except Exception as embedding_error:
+            # エンベディング生成エラーは警告として記録し、メイン処理は継続
+            logger.warning(f"⚠️ バッチエンベディング生成エラー（処理は継続）: {embedding_error}")
+        
+    except Exception as e:
+        logger.error(f"チャンク保存エラー: {str(e)}")
+        raise
 
 def _update_source_info(source_name: str) -> None:
     """ソース情報を更新する"""

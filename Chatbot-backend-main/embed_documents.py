@@ -1,13 +1,14 @@
 """
 エンベディング生成・登録スクリプト
-Gemini Embedding APIを使用してdocument_sourcesからdocument_embeddingsにベクトルを格納する
+🧠 各チャンクを Gemini Flash Embedding API（Vectors API）でベクトル化（768次元）
+モデル: gemini-embedding-exp-03-07
 """
 
 import os
 import sys
 import textwrap
 from dotenv import load_dotenv
-from google import genai
+import google.generativeai as genai
 import psycopg2
 from psycopg2.extras import execute_values
 import logging
@@ -43,123 +44,89 @@ def get_env_vars():
         if not db_url:
             raise ValueError("DATABASE_URL 環境変数が設定されていません")
     
+    # ✅ 修正: Gemini Flash Embedding API（768次元）
     model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-exp-03-07")
     
     return api_key, db_url, model
 
-def chunks(text, chunk_size=8000):
-    """テキストをチャンクに分割する（約2000トークン相当）"""
-    text = str(text) if text else ""
-    for i in range(0, len(text), chunk_size):
-        yield text[i:i+chunk_size]
-
 def generate_embeddings():
-    """メイン処理：エンベディングを生成してデータベースに保存"""
+    """メイン処理：chunksテーブルからエンベディングを生成してchunksテーブルに保存"""
     try:
         # 環境変数の取得
         api_key, db_url, model = get_env_vars()
         
         # Gemini APIクライアントの初期化
-        logger.info(f"Gemini APIクライアント初期化中... モデル: {model}")
-        client = genai.Client(api_key=api_key)
+        logger.info(f"🧠 Gemini Flash Embedding API初期化中... モデル: {model}")
+        genai.configure(api_key=api_key)
         
         # データベース接続
         logger.info("データベースに接続中...")
         conn = psycopg2.connect(db_url)
         cur = conn.cursor()
         
-        # まだ埋め込みが無いドキュメントを取得
-        logger.info("埋め込みが未生成のドキュメントを検索中...")
+        # ✅ 修正: chunksテーブルから埋め込みが未生成のチャンクを取得
+        logger.info("埋め込みが未生成のチャンクを検索中...")
         cur.execute("""
-            SELECT id, content, name
-            FROM document_sources
-            WHERE active = true
-              AND content IS NOT NULL
+            SELECT id, doc_id, chunk_index, content
+            FROM chunks
+            WHERE content IS NOT NULL
               AND content != ''
-              AND id NOT IN (
-                  SELECT DISTINCT document_id 
-                  FROM document_embeddings 
-                  WHERE document_id IS NOT NULL
-              );
+              AND embedding IS NULL;
         """)
         rows = cur.fetchall()
         
         if not rows:
-            logger.info("✅ 新しく処理すべきドキュメントはありません")
+            logger.info("✅ 新しく処理すべきチャンクはありません")
             return
         
-        logger.info(f"📄 {len(rows)}個のドキュメントの埋め込みを生成します")
+        logger.info(f"🧩 {len(rows)}個のチャンクの埋め込みを生成します")
         
         # 埋め込み生成・保存
-        records = []
         processed_count = 0
         
-        for doc_id, content, name in rows:
-            logger.info(f"📋 処理中: {name} (ID: {doc_id})")
+        for chunk_id, doc_id, chunk_index, content in rows:
+            logger.info(f"📋 処理中: Chunk {chunk_index} (ID: {chunk_id})")
             
             try:
-                # コンテンツをチャンクに分割
-                chunk_list = list(chunks(content, chunk_size=8000))
-                logger.info(f"  - {len(chunk_list)}個のチャンクに分割")
+                if not content.strip():
+                    logger.warning(f"⚠️ 空のコンテンツをスキップ: {chunk_id}")
+                    continue
                 
-                for i, chunk_content in enumerate(chunk_list):
-                    if not chunk_content.strip():
-                        continue
-                    
-                    # 埋め込み生成
-                    logger.info(f"  - チャンク {i+1}/{len(chunk_list)} の埋め込み生成中...")
-                    
-                    try:
-                        response = client.models.embed_content(
-                            model=model, 
-                            contents=chunk_content
-                        )
-                        
-                        if response.embeddings and len(response.embeddings) > 0:
-                            # 3072次元のベクトルを取得
-                            full_embedding = response.embeddings[0].values
-                            # MRL（次元削減）: 3072 → 1536次元に削減
-                            embedding_vector = full_embedding[:1536]
-                            snippet = chunk_content[:200] + "..." if len(chunk_content) > 200 else chunk_content
-                            
-                            # チャンクの場合は一意なIDを生成（document_idとして使用）
-                            chunk_doc_id = f"{doc_id}_chunk_{i}" if len(chunk_list) > 1 else doc_id
-                            
-                            records.append((chunk_doc_id, embedding_vector, snippet))
-                            logger.info(f"  - ✅ チャンク {i+1} 完了 (次元: {len(embedding_vector)})")
-                        else:
-                            logger.warning(f"  - ⚠️ チャンク {i+1} の埋め込み生成に失敗")
-                    
-                    except Exception as e:
-                        logger.error(f"  - ❌ チャンク {i+1} でエラー: {e}")
-                        continue
+                # 🧠 Gemini Flash Embedding API でベクトル化（768次元）
+                logger.info(f"  - チャンク {chunk_index} のエンベディング生成中...")
                 
-                processed_count += 1
-                logger.info(f"📄 ドキュメント完了: {name} ({processed_count}/{len(rows)})")
+                response = genai.embed_content(
+                    model=model,
+                    content=content
+                )
                 
+                if response and 'embedding' in response:
+                    # 768次元のベクトルを取得
+                    embedding_vector = response['embedding']
+                    logger.info(f"  - ✅ エンベディング生成完了 (次元: {len(embedding_vector)})")
+                    
+                    # chunksテーブルのembeddingカラムを更新
+                    cur.execute("""
+                        UPDATE chunks 
+                        SET embedding = %s, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                    """, (embedding_vector, chunk_id))
+                    
+                    processed_count += 1
+                    logger.info(f"📄 チャンク完了: {chunk_index} ({processed_count}/{len(rows)})")
+                else:
+                    logger.warning(f"  - ⚠️ チャンク {chunk_index} のエンベディング生成に失敗")
+            
             except Exception as e:
-                logger.error(f"❌ ドキュメント {name} 処理エラー: {e}")
+                logger.error(f"  - ❌ チャンク {chunk_index} でエラー: {e}")
                 continue
         
-        # データベースに一括挿入
-        if records:
-            logger.info(f"💾 {len(records)}個の埋め込みをデータベースに保存中...")
-            
-            # 実際のテーブル構造に合わせて調整
-            # document_embeddings (document_id, embedding, snippet)
-            execute_values(cur, """
-                INSERT INTO document_embeddings (document_id, embedding, snippet)
-                VALUES %s
-                ON CONFLICT (document_id) DO UPDATE
-                SET embedding = EXCLUDED.embedding,
-                    snippet = EXCLUDED.snippet,
-                    created_at = CURRENT_TIMESTAMP;
-            """, records, template=None, page_size=100)
-            
+        # データベースに変更をコミット
+        if processed_count > 0:
             conn.commit()
-            logger.info(f"✅ {len(records)}個の埋め込みを正常に保存しました")
+            logger.info(f"✅ {processed_count}個のチャンクのエンベディングを正常に保存しました")
         else:
-            logger.warning("⚠️ 保存すべき埋め込みがありませんでした")
+            logger.warning("⚠️ 保存すべきエンベディングがありませんでした")
         
     except Exception as e:
         logger.error(f"❌ メイン処理でエラー: {e}")
@@ -176,7 +143,7 @@ def generate_embeddings():
         logger.info("🔒 データベース接続を閉じました")
 
 if __name__ == "__main__":
-    logger.info("🚀 エンベディング生成スクリプト開始")
+    logger.info("🚀 Gemini Flash Embedding生成スクリプト開始")
     try:
         generate_embeddings()
         logger.info("🎉 エンベディング生成完了")

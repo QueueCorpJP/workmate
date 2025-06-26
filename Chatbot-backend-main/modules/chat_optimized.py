@@ -209,7 +209,7 @@ async def get_special_instructions_async(active_sources: List[str], db) -> str:
                 from supabase_adapter import select_data
                 special_instructions = []
                 for source_id in active_sources:
-                    source_result = select_data("document_sources", columns="name,special", filters={"id": source_id})
+                    source_result = select_data("document_sources", columns="name", filters={"id": source_id})
                     if source_result.data and len(source_result.data) > 0:
                         source_data = source_result.data[0]
                         if source_data.get('special') and source_data['special'].strip():

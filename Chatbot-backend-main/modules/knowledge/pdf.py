@@ -18,23 +18,193 @@ from .unnamed_column_handler import UnnamedColumnHandler
 
 logger = logging.getLogger(__name__)
 
+# 文字化け修復マッピング（日本語PDF特有の問題）
+MOJIBAKE_MAPPING = {
+    # PyPDF2でよく発生する文字化けパターン
+    '縺': 'い',
+    '縺ゅ→': 'あと',
+    '縺ｨ': 'と',
+    '縺ｪ': 'な',
+    '縺ｫ': 'に',
+    '縺ｮ': 'の',
+    '縺ｯ': 'は',
+    '縺ｾ': 'ま',
+    '縺ｿ': 'み',
+    '縺ｧ': 'で',
+    '縺ｩ': 'ど',
+    '縺ｰ': 'ば',
+    '縺ｱ': 'ぱ',
+    '縺ｲ': 'ひ',
+    '縺ｳ': 'び',
+    '縺ｴ': 'ぴ',
+    '縺ｵ': 'ふ',
+    '縺ｶ': 'ぶ',
+    '縺ｷ': 'ぷ',
+    '縺ｸ': 'へ',
+    '縺ｹ': 'べ',
+    '縺ｺ': 'ぺ',
+    '縺ｻ': 'ほ',
+    '縺ｼ': 'ぼ',
+    '縺ｽ': 'ぽ',
+    '縺ｾ': 'ま',
+    '縺ｿ': 'み',
+    '繧': 'ア',
+    '繧ｦ': 'ウ',
+    '繧ｨ': 'エ',
+    '繧ｪ': 'オ',
+    '繧ｫ': 'カ',
+    '繧ｬ': 'ガ',
+    '繧ｭ': 'キ',
+    '繧ｮ': 'ギ',
+    '繧ｯ': 'ク',
+    '繧ｰ': 'グ',
+    '繧ｱ': 'ケ',
+    '繧ｲ': 'ゲ',
+    '繧ｳ': 'コ',
+    '繧ｴ': 'ゴ',
+    '繧ｵ': 'サ',
+    '繧ｶ': 'ザ',
+    '繧ｷ': 'シ',
+    '繧ｸ': 'ジ',
+    '繧ｹ': 'ス',
+    '繧ｺ': 'ズ',
+    '繧ｻ': 'セ',
+    '繧ｼ': 'ゼ',
+    '繧ｽ': 'ソ',
+    '繧ｾ': 'ゾ',
+    '繧ｿ': 'タ',
+    '繝': 'ダ',
+    '繝ａ': 'チ',
+    '繝ｂ': 'ヂ',
+    '繝ｃ': 'ッ',
+    '繝ｄ': 'ヅ',
+    '繝ｅ': 'テ',
+    '繝ｆ': 'デ',
+    '繝ｇ': 'ト',
+    '繝ｈ': 'ド',
+    '繝ｉ': 'ナ',
+    '繝ｊ': 'ニ',
+    '繝ｋ': 'ヌ',
+    '繝ｌ': 'ネ',
+    '繝ｍ': 'ノ',
+    '繝ｮ': 'ハ',
+    '繝ｯ': 'バ',
+    '繝ｰ': 'パ',
+    '繝ｱ': 'ヒ',
+    '繝ｲ': 'ビ',
+    '繝ｳ': 'ピ',
+    '繝ｴ': 'フ',
+    '繝ｵ': 'ブ',
+    '繝ｶ': 'プ',
+    '繝ｷ': 'ヘ',
+    '繝ｸ': 'ベ',
+    '繝ｹ': 'ペ',
+    '繝ｺ': 'ホ',
+    '繝ｻ': 'ボ',
+    '繝ｼ': 'ポ',
+    '繝ｽ': 'マ',
+    '繝ｾ': 'ミ',
+    '繝ｿ': 'ム',
+    '繧ｳ繝ｳ繝斐Η繝ｼ繧ｿ': 'コンピュータ',
+    '繧ｷ繧ｹ繝ｃ繝': 'システム',
+    '繝ｦ繝ｼ繧ｶ繝ｼ': 'ユーザー',
+    '繝ｭ繧ｰ繧､繝ｳ': 'ログイン',
+    '繝代せ繝ｯ繝ｼ繝': 'パスワード',
+    '繝｡繝ｼ繝ｫ': 'メール',
+    '繧｢繝峨Ξ繧ｹ': 'アドレス',
+    '繝輔ぃ繧､繝ｫ': 'ファイル',
+    '繝輔か繝ｫ繝': 'フォルダ',
+    '繝ｩ繧､繧ｻ繝ｳ繧ｹ': 'ライセンス',
+    '繧ｵ繝ｼ繝薙せ': 'サービス',
+    '繧｢繝励Μ繧ｱ繝ｼ繧ｷ繝ｧ繝ｳ': 'アプリケーション',
+    '繝ｭ繧ｰ': 'ログ',
+    '繧ｨ繝ｩ繝ｼ': 'エラー',
+    '繝ｪ繧ｹ繝': 'リスト',
+    '繝ｪ繧ｹ繝医い繝': 'リストア',
+    '繝舌ャ繧ｯ繧｢繝': 'バックアップ',
+    '繝ｪ繧ｹ繝医い': 'リストア',
+    '繝舌ャ繧ｯ繧｢繝': 'バックアップ',
+    # 漢字の文字化けパターン
+    '迺ｾ遶': '環境',
+    '荳?蟋': '会社',
+    '蜿ｯ閭ｽ': '可能',
+    '蠢?隕': '必要',
+    '險ｭ螳': '設定',
+    '繝ｻ繝ｻ繝ｻ': '...',
+    # CIDエラーパターン
+    '(cid:': '',
+    ')': '',
+}
+
+def fix_mojibake_text(text: str) -> str:
+    """文字化けテキストを修復する"""
+    if not text:
+        return text
+    
+    fixed_text = text
+    
+    # 文字化けマッピングを適用
+    for mojibake, correct in MOJIBAKE_MAPPING.items():
+        fixed_text = fixed_text.replace(mojibake, correct)
+    
+    # CIDエラーパターンを除去
+    fixed_text = re.sub(r'\(cid:\d+\)', '', fixed_text)
+    
+    # 連続する文字化け文字を除去
+    fixed_text = re.sub(r'[縺繝繧]{3,}', '[文字化け]', fixed_text)
+    
+    # 置換文字を除去
+    fixed_text = fixed_text.replace('\ufffd', '[文字化け]')
+    fixed_text = fixed_text.replace('', '[文字化け]')
+    
+    # 余分な空白を整理
+    fixed_text = re.sub(r'\s+', ' ', fixed_text)
+    fixed_text = re.sub(r'\n\s*\n\s*\n', '\n\n', fixed_text)
+    
+    return fixed_text.strip()
+
 def check_text_corruption(text: str) -> bool:
     """テキストが文字化けしているかどうかを判定する（強化版）"""
     if not text or len(text.strip()) == 0:
         return True
     
-    # CSV処理の文字化け検出機能を利用
-    from .csv_processor import detect_mojibake_in_text
+    # 基本的な文字化け検出
+    corruption_indicators = [
+        # 文字化け文字の存在
+        '縺' in text,
+        '繝' in text,
+        '繧' in text,
+        '\ufffd' in text,
+        '' in text,
+        '(cid:' in text,
+        
+        # 文字化け文字の比率
+        len(re.findall(r'[縺繝繧]', text)) / len(text) > 0.1 if len(text) > 0 else False,
+        
+        # 意味のある文字の比率が低い
+        len(re.findall(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\w]', text)) / len(text) < 0.3 if len(text) > 0 else True,
+        
+        # 極端に短いテキスト
+        len(text.strip()) < 10,
+    ]
     
-    # 既存の検出結果
-    legacy_corruption = _check_legacy_corruption(text)
+    corruption_count = sum(corruption_indicators)
     
-    # CSV処理の高度な文字化け検出
-    advanced_corruption = detect_mojibake_in_text(text)
+    # 複数の指標で文字化けと判定
+    if corruption_count >= 2:
+        logger.info(f"PDF文字化け検出: {corruption_count}個の指標が該当")
+        return True
     
-    # どちらかで文字化けが検出された場合
-    if legacy_corruption or advanced_corruption:
-        logger.info(f"PDF文字化け検出: legacy={legacy_corruption}, advanced={advanced_corruption}")
+    # 強い指標の場合は単独でも文字化けと判定
+    strong_indicators = [
+        '縺' in text and len(re.findall(r'縺', text)) > 5,
+        '繝' in text and len(re.findall(r'繝', text)) > 5,
+        '(cid:' in text and len(re.findall(r'\(cid:', text)) > 3,
+        '\ufffd' in text,
+    ]
+    
+    if any(strong_indicators):
+        logger.info("PDF強い文字化け指標を検出")
         return True
     
     return False

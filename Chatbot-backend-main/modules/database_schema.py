@@ -73,7 +73,7 @@ SCHEMA = {
         input_tokens INTEGER DEFAULT 0,
         output_tokens INTEGER DEFAULT 0,
         total_tokens INTEGER DEFAULT 0,
-        model_name TEXT DEFAULT 'gpt-4o-mini',
+        model_name TEXT DEFAULT 'gemini-2.5-flash',
         cost_usd DECIMAL(10,6) DEFAULT 0.000000,
         user_id TEXT,
         company_id TEXT,
