@@ -463,15 +463,16 @@ function ChatInterface() {
 
   // 「もっと見る」ボタンの処理
   const handleLoadMoreMessages = () => {
-    const prevScrollHeight = chatContainerRef.current?.scrollHeight || 0;
+    const container = chatContainerRef.current;
+    if (!container) return;
+    
     setDisplayedMessageCount(prev => prev + 10); // さらに5ペア（10件）表示
     
-    // スクロール位置を保持
+    // 新しいメッセージが表示された後、少し上にスクロールする
     setTimeout(() => {
-      if (chatContainerRef.current) {
-        const newScrollHeight = chatContainerRef.current.scrollHeight;
-        const scrollDiff = newScrollHeight - prevScrollHeight;
-        chatContainerRef.current.scrollTop = scrollDiff;
+      if (container) {
+        // 上にスクロールして新しく読み込まれたメッセージを見やすくする
+        container.scrollTop = Math.max(0, container.scrollTop - 200);
       }
     }, 100);
   };
@@ -490,16 +491,15 @@ function ChatInterface() {
         const needToShow = messages.length - displayedMessageCount;
         if (needToShow <= 2) { // 新しいメッセージが1-2件の場合は表示数を増やす
           setDisplayedMessageCount(messages.length);
+          // 新しいメッセージが追加された場合のみ自動スクロール
+          setTimeout(() => scrollToBottom(), 100);
         }
-      }
-      
-      // 最新メッセージが表示範囲内の場合のみスクロール
-      const isLatestMessageVisible = displayedMessageCount >= messages.length;
-      if (isLatestMessageVisible) {
+      } else {
+        // 表示数が十分にある場合（ユーザーが新しい質問をした場合など）
         setTimeout(() => scrollToBottom(), 100);
       }
     }
-  }, [messages.length, displayedMessageCount]);
+  }, [messages.length]);
 
   // 表示するメッセージを取得
   const getDisplayedMessages = () => {
@@ -783,19 +783,16 @@ function ChatInterface() {
       sx={{
         display: 'flex',
         justifyContent: 'center',
-        py: 2,
+        py: 0.5,
         px: 3,
         position: 'sticky',
-        top: 0,
-        zIndex: 10,
-        backgroundColor: 'rgba(248, 250, 252, 0.95)',
-        backdropFilter: 'blur(8px)',
-        borderBottom: '1px solid rgba(37, 99, 235, 0.1)',
-        mb: 2,
+        top: { xs: '4px', sm: '8px' }, // ヘッダーのすぐ下に配置
+        zIndex: 20,
+        mb: 1,
       }}
     >
-      <Button
-        variant="outlined"
+              <Button
+        variant="contained"
         onClick={handleLoadMoreMessages}
         sx={{
           borderRadius: '20px',
@@ -803,15 +800,16 @@ function ChatInterface() {
           fontWeight: 600,
           px: 3,
           py: 1,
-          background: 'rgba(255, 255, 255, 0.9)',
+          background: 'white',
+          color: '#2563eb',
           border: '1px solid rgba(37, 99, 235, 0.2)',
-          color: 'primary.main',
-          boxShadow: '0 2px 8px rgba(37, 99, 235, 0.1)',
+          boxShadow: '0 6px 20px rgba(0, 0, 0, 0.25)',
           '&:hover': {
-            background: 'rgba(37, 99, 235, 0.05)',
+            background: 'white',
+            boxShadow: '0 8px 25px rgba(0, 0, 0, 0.3)',
+            transform: 'translateY(-2px)',
+            color: '#1d4ed8',
             border: '1px solid rgba(37, 99, 235, 0.3)',
-            boxShadow: '0 4px 16px rgba(37, 99, 235, 0.15)',
-            transform: 'translateY(-1px)',
           },
           transition: 'all 0.2s ease',
         }}
