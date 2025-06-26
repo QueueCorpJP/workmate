@@ -347,8 +347,8 @@ class DocumentProcessor:
                 raise main_error
     
     async def _save_chunks_to_database(self, doc_id: str, chunks: List[Dict[str, Any]],
-                                     company_id: str, doc_name: str, max_retries: int = 3) -> Dict[str, Any]:
-        """chunksテーブルにチャンクデータとembeddingをバッチで保存（リトライ機能付き）"""
+                                     company_id: str, doc_name: str, max_retries: int = 10) -> Dict[str, Any]:
+        """chunksテーブルにチャンクデータとembeddingを50個単位でリアルタイム保存"""
         try:
             from supabase_adapter import get_supabase_client
             supabase = get_supabase_client()
@@ -364,81 +364,108 @@ class DocumentProcessor:
             if not chunks:
                 return stats
 
-            # 初回のembedding生成
-            contents = [chunk["content"] for chunk in chunks]
-            embeddings = await self._generate_embeddings_batch(contents)
-
-            # 失敗したインデックスを特定
-            failed_indices = [i for i, emb in enumerate(embeddings) if emb is None]
+            batch_size = 50
+            total_batches = (len(chunks) + batch_size - 1) // batch_size
             
-            # リトライ処理
-            retry_count = 0
-            while failed_indices and retry_count < max_retries:
-                retry_count += 1
-                stats["retry_attempts"] = retry_count
-                
-                logger.info(f"🔄 embedding再生成 (試行 {retry_count}/{max_retries}): {len(failed_indices)}件")
-                
-                # 失敗分のみ再実行
-                retry_embeddings = await self._generate_embeddings_batch(contents, failed_indices)
-                
-                # 結果をマージ
-                for i in failed_indices:
-                    if retry_embeddings[i] is not None:
-                        embeddings[i] = retry_embeddings[i]
-                
-                # 再度失敗したインデックスを特定
-                failed_indices = [i for i in failed_indices if embeddings[i] is None]
-                
-                if failed_indices:
-                    logger.warning(f"⚠️ 再試行後も失敗: {len(failed_indices)}件 - {failed_indices}")
-                    # 次のリトライまで少し待機
-                    await asyncio.sleep(1.0)
-                else:
-                    logger.info(f"✅ 再試行成功: 全てのembeddingが生成されました")
-                    break
+            logger.info(f"🚀 {doc_name}: {len(chunks)}個のチャンクを{batch_size}個単位で処理開始")
+            logger.info(f"📊 予想バッチ数: {total_batches}")
 
-            # 最終統計
-            for i, embedding_vector in enumerate(embeddings):
-                if embedding_vector:
-                    stats["successful_embeddings"] += 1
-                else:
-                    stats["failed_embeddings"] += 1
-
-            # データベースに保存するレコードを準備
-            records_to_insert = []
-            for i, chunk_data in enumerate(chunks):
-                embedding_vector = embeddings[i]
+            # 50個単位でembedding生成→即座にinsert
+            for batch_num in range(0, len(chunks), batch_size):
+                batch_chunks = chunks[batch_num:batch_num + batch_size]
+                current_batch = (batch_num // batch_size) + 1
                 
-                records_to_insert.append({
-                    "doc_id": doc_id,
-                    "chunk_index": chunk_data["chunk_index"],
-                    "content": chunk_data["content"],
-                    "embedding": embedding_vector,
-                    "company_id": company_id,
-                    "created_at": datetime.now().isoformat(),
-                    "updated_at": datetime.now().isoformat()
-                })
-
-            # Supabaseにバッチで挿入
-            if records_to_insert:
-                result = supabase.table("chunks").insert(records_to_insert).execute()
-                if result.data:
-                    stats["saved_chunks"] = len(result.data)
-                    logger.info(f"✅ {doc_name}: {stats['saved_chunks']}/{len(chunks)} チャンク保存完了")
+                logger.info(f"🧠 バッチ {current_batch}/{total_batches}: {len(batch_chunks)}個のembedding生成開始")
+                
+                # このバッチのembedding生成
+                batch_contents = [chunk["content"] for chunk in batch_chunks]
+                batch_embeddings = await self._generate_embeddings_batch(batch_contents)
+                
+                # 失敗したembeddingのリトライ処理
+                failed_indices = [i for i, emb in enumerate(batch_embeddings) if emb is None]
+                retry_count = 0
+                
+                while failed_indices and retry_count < max_retries:
+                    retry_count += 1
+                    logger.info(f"🔄 バッチ {current_batch} embedding再生成 (試行 {retry_count}/{max_retries}): {len(failed_indices)}件")
                     
-                    # 最終結果のサマリー
-                    if stats["failed_embeddings"] > 0:
-                        logger.warning(f"⚠️ 最終結果: {stats['successful_embeddings']}/{stats['total_chunks']} embedding成功, {stats['retry_attempts']}回再試行")
+                    retry_embeddings = await self._generate_embeddings_batch(batch_contents, failed_indices)
+                    
+                    for i in failed_indices:
+                        if retry_embeddings[i] is not None:
+                            batch_embeddings[i] = retry_embeddings[i]
+                    
+                    failed_indices = [i for i in failed_indices if batch_embeddings[i] is None]
+                    
+                    if failed_indices:
+                        logger.warning(f"⚠️ バッチ {current_batch} 再試行後も失敗: {len(failed_indices)}件")
+                        await asyncio.sleep(1.0)
                     else:
-                        logger.info(f"🎉 全embedding生成成功: {stats['successful_embeddings']}/{stats['total_chunks']}")
+                        logger.info(f"✅ バッチ {current_batch} 再試行成功")
+                        break
+                
+                # 統計更新
+                for embedding in batch_embeddings:
+                    if embedding:
+                        stats["successful_embeddings"] += 1
+                    else:
+                        stats["failed_embeddings"] += 1
+                
+                if retry_count > 0:
+                    stats["retry_attempts"] = max(stats["retry_attempts"], retry_count)
+                
+                # 成功したembeddingのみでレコード準備
+                records_to_insert = []
+                for i, chunk_data in enumerate(batch_chunks):
+                    embedding_vector = batch_embeddings[i]
+                    if embedding_vector:  # 成功したembeddingのみ
+                        records_to_insert.append({
+                            "doc_id": doc_id,
+                            "chunk_index": chunk_data["chunk_index"],
+                            "content": chunk_data["content"],
+                            "embedding": embedding_vector,
+                            "company_id": company_id,
+                            "created_at": datetime.now().isoformat(),
+                            "updated_at": datetime.now().isoformat()
+                        })
+                
+                # 即座にSupabaseに挿入
+                if records_to_insert:
+                    try:
+                        logger.info(f"💾 バッチ {current_batch}/{total_batches}: {len(records_to_insert)}件を即座に保存中...")
+                        result = supabase.table("chunks").insert(records_to_insert).execute()
+                        
+                        if result.data:
+                            batch_saved = len(result.data)
+                            stats["saved_chunks"] += batch_saved
+                            logger.info(f"✅ バッチ {current_batch}/{total_batches}: {batch_saved}件保存完了")
+                        else:
+                            logger.error(f"❌ バッチ {current_batch}/{total_batches} 保存エラー: {result.error}")
+                            
+                    except Exception as batch_error:
+                        logger.error(f"❌ バッチ {current_batch}/{total_batches} 保存中に例外発生: {batch_error}")
+                        # バッチエラーでも次のバッチ処理を続行
+                        continue
                 else:
-                    logger.error(f"❌ チャンク一括保存エラー: {result.error}")
+                    logger.warning(f"⚠️ バッチ {current_batch}/{total_batches}: 保存可能なレコードがありません")
+                
+                # バッチ完了ログ
+                logger.info(f"🎯 バッチ {current_batch}/{total_batches} 完了: embedding {len(batch_embeddings) - len(failed_indices)}/{len(batch_embeddings)} 成功, 保存 {len(records_to_insert)} 件")
+
+            # 最終結果のサマリー
+            logger.info(f"🏁 {doc_name}: 全処理完了")
+            logger.info(f"📈 最終結果: 保存 {stats['saved_chunks']}/{stats['total_chunks']} チャンク")
+            logger.info(f"🧠 embedding: 成功 {stats['successful_embeddings']}, 失敗 {stats['failed_embeddings']}")
+            
+            if stats["failed_embeddings"] > 0:
+                logger.warning(f"⚠️ 最終結果: {stats['successful_embeddings']}/{stats['total_chunks']} embedding成功, {stats['retry_attempts']}回再試行")
+            else:
+                logger.info(f"🎉 全embedding生成成功: {stats['successful_embeddings']}/{stats['total_chunks']}")
 
             return stats
 
         except Exception as e:
-            logger.error(f"❌ チャンク一括保存中に例外発生: {e}", exc_info=True)
+            logger.error(f"❌ リアルタイムバッチ保存中に例外発生: {e}", exc_info=True)
             raise
     
     async def process_uploaded_file(self, file: UploadFile, user_id: str, 
@@ -696,5 +723,133 @@ class DocumentProcessor:
         # 1ページあたり約500トークンと仮定
         tokens = self._count_tokens(text)
         return max(1, (tokens + 499) // 500)
+
+    async def retry_failed_embeddings(self, doc_id: str = None, company_id: str = None, max_retries: int = 10) -> Dict[str, Any]:
+        """
+        既存のチャンクで失敗したembeddingを再生成
+        doc_id: 特定のドキュメントのみ処理（Noneの場合は全て）
+        company_id: 特定の会社のみ処理（Noneの場合は全て）
+        """
+        try:
+            from supabase_adapter import get_supabase_client
+            supabase = get_supabase_client()
+            
+            logger.info(f"🔍 失敗したembeddingの検索開始 (doc_id: {doc_id}, company_id: {company_id})")
+            
+            # 失敗したチャンクを検索（embeddingがNullのもの）
+            query = supabase.table("chunks").select("*").is_("embedding", "null")
+            
+            if doc_id:
+                query = query.eq("doc_id", doc_id)
+            if company_id:
+                query = query.eq("company_id", company_id)
+            
+            result = query.execute()
+            
+            if not result.data:
+                logger.info("✅ 失敗したembeddingは見つかりませんでした")
+                return {
+                    "total_failed": 0,
+                    "processed": 0,
+                    "successful": 0,
+                    "still_failed": 0,
+                    "retry_attempts": 0
+                }
+            
+            failed_chunks = result.data
+            logger.info(f"🔍 失敗したチャンクを発見: {len(failed_chunks)}件")
+            
+            stats = {
+                "total_failed": len(failed_chunks),
+                "processed": 0,
+                "successful": 0,
+                "still_failed": 0,
+                "retry_attempts": 0
+            }
+            
+            # チャンクをバッチで処理（50件ずつ）
+            batch_size = 50
+            for batch_start in range(0, len(failed_chunks), batch_size):
+                batch_end = min(batch_start + batch_size, len(failed_chunks))
+                batch_chunks = failed_chunks[batch_start:batch_end]
+                
+                logger.info(f"📦 バッチ処理: {batch_start + 1}-{batch_end}/{len(failed_chunks)}")
+                
+                # バッチのテキストを抽出
+                batch_contents = [chunk["content"] for chunk in batch_chunks]
+                batch_indices = list(range(len(batch_contents)))
+                
+                # embedding生成（リトライ付き）
+                embeddings = await self._generate_embeddings_batch(batch_contents)
+                
+                # 失敗したものを再試行
+                failed_indices = [i for i, emb in enumerate(embeddings) if emb is None]
+                retry_count = 0
+                
+                while failed_indices and retry_count < max_retries:
+                    retry_count += 1
+                    stats["retry_attempts"] = max(stats["retry_attempts"], retry_count)
+                    
+                    logger.info(f"🔄 バッチ再試行 {retry_count}/{max_retries}: {len(failed_indices)}件")
+                    
+                    retry_embeddings = await self._generate_embeddings_batch(batch_contents, failed_indices)
+                    
+                    # 結果をマージ
+                    for i in failed_indices:
+                        if retry_embeddings[i] is not None:
+                            embeddings[i] = retry_embeddings[i]
+                    
+                    failed_indices = [i for i in failed_indices if embeddings[i] is None]
+                    
+                    if failed_indices:
+                        await asyncio.sleep(2.0)  # リトライ間隔
+                
+                # データベースを更新
+                for i, chunk in enumerate(batch_chunks):
+                    embedding_vector = embeddings[i]
+                    chunk_id = chunk["id"]
+                    
+                    try:
+                        if embedding_vector:
+                            # embeddingを更新
+                            update_result = supabase.table("chunks").update({
+                                "embedding": embedding_vector,
+                                "updated_at": datetime.now().isoformat()
+                            }).eq("id", chunk_id).execute()
+                            
+                            if update_result.data:
+                                stats["successful"] += 1
+                                logger.info(f"✅ embedding更新成功: chunk_id={chunk_id}")
+                            else:
+                                stats["still_failed"] += 1
+                                logger.error(f"❌ embedding更新失敗: chunk_id={chunk_id}")
+                        else:
+                            stats["still_failed"] += 1
+                            logger.warning(f"⚠️ embedding生成失敗: chunk_id={chunk_id}")
+                        
+                        stats["processed"] += 1
+                        
+                    except Exception as update_error:
+                        logger.error(f"❌ チャンク更新エラー (chunk_id={chunk_id}): {update_error}")
+                        stats["still_failed"] += 1
+                        stats["processed"] += 1
+                
+                # バッチ間の待機
+                if batch_end < len(failed_chunks):
+                    await asyncio.sleep(1.0)
+            
+            # 最終結果
+            logger.info(f"🎉 embedding修復完了:")
+            logger.info(f"   - 処理対象: {stats['total_failed']}件")
+            logger.info(f"   - 処理完了: {stats['processed']}件")
+            logger.info(f"   - 成功: {stats['successful']}件")
+            logger.info(f"   - 失敗: {stats['still_failed']}件")
+            logger.info(f"   - 最大再試行回数: {stats['retry_attempts']}回")
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"❌ embedding修復処理エラー: {e}", exc_info=True)
+            raise
 
 document_processor = DocumentProcessor()
