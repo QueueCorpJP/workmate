@@ -16,7 +16,7 @@ Workmate は **RAG（Retrieval-Augmented Generation）技術**を活用したAI�
 
 ### 📂 スキーマ構成
 - **`auth`** - Supabase認証システム（16テーブル）
-- **`public`** - アプリケーション固有のビジネスロジック（10テーブル）
+- **`public`** - アプリケーション固有のビジネスロジック（9テーブル）
 
 ### 🎯 主要機能
 1. **企業・ユーザー管理** - マルチテナント対応
@@ -38,81 +38,327 @@ email                      varchar UNIQUE
 encrypted_password         varchar
 created_at                timestamptz
 updated_at                timestamptz
-is_super_admin            boolean
-raw_user_meta_data        jsonb      -- プロフィール情報
-raw_app_meta_data         jsonb      -- アプリケーション情報
-phone                     text UNIQUE
-phone_confirmed_at        timestamptz
-is_sso_user              boolean DEFAULT false
+instance_id               uuid
+aud                       varchar
+role                      varchar
+email_confirmed_at        timestamptz
+invited_at               timestamptz
+confirmation_token       varchar
+confirmation_sent_at     timestamptz
+recovery_token           varchar
+recovery_sent_at         timestamptz
+email_change_token_new   varchar
+email_change             varchar
+email_change_sent_at     timestamptz
+last_sign_in_at          timestamptz
+raw_app_meta_data        jsonb      -- プロフィール情報
+raw_user_meta_data       jsonb      -- アプリケーション情報
+is_super_admin           boolean
+phone                    text UNIQUE
+phone_confirmed_at       timestamptz
+phone_change             text DEFAULT ''
+phone_change_token       varchar DEFAULT ''
+phone_change_sent_at     timestamptz
+confirmed_at             timestamptz GENERATED -- LEAST(email_confirmed_at, phone_confirmed_at)
+email_change_token_current varchar DEFAULT ''
+email_change_confirm_status smallint DEFAULT 0 CHECK (>= 0 AND <= 2)
+banned_until             timestamptz
+reauthentication_token   varchar DEFAULT ''
+reauthentication_sent_at timestamptz
+is_sso_user              boolean DEFAULT false -- SSO経由のアカウント識別
 deleted_at               timestamptz
 is_anonymous             boolean DEFAULT false
-banned_until             timestamptz
-reauthentication_token   varchar
+
+-- 統計情報
+現在のサイズ: 96 kB
+推定データ: 0レコード
+RLS: 有効
 ```
 
 **🔑 キーポイント:**
 - Supabase認証の中核テーブル（35カラム）
 - 電話番号認証・匿名ユーザー・SSO対応
 - ユーザー削除・BANにも対応
+- confirmed_at は生成カラム（email/phone確認の早い方）
 - RLS（Row Level Security）対応
 
 ### 🔄 sessions - セッション管理
 ```sql
--- 主要カラム
+-- 主要カラム（11カラム）
 id          uuid PRIMARY KEY
-user_id     uuid → auth.users(id)
+user_id     uuid NOT NULL → auth.users(id)
 created_at  timestamptz
 updated_at  timestamptz
-user_agent  text
-ip          inet
+factor_id   uuid          -- MFA要素ID
 aal         aal_level ENUM('aal1','aal2','aal3')  -- 認証レベル
-refreshed_at timestamp
-not_after   timestamptz  -- セッション有効期限
-tag         text         -- セッション識別子
+not_after   timestamptz   -- セッション有効期限
+refreshed_at timestamp    -- 最終リフレッシュ時刻
+user_agent  text          -- ユーザーエージェント
+ip          inet          -- IPアドレス
+tag         text          -- セッション識別子
+
+-- 統計情報
+現在のサイズ: 40 kB
+推定データ: 0レコード
+RLS: 有効
 ```
 
 ### 🔐 MFA（多要素認証）システム
 
 #### mfa_factors - 認証要素
 ```sql
-factor_type           factor_type ENUM('totp','webauthn','phone')
+-- テーブル構造（12カラム）
+id                    uuid PRIMARY KEY
+user_id              uuid NOT NULL → auth.users(id)
+friendly_name        text              -- 表示名
+factor_type          factor_type ENUM('totp','webauthn','phone')
 status               factor_status ENUM('unverified','verified')
+created_at           timestamptz NOT NULL
+updated_at           timestamptz NOT NULL
 secret               text              -- TOTP秘密鍵
 phone                text              -- SMS認証用
+last_challenged_at   timestamptz UNIQUE
 web_authn_credential jsonb             -- WebAuthn認証情報
 web_authn_aaguid     uuid              -- WebAuthn AAGUID
-last_challenged_at   timestamptz UNIQUE
+
+-- 統計情報
+現在のサイズ: 56 kB
+推定データ: 0レコード
+RLS: 有効
 ```
 
 #### mfa_challenges - 認証チャレンジ
 ```sql
-factor_id                uuid → mfa_factors(id)
-otp_code                text
-verified_at             timestamptz
-ip_address              inet
-web_authn_session_data  jsonb    -- WebAuthn セッション
+-- テーブル構造（7カラム）
+id                      uuid PRIMARY KEY
+factor_id              uuid NOT NULL → mfa_factors(id)
+created_at             timestamptz NOT NULL
+verified_at            timestamptz
+ip_address             inet NOT NULL
+otp_code               text
+web_authn_session_data jsonb    -- WebAuthn セッション
+
+-- 統計情報
+現在のサイズ: 24 kB
+推定データ: 0レコード
+RLS: 有効
 ```
 
 #### mfa_amr_claims - 認証方法記録
 ```sql
-session_id             uuid → sessions(id)
+-- テーブル構造（5カラム）
+session_id             uuid NOT NULL → sessions(id)
+created_at            timestamptz NOT NULL
+updated_at            timestamptz NOT NULL
 authentication_method  text NOT NULL
-created_at            timestamptz
-updated_at            timestamptz
+id                    uuid PRIMARY KEY
+
+-- 統計情報
+現在のサイズ: 24 kB
+推定データ: 0レコード
+RLS: 有効
 ```
 
 ### 🌐 SSO（シングルサインオン）
-- **sso_providers** - ID プロバイダー管理
-- **saml_providers** - SAML設定（メタデータXML対応）
-- **sso_domains** - ドメインマッピング
-- **saml_relay_states** - SAML リレー状態管理
+
+#### sso_providers - SSOプロバイダー
+```sql
+-- テーブル構造（4カラム）
+id           uuid PRIMARY KEY
+resource_id  text UNIQUE  -- ユーザー定義のリソースID（大文字小文字区別なし）
+created_at   timestamptz
+updated_at   timestamptz
+
+-- 統計情報
+現在のサイズ: 24 kB
+推定データ: 0レコード
+RLS: 有効
+CHECK: resource_id = NULL OR char_length(resource_id) > 0
+```
+
+#### sso_domains - SSOドメインマッピング
+```sql
+-- テーブル構造（5カラム）
+id              uuid PRIMARY KEY
+sso_provider_id uuid NOT NULL → sso_providers(id)
+domain          text NOT NULL  -- マッピング対象ドメイン
+created_at      timestamptz
+updated_at      timestamptz
+
+-- 統計情報
+現在のサイズ: 32 kB
+推定データ: 0レコード
+RLS: 有効
+CHECK: char_length(domain) > 0
+```
+
+#### saml_providers - SAML設定
+```sql
+-- テーブル構造（9カラム）
+id                  uuid PRIMARY KEY
+sso_provider_id     uuid NOT NULL → sso_providers(id)
+entity_id           text NOT NULL UNIQUE  -- SAMLエンティティID
+metadata_xml        text NOT NULL         -- SAMLメタデータXML
+metadata_url        text                  -- メタデータURL（オプション）
+attribute_mapping   jsonb                 -- 属性マッピング設定
+created_at          timestamptz
+updated_at          timestamptz
+name_id_format      text                  -- NameIDフォーマット
+
+-- 統計情報
+現在のサイズ: 32 kB
+推定データ: 0レコード
+RLS: 有効
+CHECK: char_length(entity_id) > 0, char_length(metadata_xml) > 0
+CHECK: metadata_url = NULL OR char_length(metadata_url) > 0
+```
+
+#### saml_relay_states - SAML Relay State
+```sql
+-- テーブル構造（8カラム）
+id              uuid PRIMARY KEY
+sso_provider_id uuid NOT NULL → sso_providers(id)
+request_id      text NOT NULL  -- SAMLリクエストID
+for_email       text           -- 対象メールアドレス
+redirect_to     text           -- リダイレクト先URL
+created_at      timestamptz
+updated_at      timestamptz
+flow_state_id   uuid → flow_state(id)  -- PKCEフロー連携
+
+-- 統計情報
+現在のサイズ: 40 kB
+推定データ: 0レコード
+RLS: 有効
+CHECK: char_length(request_id) > 0
+```
 
 ### 🔑 その他の認証テーブル
-- **identities** - 外部ID連携（OAuth等）
-- **refresh_tokens** - JWTリフレッシュトークン
-- **one_time_tokens** - ワンタイムトークン（6種類対応）
-- **audit_log_entries** - 監査ログ
-- **flow_state** - PKCE認証フロー管理
+
+#### identities - 外部ID連携
+```sql
+-- テーブル構造（9カラム）
+provider_id      text NOT NULL          -- プロバイダー固有ID
+user_id          uuid NOT NULL → users(id)
+identity_data    jsonb NOT NULL         -- ID情報
+provider         text NOT NULL          -- プロバイダー名
+last_sign_in_at  timestamptz
+created_at       timestamptz
+updated_at       timestamptz
+email            text GENERATED         -- identity_dataから抽出
+id               uuid PRIMARY KEY DEFAULT gen_random_uuid()
+
+-- 統計情報
+現在のサイズ: 40 kB
+推定データ: 0レコード
+RLS: 有効
+```
+
+#### refresh_tokens - JWTリフレッシュトークン
+```sql
+-- テーブル構造（9カラム）
+instance_id  uuid
+id           bigint PRIMARY KEY DEFAULT nextval('auth.refresh_tokens_id_seq')
+token        varchar UNIQUE
+user_id      varchar
+revoked      boolean
+created_at   timestamptz
+updated_at   timestamptz
+parent       varchar
+session_id   uuid → sessions(id)
+
+-- 統計情報
+現在のサイズ: 64 kB
+推定データ: 0レコード
+RLS: 有効
+```
+
+#### one_time_tokens - ワンタイムトークン
+```sql
+-- テーブル構造（7カラム）
+id          uuid PRIMARY KEY
+user_id     uuid NOT NULL → users(id)
+token_type  one_time_token_type ENUM(
+    'confirmation_token',
+    'reauthentication_token', 
+    'recovery_token',
+    'email_change_token_new',
+    'email_change_token_current',
+    'phone_change_token'
+)
+token_hash  text NOT NULL     -- トークンハッシュ
+relates_to  text NOT NULL     -- 関連情報
+created_at  timestamp NOT NULL DEFAULT now()
+updated_at  timestamp NOT NULL DEFAULT now()
+
+-- 統計情報
+現在のサイズ: 88 kB
+推定データ: 0レコード
+RLS: 有効
+CHECK: char_length(token_hash) > 0
+```
+
+#### flow_state - PKCE認証フロー
+```sql
+-- テーブル構造（12カラム）
+id                      uuid PRIMARY KEY
+user_id                 uuid → users(id)
+auth_code               text NOT NULL
+code_challenge_method   code_challenge_method ENUM('s256','plain')
+code_challenge          text NOT NULL
+provider_type           text NOT NULL
+provider_access_token   text
+provider_refresh_token  text
+created_at              timestamptz
+updated_at              timestamptz
+authentication_method   text NOT NULL
+auth_code_issued_at     timestamptz
+
+-- 統計情報
+現在のサイズ: 40 kB
+推定データ: 0レコード
+RLS: 有効
+```
+
+#### audit_log_entries - 監査ログ
+```sql
+-- テーブル構造（5カラム）
+instance_id  uuid
+id           uuid PRIMARY KEY
+payload      json              -- 監査データ
+created_at   timestamptz
+ip_address   varchar NOT NULL DEFAULT ''
+
+-- 統計情報
+現在のサイズ: 24 kB
+推定データ: 0レコード
+RLS: 有効
+```
+
+#### instances - インスタンス管理
+```sql
+-- テーブル構造（5カラム）
+id               uuid PRIMARY KEY
+uuid             uuid
+raw_base_config  text          -- 基本設定
+created_at       timestamptz
+updated_at       timestamptz
+
+-- 統計情報
+現在のサイズ: 16 kB
+推定データ: 0レコード
+RLS: 有効
+```
+
+#### schema_migrations - スキーマ管理
+```sql
+-- テーブル構造（1カラム）
+version  varchar PRIMARY KEY   -- マイグレーションバージョン
+
+-- 統計情報
+現在のサイズ: 24 kB
+推定データ: 61レコード
+RLS: 有効
+```
 
 ---
 
@@ -120,34 +366,38 @@ updated_at            timestamptz
 
 ### 🏢 companies - 企業マスター
 ```sql
--- テーブル構造
+-- テーブル構造（3カラム）
 id          text PRIMARY KEY     -- 企業ID
 name        text NOT NULL        -- 企業名
 created_at  timestamp NOT NULL   -- 作成日時
 
 -- 統計情報
-推定データ: 7レコード (32 kB)
+現在のサイズ: 32 kB
+推定データ: 7レコード
+RLS: 無効
 ```
 
 ### 👥 users - アプリケーションユーザー
 ```sql
--- テーブル構造
+-- テーブル構造（8カラム）
 id          text PRIMARY KEY           -- ユーザーID
 email       text UNIQUE NOT NULL       -- メールアドレス
 password    text NOT NULL              -- パスワード（ハッシュ化）
 name        text NOT NULL              -- 表示名
 role        text DEFAULT 'user'        -- ロール
 company_id  text → companies(id)       -- 所属企業
-created_by  text → users(id)           -- 作成者（管理者）
 created_at  timestamp NOT NULL         -- 作成日時
+created_by  text → users(id)           -- 作成者（管理者）
 
 -- 統計情報
-推定データ: 4レコード (80 kB)
+現在のサイズ: 80 kB
+推定データ: 4レコード
+RLS: 無効
 ```
 
 ### 📊 usage_limits - 利用制限管理
 ```sql
--- テーブル構造
+-- テーブル構造（6カラム）
 user_id                  text PRIMARY KEY → users(id)
 document_uploads_used    int DEFAULT 0      -- 使用済みドキュメント数
 document_uploads_limit   int DEFAULT 2      -- ドキュメント上限
@@ -156,109 +406,69 @@ questions_limit         int DEFAULT 10     -- 質問回数上限
 is_unlimited            bool DEFAULT false -- 無制限フラグ
 
 -- 統計情報
-推定データ: 4レコード (64 kB)
+現在のサイズ: 64 kB
+推定データ: 4レコード
+RLS: 無効
 ```
 
 ### 📄 document_sources - ドキュメント管理（🚀最適化済み）
 ```sql
--- テーブル構造（実際のSupabase構造）
+-- テーブル構造（11カラム）
 id           text PRIMARY KEY              -- ドキュメントID
 name         text NOT NULL                 -- ファイル名
 type         text NOT NULL                 -- ファイル種別
 page_count   integer                      -- ページ数
-uploaded_by  text → users(id)             -- アップロード者
-company_id   text → companies(id)         -- 所属企業
+uploaded_by  text NOT NULL → users(id)     -- アップロード者
+company_id   text NOT NULL → companies(id) -- 所属企業
 uploaded_at  timestamp NOT NULL           -- アップロード日時
 active       boolean DEFAULT true         -- 有効フラグ
 special      text                         -- 特殊属性
 parent_id    text → document_sources(id)  -- 親ドキュメント（階層構造）
 
 -- 統計情報
-推定データ: 2レコード (240 kB - 大幅削減済み)
+現在のサイズ: 232 kB
+推定データ: 0レコード（削除済みアーカイブあり: 42レコード）
+RLS: 無効
 
 -- ✅ 最適化完了
 -- ❌ content カラム削除済み（chunksテーブルで管理）
 -- ❌ embedding カラム削除済み（chunksテーブルで管理）
 ```
 
-### 🧩 chunks - チャンク管理テーブル（🆕新規追加）
+### 🧩 chunks - チャンク管理テーブル（🆕ベクトルRAG対応）
 
-ファイル全体のテキスト（`document_sources.content`）を**小さなチャンク（300〜500トークン）**に分割し、それぞれを検索・RAG（LLMとの連携）用に保存するテーブルです。
-
+**📋 テーブル構造詳細:**
 ```sql
--- テーブル構造（実際のSupabase構造）
+-- テーブル構造（8カラム）
 id          uuid PRIMARY KEY DEFAULT gen_random_uuid()  -- チャンク一意ID（UUID）
-doc_id      text NOT NULL → document_sources(id)       -- 紐づく document_sources.id（親）
-chunk_index integer NOT NULL                           -- チャンクの順序（0, 1, 2, …）
 content     text NOT NULL                              -- チャンク本文（300-500トークン）
-created_at  timestamp DEFAULT now()                    -- 登録日時
-company_id  text                                       -- 所属企業ID（企業分離用）
 embedding   vector                                     -- 🧠 Gemini Embedding（3072次元）
-
--- 外部キー制約
-CONSTRAINT fk_chunks_doc FOREIGN KEY (doc_id) REFERENCES document_sources(id)
+chunk_index integer NOT NULL                           -- チャンクの順序（0, 1, 2, …）
+doc_id      text NOT NULL → document_sources(id)       -- 紐づく document_sources.id（親）
+company_id  text                                       -- 所属企業ID（企業分離用）
+created_at  timestamptz DEFAULT now()                  -- 登録日時
+updated_at  timestamptz DEFAULT now()                  -- 更新日時
 
 -- 統計情報
-推定データ: 3レコード (696 kB)
+現在のサイズ: 16 kB
+推定データ: 0レコード
+RLS: 無効
 ```
 
-### 🔧 主な用途
+**🔧 主な用途:**
 | 用途 | 説明 |
 |------|------|
 | **高速な部分検索（semantic）** | embedding検索で、質問と「意味的に近いチャンク」だけを抽出する |
 | **LLMとの組み合わせ（RAG）** | Geminiなどに「部分情報だけ」渡すことで効率よく回答を生成 |
 | **ドキュメント単位の絞り込み** | doc_idで document_sources と紐づけて、対象ファイル内に限定可能 |
 
-### 📂 document_sources との役割分担
+**📂 document_sources との役割分担:**
 - **document_sources**: 一覧・メタデータ管理（ファイル名、アップロード者、企業など）
 - **chunks**: 実際の検索・RAG処理（細かく分割されたコンテンツとベクトル）
 
-### ✅ 重複カラムの最適化完了
-以下の最適化が完了し、明確な役割分担を実現：
-
-| カラム | 最適化状況 | 効果 |
-|--------|-----------|------|
-| **content** | ✅ **document_sourcesから削除済み** | 🎯 RAG検索精度向上・容量大幅削減 |
-| **embedding** | ✅ **document_sourcesから削除済み** | 🚀 chunksベクトル検索への一元化 |
-| **企業分離** | ✅ **company_idで完全分離** | 🔧 マルチテナント対応 |
-
-**🎉 最適化効果**: 
-- **容量削減**: 3.6MB → 240 kB (document_sources) + 696 kB (chunks) = 大幅効率化
-- **検索精度**: chunksのみの一元化でRAG性能向上
-- **管理効率**: メタデータ vs 検索データの明確分離
-
-### 🔄 RAG処理フロー詳細
-```
-1️⃣ ユーザーが PDF / XLS をアップロード
-        ↓
-2️⃣ document_sources に保存（メタ情報 + 本文）
-        ↓
-3️⃣ テキストを分割（300〜500トークンごと）
-        ↓
-4️⃣ 各チャンクを Gemini でベクトル化（3072次元）
-        ↓
-5️⃣ chunks に保存（doc_id + embedding）
-        ↓
-6️⃣ ユーザーが質問
-        ↓
-7️⃣ 質問を embedding 化
-        ↓
-8️⃣ chunks から類似チャンク Top-N を検索
-        ↓
-9️⃣ Gemini などの LLM に渡し、回答生成
-```
-
-**🚀 チャンク分割の利点:**
-- **検索精度向上**: 長い文書を小分割して関連性の高い部分を抽出
-- **トークン効率**: 必要な部分のみをAIに送信してコスト削減
-- **並列処理**: 複数チャンクの同時検索で高速化
-- **コンテキスト管理**: chunk_indexで前後の文脈を把握可能
-- **柔軟な制御**: activeフラグでチャンク単位の有効/無効切り替え
-- **特殊処理対応**: specialカラムで特定チャンクの特別扱いが可能
-
 ### 💬 chat_history - チャット履歴
 ```sql
--- テーブル構造
+-- テーブル構造（20カラム）
 id               text PRIMARY KEY     -- チャットID
 user_message     text NOT NULL        -- ユーザー質問
 bot_response     text NOT NULL        -- AI応答
@@ -272,23 +482,25 @@ source_page      text                 -- 参照ページ
 user_id          varchar              -- ユーザーID
 company_id       varchar              -- 企業ID
 
--- 🤖 AI分析情報（Gemini 2.5 Flash）
-model_name       varchar DEFAULT 'gemini-2.5-flash'  -- 🆕更新済み
+-- 🤖 AI分析情報（Gemini）
+model_name       varchar DEFAULT 'gpt-4o-mini'  -- AIモデル名
 input_tokens     int DEFAULT 0        -- 入力トークン数
 output_tokens    int DEFAULT 0        -- 出力トークン数
 total_tokens     int DEFAULT 0        -- 合計トークン数
-cost_usd         numeric DEFAULT 0    -- コスト（USD）
-base_cost_usd    numeric DEFAULT 0    -- 基本コスト
-prompt_cost_usd  numeric DEFAULT 0    -- プロンプトコスト
+cost_usd         numeric DEFAULT 0.000000    -- コスト（USD）
+base_cost_usd    numeric DEFAULT 0.000000    -- 基本コスト
+prompt_cost_usd  numeric DEFAULT 0.000000    -- プロンプトコスト
 prompt_references int DEFAULT 0       -- プロンプト参照数
 
 -- 統計情報
-推定データ: 273レコード (704 kB)
+現在のサイズ: 552 kB
+推定データ: 22レコード
+RLS: 無効
 ```
 
 ### 📊 monthly_token_usage - 月次利用統計
 ```sql
--- テーブル構造
+-- テーブル構造（11カラム）
 id                    varchar PRIMARY KEY      -- 統計ID
 company_id           varchar NOT NULL         -- 企業ID
 user_id              varchar NOT NULL         -- ユーザーID
@@ -296,33 +508,37 @@ year_month           varchar NOT NULL         -- 年月（YYYY-MM）
 total_input_tokens   int DEFAULT 0           -- 月間入力トークン
 total_output_tokens  int DEFAULT 0           -- 月間出力トークン
 total_tokens         int DEFAULT 0           -- 月間合計トークン
-total_cost_usd       numeric DEFAULT 0       -- 月間コスト
+total_cost_usd       numeric DEFAULT 0.000000 -- 月間コスト
 conversation_count   int DEFAULT 0           -- 会話数
-created_at           timestamp DEFAULT now()
-updated_at           timestamp DEFAULT now()
+created_at           timestamp DEFAULT CURRENT_TIMESTAMP
+updated_at           timestamp DEFAULT CURRENT_TIMESTAMP
 
 -- 統計情報
-推定データ: 0レコード (88 kB)
+現在のサイズ: 88 kB
+推定データ: 0レコード
+RLS: 無効
 ```
 
 ### ⚙️ company_settings - 企業設定
 ```sql
--- テーブル構造
+-- テーブル構造（7カラム）
 company_id                      varchar PRIMARY KEY
 monthly_token_limit             int DEFAULT 25000000    -- 月間トークン上限
 warning_threshold_percentage    int DEFAULT 80          -- 警告閾値（80%）
 critical_threshold_percentage   int DEFAULT 95          -- 重要警告閾値（95%）
 pricing_tier                   varchar DEFAULT 'basic'  -- 料金プラン
-created_at                     timestamp DEFAULT now()
-updated_at                     timestamp DEFAULT now()
+created_at                     timestamp DEFAULT CURRENT_TIMESTAMP
+updated_at                     timestamp DEFAULT CURRENT_TIMESTAMP
 
 -- 統計情報
-推定データ: 1レコード (24 kB)
+現在のサイズ: 24 kB
+推定データ: 1レコード
+RLS: 無効
 ```
 
 ### 📋 applications - 申請管理
 ```sql
--- テーブル構造
+-- テーブル構造（14カラム）
 id                text PRIMARY KEY
 company_name      text NOT NULL              -- 申請企業名
 contact_name      text NOT NULL              -- 担当者名
@@ -339,12 +555,14 @@ processed_by     text                       -- 処理者
 notes           text                        -- 管理者メモ
 
 -- 統計情報
-推定データ: 0レコード (48 kB)
+現在のサイズ: 48 kB
+推定データ: 0レコード
+RLS: 無効
 ```
 
 ### 📈 plan_history - プラン変更履歴
 ```sql
--- テーブル構造
+-- テーブル構造（6カラム）
 id             text PRIMARY KEY DEFAULT gen_random_uuid()
 user_id        text NOT NULL → users(id)    -- 対象ユーザー
 from_plan      text NOT NULL                -- 変更前プラン
@@ -353,7 +571,9 @@ changed_at     timestamp DEFAULT now()      -- 変更日時
 duration_days  int                         -- プラン期間（日数）
 
 -- 統計情報
-推定データ: 1レコード (32 kB)
+現在のサイズ: 32 kB
+推定データ: 1レコード
+RLS: 無効
 ```
 
 ---
@@ -393,6 +613,10 @@ erDiagram
     auth_sessions ||--o{ auth_mfa_amr_claims : "認証方法"
     auth_sessions ||--o{ auth_refresh_tokens : "リフレッシュ"
     auth_users ||--o{ auth_one_time_tokens : "ワンタイム"
+    auth_sso_providers ||--o{ auth_sso_domains : "ドメイン"
+    auth_sso_providers ||--o{ auth_saml_providers : "SAML設定"
+    auth_sso_providers ||--o{ auth_saml_relay_states : "Relay状態"
+    auth_flow_state ||--o{ auth_saml_relay_states : "フロー連携"
 ```
 
 ---
@@ -479,17 +703,21 @@ SELECT
     COUNT(ch.id) AS total_conversations,
     SUM(ch.total_tokens) AS total_tokens,
     SUM(ch.cost_usd) AS total_cost,
-    AVG(ch_tbl.chunk_index) AS avg_chunks_per_doc  -- 🆕平均チャンク数
+    CASE 
+        WHEN COUNT(DISTINCT ds.id) > 0 
+        THEN COUNT(DISTINCT ch_tbl.id)::float / COUNT(DISTINCT ds.id)
+        ELSE 0 
+    END AS avg_chunks_per_doc  -- 🆕平均チャンク数
 FROM companies c
 LEFT JOIN users u ON c.id = u.company_id
-LEFT JOIN document_sources ds ON c.id = ds.company_id
+LEFT JOIN document_sources ds ON c.id = ds.company_id AND ds.active = true
 LEFT JOIN chunks ch_tbl ON ds.id = ch_tbl.doc_id  -- 🆕チャンクテーブル
 LEFT JOIN chat_history ch ON c.id = ch.company_id
 GROUP BY c.id, c.name
 ORDER BY total_cost DESC;
 ```
 
-#### Gemini 2.5 Flash利用統計
+#### Gemini利用統計
 ```sql
 SELECT 
     DATE_TRUNC('day', timestamp) AS date,
@@ -497,10 +725,10 @@ SELECT
     SUM(input_tokens) AS total_input_tokens,
     SUM(output_tokens) AS total_output_tokens,
     SUM(cost_usd) AS total_cost,
-    AVG(cost_usd) AS avg_cost_per_conversation
+    AVG(cost_usd) AS avg_cost_per_conversation,
+    COUNT(CASE WHEN model_name LIKE 'gemini%' THEN 1 END) AS gemini_conversations
 FROM chat_history 
-WHERE model_name = 'gemini-2.5-flash'
-  AND timestamp >= CURRENT_DATE - INTERVAL '30 days'
+WHERE timestamp >= CURRENT_DATE - INTERVAL '30 days'
 GROUP BY DATE_TRUNC('day', timestamp)
 ORDER BY date DESC;
 ```
@@ -513,10 +741,12 @@ SELECT
     ch.chunk_index,
     COUNT(*) AS reference_count,
     LENGTH(ch.content) AS chunk_size_chars,
+    ROUND(LENGTH(ch.content) / 4.0) AS estimated_tokens,
     SUBSTRING(ch.content, 1, 100) || '...' AS content_preview
 FROM chunks ch
 JOIN document_sources ds ON ch.doc_id = ds.id
 JOIN chat_history chat ON ds.name = chat.source_document
+WHERE ds.active = true
 GROUP BY ds.name, ch.chunk_index, ch.content
 ORDER BY reference_count DESC
 LIMIT 20;
@@ -528,8 +758,9 @@ SELECT
     AVG(LENGTH(ch.content)) AS avg_chunk_size_chars,
     ROUND(AVG(LENGTH(ch.content)) / 4.0) AS estimated_tokens, -- 概算トークン数
     COUNT(DISTINCT ch.doc_id) AS unique_documents,
-    MAX(ch.chunk_index) AS max_chunks_per_doc,
-    COUNT(CASE WHEN ch.embedding IS NOT NULL THEN 1 END) AS vectorized_chunks
+    MAX(ch.chunk_index) + 1 AS max_chunks_per_doc,
+    COUNT(CASE WHEN ch.embedding IS NOT NULL THEN 1 END) AS vectorized_chunks,
+    ROUND(COUNT(CASE WHEN ch.embedding IS NOT NULL THEN 1 END) * 100.0 / COUNT(ch.id), 2) AS vectorized_percentage
 FROM companies c
 JOIN chunks ch ON c.id = ch.company_id
 GROUP BY c.id, c.name
@@ -545,7 +776,7 @@ SELECT
     COUNT(*) AS chunk_count,
     ROUND(AVG(LENGTH(content) / 4.0)) AS avg_tokens,
     COUNT(CASE WHEN embedding IS NOT NULL THEN 1 END) AS with_embedding,
-    COUNT(*) AS total_chunks_all -- 全チャンク数
+    ROUND(COUNT(CASE WHEN embedding IS NOT NULL THEN 1 END) * 100.0 / COUNT(*), 2) AS embedding_percentage
 FROM chunks
 GROUP BY 
     CASE 
@@ -554,38 +785,27 @@ GROUP BY
         WHEN LENGTH(content) / 4 > 500 THEN '500超過トークン'
     END
 ORDER BY chunk_count DESC;
-
--- チャンク企業別分析
-SELECT 
-    c.name AS company_name,
-    COUNT(ch.id) AS total_chunks,
-    COUNT(CASE WHEN ch.embedding IS NOT NULL THEN 1 END) AS vectorized_chunks,
-    COUNT(CASE WHEN ch.embedding IS NULL THEN 1 END) AS non_vectorized_chunks,
-    ROUND(COUNT(CASE WHEN ch.embedding IS NOT NULL THEN 1 END) * 100.0 / COUNT(ch.id), 2) AS vectorized_percentage
-FROM companies c
-JOIN chunks ch ON c.id = ch.company_id
-GROUP BY c.id, c.name
-ORDER BY total_chunks DESC;
 ```
 
 ### 🚨 アラート・通知設定
 
 #### トークン使用量警告（Gemini対応）
 ```sql
--- Gemini 2.5 Flash の使用量警告
+-- 月次使用量警告
 SELECT 
     c.name,
     cs.monthly_token_limit,
-    SUM(mtu.total_tokens) AS current_usage,
-    ROUND(SUM(mtu.total_tokens) * 100.0 / cs.monthly_token_limit, 2) AS usage_percentage,
-    SUM(CASE WHEN ch.model_name = 'gemini-2.5-flash' THEN ch.total_tokens ELSE 0 END) AS gemini_tokens
+    COALESCE(SUM(mtu.total_tokens), 0) AS current_usage,
+    ROUND(COALESCE(SUM(mtu.total_tokens), 0) * 100.0 / cs.monthly_token_limit, 2) AS usage_percentage,
+    cs.warning_threshold_percentage,
+    cs.critical_threshold_percentage
 FROM companies c
 JOIN company_settings cs ON c.id = cs.company_id
 LEFT JOIN monthly_token_usage mtu ON c.id = mtu.company_id 
-LEFT JOIN chat_history ch ON c.id = ch.company_id
-WHERE mtu.year_month = TO_CHAR(CURRENT_DATE, 'YYYY-MM')
-GROUP BY c.id, c.name, cs.monthly_token_limit, cs.warning_threshold_percentage
-HAVING SUM(mtu.total_tokens) > cs.monthly_token_limit * cs.warning_threshold_percentage / 100;
+    AND mtu.year_month = TO_CHAR(CURRENT_DATE, 'YYYY-MM')
+GROUP BY c.id, c.name, cs.monthly_token_limit, cs.warning_threshold_percentage, cs.critical_threshold_percentage
+HAVING COALESCE(SUM(mtu.total_tokens), 0) > cs.monthly_token_limit * cs.warning_threshold_percentage / 100
+ORDER BY usage_percentage DESC;
 ```
 
 ### 🔒 セキュリティ・権限管理
@@ -601,6 +821,40 @@ CREATE POLICY chunk_company_isolation ON chunks
 -- 企業データの分離
 CREATE POLICY company_isolation ON document_sources
     FOR ALL USING (company_id = current_user_company_id());
+
+-- ユーザーデータの分離
+CREATE POLICY user_company_isolation ON users
+    FOR ALL USING (company_id = current_user_company_id());
+```
+
+#### 認証システムのセキュリティ監視
+```sql
+-- 最近の認証アクティビティ
+SELECT 
+    u.email,
+    s.created_at,
+    s.user_agent,
+    s.ip,
+    s.aal AS auth_level,
+    CASE 
+        WHEN mfa.id IS NOT NULL THEN 'MFA有効'
+        ELSE 'パスワードのみ'
+    END AS auth_method
+FROM auth.sessions s
+JOIN auth.users u ON s.user_id = u.id
+LEFT JOIN auth.mfa_factors mfa ON u.id = mfa.user_id AND mfa.status = 'verified'
+WHERE s.created_at >= CURRENT_DATE - INTERVAL '7 days'
+ORDER BY s.created_at DESC;
+
+-- MFA利用状況
+SELECT 
+    factor_type,
+    status,
+    COUNT(*) AS factor_count,
+    COUNT(DISTINCT user_id) AS unique_users
+FROM auth.mfa_factors
+GROUP BY factor_type, status
+ORDER BY factor_count DESC;
 ```
 
 ---
@@ -611,24 +865,23 @@ Workmate データベースは以下の特徴を持つ最新設計になって�
 
 ### ✅ 強み
 - **高度なチャンク処理**: 新しい`chunks`テーブルで検索精度を大幅向上
-- **Gemini 2.5 Flash対応**: 最新AIモデルでコスト効率と性能を両立
+- **Gemini Embedding対応**: 3072次元ベクトルによる高精度なRAG検索
 - **マルチテナント対応**: 企業単位での完全なデータ分離
 - **スケーラブル**: ベクトル検索による高速なRAG処理
 - **詳細な分析**: トークン単位でのコスト・利用分析
 - **柔軟な権限管理**: 企業管理者による階層的ユーザー管理
-- **エンタープライズ認証**: MFA、SSO、WebAuthn対応
+- **エンタープライズ認証**: MFA、SSO、WebAuthn対応（16テーブル）
 
 ### 🆕 最新の改良点
 1. **高精度RAGシステム**: 300-500トークンのチャンク分割で検索精度を大幅向上
 2. **Gemini Embedding統合**: 3072次元embeddingとコサイン類似度による高速検索
 3. **強化された認証**: 35カラムの包括的なユーザー管理（MFA、SSO、WebAuthn）
 4. **企業データ分離**: company_idによる直接的なマルチテナント対応
+5. **PKCE認証フロー**: 最新のOAuth 2.1セキュリティ標準対応
 
-### 🔍 注目ポイント
-1. **二層検索戦略**: document_sources（メタデータ）+ chunks（意味検索）の役割分担
-2. **RAG最適化**: chunk_index による文脈管理とTop-N抽出による効率的AI回答
-3. **トークン効率**: 300-500トークンの最適サイズでコスト削減と精度向上を両立
-4. **企業レベルセキュリティ**: 16テーブルの認証システム + チャンク単位のRLS
+### 🔍 テーブル構成詳細
+- **auth スキーマ**: 16テーブル、RLS有効、包括的な認証・認可システム
+- **public スキーマ**: 9テーブル、ビジネスロジック、マルチテナント対応
 
 ### 🚀 運用のベストプラクティス
 - **RAGチューニング**: 300-500トークンの最適サイズ維持とTop-N数の調整
@@ -637,5 +890,6 @@ Workmate データベースは以下の特徴を持つ最新設計になって�
 - **チャンク監視**: chunk_index の連続性チェックと欠損チャンクの検出
 - **企業分離確認**: company_id による完全なデータ分離の定期検証
 - **認証ログ監視**: audit_log_entries による包括的なセキュリティ監視
+- **MFA推進**: 多要素認証の導入率向上とセキュリティ強化
 
 この最新のデータベース設計により、企業向けAIチャットボットサービスとして最高レベルの性能とセキュリティを提供しています。 
