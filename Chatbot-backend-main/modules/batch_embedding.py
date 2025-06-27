@@ -1,7 +1,7 @@
 """
 🧠 バッチエンベディング生成モジュール
 チャンクを10件ずつまとめてバッチで送信し、エラー回復機能付きでembeddingを生成
-text-embedding-004使用（768次元）
+gemini-embedding-001使用（3072次元）
 """
 
 import os
@@ -25,7 +25,7 @@ class BatchEmbeddingGenerator:
     
     def __init__(self):
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.embedding_model = "models/text-embedding-004"  # 固定でtext-embedding-004を使用（768次元）
+        self.embedding_model = "gemini-embedding-001"  # Vertex AI gemini-embedding-001を使用（3072次元）
         self.auto_generate = os.getenv("AUTO_GENERATE_EMBEDDINGS", "false").lower() == "true"
         self.supabase = None
         

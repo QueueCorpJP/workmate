@@ -4,7 +4,7 @@
 
 ステップ:
 ✏️ Step 1. 質問入力 - ユーザーがチャットボットに質問を入力
-🧠 Step 2. embedding 生成 - Gemini text-embedding-004 を使って、質問文をベクトルに変換（768次元）
+🧠 Step 2. embedding 生成 - Vertex AI text-multilingual-embedding-002 を使って、質問文をベクトルに変換（768次元）
 🔍 Step 3. 類似チャンク検索（Top-K） - Supabaseの chunks テーブルから、ベクトル距離が近いチャンクを pgvector を用いて取得
 💡 Step 4. LLMへ送信 - Top-K チャンクと元の質問を Gemini Flash 2.5 に渡して、要約せずに「原文ベース」で回答を生成
 ⚡️ Step 5. 回答表示
@@ -31,12 +31,12 @@ class RealtimeRAGProcessor:
     
     def __init__(self):
         """初期化"""
-        self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.embedding_model = "models/text-embedding-004"  # 固定でtext-embedding-004を使用（768次元）
+        self.use_vertex_ai = os.getenv("USE_VERTEX_AI", "true").lower() == "true"
+        self.embedding_model = os.getenv("EMBEDDING_MODEL", "text-multilingual-embedding-002")  # Vertex AI text-multilingual-embedding-002を使用（768次元）
+        self.expected_dimensions = 768 if "text-multilingual-embedding-002" in self.embedding_model else 3072
         
-        # モデル名の正規化
-        if not self.embedding_model.startswith(("models/", "tunedModels/")):
-            self.embedding_model = f"models/{self.embedding_model}"
+        # API キーの設定
+        self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         
         self.chat_model = "gemini-2.5-flash"  # 最新のGemini Flash 2.5
         self.db_url = self._get_db_url()
@@ -44,11 +44,23 @@ class RealtimeRAGProcessor:
         if not self.api_key:
             raise ValueError("GOOGLE_API_KEY または GEMINI_API_KEY 環境変数が設定されていません")
         
-        # Gemini APIクライアントの初期化
+        # Gemini APIクライアントの初期化（チャット用）
         genai.configure(api_key=self.api_key)
         self.chat_client = genai.GenerativeModel(self.chat_model)
         
-        logger.info(f"✅ リアルタイムRAGプロセッサ初期化完了: エンベディング={self.embedding_model} (768次元)")
+        # Vertex AI Embeddingクライアントの初期化（埋め込み用）
+        if self.use_vertex_ai:
+            from .vertex_ai_embedding import get_vertex_ai_embedding_client, vertex_ai_embedding_available
+            if vertex_ai_embedding_available():
+                self.vertex_client = get_vertex_ai_embedding_client()
+                logger.info(f"✅ Vertex AI Embedding初期化: {self.embedding_model} ({self.expected_dimensions}次元)")
+            else:
+                logger.error("❌ Vertex AI Embeddingが利用できません")
+                raise ValueError("Vertex AI Embeddingの初期化に失敗しました")
+        else:
+            self.vertex_client = None
+        
+        logger.info(f"✅ リアルタイムRAGプロセッサ初期化完了: エンベディング={self.embedding_model} (3072次元)")
     
     def _get_db_url(self) -> str:
         """データベースURLを構築"""
@@ -93,36 +105,47 @@ class RealtimeRAGProcessor:
     async def step2_generate_embedding(self, question: str) -> List[float]:
         """
         🧠 Step 2. embedding 生成
-        Gemini text-embedding-004 を使って、質問文をベクトルに変換（768次元）
+        Vertex AI text-multilingual-embedding-002 を使って、質問文をベクトルに変換（768次元）
         """
         logger.info(f"🧠 Step 2: エンベディング生成中...")
         
         try:
-            # Gemini API使用
-            response = genai.embed_content(
-                model=self.embedding_model,
-                content=question
-            )
-            
-            # レスポンスからエンベディングベクトルを取得
-            embedding_vector = None
-            if isinstance(response, dict) and 'embedding' in response:
-                embedding_vector = response['embedding']
-            elif hasattr(response, 'embedding') and response.embedding:
-                embedding_vector = response.embedding
+            if self.use_vertex_ai and self.vertex_client:
+                # Vertex AI使用
+                embedding_vector = self.vertex_client.generate_embedding(question)
+                
+                if embedding_vector and len(embedding_vector) > 0:
+                    # 次元数チェック
+                    if len(embedding_vector) != self.expected_dimensions:
+                        logger.warning(f"予期しない次元数: {len(embedding_vector)}次元（期待値: {self.expected_dimensions}次元）")
+                    
+                    logger.info(f"✅ Step 2完了: {len(embedding_vector)}次元のエンベディング生成成功")
+                    return embedding_vector
+                else:
+                    raise ValueError("Vertex AI エンベディング生成に失敗しました")
             else:
-                logger.error(f"予期しないレスポンス形式: {type(response)}")
-                raise ValueError("エンベディング生成に失敗しました")
-            
-            if not embedding_vector:
-                raise ValueError("エンベディングベクトルが空です")
-            
-            # 次元数チェック（text-embedding-004は768次元）
-            if len(embedding_vector) != 768:
-                logger.warning(f"予期しない次元数: {len(embedding_vector)}次元（期待値: 768次元）")
-            
-            logger.info(f"✅ Step 2完了: {len(embedding_vector)}次元のエンベディング生成成功")
-            return embedding_vector
+                # フォールバック: Gemini API使用（非推奨）
+                logger.warning("⚠️ Vertex AIが利用できないため、Gemini APIを使用")
+                response = genai.embed_content(
+                    model="models/text-embedding-004",  # 利用可能なモデルに変更
+                    content=question
+                )
+                
+                # レスポンスからエンベディングベクトルを取得
+                embedding_vector = None
+                if isinstance(response, dict) and 'embedding' in response:
+                    embedding_vector = response['embedding']
+                elif hasattr(response, 'embedding') and response.embedding:
+                    embedding_vector = response.embedding
+                else:
+                    logger.error(f"予期しないレスポンス形式: {type(response)}")
+                    raise ValueError("エンベディング生成に失敗しました")
+                
+                if not embedding_vector:
+                    raise ValueError("エンベディングベクトルが空です")
+                
+                logger.info(f"✅ Step 2完了: {len(embedding_vector)}次元のエンベディング生成成功（フォールバック）")
+                return embedding_vector
             
         except Exception as e:
             logger.error(f"❌ Step 2エラー: エンベディング生成失敗 - {e}")
@@ -140,7 +163,7 @@ class RealtimeRAGProcessor:
                 with conn.cursor() as cur:
                     # pgvectorを使用したベクトル類似検索SQL
                     sql = """
-                    SELECT 
+                    SELECT
                         c.id,
                         c.doc_id,
                         c.chunk_index,
@@ -153,7 +176,9 @@ class RealtimeRAGProcessor:
                     WHERE c.embedding IS NOT NULL
                     """
                     
-                    params = [query_embedding]
+                    # ベクトルを文字列形式に変換
+                    vector_str = '[' + ','.join(map(str, query_embedding)) + ']'
+                    params = [vector_str]
                     
                     # 会社IDフィルタ（オプション）
                     if company_id:
@@ -162,7 +187,7 @@ class RealtimeRAGProcessor:
                     
                     # ベクトル距離順でソート（Top-K取得）
                     sql += " ORDER BY c.embedding <=> %s LIMIT %s"
-                    params.extend([query_embedding, top_k])
+                    params.extend([vector_str, top_k])
                     
                     logger.info(f"実行SQL: ベクトル類似検索 (Top-{top_k})")
                     cur.execute(sql, params)
@@ -250,10 +275,26 @@ class RealtimeRAGProcessor:
                 )
             )
             
-            if response and response.text:
-                answer = response.text.strip()
-                logger.info(f"✅ Step 4完了: {len(answer)}文字の回答を生成")
-                return answer
+            if response and response.candidates:
+                # 複数パートのレスポンスに対応
+                try:
+                    # まず response.text を試す（シンプルなレスポンスの場合）
+                    answer = response.text.strip()
+                except (ValueError, AttributeError):
+                    # response.text が使えない場合は parts を使用
+                    parts = []
+                    for candidate in response.candidates:
+                        for part in candidate.content.parts:
+                            if hasattr(part, 'text') and part.text:
+                                parts.append(part.text)
+                    answer = ''.join(parts).strip()
+                
+                if answer:
+                    logger.info(f"✅ Step 4完了: {len(answer)}文字の回答を生成")
+                    return answer
+                else:
+                    logger.error("LLMからの回答が空です")
+                    return "申し訳ございませんが、回答の生成に失敗しました。もう一度お試しください。"
             else:
                 logger.error("LLMからの回答が空です")
                 return "申し訳ございませんが、回答の生成に失敗しました。もう一度お試しください。"

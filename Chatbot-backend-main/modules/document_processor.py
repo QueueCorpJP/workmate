@@ -30,10 +30,14 @@ class DocumentProcessor:
     
     def __init__(self):
         self.gemini_client = None
-        self.embedding_model = os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
-        # 環境変数で設定されたモデルを使用（デフォルトは768次元対応モデル）
-        if not self.embedding_model.startswith("models/"):
+        self.vertex_ai_client = None
+        self.use_vertex_ai = os.getenv("USE_VERTEX_AI", "true").lower() == "true"
+        self.embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
+        
+        # Vertex AI使用時はモデル名をそのまま使用、Gemini API使用時はmodels/プレフィックスを追加
+        if not self.use_vertex_ai and not self.embedding_model.startswith("models/"):
             self.embedding_model = f"models/{self.embedding_model}"
+            
         self.chunk_size_tokens = 400  # 300-500トークンの中間値
         self.chunk_overlap_tokens = 50  # チャンク間のオーバーラップ
         self.max_chunk_size_chars = 2000  # 文字数での上限
@@ -44,6 +48,36 @@ class DocumentProcessor:
         except Exception as e:
             logger.warning(f"tiktoken初期化失敗: {e}")
             self.tokenizer = None
+        
+        # Vertex AIが利用できない場合はGemini APIにフォールバック
+        if self.use_vertex_ai:
+            try:
+                self._init_vertex_ai_client()
+            except Exception as e:
+                logger.warning(f"⚠️ Vertex AI初期化失敗、Gemini APIにフォールバック: {e}")
+                self.use_vertex_ai = False
+                self._init_gemini_client()
+        else:
+            self._init_gemini_client()
+    
+    def _init_vertex_ai_client(self):
+        """Vertex AI クライアントを初期化"""
+        try:
+            from modules.vertex_ai_embedding import get_vertex_ai_embedding_client, vertex_ai_embedding_available
+            
+            if not vertex_ai_embedding_available():
+                logger.error("❌ Vertex AI Embeddingが利用できません")
+                raise ValueError("Vertex AI Embeddingが利用できません")
+            
+            self.vertex_ai_client = get_vertex_ai_embedding_client()
+            if not self.vertex_ai_client:
+                raise ValueError("Vertex AI クライアントの取得に失敗しました")
+            
+            logger.info(f"🧠 Vertex AI クライアント初期化完了: {self.embedding_model} (3072次元)")
+            
+        except Exception as e:
+            logger.error(f"❌ Vertex AI クライアント初期化エラー: {e}")
+            raise
     
     def _init_gemini_client(self):
         """Gemini APIクライアントを初期化（新しいSDK）"""
@@ -189,78 +223,143 @@ class DocumentProcessor:
         return chunks
     
     async def _generate_embeddings_batch(self, texts: List[str], failed_indices: List[int] = None) -> List[Optional[List[float]]]:
-        """Gemini Flash APIでテキストのembeddingを個別生成（バッチ処理風）"""
+        """Vertex AI または Gemini APIでテキストのembeddingを個別生成（バッチ処理風）"""
         if failed_indices is None:
-            logger.info(f"🧠 embedding生成開始: {len(texts)}件, モデル={self.embedding_model}")
+            logger.info(f"🧠 embedding生成開始: {len(texts)}件, モデル={self.embedding_model}, Vertex AI={self.use_vertex_ai}")
         else:
-            logger.info(f"🔄 embedding再生成開始: {len(failed_indices)}件の失敗分, モデル={self.embedding_model}")
+            logger.info(f"🔄 embedding再生成開始: {len(failed_indices)}件の失敗分, モデル={self.embedding_model}, Vertex AI={self.use_vertex_ai}")
         
         try:
-            self._init_gemini_client()
-            
-            all_embeddings = []
-            failed_embeddings = []  # 失敗したインデックスを記録
-            
-            # 処理対象のインデックスを決定
-            if failed_indices is None:
-                # 全件処理
-                process_indices = list(range(len(texts)))
-                all_embeddings = [None] * len(texts)
+            if self.use_vertex_ai:
+                return await self._generate_embeddings_vertex_ai(texts, failed_indices)
             else:
-                # 失敗分のみ処理
-                process_indices = failed_indices
-                all_embeddings = [None] * len(texts)
-            
-            # Gemini APIは個別処理が推奨されるため、1つずつ処理
-            for idx, i in enumerate(process_indices):
-                try:
-                    text = texts[i]
-                    if not text or not text.strip():
-                        logger.warning(f"⚠️ 空のテキストをスキップ: インデックス {i}")
-                        all_embeddings[i] = None
-                        failed_embeddings.append(i)
-                        continue
-                    
-                    response = await asyncio.to_thread(
-                        self.gemini_client.models.embed_content,
-                        model=self.embedding_model,
-                        contents=text.strip()
-                    )
-                    
-                    if response and hasattr(response, 'embeddings') and response.embeddings and len(response.embeddings) > 0:
-                        embedding_vector = response.embeddings[0].values
-                        all_embeddings[i] = embedding_vector
-                        logger.info(f"✅ embedding生成成功: {idx + 1}/{len(process_indices)} (インデックス {i}, 次元: {len(embedding_vector)})")
-                    else:
-                        logger.warning(f"⚠️ embedding生成レスポンスが不正です: インデックス {i}")
-                        all_embeddings[i] = None
-                        failed_embeddings.append(i)
-                    
-                    # API制限対策
-                    await asyncio.sleep(0.2)
-                    
-                except Exception as e:
-                    logger.error(f"❌ embedding生成エラー (インデックス {i}): {e}")
-                    all_embeddings[i] = None
-                    failed_embeddings.append(i)
-
-            success_count = len([e for e in all_embeddings if e is not None])
-            total_count = len(texts)
-            
-            if failed_indices is None:
-                logger.info(f"🎉 embedding生成完了: {success_count}/{total_count} 成功")
-            else:
-                logger.info(f"🎉 embedding再生成完了: {success_count - (total_count - len(failed_indices))}/{len(failed_indices)} 成功")
-            
-            # 失敗したインデックスを記録
-            if failed_embeddings:
-                logger.warning(f"⚠️ 失敗したインデックス: {failed_embeddings}")
-            
-            return all_embeddings
-
+                return await self._generate_embeddings_gemini_api(texts, failed_indices)
+                
         except Exception as e:
             logger.error(f"❌ embeddingバッチ生成中に例外発生: {e}", exc_info=True)
             raise
+    
+    async def _generate_embeddings_vertex_ai(self, texts: List[str], failed_indices: List[int] = None) -> List[Optional[List[float]]]:
+        """Vertex AI でテキストのembeddingを生成"""
+        if not self.vertex_ai_client:
+            raise ValueError("Vertex AI クライアントが初期化されていません")
+        
+        all_embeddings = []
+        failed_embeddings = []
+        
+        # 処理対象のインデックスを決定
+        if failed_indices is None:
+            process_indices = list(range(len(texts)))
+            all_embeddings = [None] * len(texts)
+        else:
+            process_indices = failed_indices
+            all_embeddings = [None] * len(texts)
+        
+        # Vertex AI は個別処理
+        for idx, i in enumerate(process_indices):
+            try:
+                text = texts[i]
+                if not text or not text.strip():
+                    logger.warning(f"⚠️ 空のテキストをスキップ: インデックス {i}")
+                    all_embeddings[i] = None
+                    failed_embeddings.append(i)
+                    continue
+                
+                # Vertex AI クライアントでembedding生成
+                embedding_vector = await asyncio.to_thread(
+                    self.vertex_ai_client.generate_embedding,
+                    text.strip()
+                )
+                
+                if embedding_vector:
+                    all_embeddings[i] = embedding_vector
+                    logger.info(f"✅ embedding生成成功: {idx + 1}/{len(process_indices)} (インデックス {i}, 次元: {len(embedding_vector)})")
+                else:
+                    logger.warning(f"⚠️ embedding生成失敗: インデックス {i}")
+                    all_embeddings[i] = None
+                    failed_embeddings.append(i)
+                
+                # API制限対策
+                await asyncio.sleep(0.1)
+                
+            except Exception as e:
+                logger.error(f"❌ embedding生成エラー (インデックス {i}): {e}")
+                all_embeddings[i] = None
+                failed_embeddings.append(i)
+        
+        success_count = len([e for e in all_embeddings if e is not None])
+        total_count = len(texts)
+        
+        if failed_indices is None:
+            logger.info(f"🎉 Vertex AI embedding生成完了: {success_count}/{total_count} 成功")
+        else:
+            logger.info(f"🎉 Vertex AI embedding再生成完了: {success_count - (total_count - len(failed_indices))}/{len(failed_indices)} 成功")
+        
+        if failed_embeddings:
+            logger.warning(f"⚠️ 失敗したインデックス: {failed_embeddings}")
+        
+        return all_embeddings
+    
+    async def _generate_embeddings_gemini_api(self, texts: List[str], failed_indices: List[int] = None) -> List[Optional[List[float]]]:
+        """Gemini API でテキストのembeddingを生成"""
+        self._init_gemini_client()
+        
+        all_embeddings = []
+        failed_embeddings = []
+        
+        # 処理対象のインデックスを決定
+        if failed_indices is None:
+            process_indices = list(range(len(texts)))
+            all_embeddings = [None] * len(texts)
+        else:
+            process_indices = failed_indices
+            all_embeddings = [None] * len(texts)
+        
+        # Gemini APIは個別処理が推奨されるため、1つずつ処理
+        for idx, i in enumerate(process_indices):
+            try:
+                text = texts[i]
+                if not text or not text.strip():
+                    logger.warning(f"⚠️ 空のテキストをスキップ: インデックス {i}")
+                    all_embeddings[i] = None
+                    failed_embeddings.append(i)
+                    continue
+                
+                response = await asyncio.to_thread(
+                    self.gemini_client.models.embed_content,
+                    model=self.embedding_model,
+                    contents=text.strip()
+                )
+                
+                if response and hasattr(response, 'embeddings') and response.embeddings and len(response.embeddings) > 0:
+                    embedding_vector = response.embeddings[0].values
+                    all_embeddings[i] = embedding_vector
+                    logger.info(f"✅ embedding生成成功: {idx + 1}/{len(process_indices)} (インデックス {i}, 次元: {len(embedding_vector)})")
+                else:
+                    logger.warning(f"⚠️ embedding生成レスポンスが不正です: インデックス {i}")
+                    all_embeddings[i] = None
+                    failed_embeddings.append(i)
+                
+                # API制限対策
+                await asyncio.sleep(0.2)
+                
+            except Exception as e:
+                logger.error(f"❌ embedding生成エラー (インデックス {i}): {e}")
+                all_embeddings[i] = None
+                failed_embeddings.append(i)
+
+        success_count = len([e for e in all_embeddings if e is not None])
+        total_count = len(texts)
+        
+        if failed_indices is None:
+            logger.info(f"🎉 Gemini API embedding生成完了: {success_count}/{total_count} 成功")
+        else:
+            logger.info(f"🎉 Gemini API embedding再生成完了: {success_count - (total_count - len(failed_indices))}/{len(failed_indices)} 成功")
+        
+        if failed_embeddings:
+            logger.warning(f"⚠️ 失敗したインデックス: {failed_embeddings}")
+        
+        return all_embeddings
 
     async def _save_document_metadata(self, doc_data: Dict[str, Any]) -> str:
         """document_sourcesテーブルにメタデータを保存"""

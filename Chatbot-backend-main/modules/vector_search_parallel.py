@@ -11,11 +11,26 @@ from typing import List, Dict, Tuple, Optional, Set
 from concurrent.futures import ThreadPoolExecutor
 import time
 from dotenv import load_dotenv
-import google.generativeai as genai
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import numpy as np
 import os
+
+# Vertex AI インポート
+try:
+    from google.cloud import aiplatform
+    from vertexai.language_models import TextEmbeddingModel
+    import vertexai
+    VERTEX_AI_AVAILABLE = True
+except ImportError:
+    VERTEX_AI_AVAILABLE = False
+
+# フォールバック用のGemini API
+try:
+    import google.generativeai as genai
+    GEMINI_API_AVAILABLE = True
+except ImportError:
+    GEMINI_API_AVAILABLE = False
 
 # 環境変数の読み込み
 load_dotenv()
@@ -27,23 +42,66 @@ class ParallelVectorSearchSystem:
     
     def __init__(self):
         """初期化"""
-        self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.model = "models/text-embedding-004"  # 固定でtext-embedding-004を使用（768次元）
+        self.use_vertex_ai = os.getenv("USE_VERTEX_AI", "true").lower() == "true"
+        self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "workmate-462302")
+        self.location = "us-central1"
+        
+        # モデル設定
+        if self.use_vertex_ai:
+            self.model_name = os.getenv("EMBEDDING_MODEL", "text-multilingual-embedding-002")
+        else:
+            self.model_name = "models/gemini-embedding-001"
         
         self.db_url = self._get_db_url()
+        
+        # Vertex AI または Gemini API の初期化
+        if self.use_vertex_ai and VERTEX_AI_AVAILABLE:
+            self._init_vertex_ai()
+        else:
+            self._init_gemini_api()
+        
+        # 並列処理用のExecutor
+        self.executor = ThreadPoolExecutor(max_workers=4)
+        
+        logger.info(f"✅ 並列ベクトル検索システム初期化: {self.model_name}")
+    
+    def _init_vertex_ai(self):
+        """Vertex AI の初期化"""
+        try:
+            # サービスアカウント認証の設定
+            service_account_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+            if service_account_path and os.path.exists(service_account_path):
+                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = service_account_path
+                logger.info(f"✅ サービスアカウント認証設定: {service_account_path}")
+            
+            # Vertex AI初期化
+            vertexai.init(project=self.project_id, location=self.location)
+            self.model = TextEmbeddingModel.from_pretrained(self.model_name)
+            self.embedding_method = "vertex_ai"
+            self.api_key = None  # Vertex AIではAPI keyは不要
+            logger.info(f"✅ Vertex AI 初期化完了: {self.model_name}")
+            
+        except Exception as e:
+            logger.error(f"❌ Vertex AI 初期化失敗: {e}")
+            logger.info("🔄 Gemini API にフォールバック")
+            self._init_gemini_api()
+    
+    def _init_gemini_api(self):
+        """Gemini API の初期化"""
+        if not GEMINI_API_AVAILABLE:
+            raise ValueError("Gemini API ライブラリが利用できません")
+        
+        # API キーの設定
+        self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         
         if not self.api_key:
             raise ValueError("GOOGLE_API_KEY または GEMINI_API_KEY 環境変数が設定されていません")
         
         # Gemini APIクライアントの初期化
         genai.configure(api_key=self.api_key)
-        
-        # 並列処理用のExecutor
-        self.executor = ThreadPoolExecutor(max_workers=4)
-        
-        logger.info(f"✅ 並列ベクトル検索システム初期化: {self.model} (768次元)")
-        
-        logger.info(f"✅ 並列ベクトル検索システム初期化: モデル={self.model}")
+        self.model = None  # genai.embed_content を直接使用
+        self.embedding_method = "gemini_api"
+        logger.info(f"✅ Gemini API 初期化完了: {self.model_name}")
         
     def _get_db_url(self) -> str:
         """データベースURLを構築"""
@@ -68,26 +126,10 @@ class ParallelVectorSearchSystem:
         
         async def generate_single_embedding(query: str) -> List[float]:
             try:
-                response = genai.embed_content(
-                    model=self.model,
-                    content=query
-                )
-                
-                # レスポンスからエンベディングベクトルを取得
-                embedding_vector = None
-                
-                if isinstance(response, dict) and 'embedding' in response:
-                    embedding_vector = response['embedding']
-                elif hasattr(response, 'embedding') and response.embedding:
-                    embedding_vector = response.embedding
-                
-                if embedding_vector and len(embedding_vector) > 0:
-                    # 768次元のベクトルをそのまま使用
-                    embedding = embedding_vector
-                    return embedding
+                if self.embedding_method == "vertex_ai":
+                    return await self._generate_vertex_ai_embedding(query)
                 else:
-                    logger.error(f"埋め込み生成失敗: {query}")
-                    return []
+                    return await self._generate_gemini_api_embedding(query)
             except Exception as e:
                 logger.error(f"埋め込み生成エラー: {e}")
                 return []
@@ -98,6 +140,50 @@ class ParallelVectorSearchSystem:
         
         logger.info(f"✅ 並列埋め込み生成完了: {len([e for e in embeddings if e])}個成功")
         return embeddings
+    
+    async def _generate_vertex_ai_embedding(self, query: str) -> List[float]:
+        """Vertex AI を使用した埋め込み生成"""
+        try:
+            # Vertex AI の埋め込み生成は同期的なので、非同期実行
+            def _sync_generate():
+                embeddings = self.model.get_embeddings([query])
+                if embeddings and len(embeddings) > 0:
+                    return embeddings[0].values
+                return []
+            
+            loop = asyncio.get_event_loop()
+            embedding = await loop.run_in_executor(self.executor, _sync_generate)
+            return embedding
+            
+        except Exception as e:
+            logger.error(f"Vertex AI 埋め込み生成エラー: {e}")
+            return []
+    
+    async def _generate_gemini_api_embedding(self, query: str) -> List[float]:
+        """Gemini API を使用した埋め込み生成"""
+        try:
+            response = genai.embed_content(
+                model=self.model_name,
+                content=query
+            )
+            
+            # レスポンスからエンベディングベクトルを取得
+            embedding_vector = None
+            
+            if isinstance(response, dict) and 'embedding' in response:
+                embedding_vector = response['embedding']
+            elif hasattr(response, 'embedding') and response.embedding:
+                embedding_vector = response.embedding
+            
+            if embedding_vector and len(embedding_vector) > 0:
+                return embedding_vector
+            else:
+                logger.error(f"埋め込み生成失敗: {query}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Gemini API 埋め込み生成エラー: {e}")
+            return []
 
     def expand_query_strategies(self, original_query: str) -> List[str]:
         """クエリ拡張戦略を生成"""
@@ -168,31 +254,25 @@ class ParallelVectorSearchSystem:
             with psycopg2.connect(self.db_url, cursor_factory=RealDictCursor) as conn:
                 with conn.cursor() as cur:
                     sql = """
-                    SELECT 
-                        de.document_id as chunk_id,
-                        CASE 
-                            WHEN de.document_id LIKE '%_chunk_%' THEN 
-                                SPLIT_PART(de.document_id, '_chunk_', 1)
-                            ELSE de.document_id
-                        END as original_doc_id,
+                    SELECT
+                        c.id::text as chunk_id,
+                        c.doc_id as original_doc_id,
                         ds.name,
                         ds.special,
                         ds.type,
-                        de.snippet,
-                        1 - (de.embedding <=> %s) as similarity
-                    FROM document_embeddings de
-                    LEFT JOIN document_sources ds ON ds.id = CASE 
-                        WHEN de.document_id LIKE '%_chunk_%' THEN 
-                            SPLIT_PART(de.document_id, '_chunk_', 1)
-                        ELSE de.document_id
-                    END
-                    WHERE de.embedding IS NOT NULL
+                        c.content as snippet,
+                        1 - (c.embedding <=> %s::vector) as similarity
+                    FROM chunks c
+                    LEFT JOIN document_sources ds ON ds.id = c.doc_id
+                    WHERE c.embedding IS NOT NULL
                     """
                     
-                    params = [query_vector]
+                    # Convert list to string format for PostgreSQL vector type
+                    vector_str = '[' + ','.join(map(str, query_vector)) + ']'
+                    params = [vector_str]
                     
                     if company_id:
-                        sql += " AND ds.company_id = %s"
+                        sql += " AND c.company_id = %s"
                         params.append(company_id)
                     
                     sql += f" ORDER BY {order_by} LIMIT %s"
@@ -204,11 +284,11 @@ class ParallelVectorSearchSystem:
                     return [{
                         'chunk_id': row['chunk_id'],
                         'document_id': row['original_doc_id'],
-                        'document_name': row['name'],
-                        'document_type': row['type'],
-                        'special': row['special'],
-                        'snippet': row['snippet'],
-                        'similarity_score': float(row['similarity']),
+                        'document_name': row['name'] if row['name'] else 'Unknown Document',
+                        'document_type': row['type'] if row['type'] else 'unknown',
+                        'special': row['special'] if row['special'] else False,
+                        'snippet': row['snippet'] if row['snippet'] else '',
+                        'similarity_score': float(row['similarity']) if row['similarity'] else 0.0,
                         'search_type': 'vector_parallel'
                     } for row in results]
         
@@ -235,7 +315,7 @@ class ParallelVectorSearchSystem:
             if min_top > max_bottom:
                 gap_threshold_high = min_top - 0.05
                 gap_threshold_low = max_bottom + 0.05
-                gap_candidates.append(f"similarity BETWEEN {gap_threshold_low} AND {gap_threshold_high}")
+                gap_candidates.append(f"BETWEEN {gap_threshold_low} AND {gap_threshold_high}")
                 logger.info(f"🔍 間隙検索範囲: {gap_threshold_low:.3f} - {gap_threshold_high:.3f}")
         
         return gap_candidates
@@ -266,34 +346,65 @@ class ParallelVectorSearchSystem:
         try:
             with psycopg2.connect(self.db_url, cursor_factory=RealDictCursor) as conn:
                 with conn.cursor() as cur:
+                    # Convert list to string format for PostgreSQL vector type
+                    vector_str = '[' + ','.join(map(str, query_vector)) + ']'
+                    
+                    # Use subquery to avoid repeating the vector calculation
                     sql = f"""
-                    SELECT 
-                        de.document_id as chunk_id,
-                        CASE 
-                            WHEN de.document_id LIKE '%_chunk_%' THEN 
-                                SPLIT_PART(de.document_id, '_chunk_', 1)
-                            ELSE de.document_id
-                        END as original_doc_id,
-                        ds.name,
-                        ds.special,
-                        ds.type,
-                        de.snippet,
-                        1 - (de.embedding <=> %s) as similarity
-                    FROM document_embeddings de
-                    LEFT JOIN document_sources ds ON ds.id = CASE 
-                        WHEN de.document_id LIKE '%_chunk_%' THEN 
-                            SPLIT_PART(de.document_id, '_chunk_', 1)
-                        ELSE de.document_id
-                    END
-                    WHERE de.embedding IS NOT NULL
-                      AND (1 - (de.embedding <=> %s)) {condition}
+                    SELECT
+                        chunk_id,
+                        original_doc_id,
+                        name,
+                        special,
+                        type,
+                        snippet,
+                        similarity
+                    FROM (
+                        SELECT
+                            c.id::text as chunk_id,
+                            c.doc_id as original_doc_id,
+                            ds.name,
+                            ds.special,
+                            ds.type,
+                            c.content as snippet,
+                            1 - (c.embedding <=> %s::vector) as similarity
+                        FROM chunks c
+                        LEFT JOIN document_sources ds ON ds.id = c.doc_id
+                        WHERE c.embedding IS NOT NULL
+                    ) subq
+                    WHERE similarity {condition}
                     """
                     
-                    params = [query_vector, query_vector]
+                    params = [vector_str]
                     
                     if company_id:
-                        sql += " AND ds.company_id = %s"
-                        params.append(company_id)
+                        # Add company_id filter to the subquery
+                        sql = f"""
+                        SELECT
+                            chunk_id,
+                            original_doc_id,
+                            name,
+                            special,
+                            type,
+                            snippet,
+                            similarity
+                        FROM (
+                            SELECT
+                                c.id::text as chunk_id,
+                                c.doc_id as original_doc_id,
+                                ds.name,
+                                ds.special,
+                                ds.type,
+                                c.content as snippet,
+                                1 - (c.embedding <=> %s::vector) as similarity
+                            FROM chunks c
+                            LEFT JOIN document_sources ds ON ds.id = c.doc_id
+                            WHERE c.embedding IS NOT NULL
+                              AND c.company_id = %s
+                        ) subq
+                        WHERE similarity {condition}
+                        """
+                        params = [vector_str, company_id]
                     
                     sql += " ORDER BY similarity DESC LIMIT 5"
                     
@@ -303,11 +414,11 @@ class ParallelVectorSearchSystem:
                     return [{
                         'chunk_id': row['chunk_id'],
                         'document_id': row['original_doc_id'],
-                        'document_name': row['name'],
-                        'document_type': row['type'],
-                        'special': row['special'],
-                        'snippet': row['snippet'],
-                        'similarity_score': float(row['similarity']),
+                        'document_name': row['name'] if row['name'] else 'Unknown Document',
+                        'document_type': row['type'] if row['type'] else 'unknown',
+                        'special': row['special'] if row['special'] else False,
+                        'snippet': row['snippet'] if row['snippet'] else '',
+                        'similarity_score': float(row['similarity']) if row['similarity'] else 0.0,
                         'search_type': 'vector_gap'
                     } for row in results]
         

@@ -27,23 +27,33 @@ class ParallelVectorSearchSystem:
     
     def __init__(self):
         """初期化"""
-        self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.model = "models/text-embedding-004"  # 固定でtext-embedding-004を使用（768次元）
+        self.use_vertex_ai = os.getenv("USE_VERTEX_AI", "true").lower() == "true"
+        self.model = "text-multilingual-embedding-002"  # Vertex AI text-multilingual-embedding-002を使用（768次元）
         
         self.db_url = self._get_db_url()
         
-        if not self.api_key:
-            raise ValueError("GOOGLE_API_KEY または GEMINI_API_KEY 環境変数が設定されていません")
-        
-        # Gemini APIクライアントの初期化
-        genai.configure(api_key=self.api_key)
+        # Vertex AI Embeddingクライアントの初期化
+        if self.use_vertex_ai:
+            from .vertex_ai_embedding import get_vertex_ai_embedding_client, vertex_ai_embedding_available
+            if vertex_ai_embedding_available():
+                self.vertex_client = get_vertex_ai_embedding_client()
+                self.api_key = None  # Vertex AIではAPI keyは不要
+                logger.info(f"✅ Vertex AI Embedding初期化: {self.model} (768次元)")
+            else:
+                logger.error("❌ Vertex AI Embeddingが利用できません")
+                raise ValueError("Vertex AI Embeddingの初期化に失敗しました")
+        else:
+            # フォールバック: Gemini APIクライアントの初期化
+            self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+            if not self.api_key:
+                raise ValueError("GOOGLE_API_KEY または GEMINI_API_KEY 環境変数が設定されていません")
+            genai.configure(api_key=self.api_key)
+            self.vertex_client = None
         
         # 並列処理用のExecutor
         self.executor = ThreadPoolExecutor(max_workers=4)
         
-        logger.info(f"✅ 並列ベクトル検索システム初期化: {self.model} (768次元)")
-        
-        logger.info(f"✅ 並列ベクトル検索システム初期化: モデル={self.model}")
+        logger.info(f"✅ 並列ベクトル検索システム初期化: モデル={self.model} (768次元)")
         
     def _get_db_url(self) -> str:
         """データベースURLを構築"""
@@ -129,25 +139,33 @@ class ParallelVectorSearchSystem:
         """複数クエリの埋め込みを並列生成"""
         async def generate_single(query: str) -> List[float]:
             try:
-                response = genai.embed_content(
-                    model=self.model,
-                    content=query
-                )
-                
-                # レスポンスからエンベディングベクトルを取得
-                embedding_vector = None
-                
-                if isinstance(response, dict) and 'embedding' in response:
-                    embedding_vector = response['embedding']
-                elif hasattr(response, 'embedding') and response.embedding:
-                    embedding_vector = response.embedding
-                else:
-                    logger.error(f"予期しないレスポンス形式: {type(response)}")
+                if self.use_vertex_ai and self.vertex_client:
+                    # Vertex AI を使用
+                    embedding_vector = self.vertex_client.generate_embedding(query)
+                    if embedding_vector and len(embedding_vector) > 0:
+                        return embedding_vector
                     return []
-                
-                if embedding_vector and len(embedding_vector) > 0:
-                    return embedding_vector  # 次元削減なし
-                return []
+                else:
+                    # フォールバック: Gemini API を使用
+                    response = genai.embed_content(
+                        model=f"models/{self.model}",
+                        content=query
+                    )
+                    
+                    # レスポンスからエンベディングベクトルを取得
+                    embedding_vector = None
+                    
+                    if isinstance(response, dict) and 'embedding' in response:
+                        embedding_vector = response['embedding']
+                    elif hasattr(response, 'embedding') and response.embedding:
+                        embedding_vector = response.embedding
+                    else:
+                        logger.error(f"予期しないレスポンス形式: {type(response)}")
+                        return []
+                    
+                    if embedding_vector and len(embedding_vector) > 0:
+                        return embedding_vector
+                    return []
             except Exception as e:
                 logger.error(f"埋め込み生成エラー: {e}")
                 return []
@@ -187,13 +205,15 @@ class ParallelVectorSearchSystem:
                         ds.name,
                         ds.special,
                         ds.type,
-                        1 - (c.embedding <=> %s::vector) as similarity
+                        1 - (c.embedding <=> %s) as similarity
                     FROM chunks c
                     LEFT JOIN document_sources ds ON ds.id = c.doc_id
                     WHERE c.embedding IS NOT NULL
                     """
                     
-                    params = [query_vector]
+                    # ベクトルを文字列形式に変換
+                    vector_str = '[' + ','.join(map(str, query_vector)) + ']'
+                    params = [vector_str]
                     
                     # 会社IDフィルタ（有効化）
                     if company_id:
@@ -409,27 +429,37 @@ class ParallelVectorSearchSystem:
         """複数クエリの埋め込みを同期並列生成"""
         def generate_single_embedding(query: str) -> List[float]:
             try:
-                response = genai.embed_content(
-                    model=self.model,
-                    content=query
-                )
-                
-                # レスポンスからエンベディングベクトルを取得
-                embedding_vector = None
-                
-                if isinstance(response, dict) and 'embedding' in response:
-                    embedding_vector = response['embedding']
-                elif hasattr(response, 'embedding') and response.embedding:
-                    embedding_vector = response.embedding
+                if self.use_vertex_ai and self.vertex_client:
+                    # Vertex AI を使用
+                    embedding_vector = self.vertex_client.generate_embedding(query)
+                    if embedding_vector and len(embedding_vector) > 0:
+                        return embedding_vector
+                    else:
+                        logger.error(f"埋め込み生成失敗: {query}")
+                        return []
                 else:
-                    logger.error(f"予期しないレスポンス形式: {type(response)}")
-                    return []
-                
-                if embedding_vector and len(embedding_vector) > 0:
-                    return embedding_vector  # 次元削減なし
-                else:
-                    logger.error(f"埋め込み生成失敗: {query}")
-                    return []
+                    # フォールバック: Gemini API を使用
+                    response = genai.embed_content(
+                        model=f"models/{self.model}",
+                        content=query
+                    )
+                    
+                    # レスポンスからエンベディングベクトルを取得
+                    embedding_vector = None
+                    
+                    if isinstance(response, dict) and 'embedding' in response:
+                        embedding_vector = response['embedding']
+                    elif hasattr(response, 'embedding') and response.embedding:
+                        embedding_vector = response.embedding
+                    else:
+                        logger.error(f"予期しないレスポンス形式: {type(response)}")
+                        return []
+                    
+                    if embedding_vector and len(embedding_vector) > 0:
+                        return embedding_vector
+                    else:
+                        logger.error(f"埋め込み生成失敗: {query}")
+                        return []
             except Exception as e:
                 logger.error(f"埋め込み生成エラー: {e}")
                 return []
@@ -480,10 +510,10 @@ class ParallelVectorSearchSystem:
             with psycopg2.connect(self.db_url, cursor_factory=RealDictCursor) as conn:
                 with conn.cursor() as cur:
                     sql = f"""
-                    SELECT 
+                    SELECT
                         de.document_id as chunk_id,
-                        CASE 
-                            WHEN de.document_id LIKE '%_chunk_%' THEN 
+                        CASE
+                            WHEN de.document_id LIKE '%_chunk_%' THEN
                                 SPLIT_PART(de.document_id, '_chunk_', 1)
                             ELSE de.document_id
                         END as original_doc_id,
@@ -493,8 +523,8 @@ class ParallelVectorSearchSystem:
                         de.snippet,
                         1 - (de.embedding <=> %s) as similarity
                     FROM document_embeddings de
-                    LEFT JOIN document_sources ds ON ds.id = CASE 
-                        WHEN de.document_id LIKE '%_chunk_%' THEN 
+                    LEFT JOIN document_sources ds ON ds.id = CASE
+                        WHEN de.document_id LIKE '%_chunk_%' THEN
                             SPLIT_PART(de.document_id, '_chunk_', 1)
                         ELSE de.document_id
                     END
@@ -502,7 +532,9 @@ class ParallelVectorSearchSystem:
                       AND (1 - (de.embedding <=> %s)) {condition}
                     """
                     
-                    params = [query_vector, query_vector]
+                    # ベクトルを文字列形式に変換
+                    vector_str = '[' + ','.join(map(str, query_vector)) + ']'
+                    params = [vector_str, vector_str]
                     
                     # 🔍 デバッグ: 間隙検索でもcompany_idフィルタを無効化
                     # if company_id:

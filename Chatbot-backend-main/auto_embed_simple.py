@@ -34,9 +34,9 @@ def main():
         
         # Gemini API初期化
         genai.configure(api_key=api_key)
-        # 固定でtext-embedding-004を使用（768次元）
-        embedding_model = "models/text-embedding-004"
-        logger.info(f"🧠 Gemini API初期化完了: {embedding_model} (768次元)")
+        # Vertex AI gemini-embedding-001を使用（3072次元）
+        embedding_model = "gemini-embedding-001"
+        logger.info(f"🧠 Vertex AI初期化完了: {embedding_model} (3072次元)")
         
         # Supabaseクライアント取得
         supabase = get_supabase_client()

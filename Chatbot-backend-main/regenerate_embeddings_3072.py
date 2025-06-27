@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-全埋め込みベクトルを text-embedding-004 (768次元) で再生成
+全埋め込みベクトルを gemini-embedding-001 (3072次元) で再生成
 - chunksテーブルの全埋め込みを再生成
 - 768次元に統一
 - 並列処理で高速化
@@ -36,7 +36,7 @@ class EmbeddingRegenerator:
     def __init__(self):
         """初期化"""
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.model = "models/text-embedding-004"  # 768次元モデル
+        self.model = "gemini-embedding-001"  # 3072次元モデル
         self.db_url = self._get_db_url()
         
         if not self.api_key:

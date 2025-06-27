@@ -31,7 +31,7 @@ COMMENT ON COLUMN chunks.id IS 'チャンク一意ID（UUID）';
 COMMENT ON COLUMN chunks.doc_id IS '親ドキュメントID（document_sources.id）';
 COMMENT ON COLUMN chunks.chunk_index IS 'ドキュメント内でのチャンク順序';
 COMMENT ON COLUMN chunks.content IS 'チャンクのテキスト内容（300-500トークン）';
-COMMENT ON COLUMN chunks.embedding IS 'Gemini Flash生成の768次元ベクトル（text-embedding-004）';
+COMMENT ON COLUMN chunks.embedding IS 'Vertex AI生成の768次元ベクトル（text-multilingual-embedding-002）';
 COMMENT ON COLUMN chunks.company_id IS '所属企業ID';
 
 -- document_sourcesテーブルからcontentカラムを削除（最適化）
