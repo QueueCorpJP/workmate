@@ -17,7 +17,7 @@ from datetime import datetime
 import re
 import tiktoken
 from fastapi import HTTPException, UploadFile
-import google.generativeai as genai
+from google import genai
 import psycopg2
 from psycopg2.extras import execute_values
 
@@ -46,15 +46,15 @@ class DocumentProcessor:
             self.tokenizer = None
     
     def _init_gemini_client(self):
-        """Gemini APIクライアントを初期化"""
+        """Gemini APIクライアントを初期化（新しいSDK）"""
         if self.gemini_client is None:
             api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
             if not api_key:
                 raise ValueError("GOOGLE_API_KEY または GEMINI_API_KEY 環境変数が設定されていません")
             
-            genai.configure(api_key=api_key)
-            self.gemini_client = genai
-            logger.info(f"🧠 Gemini APIクライアント初期化完了: {self.embedding_model}")
+            # 新しいSDKのクライアント初期化
+            self.gemini_client = genai.Client(api_key=api_key)
+            logger.info(f"🧠 Gemini APIクライアント初期化完了（新SDK）: {self.embedding_model}")
     
     def _count_tokens(self, text: str) -> int:
         """テキストのトークン数をカウント"""
@@ -222,13 +222,13 @@ class DocumentProcessor:
                         continue
                     
                     response = await asyncio.to_thread(
-                        self.gemini_client.embed_content,
+                        self.gemini_client.models.embed_content,
                         model=self.embedding_model,
-                        content=text.strip()
+                        contents=text.strip()
                     )
                     
-                    if response and 'embedding' in response:
-                        embedding_vector = response['embedding']
+                    if response and hasattr(response, 'embeddings') and response.embeddings and len(response.embeddings) > 0:
+                        embedding_vector = response.embeddings[0].values
                         all_embeddings[i] = embedding_vector
                         logger.info(f"✅ embedding生成成功: {idx + 1}/{len(process_indices)} (インデックス {i}, 次元: {len(embedding_vector)})")
                     else:
@@ -562,31 +562,78 @@ class DocumentProcessor:
             raise
     
     async def _extract_text_from_pdf(self, content: bytes) -> str:
-        """PDFからテキストを抽出（文字化け対応強化版）"""
+        """PDFからテキストを抽出（Gemini直接処理でシンプル化）"""
         try:
-            from .knowledge.pdf_enhanced import process_pdf_file_enhanced
+            logger.info("🔄 Gemini直接処理でPDFテキスト抽出開始")
             
-            logger.info("強化版PDF処理を使用してテキストを抽出")
+            # Geminiクライアント初期化
+            self._init_gemini_client()
             
-            # 強化版PDF処理を使用
-            result_df, sections, extracted_text = await process_pdf_file_enhanced(content, "uploaded_pdf")
+            # PDFファイルを一時保存
+            import tempfile
+            import os
             
-            if extracted_text and extracted_text.strip():
-                logger.info(f"✅ 強化版PDF処理成功: {len(extracted_text)} 文字")
-                return extracted_text
-            else:
-                logger.warning("強化版PDF処理からテキストを取得できませんでした")
-                raise Exception("PDFからテキストを抽出できませんでした")
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_file:
+                tmp_file.write(content)
+                tmp_file_path = tmp_file.name
+            
+            try:
+                # シンプルなプロンプト
+                prompt = """
+                このPDFファイルの内容を正確にテキストとして抽出してください。
+                
+                重要な指示：
+                1. 文書の構造（見出し、段落、表、リストなど）を保持してください
+                2. 日本語の文字化けがあれば適切に修正してください  
+                3. 表がある場合は、行と列の構造を保持してください
+                4. ページ番号や章構成があれば識別してください
+                5. 図表のキャプションも含めて抽出してください
+                
+                出力は元のPDF構造を保った形で、読みやすいテキストとして出力してください。
+                """
+                
+                # PDFファイルを直接Geminiにアップロード（新SDK）
+                uploaded_file = await asyncio.to_thread(
+                    self.gemini_client.files.upload,
+                    file=tmp_file_path
+                )
+                
+                # 同期処理を非同期で実行
+                response = await asyncio.to_thread(
+                    self.gemini_client.models.generate_content,
+                    model='gemini-1.5-flash',
+                    contents=[prompt, uploaded_file]
+                )
+                
+                if response.text and response.text.strip():
+                    logger.info(f"✅ Gemini PDF処理成功: {len(response.text)} 文字")
+                    
+                    # アップロードファイルを削除（新SDK）
+                    try:
+                        await asyncio.to_thread(
+                            self.gemini_client.files.delete,
+                            name=uploaded_file.name
+                        )
+                    except:
+                        pass
+                        
+                    return response.text
+                else:
+                    raise Exception("GeminiからPDFテキストを取得できませんでした")
+                    
+            finally:
+                # 一時ファイル削除
+                if os.path.exists(tmp_file_path):
+                    os.unlink(tmp_file_path)
             
         except Exception as e:
-            logger.error(f"強化版PDF処理エラー: {e}")
+            logger.error(f"Gemini PDF処理エラー: {e}")
             
-            # フォールバック: 従来のPyPDF2処理
+            # フォールバック: 従来のPyPDF2処理（最小限）
             try:
-                logger.info("フォールバック: 従来のPyPDF2処理を実行")
+                logger.info("🔙 フォールバック: PyPDF2処理")
                 import PyPDF2
                 from io import BytesIO
-                from .knowledge.pdf_enhanced import fix_mojibake_text
                 
                 pdf_reader = PyPDF2.PdfReader(BytesIO(content))
                 text_parts = []
@@ -595,20 +642,19 @@ class DocumentProcessor:
                     try:
                         page_text = page.extract_text()
                         if page_text and page_text.strip():
-                            # 文字化け修復を適用
-                            fixed_text = fix_mojibake_text(page_text)
-                            text_parts.append(f"=== ページ {page_num + 1} ===\n{fixed_text}")
+                            text_parts.append(f"=== ページ {page_num + 1} ===\n{page_text}")
                     except Exception as page_error:
                         logger.warning(f"PDF ページ {page_num + 1} 抽出エラー: {page_error}")
                         continue
                 
                 if text_parts:
+                    logger.info(f"✅ PyPDF2フォールバック成功: {len(text_parts)} ページ")
                     return "\n\n".join(text_parts)
                 else:
                     raise Exception("PDFからテキストを抽出できませんでした")
                 
             except Exception as fallback_error:
-                logger.error(f"フォールバックPDF処理エラー: {fallback_error}")
+                logger.error(f"PyPDF2フォールバック処理エラー: {fallback_error}")
                 raise Exception(f"PDF処理に失敗しました: {fallback_error}")
     
     async def _extract_text_from_excel(self, content: bytes) -> str:
