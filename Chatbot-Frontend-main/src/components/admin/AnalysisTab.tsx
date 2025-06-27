@@ -661,7 +661,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                   fontSize: '0.9rem'
                 }}
               >
-                ✨ 最新の Gemini AI による高度な分析
+                ✨ 最新の AI による高度な分析
               </Typography>
             </Box>
           </Container>
@@ -764,7 +764,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                             lineHeight: 1.6
                           }}
                         >
-                          Gemini AIがチャット履歴を分析して、
+                          AIがチャット履歴を分析して、
                           <br />
                           詳細な洞察とアドバイスを生成します。
                         </Typography>
