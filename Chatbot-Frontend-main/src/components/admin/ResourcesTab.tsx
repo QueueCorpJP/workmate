@@ -117,15 +117,34 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
 
       const allowedTypes = [
         'application/pdf',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+        'application/vnd.ms-excel', // .xls
+        'application/vnd.ms-excel.sheet.macroEnabled.12', // .xlsm
+        'application/vnd.ms-excel.sheet.binary.macroEnabled.12', // .xlsb
         'text/plain',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/msword'
+        'text/csv', // .csv
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+        'application/msword', // .doc
+        'application/rtf', // Rich Text Format
+        'text/html', // HTML files
+        'application/json', // JSON files
+        'application/xml', // XML files
+        'text/xml' // XML files
       ];
 
-      if (!allowedTypes.includes(file.type)) {
-        setAlertMessage("サポートされていないファイル形式です。PDF、Excel、Word、テキストファイルのみアップロード可能です。");
+      // ファイルタイプチェック（MIMEタイプまたは拡張子で判定）
+      const fileName = file.name.toLowerCase();
+      const supportedExtensions = [
+        '.pdf', '.xlsx', '.xls', '.xlsm', '.xlsb', '.csv',
+        '.docx', '.doc', '.txt', '.rtf', '.html', '.htm',
+        '.json', '.xml'
+      ];
+      
+      const isTypeAllowed = allowedTypes.includes(file.type) ||
+                           supportedExtensions.some(ext => fileName.endsWith(ext));
+
+      if (!isTypeAllowed) {
+        setAlertMessage("サポートされていないファイル形式です。PDF、Excel、Word、テキスト、CSV、HTML、JSON、XMLファイルのみアップロード可能です。");
         setAlertSeverity('error');
         setShowAlert(true);
         return;
@@ -137,9 +156,17 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
       'application/pdf': ['.pdf'],
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
       'application/vnd.ms-excel': ['.xls'],
+      'application/vnd.ms-excel.sheet.macroEnabled.12': ['.xlsm'],
+      'application/vnd.ms-excel.sheet.binary.macroEnabled.12': ['.xlsb'],
       'text/plain': ['.txt'],
+      'text/csv': ['.csv'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-      'application/msword': ['.doc']
+      'application/msword': ['.doc'],
+      'application/rtf': ['.rtf'],
+      'text/html': ['.html', '.htm'],
+      'application/json': ['.json'],
+      'application/xml': ['.xml'],
+      'text/xml': ['.xml']
     },
     multiple: false,
   });

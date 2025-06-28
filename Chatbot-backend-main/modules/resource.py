@@ -251,16 +251,29 @@ async def remove_resource_by_id(resource_id: str, db: Connection):
                 "message": "リソースが見つかりませんでした"
             }
         
-        # リソースを削除
+        # 関連するchunksの数を事前に確認（ログ用）
+        chunks_query = supabase.table("chunks").select("id", count="exact").eq("doc_id", resource_id)
+        chunks_result = chunks_query.execute()
+        chunks_count = chunks_result.count if chunks_result.count is not None else 0
+        print(f"削除対象のchunks数: {chunks_count}")
+        
+        # リソースを削除（ON DELETE CASCADEにより関連chunksも自動削除）
         delete_query = supabase.table("document_sources").delete().eq("id", resource_id)
         delete_result = delete_query.execute()
         
-        print(f"削除結果: {delete_result.data if delete_result.data else '削除失敗'}")
-        
-        return {
-            "name": resource_name,
-            "message": f"リソース '{resource_name}' を削除しました"
-        }
+        if delete_result.data:
+            print(f"✅ リソース削除成功: {resource_name}")
+            print(f"✅ 関連chunks自動削除: {chunks_count}件 (ON DELETE CASCADE)")
+            return {
+                "name": resource_name,
+                "message": f"リソース '{resource_name}' と関連データ({chunks_count}件のchunks)を削除しました"
+            }
+        else:
+            print(f"❌ リソース削除失敗: {resource_name}")
+            return {
+                "name": resource_name,
+                "message": "リソースの削除に失敗しました"
+            }
     except Exception as e:
         print(f"リソース削除エラー: {e}")
         import traceback

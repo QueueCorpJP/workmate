@@ -149,10 +149,27 @@ export const GoogleDriveFilePicker: React.FC<GoogleDriveFilePickerProps> = ({
 
       const allFiles = response.result.files || [];
       
-      // サポートされているファイル形式のみフィルター
+      // サポートされているファイル形式のみフィルター（より包括的に）
       const supportedFiles = allFiles.filter((file: GoogleDriveFile) => {
-        return file.mimeType === 'application/vnd.google-apps.folder' || 
-               SUPPORTED_MIME_TYPES.includes(file.mimeType);
+        // フォルダは常に表示
+        if (file.mimeType === 'application/vnd.google-apps.folder') {
+          return true;
+        }
+        
+        // サポートされているMIMEタイプをチェック
+        if (SUPPORTED_MIME_TYPES.includes(file.mimeType)) {
+          return true;
+        }
+        
+        // ファイル拡張子による追加チェック（MIMEタイプが不正確な場合のフォールバック）
+        const fileName = file.name.toLowerCase();
+        const supportedExtensions = [
+          '.pdf', '.xlsx', '.xls', '.xlsm', '.xlsb', '.csv',
+          '.docx', '.doc', '.txt', '.rtf', '.html', '.htm',
+          '.json', '.xml'
+        ];
+        
+        return supportedExtensions.some(ext => fileName.endsWith(ext));
       });
 
       setFiles(supportedFiles);

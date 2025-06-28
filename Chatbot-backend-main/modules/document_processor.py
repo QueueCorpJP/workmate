@@ -757,7 +757,71 @@ class DocumentProcessor:
                 raise Exception(f"PDF処理に失敗しました: {fallback_error}")
     
     async def _extract_text_from_excel(self, content: bytes) -> str:
-        """Excelファイルからテキストを抽出"""
+        """Excelファイルからテキストを抽出（改良版：XLS対応、文字化け・記号除去強化）"""
+        try:
+            # 改良版Excelクリーナーを最優先使用
+            from modules.excel_data_cleaner_enhanced import ExcelDataCleanerEnhanced
+            
+            cleaner = ExcelDataCleanerEnhanced()
+            cleaned_text = cleaner.clean_excel_data(content)
+            
+            logger.info(f"✅ Excel処理完了（改良版）: {len(cleaned_text)} 文字")
+            return cleaned_text
+            
+        except ImportError:
+            # フォールバック1: 超保守版
+            logger.warning("⚠️ 改良版ExcelDataCleanerが利用できません。超保守版を使用します。")
+            try:
+                from modules.excel_data_cleaner_ultra_conservative import ExcelDataCleanerUltraConservative
+                cleaner = ExcelDataCleanerUltraConservative()
+                cleaned_text = cleaner.clean_excel_data(content)
+                logger.info(f"✅ Excel処理完了（超保守版）: {len(cleaned_text)} 文字")
+                return cleaned_text
+            except ImportError:
+                # フォールバック2: 修正版
+                logger.warning("⚠️ 超保守版ExcelDataCleanerが利用できません。修正版を使用します。")
+                try:
+                    from modules.excel_data_cleaner_fixed import ExcelDataCleanerFixed
+                    cleaner = ExcelDataCleanerFixed()
+                    cleaned_text = cleaner.clean_excel_data(content)
+                    logger.info(f"✅ Excel処理完了（修正版）: {len(cleaned_text)} 文字")
+                    return cleaned_text
+                except ImportError:
+                    # フォールバック3: 強化版
+                    logger.warning("⚠️ 修正版ExcelDataCleanerが利用できません。強化版を使用します。")
+                    try:
+                        from modules.excel_data_cleaner import ExcelDataCleaner
+                        cleaner = ExcelDataCleaner()
+                        cleaned_text = cleaner.clean_excel_data(content)
+                        logger.info(f"✅ Excel処理完了（強化版）: {len(cleaned_text)} 文字")
+                        return cleaned_text
+                    except Exception as e2:
+                        logger.warning(f"⚠️ 強化版Excel処理失敗、従来版にフォールバック: {e2}")
+                        return await self._extract_text_from_excel_fallback(content)
+        except Exception as e:
+            logger.error(f"❌ Excel処理エラー（改良版）: {e}")
+            # フォールバック: 超保守版
+            logger.info("🔄 超保守版Excel処理にフォールバック")
+            try:
+                from modules.excel_data_cleaner_ultra_conservative import ExcelDataCleanerUltraConservative
+                cleaner = ExcelDataCleanerUltraConservative()
+                cleaned_text = cleaner.clean_excel_data(content)
+                logger.info(f"✅ Excel処理完了（超保守版）: {len(cleaned_text)} 文字")
+                return cleaned_text
+            except Exception as e2:
+                logger.warning(f"⚠️ 修正版Excel処理失敗、強化版にフォールバック: {e2}")
+                try:
+                    from modules.excel_data_cleaner import ExcelDataCleaner
+                    cleaner = ExcelDataCleaner()
+                    cleaned_text = cleaner.clean_excel_data(content)
+                    logger.info(f"✅ Excel処理完了（強化版）: {len(cleaned_text)} 文字")
+                    return cleaned_text
+                except Exception as e3:
+                    logger.warning(f"⚠️ 強化版Excel処理失敗、従来版にフォールバック: {e3}")
+                    return await self._extract_text_from_excel_fallback(content)
+    
+    async def _extract_text_from_excel_fallback(self, content: bytes) -> str:
+        """Excelファイルからテキストを抽出（従来版）"""
         try:
             import pandas as pd
             from io import BytesIO
@@ -782,7 +846,7 @@ class DocumentProcessor:
             return "\n\n".join(text_parts)
             
         except Exception as e:
-            logger.error(f"Excel処理エラー: {e}")
+            logger.error(f"Excel処理エラー（従来版）: {e}")
             raise
     
     async def _extract_text_from_word(self, content: bytes) -> str:
