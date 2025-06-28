@@ -115,11 +115,22 @@ async def upload_document(
         # ドキュメント処理実行
         logger.info(f"🔄 ドキュメント処理開始: {file.filename}")
         
-        processing_result = await document_processor.process_uploaded_file(
-            file=file,
-            user_id=user_id,
-            company_id=company_id
-        )
+        # Excelファイルの場合はレコードベース処理を使用
+        if file_extension in ['.xlsx', '.xls']:
+            logger.info(f"📊 Excelファイル検出、レコードベース処理を使用: {file.filename}")
+            from .document_processor_record_based import document_processor_record_based
+            processing_result = await document_processor_record_based.process_uploaded_file(
+                file=file,
+                user_id=user_id,
+                company_id=company_id
+            )
+        else:
+            # 他のファイル形式は従来の処理
+            processing_result = await document_processor.process_uploaded_file(
+                file=file,
+                user_id=user_id,
+                company_id=company_id
+            )
         
         # 処理結果からembedding情報を取得
         embedding_result = {
