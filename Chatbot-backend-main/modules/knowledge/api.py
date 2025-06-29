@@ -189,10 +189,10 @@ async def _record_document_source(
             "name": name,
             "type": doc_type,
             "page_count": page_count,
-            # ❌ "content": content_str,  # contentカラム削除済み
             "uploaded_by": user_id,
             "company_id": company_id,
-            "uploaded_at": datetime.now().isoformat()
+            "uploaded_at": datetime.now().isoformat(),
+            "special": "knowledge API経由でアップロード"
         }
         
         try:

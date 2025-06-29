@@ -26,7 +26,8 @@ async def test_cascade_delete():
             "type": "text",
             "uploaded_by": "test_user",
             "company_id": "test_company",
-            "active": True
+            "active": True,
+            "uploaded_at": "2025-01-01T00:00:00Z"
         }
         
         print(f"📄 テスト用ドキュメントを作成: {test_doc_id}")
@@ -148,7 +149,8 @@ async def test_real_delete_function():
             "type": "text",
             "uploaded_by": "test_user",
             "company_id": "test_company",
-            "active": True
+            "active": True,
+            "uploaded_at": "2025-01-01T00:00:00Z"
         }
         
         doc_result = supabase.table("document_sources").insert(test_doc_data).execute()

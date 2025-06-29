@@ -114,7 +114,7 @@ async def realtime_rag_search(query: str, company_id: str = None, company_name: 
                 question=query,
                 company_id=company_id,
                 company_name=company_name,
-                top_k=max_results
+                top_k=max_results * 2  # 検索精度向上のため拡大
             )
             
             if result and result.get("answer"):
@@ -142,7 +142,7 @@ async def realtime_rag_search(query: str, company_id: str = None, company_name: 
     safe_print("⚠️ フォールバック: 従来のRAG検索システムを使用")
     return simple_rag_search_fallback("", query, max_results, company_id)
 
-def simple_rag_search_fallback(knowledge_text: str, query: str, max_results: int = 5, company_id: str = None) -> str:
+def simple_rag_search_fallback(knowledge_text: str, query: str, max_results: int = 20, company_id: str = None) -> str:
     """
     🔄 フォールバック用の従来RAG検索 - 並列ベクトル検索優先、フォールバックで従来検索
     """
@@ -197,7 +197,7 @@ def simple_rag_search_fallback(knowledge_text: str, query: str, max_results: int
                 
                 # company_idなしでも実行（デバッグ用）
                 vector_result = vector_search_system.get_document_content_by_similarity(
-                    query, company_id, max_results * 2
+                    query, company_id, max_results
                 )
                 
                 safe_print(f"🔍 ベクトル検索結果: {len(vector_result) if vector_result else 0}文字")

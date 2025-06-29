@@ -125,7 +125,10 @@ class TestDatabaseIntegration:
             "id": "test_doc_id",
             "name": "test_doc.pdf",
             "company_id": "test_company",
-            "content": "テスト文書内容"
+            "type": "pdf",
+            "uploaded_by": "test_user",
+            "uploaded_at": "2024-01-01T00:00:00",
+            "special": "統合テスト用ドキュメント"
         }
         
         mock_db.execute = AsyncMock()

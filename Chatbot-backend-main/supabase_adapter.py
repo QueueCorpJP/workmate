@@ -1,5 +1,5 @@
 """
-Supabase adapter for the chatbot application
+Supabase adapter for the chatbot application (Fixed version with schema cache refresh)
 This module provides functions to connect to Supabase and use it as a database backend
 """
 import os
@@ -19,28 +19,50 @@ client_options = {
     "retry_count": 3,  # リトライ回数
 }
 
-# Create Supabase client
-try:
-    supabase: Client = create_client(supabase_url, supabase_key)
-    # タイムアウト設定を適用
-    if hasattr(supabase, '_client'):
-        supabase._client.timeout = 600
-except Exception as e:
-    print(f"Supabase client creation error: {e}")
-    # フォールバック：デフォルト設定でクライアント作成
-    supabase: Client = create_client(supabase_url, supabase_key)
+# Global client variable
+_supabase_client = None
 
-def get_supabase_client():
-    """Get the Supabase client instance"""
-    return supabase
+def create_fresh_client():
+    """Create a fresh Supabase client instance"""
+    try:
+        client = create_client(supabase_url, supabase_key)
+        # タイムアウト設定を適用
+        if hasattr(client, '_client'):
+            client._client.timeout = 600
+        return client
+    except Exception as e:
+        print(f"Supabase client creation error: {e}")
+        # フォールバック：デフォルト設定でクライアント作成
+        return create_client(supabase_url, supabase_key)
+
+def get_supabase_client(force_refresh=False):
+    """Get the Supabase client instance with optional refresh"""
+    global _supabase_client
+    
+    if _supabase_client is None or force_refresh:
+        print("🔄 Creating fresh Supabase client...")
+        _supabase_client = create_fresh_client()
+    
+    return _supabase_client
+
+def refresh_schema_cache():
+    """Force refresh the Supabase client to clear schema cache"""
+    global _supabase_client
+    print("🔄 Refreshing Supabase schema cache...")
+    _supabase_client = create_fresh_client()
+    return _supabase_client
+
+# Initialize the client
+supabase = get_supabase_client()
 
 def execute_query(query, params=None):
     """Execute a SQL query on Supabase"""
     # This is a simple wrapper around the Supabase client's rpc function
     # You can use this to execute custom SQL queries
     try:
+        client = get_supabase_client()
         # print(f"Executing query: {query}")
-        result = supabase.rpc(
+        result = client.rpc(
             "execute_sql",
             {"sql_query": query, "params": params or []}
         ).execute()
@@ -68,8 +90,8 @@ def execute_query(query, params=None):
         # print(traceback.format_exc())
         return []
 
-def insert_data(table, data):
-    """Insert data into a table"""
+def insert_data(table, data, retry_with_fresh_client=True):
+    """Insert data into a table with automatic schema cache refresh on error"""
     # Ensure all data values are properly converted to strings
     if isinstance(data, dict):
         # コンテンツサイズをチェック
@@ -98,8 +120,11 @@ def insert_data(table, data):
                         item[key] = str(value)
     
     try:
+        # Get current client
+        client = get_supabase_client()
+        
         # タイムアウト付きで実行
-        result = supabase.table(table).insert(data).execute()
+        result = client.table(table).insert(data).execute()
         
         # 成功ログ
         if isinstance(data, dict) and 'content' in data:
@@ -112,201 +137,74 @@ def insert_data(table, data):
     except Exception as e:
         # エラーの詳細をログ出力
         error_msg = str(e)
+        
+        # スキーマキャッシュエラーの場合は自動的にリトライ
+        if "schema cache" in error_msg.lower() and retry_with_fresh_client:
+            print(f"🔄 スキーマキャッシュエラーを検出。新しいクライアントでリトライ中...")
+            
+            # 新しいクライアントを作成
+            fresh_client = refresh_schema_cache()
+            
+            try:
+                # 新しいクライアントでリトライ
+                result = fresh_client.table(table).insert(data).execute()
+                print(f"✅ リトライ成功: データ挿入完了 (テーブル: {table})")
+                return result
+            except Exception as retry_error:
+                print(f"❌ リトライも失敗: {retry_error}")
+                raise retry_error
+        
+        # その他のエラーまたはリトライ失敗の場合
         if isinstance(data, dict) and 'content' in data:
             content_size = len(str(data['content']).encode('utf-8')) / (1024 * 1024)
             print(f"❌ データ挿入エラー: {content_size:.2f}MB (テーブル: {table}) - {error_msg}")
         else:
             print(f"❌ データ挿入エラー (テーブル: {table}) - {error_msg}")
         
-        # statement timeoutの場合は特別なエラーメッセージ
-        if "statement timeout" in error_msg.lower() or "57014" in error_msg:
-            raise Exception(f"データベースタイムアウト: コンテンツが大きすぎます。ファイルを分割してください。")
-        
-        raise
+        raise e
 
-def update_data(table, data, match_column, match_value):
-    """Update data in a table"""
-    # Ensure all data values are properly converted to strings
-    if isinstance(data, dict):
-        for key, value in data.items():
-            if value is None:
-                # Keep NULL values as NULL for integer fields
-                continue
-            elif not isinstance(value, (str, int, float, bool)):
-                data[key] = str(value)
-    
-    return supabase.table(table).update(data).eq(match_column, match_value).execute()
-
-def delete_data(table, match_column, match_value):
-    """Delete data from a table"""
-    return supabase.table(table).delete().eq(match_column, match_value).execute()
-
-def select_data(table, columns="*", filters=None, order=None, limit=None, offset=None):
-    """Select data from a table with optional filters, ordering, and pagination"""
-    # print(f"Selecting data from table: {table}, columns: {columns}, filters: {filters}, order: {order}, limit: {limit}, offset: {offset}")
-    
-    # Check if this is a COUNT query
-    if isinstance(columns, str) and "COUNT" in columns.upper():
-        # Use execute_query for COUNT operations
-        count_query = f"SELECT COUNT(*) FROM {table}"
-        
-        # Add filters if provided
-        if filters:
-            conditions = []
-            for column, value in filters.items():
-                if isinstance(value, str):
-                    conditions.append(f"{column} = '{value}'")
-                else:
-                    conditions.append(f"{column} = {value}")
-            
-            if conditions:
-                count_query += " WHERE " + " AND ".join(conditions)
-        
-        # print(f"Executing COUNT query: {count_query}")
-        
-        # Execute the COUNT query
-        try:
-            count_result = execute_query(count_query)
-            # print(f"COUNT result: {count_result}")
-            
-            # Create a wrapper for the result
-            class ResultWrapper:
-                def __init__(self, data):
-                    self.data = data
-                
-                def order(self, column, ascending=True):
-                    return self.data
-                
-                def __getitem__(self, key):
-                    return self.data[key]
-                
-                def __len__(self):
-                    return len(self.data)
-                
-                def __bool__(self):
-                    return bool(self.data)
-            
-            # Format the result to match the expected structure
-            result = type('obj', (object,), {
-                'data': ResultWrapper([{'count': count_result[0]['count']}])
-            })
-            
-            return result
-        except Exception as e:
-            print(f"Supabase API error in fetchall: {e}")
-            import traceback
-            print(traceback.format_exc())
-            # Return empty result on error
-            return type('obj', (object,), {'data': ResultWrapper([])})
-    
-    # For non-COUNT queries, use the standard approach
-    # print(f"Using standard approach for table: {table}")
-    query = supabase.table(table).select(columns)
-    
-    if filters:
-        for column, value in filters.items():
-            # print(f"Adding filter: {column} = {value}")
-            if value is None:
-                # Use is_ method for NULL checks (especially for vector columns)
-                query = query.is_(column, 'null')
-            else:
-                query = query.eq(column, value)
-    
-    # Add ordering if specified
-    if order:
-        # print(f"Adding order: {order}")
-        # Clean order string to prevent invalid syntax
-        clean_order = order.strip()
-        
-        # Remove any duplicate or invalid patterns
-        if ".desc.asc" in clean_order or ".asc.desc" in clean_order:
-            print(f"⚠️ 不正なorder構文を検出: {clean_order}")
-            # Extract column name and use desc as default
-            column_name = clean_order.split('.')[0]
-            query = query.order(column_name, desc=True)
-        elif " desc" in clean_order.lower():
-            column_name = clean_order.replace(" desc", "").strip()
-            query = query.order(column_name, desc=True)
-        elif " asc" in clean_order.lower():
-            column_name = clean_order.replace(" asc", "").strip()
-            query = query.order(column_name, desc=False)
-        elif ".desc" in clean_order:
-            column_name = clean_order.replace(".desc", "").strip()
-            query = query.order(column_name, desc=True)
-        elif ".asc" in clean_order:
-            column_name = clean_order.replace(".asc", "").strip()
-            query = query.order(column_name, desc=False)
-        else:
-            query = query.order(clean_order, desc=False)
-    
-    # Add limit and offset using range method
-    if offset is not None or limit is not None:
-        start = offset or 0
-        if limit is not None:
-            # range(start, end) where end is inclusive
-            end = start + limit - 1
-            # print(f"Adding range: {start} to {end}")
-            query = query.range(start, end)
-        else:
-            # If no limit specified but offset is given, get a reasonable amount
-            # print(f"Adding range from offset: {start}")
-            query = query.range(start, start + 999)
-    
-    # Execute the query and return the result
+def select_data(table, columns="*", filters=None):
+    """Select data from a table"""
     try:
-        # print(f"Executing Supabase query for table: {table}")
-        # print(f"Query details: columns={columns}, filters={filters}, order={order}, limit={limit}, offset={offset}")
+        client = get_supabase_client()
+        query = client.table(table).select(columns)
+        
+        if filters:
+            for key, value in filters.items():
+                query = query.eq(key, value)
+        
         result = query.execute()
-        # print(f"Query result for table {table}: {len(result.data) if result.data else 0} rows")
-        
-        # Create a wrapper class for the result data
-        class ResultWrapper:
-            def __init__(self, data):
-                self.data = data
-            
-            def order(self, column, ascending=True):
-                # Just return the original data, no ordering is performed
-                return self.data
-                
-            def __getitem__(self, key):
-                # Make the wrapper subscriptable
-                return self.data[key]
-                
-            def __len__(self):
-                # Support len() function
-                return len(self.data)
-                
-            def __bool__(self):
-                # Support boolean evaluation
-                return bool(self.data)
-        
-        # Replace result.data with a wrapper that has an order method
-        original_data = result.data
-        result.data = ResultWrapper(original_data)
-        
         return result
     except Exception as e:
-        print(f"Error executing Supabase query for table {table}: {e}")
-        # print(f"Query parameters - columns: {columns}, filters: {filters}, order: {order}, limit: {limit}, offset: {offset}")
-        import traceback
-        print(traceback.format_exc())
+        print(f"Select data error: {e}")
+        return None
+
+def update_data(table, data, filters):
+    """Update data in a table"""
+    try:
+        client = get_supabase_client()
+        query = client.table(table).update(data)
         
-        # Create an empty result wrapper
-        class ResultWrapper:
-            def __init__(self, data):
-                self.data = data
-            
-            def order(self, column, ascending=True):
-                return self.data
-                
-            def __getitem__(self, key):
-                return self.data[key]
-                
-            def __len__(self):
-                return len(self.data)
-                
-            def __bool__(self):
-                return bool(self.data)
+        for key, value in filters.items():
+            query = query.eq(key, value)
         
-        # Return empty result on error
-        return type('obj', (object,), {'data': ResultWrapper([])})
+        result = query.execute()
+        return result
+    except Exception as e:
+        print(f"Update data error: {e}")
+        return None
+
+def delete_data(table, filters):
+    """Delete data from a table"""
+    try:
+        client = get_supabase_client()
+        query = client.table(table).delete()
+        
+        for key, value in filters.items():
+            query = query.eq(key, value)
+        
+        result = query.execute()
+        return result
+    except Exception as e:
+        print(f"Delete data error: {e}")
+        return None

@@ -368,6 +368,7 @@ class DocumentProcessor:
             
             document_id = str(uuid.uuid4())
             
+            # document_sourcesテーブルに必要なフィールドのみを含める（contentとembeddingは削除済み）
             metadata = {
                 "id": document_id,
                 "name": doc_data["name"],
@@ -375,16 +376,23 @@ class DocumentProcessor:
                 "page_count": doc_data.get("page_count", 1),
                 "uploaded_by": doc_data["uploaded_by"],
                 "company_id": doc_data["company_id"],
-                "uploaded_at": datetime.now().isoformat()
+                "uploaded_at": datetime.now().isoformat(),  # uploaded_atフィールドを使用
+                "active": True,  # activeフィールドを追加
+                "parent_id": doc_data.get("parent_id"),  # 親ドキュメント（階層構造）
+                "doc_id": document_id  # ドキュメント識別子として自身のIDを設定
             }
             
+            # specialコラムは絶対に設定しない（ユーザーの要求通り）
+            
+            logger.info(f"🔄 document_sourcesテーブルへの保存開始: {document_id} - {doc_data['name']}")
             result = insert_data("document_sources", metadata)
             
             if result and result.data:
-                logger.info(f"✅ メタデータ保存完了: {document_id} - {doc_data['name']}")
+                logger.info(f"✅ document_sourcesテーブル保存完了: {document_id} - {doc_data['name']}")
                 return document_id
             else:
-                raise Exception("メタデータ保存に失敗しました")
+                logger.error(f"❌ document_sourcesテーブル保存失敗: result={result}")
+                raise Exception("document_sourcesテーブルへのメタデータ保存に失敗しました")
                 
         except Exception as main_error:
             logger.error(f"❌ メタデータ保存エラー: {main_error}")
@@ -606,7 +614,8 @@ class DocumentProcessor:
                 "type": self._detect_file_type(file.filename),
                 "page_count": self._estimate_page_count(extracted_text),
                 "uploaded_by": user_id,
-                "company_id": company_id
+                "company_id": company_id,
+                "special": f"テキスト長: {len(extracted_text)}文字"  # 特殊属性として記録
             }
             
             document_id = await self._save_document_metadata(doc_data)
@@ -757,29 +766,29 @@ class DocumentProcessor:
                 raise Exception(f"PDF処理に失敗しました: {fallback_error}")
     
     async def _extract_text_from_excel(self, content: bytes) -> str:
-        """Excelファイルからテキストを抽出（改良版：XLS対応、文字化け・記号除去強化）"""
+        """Excelファイルからテキストを抽出（データ損失防止版：Ultra Conservative最優先）"""
         try:
-            # 改良版Excelクリーナーを最優先使用
-            from modules.excel_data_cleaner_enhanced import ExcelDataCleanerEnhanced
+            # 最優先: 超保守版（データ損失を最小限に抑制）
+            from modules.excel_data_cleaner_ultra_conservative import ExcelDataCleanerUltraConservative
             
-            cleaner = ExcelDataCleanerEnhanced()
+            cleaner = ExcelDataCleanerUltraConservative()
             cleaned_text = cleaner.clean_excel_data(content)
             
-            logger.info(f"✅ Excel処理完了（改良版）: {len(cleaned_text)} 文字")
+            logger.info(f"✅ Excel処理完了（超保守版）: {len(cleaned_text)} 文字")
             return cleaned_text
             
         except ImportError:
-            # フォールバック1: 超保守版
-            logger.warning("⚠️ 改良版ExcelDataCleanerが利用できません。超保守版を使用します。")
+            # フォールバック1: 改良版
+            logger.warning("⚠️ 超保守版ExcelDataCleanerが利用できません。改良版を使用します。")
             try:
-                from modules.excel_data_cleaner_ultra_conservative import ExcelDataCleanerUltraConservative
-                cleaner = ExcelDataCleanerUltraConservative()
+                from modules.excel_data_cleaner_enhanced import ExcelDataCleanerEnhanced
+                cleaner = ExcelDataCleanerEnhanced()
                 cleaned_text = cleaner.clean_excel_data(content)
-                logger.info(f"✅ Excel処理完了（超保守版）: {len(cleaned_text)} 文字")
+                logger.info(f"✅ Excel処理完了（改良版）: {len(cleaned_text)} 文字")
                 return cleaned_text
             except ImportError:
                 # フォールバック2: 修正版
-                logger.warning("⚠️ 超保守版ExcelDataCleanerが利用できません。修正版を使用します。")
+                logger.warning("⚠️ 改良版ExcelDataCleanerが利用できません。修正版を使用します。")
                 try:
                     from modules.excel_data_cleaner_fixed import ExcelDataCleanerFixed
                     cleaner = ExcelDataCleanerFixed()
@@ -799,25 +808,25 @@ class DocumentProcessor:
                         logger.warning(f"⚠️ 強化版Excel処理失敗、従来版にフォールバック: {e2}")
                         return await self._extract_text_from_excel_fallback(content)
         except Exception as e:
-            logger.error(f"❌ Excel処理エラー（改良版）: {e}")
-            # フォールバック: 超保守版
-            logger.info("🔄 超保守版Excel処理にフォールバック")
+            logger.error(f"❌ Excel処理エラー（超保守版）: {e}")
+            # フォールバック: 改良版
+            logger.info("🔄 改良版Excel処理にフォールバック")
             try:
-                from modules.excel_data_cleaner_ultra_conservative import ExcelDataCleanerUltraConservative
-                cleaner = ExcelDataCleanerUltraConservative()
+                from modules.excel_data_cleaner_enhanced import ExcelDataCleanerEnhanced
+                cleaner = ExcelDataCleanerEnhanced()
                 cleaned_text = cleaner.clean_excel_data(content)
-                logger.info(f"✅ Excel処理完了（超保守版）: {len(cleaned_text)} 文字")
+                logger.info(f"✅ Excel処理完了（改良版）: {len(cleaned_text)} 文字")
                 return cleaned_text
             except Exception as e2:
-                logger.warning(f"⚠️ 修正版Excel処理失敗、強化版にフォールバック: {e2}")
+                logger.warning(f"⚠️ 改良版Excel処理失敗、修正版にフォールバック: {e2}")
                 try:
-                    from modules.excel_data_cleaner import ExcelDataCleaner
-                    cleaner = ExcelDataCleaner()
+                    from modules.excel_data_cleaner_fixed import ExcelDataCleanerFixed
+                    cleaner = ExcelDataCleanerFixed()
                     cleaned_text = cleaner.clean_excel_data(content)
-                    logger.info(f"✅ Excel処理完了（強化版）: {len(cleaned_text)} 文字")
+                    logger.info(f"✅ Excel処理完了（修正版）: {len(cleaned_text)} 文字")
                     return cleaned_text
                 except Exception as e3:
-                    logger.warning(f"⚠️ 強化版Excel処理失敗、従来版にフォールバック: {e3}")
+                    logger.warning(f"⚠️ 修正版Excel処理失敗、従来版にフォールバック: {e3}")
                     return await self._extract_text_from_excel_fallback(content)
     
     async def _extract_text_from_excel_fallback(self, content: bytes) -> str:

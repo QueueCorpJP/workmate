@@ -106,9 +106,10 @@ def test_document_data():
         "id": "test_doc_id",
         "name": "test_document.pdf",
         "type": "pdf",
-        "content": "テストドキュメントの内容",
         "uploaded_by": "test_user_id",
-        "company_id": "test_company_id"
+        "company_id": "test_company_id",
+        "uploaded_at": "2024-01-01T00:00:00",
+        "special": "テスト用ドキュメント"
     }
 
 

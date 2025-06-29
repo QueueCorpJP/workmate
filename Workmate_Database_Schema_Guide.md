@@ -16,15 +16,17 @@ Workmate は **RAG（Retrieval-Augmented Generation）技術**を活用したAI�
 
 ### 📂 スキーマ構成
 - **`auth`** - Supabase認証システム（16テーブル）
-- **`public`** - アプリケーション固有のビジネスロジック（9テーブル）
+- **`public`** - アプリケーション固有のビジネスロジック（12テーブル）🔄
 
 ### 🎯 主要機能
 1. **企業・ユーザー管理** - マルチテナント対応
-2. **ドキュメント管理** - PDF、動画等のアップロード・解析
-3. **チャンク分割処理** - 効率的なRAG検索のための文書分割
+2. **ドキュメント管理** - PDF、Excel等のアップロード・解析
+3. **チャンク分割処理** - 効率的なRAG検索のための文書分割（768次元ベクトル）
 4. **AIチャット** - Gemini 2.5 Flash による自然言語処理
 5. **利用状況追跡** - トークン使用量・コスト管理
 6. **プラン管理** - ユーザーの料金プラン制御
+7. **申請管理** - 本番環境アップグレード等の申請処理🆕
+8. **トークン分析** - 月次使用量分析・企業設定管理🆕
 
 ---
 
@@ -413,58 +415,68 @@ RLS: 無効
 
 ### 📄 document_sources - ドキュメント管理（🚀最適化済み）
 ```sql
--- テーブル構造（11カラム）
+-- テーブル構造（12カラム）- 実際のSupabase構造
 id           text PRIMARY KEY              -- ドキュメントID
 name         text NOT NULL                 -- ファイル名
-type         text NOT NULL                 -- ファイル種別
+type         text NOT NULL                 -- ファイル種別（PDF、Excel等）
 page_count   integer                      -- ページ数
 uploaded_by  text NOT NULL → users(id)     -- アップロード者
 company_id   text NOT NULL → companies(id) -- 所属企業
 uploaded_at  timestamp NOT NULL           -- アップロード日時
 active       boolean DEFAULT true         -- 有効フラグ
-special      text                         -- 特殊属性
-parent_id    text → document_sources(id)  -- 親ドキュメント（階層構造）
+special      text                         -- 特殊属性（メタデータ）
+parent_id    text → document_sources(id)  -- 親ドキュメント（階層構造）🆕
+doc_id       text UNIQUE                  -- ドキュメント識別子🆕
 
--- 統計情報
-現在のサイズ: 232 kB
-推定データ: 0レコード（削除済みアーカイブあり: 42レコード）
+-- 統計情報（2025年1月現在）
+現在のサイズ: 104 kB
+推定データ: 6レコード（アクティブ）
 RLS: 無効
 
 -- ✅ 最適化完了
 -- ❌ content カラム削除済み（chunksテーブルで管理）
 -- ❌ embedding カラム削除済み（chunksテーブルで管理）
+-- 🆕 parent_id: 階層構造サポート
+-- 🆕 doc_id: ユニーク識別子
 ```
 
 ### 🧩 chunks - チャンク管理テーブル（🆕ベクトルRAG対応）
 
 **📋 テーブル構造詳細:**
 ```sql
--- テーブル構造（8カラム）
+-- テーブル構造（8カラム）- 実際のSupabase構造
 id          uuid PRIMARY KEY DEFAULT gen_random_uuid()  -- チャンク一意ID（UUID）
 content     text NOT NULL                              -- チャンク本文（300-500トークン）
-embedding   vector                                     -- 🧠 Gemini Embedding（3072次元）
+embedding   vector                                     -- 🧠 Gemini Embedding（768次元ベクトル）
 chunk_index integer NOT NULL                           -- チャンクの順序（0, 1, 2, …）
-doc_id      text NOT NULL → document_sources(id)       -- 紐づく document_sources.id（親）
+doc_id      text NOT NULL                             -- 紐づく document_sources.id（親）
 company_id  text                                       -- 所属企業ID（企業分離用）
 created_at  timestamptz DEFAULT now()                  -- 登録日時
 updated_at  timestamptz DEFAULT now()                  -- 更新日時
 
--- 統計情報
-現在のサイズ: 16 kB
-推定データ: 0レコード
+-- 統計情報（2025年1月現在）
+現在のサイズ: 58 MB
+推定データ: 2,953レコード（アクティブ）
 RLS: 無効
+
+-- インデックス（推奨）
+CREATE INDEX idx_chunks_doc_id ON chunks(doc_id);
+CREATE INDEX idx_chunks_company_id ON chunks(company_id);
+CREATE INDEX idx_chunks_embedding ON chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 ```
 
 **🔧 主な用途:**
 | 用途 | 説明 |
 |------|------|
 | **高速な部分検索（semantic）** | embedding検索で、質問と「意味的に近いチャンク」だけを抽出する |
-| **LLMとの組み合わせ（RAG）** | Geminiなどに「部分情報だけ」渡すことで効率よく回答を生成 |
+| **LLMとの組み合わせ（RAG）** | Gemini 2.5 Flashに「部分情報だけ」渡すことで効率よく回答を生成 |
 | **ドキュメント単位の絞り込み** | doc_idで document_sources と紐づけて、対象ファイル内に限定可能 |
+| **企業データ分離** | company_idで企業ごとのデータを分離管理 |
 
-**📂 document_sources との役割分担:**
-- **document_sources**: 一覧・メタデータ管理（ファイル名、アップロード者、企業など）
-- **chunks**: 実際の検索・RAG処理（細かく分割されたコンテンツとベクトル）
+**🚀 パフォーマンス:**
+- **pgvector拡張**: 高速ベクトル検索対応
+- **バッチ処理**: 50個単位でembedding生成・挿入
+- **リアルタイム保存**: ドキュメント処理と並行してチャンク保存
 
 ### 💬 chat_history - チャット履歴
 ```sql
@@ -482,8 +494,8 @@ source_page      text                 -- 参照ページ
 user_id          varchar              -- ユーザーID
 company_id       varchar              -- 企業ID
 
--- 🤖 AI分析情報（Gemini）
-model_name       varchar DEFAULT 'gpt-4o-mini'  -- AIモデル名
+-- 🤖 AI分析情報（Gemini 2.5 Flash）
+model_name       varchar DEFAULT 'gpt-4o-mini'  -- AIモデル名🔄
 input_tokens     int DEFAULT 0        -- 入力トークン数
 output_tokens    int DEFAULT 0        -- 出力トークン数
 total_tokens     int DEFAULT 0        -- 合計トークン数
@@ -492,86 +504,89 @@ base_cost_usd    numeric DEFAULT 0.000000    -- 基本コスト
 prompt_cost_usd  numeric DEFAULT 0.000000    -- プロンプトコスト
 prompt_references int DEFAULT 0       -- プロンプト参照数
 
--- 統計情報
-現在のサイズ: 552 kB
-推定データ: 22レコード
+-- 統計情報（2025年1月現在）
+現在のサイズ: 592 kB
+推定データ: 69レコード
 RLS: 無効
 ```
 
-### 📊 monthly_token_usage - 月次利用統計
+### 📊 plan_history - プラン変更履歴（🆕新機能）
 ```sql
--- テーブル構造（11カラム）
-id                    varchar PRIMARY KEY      -- 統計ID
-company_id           varchar NOT NULL         -- 企業ID
-user_id              varchar NOT NULL         -- ユーザーID
-year_month           varchar NOT NULL         -- 年月（YYYY-MM）
-total_input_tokens   int DEFAULT 0           -- 月間入力トークン
-total_output_tokens  int DEFAULT 0           -- 月間出力トークン
-total_tokens         int DEFAULT 0           -- 月間合計トークン
-total_cost_usd       numeric DEFAULT 0.000000 -- 月間コスト
-conversation_count   int DEFAULT 0           -- 会話数
-created_at           timestamp DEFAULT CURRENT_TIMESTAMP
-updated_at           timestamp DEFAULT CURRENT_TIMESTAMP
+-- テーブル構造（6カラム）
+id              text PRIMARY KEY DEFAULT gen_random_uuid()  -- 変更履歴ID
+user_id         text NOT NULL → users(id)     -- ユーザーID
+from_plan       text NOT NULL                  -- 変更前プラン
+to_plan         text NOT NULL                  -- 変更後プラン
+changed_at      timestamp DEFAULT now()        -- 変更日時
+duration_days   integer                       -- プラン期間（日数）
 
--- 統計情報
-現在のサイズ: 88 kB
-推定データ: 0レコード
-RLS: 無効
-```
-
-### ⚙️ company_settings - 企業設定
-```sql
--- テーブル構造（7カラム）
-company_id                      varchar PRIMARY KEY
-monthly_token_limit             int DEFAULT 25000000    -- 月間トークン上限
-warning_threshold_percentage    int DEFAULT 80          -- 警告閾値（80%）
-critical_threshold_percentage   int DEFAULT 95          -- 重要警告閾値（95%）
-pricing_tier                   varchar DEFAULT 'basic'  -- 料金プラン
-created_at                     timestamp DEFAULT CURRENT_TIMESTAMP
-updated_at                     timestamp DEFAULT CURRENT_TIMESTAMP
-
--- 統計情報
-現在のサイズ: 24 kB
+-- 統計情報（2025年1月現在）
+現在のサイズ: 32 kB
 推定データ: 1レコード
 RLS: 無効
 ```
 
-### 📋 applications - 申請管理
+### 📝 applications - 申請管理（🆕新機能）
 ```sql
 -- テーブル構造（14カラム）
-id                text PRIMARY KEY
-company_name      text NOT NULL              -- 申請企業名
-contact_name      text NOT NULL              -- 担当者名
-email            text NOT NULL              -- 連絡先メール
-phone            text                       -- 電話番号
-expected_users   text                       -- 想定ユーザー数
-current_usage    text                       -- 現在の利用状況
-message          text                       -- 要望・メッセージ
-application_type text DEFAULT 'production-upgrade'  -- 申請種別
-status           text DEFAULT 'pending'      -- 処理状況
-submitted_at     text NOT NULL              -- 申請日時
-processed_at     text                       -- 処理日時
-processed_by     text                       -- 処理者
-notes           text                        -- 管理者メモ
+id                 text PRIMARY KEY           -- 申請ID
+company_name       text NOT NULL              -- 会社名
+contact_name       text NOT NULL              -- 担当者名
+email              text NOT NULL              -- メールアドレス
+phone              text                       -- 電話番号
+expected_users     text                       -- 予想ユーザー数
+current_usage      text                       -- 現在の使用状況
+message            text                       -- メッセージ
+application_type   text DEFAULT 'production-upgrade'  -- 申請種別
+status             text DEFAULT 'pending'     -- ステータス
+submitted_at       text NOT NULL              -- 申請日時
+processed_at       text                       -- 処理日時
+processed_by       text                       -- 処理者
+notes              text                       -- 備考
 
--- 統計情報
+-- 統計情報（2025年1月現在）
 現在のサイズ: 48 kB
 推定データ: 0レコード
 RLS: 無効
 ```
 
-### 📈 plan_history - プラン変更履歴
+### 📊 monthly_token_usage - 月次トークン使用量（🆕新機能）
 ```sql
--- テーブル構造（6カラム）
-id             text PRIMARY KEY DEFAULT gen_random_uuid()
-user_id        text NOT NULL → users(id)    -- 対象ユーザー
-from_plan      text NOT NULL                -- 変更前プラン
-to_plan        text NOT NULL                -- 変更後プラン
-changed_at     timestamp DEFAULT now()      -- 変更日時
-duration_days  int                         -- プラン期間（日数）
+-- テーブル構造（11カラム）
+id                   varchar PRIMARY KEY       -- 使用量ID
+company_id           varchar NOT NULL          -- 企業ID
+user_id              varchar NOT NULL          -- ユーザーID
+year_month           varchar NOT NULL          -- 年月（YYYY-MM）
+total_input_tokens   int DEFAULT 0             -- 入力トークン合計
+total_output_tokens  int DEFAULT 0             -- 出力トークン合計
+total_tokens         int DEFAULT 0             -- 総トークン数
+total_cost_usd       numeric DEFAULT 0.000000  -- 総コスト（USD）
+conversation_count   int DEFAULT 0             -- 会話回数
+created_at           timestamp DEFAULT CURRENT_TIMESTAMP  -- 作成日時
+updated_at           timestamp DEFAULT CURRENT_TIMESTAMP  -- 更新日時
 
--- 統計情報
-現在のサイズ: 32 kB
+-- 統計情報（2025年1月現在）
+現在のサイズ: 88 kB
+推定データ: 0レコード
+RLS: 無効
+
+-- ユニーク制約（推奨）
+UNIQUE(company_id, user_id, year_month)
+```
+
+### ⚙️ company_settings - 企業設定（🆕新機能）
+```sql
+-- テーブル構造（7カラム）
+company_id                     varchar PRIMARY KEY    -- 企業ID
+monthly_token_limit            int DEFAULT 25000000   -- 月次トークン制限
+warning_threshold_percentage   int DEFAULT 80         -- 警告閾値（%）
+critical_threshold_percentage  int DEFAULT 95         -- 危険閾値（%）
+pricing_tier                   varchar DEFAULT 'basic' -- 料金ティア
+created_at                     timestamp DEFAULT CURRENT_TIMESTAMP  -- 作成日時
+updated_at                     timestamp DEFAULT CURRENT_TIMESTAMP  -- 更新日時
+
+-- 統計情報（2025年1月現在）
+現在のサイズ: 24 kB
 推定データ: 1レコード
 RLS: 無効
 ```
@@ -580,316 +595,328 @@ RLS: 無効
 
 ## 🔗 テーブル関係図
 
-```mermaid
-erDiagram
-    %% 企業・ユーザー関係
-    companies ||--o{ users : "所属"
-    users ||--o{ users : "作成者"
-    users ||--|| usage_limits : "利用制限"
-    users ||--o{ plan_history : "プラン履歴"
-    
-    %% ドキュメント・チャンク関係
-    companies ||--o{ document_sources : "所有"
-    companies ||--o{ chunks : "チャンク所有"
-    users ||--o{ document_sources : "アップロード"
-    document_sources ||--o{ document_sources : "階層構造"
-    document_sources ||--o{ chunks : "チャンク分割"
-    
-    %% チャット・利用統計
-    document_sources ||--o{ chat_history : "参照"
-    companies ||--o{ chat_history : "所属"
-    users ||--o{ chat_history : "発言"
-    
-    %% 設定・統計
-    companies ||--|| company_settings : "設定"
-    companies ||--o{ monthly_token_usage : "月次統計"
-    users ||--o{ monthly_token_usage : "個人統計"
-    
-    %% 認証システム（auth スキーマ）
-    auth_users ||--o{ auth_sessions : "セッション"
-    auth_users ||--o{ auth_identities : "ID連携"
-    auth_users ||--o{ auth_mfa_factors : "MFA"
-    auth_mfa_factors ||--o{ auth_mfa_challenges : "認証チャレンジ"
-    auth_sessions ||--o{ auth_mfa_amr_claims : "認証方法"
-    auth_sessions ||--o{ auth_refresh_tokens : "リフレッシュ"
-    auth_users ||--o{ auth_one_time_tokens : "ワンタイム"
-    auth_sso_providers ||--o{ auth_sso_domains : "ドメイン"
-    auth_sso_providers ||--o{ auth_saml_providers : "SAML設定"
-    auth_sso_providers ||--o{ auth_saml_relay_states : "Relay状態"
-    auth_flow_state ||--o{ auth_saml_relay_states : "フロー連携"
+### 🏢 企業・ユーザー関係
+```
+companies (企業マスター)
+    ↓ 1:N
+users (アプリケーションユーザー)
+    ↓ 1:1
+usage_limits (利用制限)
+    ↓ 1:N
+plan_history (プラン変更履歴)🆕
+
+companies
+    ↓ 1:1
+company_settings (企業設定)🆕
+    ↓ 1:N
+monthly_token_usage (月次使用量)🆕
+```
+
+### 📄 ドキュメント・チャンク関係
+```
+companies
+    ↓ 1:N
+document_sources (ドキュメント管理)
+    ↓ 1:N
+chunks (RAGチャンク)
+
+document_sources (自己参照)
+    ↓ parent_id (階層構造)🆕
+document_sources
+
+chunks → pgvector extension (ベクトル検索)
+```
+
+### 💬 チャット・分析関係
+```
+users
+    ↓ 1:N
+chat_history (チャット履歴)
+    ↓ 分析データ集約
+monthly_token_usage (月次統計)
+
+companies
+    ↓ 1:N
+applications (申請管理)🆕
+```
+
+### 🔐 認証システム関係
+```
+auth.users (Supabase認証)
+    ↓ 1:N
+auth.sessions (セッション管理)
+    ↓ 1:N
+auth.mfa_factors (MFA要素)
+    ↓ 1:N
+auth.mfa_challenges (認証チャレンジ)
+
+auth.users
+    ↓ 1:N
+auth.identities (外部ID連携)
+
+auth.sso_providers (SSOプロバイダー)
+    ↓ 1:N
+auth.sso_domains (ドメインマッピング)
+    ↓ 1:N
+auth.saml_providers (SAML設定)
 ```
 
 ---
 
 ## 📊 データフロー解説
 
-### 🔄 1. ユーザー登録・認証フロー
+### 🔄 ユーザー登録・認証フロー
 ```
-1. 企業管理者登録
-   └─ companies テーブル作成
-   └─ auth.users 作成（Supabase）
-   └─ public.users 作成（アプリ固有情報）
-   └─ usage_limits 初期化
-   └─ company_settings 初期化
-
-2. 一般ユーザー招待
-   └─ 管理者が public.users 作成
-   └─ 招待メール送信
-   └─ ユーザーが auth.users でアカウント作成
-```
-
-### 📄 2. ドキュメント・チャンク処理フロー（🆕詳細版）
-```
-PDF/XLS等 → テキスト抽出 → チャンク分割 → Geminiベクトル化 → 保存・検索
-アップロード     OCR/解析    (300-500tok)    (3072次元)     (RAG対応)
-     │              │           │             │             │
-     ▼              ▼           ▼             ▼             ▼
-document_sources  content     chunks        embedding     高速検索
-(メタデータ)     全文保存    (分割保存)    (ベクトル)    (類似度計算)
-     │              │           │             │             │
-     ▼              ▼           ▼             ▼             ▼
-ファイル管理    全文検索     意味検索      コサイン類似度   Top-N抽出
+1. 新規ユーザー登録
+   auth.users → 認証情報作成
+   ↓
+2. アプリケーションユーザー作成
+   public.users → プロフィール作成
+   ↓
+3. 利用制限設定
+   usage_limits → デフォルト制限適用
+   ↓
+4. 企業設定確認
+   company_settings → トークン制限取得🆕
 ```
 
-**🔍 チャンク処理の詳細:**
-1. **PDF/XLSアップロード** → document_sources に基本情報・全文保存
-2. **テキスト分割** → 300-500トークンごとにchunks テーブルに分割保存
-3. **Geminiベクトル化** → 各チャンクを3072次元embeddingに変換
-4. **検索最適化** → chunk_index で文書内の順序管理
-5. **RAG準備完了** → 質問時に類似チャンクを高速抽出可能
-
-### 💬 3. チャット・RAG処理フロー（🆕Gemini 2.5 Flash）
+### 📤 ドキュメントアップロード・RAG処理フロー
 ```
-ユーザー質問 → 質問ベクトル化 → 類似チャンク検索 → コンテキスト構築 → AI応答生成 → 履歴保存
-     │              │             │              │             │         │
-     ▼              ▼             ▼              ▼             ▼         ▼
-user_message   Gemini Embedding  chunks検索    Top-N抽出    Gemini    chat_history
-(自然言語)     (3072次元)       (コサイン類似度) (300-500tok×N) 2.5Flash  (全記録)
-     │              │             │              │             │         │
-     ▼              ▼             ▼              ▼             ▼         ▼
-  入力処理       ベクトル変換     意味的類似性      関連文書抽出    回答生成   コスト記録
+1. ファイルアップロード
+   document_sources → メタデータ保存
+   ↓
+2. テキスト抽出・前処理
+   PDF/Excel → テキスト抽出
+   ↓
+3. チャンク分割（300-500トークン）
+   chunks → content（本文）保存
+   ↓
+4. Gemini Embedding生成
+   chunks → embedding（768次元ベクトル）🔄
+   ↓
+5. pgvector インデックス更新
+   ベクトル検索インデックス最適化
 ```
 
-**🔍 RAG検索の詳細:**
-1. **質問解析** → ユーザーの質問をGeminiで3072次元ベクトルに変換
-2. **類似検索** → chunksテーブルでコサイン類似度による高速検索
-3. **Top-N抽出** → 最も関連性の高いチャンク（通常3-5個）を抽出
-4. **コンテキスト構築** → 抽出チャンクを時系列順（chunk_index）で整理
-5. **AI回答生成** → Gemini 2.5 Flashに「質問+関連チャンク」を送信
-6. **メタデータ記録** → source_document, source_page等も併せて保存
-
-### 📊 4. 利用統計・コスト管理フロー
+### 💬 チャット・RAG検索フロー
 ```
-チャット実行 → トークン計算 → コスト算出 → 月次集計 → 制限チェック
-     │           │           │          │         │
-     ▼           ▼           ▼          ▼         ▼
-chat_history  token数記録  Gemini料金  monthly_usage  usage_limits
-             input/output  単価計算    月間合計    上限比較
+1. ユーザー質問受信
+   chat_history → user_message 保存
+   ↓
+2. ベクトル検索実行
+   chunks.embedding → 類似チャンク検索
+   ↓
+3. Gemini 2.5 Flash 応答生成🔄
+   RAGコンテキスト → AI応答
+   ↓
+4. 結果保存・統計更新
+   chat_history → bot_response 保存
+   monthly_token_usage → トークン使用量更新🆕
+   ↓
+5. 利用制限チェック
+   usage_limits → 残り制限確認
+```
+
+### 📊 分析・管理フロー
+```
+1. リアルタイム統計
+   chat_history → 即座に統計更新
+   ↓
+2. 月次集計処理
+   monthly_token_usage → 企業・ユーザー別集計🆕
+   ↓
+3. 制限アラート
+   company_settings → 閾値チェック🆕
+   ↓
+4. プラン変更
+   plan_history → 変更履歴記録🆕
+```
+
+### 🎫 申請・承認フロー
+```
+1. アップグレード申請
+   applications → 申請情報保存🆕
+   ↓
+2. 管理者確認
+   applications.status → 'pending' → 'approved'🆕
+   ↓
+3. プラン変更実行
+   plan_history → 変更履歴記録🆕
+   usage_limits → 制限値更新
 ```
 
 ---
 
 ## 🔧 運用・管理機能
 
-### 📊 管理ダッシュボード作成用クエリ例
+### 🎯 パフォーマンス最適化
 
-#### 企業別利用状況（チャンク対応）
+#### ベクトル検索の最適化
 ```sql
-SELECT 
-    c.name AS company_name,
-    COUNT(DISTINCT u.id) AS total_users,
-    COUNT(DISTINCT ds.id) AS total_documents,
-    COUNT(DISTINCT ch_tbl.id) AS total_chunks,  -- 🆕チャンク数
-    COUNT(ch.id) AS total_conversations,
-    SUM(ch.total_tokens) AS total_tokens,
-    SUM(ch.cost_usd) AS total_cost,
-    CASE 
-        WHEN COUNT(DISTINCT ds.id) > 0 
-        THEN COUNT(DISTINCT ch_tbl.id)::float / COUNT(DISTINCT ds.id)
-        ELSE 0 
-    END AS avg_chunks_per_doc  -- 🆕平均チャンク数
-FROM companies c
-LEFT JOIN users u ON c.id = u.company_id
-LEFT JOIN document_sources ds ON c.id = ds.company_id AND ds.active = true
-LEFT JOIN chunks ch_tbl ON ds.id = ch_tbl.doc_id  -- 🆕チャンクテーブル
-LEFT JOIN chat_history ch ON c.id = ch.company_id
-GROUP BY c.id, c.name
-ORDER BY total_cost DESC;
+-- pgvector インデックス作成（必須）
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- 効率的なベクトルインデックス
+CREATE INDEX idx_chunks_embedding_ivfflat 
+ON chunks USING ivfflat (embedding vector_cosine_ops) 
+WITH (lists = 100);
+
+-- 高速検索のための複合インデックス
+CREATE INDEX idx_chunks_company_doc 
+ON chunks(company_id, doc_id);
+
+-- アクティブチャンクのみの検索
+CREATE INDEX idx_chunks_active 
+ON chunks(company_id) 
+WHERE doc_id IN (
+    SELECT id FROM document_sources WHERE active = true
+);
 ```
 
-#### Gemini利用統計
+#### 統計処理の最適化
 ```sql
-SELECT 
-    DATE_TRUNC('day', timestamp) AS date,
-    COUNT(*) AS conversations,
-    SUM(input_tokens) AS total_input_tokens,
-    SUM(output_tokens) AS total_output_tokens,
-    SUM(cost_usd) AS total_cost,
-    AVG(cost_usd) AS avg_cost_per_conversation,
-    COUNT(CASE WHEN model_name LIKE 'gemini%' THEN 1 END) AS gemini_conversations
-FROM chat_history 
-WHERE timestamp >= CURRENT_DATE - INTERVAL '30 days'
-GROUP BY DATE_TRUNC('day', timestamp)
-ORDER BY date DESC;
+-- 月次統計の高速化
+CREATE INDEX idx_monthly_usage_lookup 
+ON monthly_token_usage(company_id, user_id, year_month);
+
+-- チャット履歴の分析用インデックス
+CREATE INDEX idx_chat_history_analytics 
+ON chat_history(company_id, timestamp DESC);
+
+-- プラン履歴の追跡用
+CREATE INDEX idx_plan_history_user_time 
+ON plan_history(user_id, changed_at DESC);
 ```
 
-#### チャンク効率性分析
+### 📊 監視・アラート
+
+#### トークン使用量監視
 ```sql
--- 最も参照されるチャンクの分析（RAG効率性）
+-- 企業別月次使用量チェック
 SELECT 
-    ds.name AS document_name,
-    ch.chunk_index,
-    COUNT(*) AS reference_count,
-    LENGTH(ch.content) AS chunk_size_chars,
-    ROUND(LENGTH(ch.content) / 4.0) AS estimated_tokens,
-    SUBSTRING(ch.content, 1, 100) || '...' AS content_preview
-FROM chunks ch
-JOIN document_sources ds ON ch.doc_id = ds.id
-JOIN chat_history chat ON ds.name = chat.source_document
-WHERE ds.active = true
-GROUP BY ds.name, ch.chunk_index, ch.content
-ORDER BY reference_count DESC
-LIMIT 20;
-
--- 企業別チャンク利用状況（🆕RAG統計強化）
-SELECT 
-    c.name AS company_name,
-    COUNT(ch.id) AS total_chunks,
-    AVG(LENGTH(ch.content)) AS avg_chunk_size_chars,
-    ROUND(AVG(LENGTH(ch.content)) / 4.0) AS estimated_tokens, -- 概算トークン数
-    COUNT(DISTINCT ch.doc_id) AS unique_documents,
-    MAX(ch.chunk_index) + 1 AS max_chunks_per_doc,
-    COUNT(CASE WHEN ch.embedding IS NOT NULL THEN 1 END) AS vectorized_chunks,
-    ROUND(COUNT(CASE WHEN ch.embedding IS NOT NULL THEN 1 END) * 100.0 / COUNT(ch.id), 2) AS vectorized_percentage
-FROM companies c
-JOIN chunks ch ON c.id = ch.company_id
-GROUP BY c.id, c.name
-ORDER BY total_chunks DESC;
-
--- チャンクサイズ分布分析（300-500トークン最適化確認）
-SELECT 
-    CASE 
-        WHEN LENGTH(content) / 4 < 300 THEN '300未満トークン'
-        WHEN LENGTH(content) / 4 BETWEEN 300 AND 500 THEN '300-500トークン（最適）'
-        WHEN LENGTH(content) / 4 > 500 THEN '500超過トークン'
-    END AS token_range,
-    COUNT(*) AS chunk_count,
-    ROUND(AVG(LENGTH(content) / 4.0)) AS avg_tokens,
-    COUNT(CASE WHEN embedding IS NOT NULL THEN 1 END) AS with_embedding,
-    ROUND(COUNT(CASE WHEN embedding IS NOT NULL THEN 1 END) * 100.0 / COUNT(*), 2) AS embedding_percentage
-FROM chunks
-GROUP BY 
-    CASE 
-        WHEN LENGTH(content) / 4 < 300 THEN '300未満トークン'
-        WHEN LENGTH(content) / 4 BETWEEN 300 AND 500 THEN '300-500トークン（最適）'
-        WHEN LENGTH(content) / 4 > 500 THEN '500超過トークン'
-    END
-ORDER BY chunk_count DESC;
-```
-
-### 🚨 アラート・通知設定
-
-#### トークン使用量警告（Gemini対応）
-```sql
--- 月次使用量警告
-SELECT 
-    c.name,
+    c.name as company_name,
+    mtu.year_month,
+    mtu.total_tokens,
     cs.monthly_token_limit,
-    COALESCE(SUM(mtu.total_tokens), 0) AS current_usage,
-    ROUND(COALESCE(SUM(mtu.total_tokens), 0) * 100.0 / cs.monthly_token_limit, 2) AS usage_percentage,
-    cs.warning_threshold_percentage,
-    cs.critical_threshold_percentage
-FROM companies c
+    ROUND(mtu.total_tokens::float / cs.monthly_token_limit * 100, 1) as usage_percentage
+FROM monthly_token_usage mtu
+JOIN companies c ON mtu.company_id = c.id
 JOIN company_settings cs ON c.id = cs.company_id
-LEFT JOIN monthly_token_usage mtu ON c.id = mtu.company_id 
-    AND mtu.year_month = TO_CHAR(CURRENT_DATE, 'YYYY-MM')
-GROUP BY c.id, c.name, cs.monthly_token_limit, cs.warning_threshold_percentage, cs.critical_threshold_percentage
-HAVING COALESCE(SUM(mtu.total_tokens), 0) > cs.monthly_token_limit * cs.warning_threshold_percentage / 100
+WHERE mtu.year_month = TO_CHAR(CURRENT_DATE, 'YYYY-MM')
 ORDER BY usage_percentage DESC;
 ```
 
-### 🔒 セキュリティ・権限管理
-
-#### Row Level Security (RLS) 設定例
+#### 異常検知クエリ
 ```sql
--- チャンクテーブルの企業データ分離
-CREATE POLICY chunk_company_isolation ON chunks
-    FOR ALL USING (
-        company_id = current_user_company_id()
-    );
-
--- 企業データの分離
-CREATE POLICY company_isolation ON document_sources
-    FOR ALL USING (company_id = current_user_company_id());
-
--- ユーザーデータの分離
-CREATE POLICY user_company_isolation ON users
-    FOR ALL USING (company_id = current_user_company_id());
+-- 大量トークン使用の検知
+SELECT 
+    ch.company_id,
+    ch.user_id,
+    DATE(ch.timestamp) as date,
+    SUM(ch.total_tokens) as daily_tokens,
+    COUNT(*) as conversation_count
+FROM chat_history ch
+WHERE ch.timestamp >= CURRENT_DATE - INTERVAL '7 days'
+GROUP BY ch.company_id, ch.user_id, DATE(ch.timestamp)
+HAVING SUM(ch.total_tokens) > 100000  -- 10万トークン/日
+ORDER BY daily_tokens DESC;
 ```
 
-#### 認証システムのセキュリティ監視
-```sql
--- 最近の認証アクティビティ
-SELECT 
-    u.email,
-    s.created_at,
-    s.user_agent,
-    s.ip,
-    s.aal AS auth_level,
-    CASE 
-        WHEN mfa.id IS NOT NULL THEN 'MFA有効'
-        ELSE 'パスワードのみ'
-    END AS auth_method
-FROM auth.sessions s
-JOIN auth.users u ON s.user_id = u.id
-LEFT JOIN auth.mfa_factors mfa ON u.id = mfa.user_id AND mfa.status = 'verified'
-WHERE s.created_at >= CURRENT_DATE - INTERVAL '7 days'
-ORDER BY s.created_at DESC;
+### 🔒 セキュリティ・データ保護
 
--- MFA利用状況
+#### 企業データ分離の確認
+```sql
+-- 企業間のデータ漏洩チェック
 SELECT 
-    factor_type,
-    status,
-    COUNT(*) AS factor_count,
-    COUNT(DISTINCT user_id) AS unique_users
-FROM auth.mfa_factors
-GROUP BY factor_type, status
-ORDER BY factor_count DESC;
+    'chunks' as table_name,
+    company_id,
+    COUNT(*) as record_count
+FROM chunks 
+GROUP BY company_id
+UNION ALL
+SELECT 
+    'document_sources',
+    company_id,
+    COUNT(*)
+FROM document_sources 
+GROUP BY company_id
+ORDER BY table_name, company_id;
 ```
+
+#### 削除データの完全性確認
+```sql
+-- カスケード削除の動作確認
+SELECT 
+    ds.id as doc_id,
+    ds.name as doc_name,
+    COUNT(c.id) as chunk_count
+FROM document_sources ds
+LEFT JOIN chunks c ON ds.id = c.doc_id
+WHERE ds.active = false
+GROUP BY ds.id, ds.name
+HAVING COUNT(c.id) > 0;  -- 非アクティブなのにチャンクが残っている場合
+```
+
+### 🚀 運用のベストプラクティス
+
+#### 1. 定期メンテナンス（推奨）
+```bash
+# 週次実行推奨
+# 1. 統計情報更新
+ANALYZE chunks;
+ANALYZE chat_history;
+ANALYZE monthly_token_usage;
+
+# 2. 不要データクリーンアップ（6ヶ月以上前）
+DELETE FROM chat_history 
+WHERE timestamp < CURRENT_DATE - INTERVAL '6 months';
+
+# 3. インデックス再構築（月次）
+REINDEX INDEX idx_chunks_embedding_ivfflat;
+```
+
+#### 2. 容量管理
+```sql
+-- テーブルサイズ監視
+SELECT 
+    schemaname,
+    tablename,
+    pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size,
+    pg_total_relation_size(schemaname||'.'||tablename) as size_bytes
+FROM pg_tables 
+WHERE schemaname = 'public'
+ORDER BY size_bytes DESC;
+```
+
+#### 3. バックアップ戦略
+- **chunks テーブル**: 最重要（embeddings再生成コスト高）
+- **chat_history**: 分析用途で重要
+- **document_sources**: メタデータ（復旧容易）
+- **auth スキーマ**: Supabase自動バックアップ
+
+#### 4. スケーリング指針
+| 指標 | 注意 | 対策 |
+|------|------|------|
+| **chunks > 1万件** | ベクトル検索遅延 | インデックス調整 |
+| **チャット > 1000件/日** | レスポンス低下 | 履歴アーカイブ |
+| **月次トークン > 1000万** | コスト急増 | 制限強化・プラン見直し |
 
 ---
 
-## 🎯 まとめ
+## 🎉 まとめ
 
-Workmate データベースは以下の特徴を持つ最新設計になっています：
+### ✅ システムの強み
+- **🔐 強固な認証**: Supabase auth + MFA + SSO対応
+- **🧠 高精度RAG**: pgvector + Gemini 2.5 Flash
+- **📊 詳細分析**: リアルタイム統計 + 月次レポート
+- **🏢 マルチテナント**: 企業データ完全分離
+- **⚡ 高パフォーマンス**: 最適化されたインデックス戦略
+- **🔄 運用性**: 充実した監視・アラート機能
 
-### ✅ 強み
-- **高度なチャンク処理**: 新しい`chunks`テーブルで検索精度を大幅向上
-- **Gemini Embedding対応**: 3072次元ベクトルによる高精度なRAG検索
-- **マルチテナント対応**: 企業単位での完全なデータ分離
-- **スケーラブル**: ベクトル検索による高速なRAG処理
-- **詳細な分析**: トークン単位でのコスト・利用分析
-- **柔軟な権限管理**: 企業管理者による階層的ユーザー管理
-- **エンタープライズ認証**: MFA、SSO、WebAuthn対応（16テーブル）
+### 🚀 今後の拡張性
+- **AI機能強化**: より高度なRAG・マルチモーダル対応
+- **分析機能**: BI連携・カスタムダッシュボード
+- **API拡張**: 外部システム連携・Webhook
+- **グローバル対応**: 多言語・タイムゾーン対応
 
-### 🆕 最新の改良点
-1. **高精度RAGシステム**: 300-500トークンのチャンク分割で検索精度を大幅向上
-2. **Gemini Embedding統合**: 3072次元embeddingとコサイン類似度による高速検索
-3. **強化された認証**: 35カラムの包括的なユーザー管理（MFA、SSO、WebAuthn）
-4. **企業データ分離**: company_idによる直接的なマルチテナント対応
-5. **PKCE認証フロー**: 最新のOAuth 2.1セキュリティ標準対応
-
-### 🔍 テーブル構成詳細
-- **auth スキーマ**: 16テーブル、RLS有効、包括的な認証・認可システム
-- **public スキーマ**: 9テーブル、ビジネスロジック、マルチテナント対応
-
-### 🚀 運用のベストプラクティス
-- **RAGチューニング**: 300-500トークンの最適サイズ維持とTop-N数の調整
-- **Embedding品質管理**: 3072次元ベクトルの定期的な再生成とコサイン類似度閾値の最適化
-- **二層検索戦略**: document_sources（全文・メタ）と chunks（意味・部分）の効率的使い分け
-- **チャンク監視**: chunk_index の連続性チェックと欠損チャンクの検出
-- **企業分離確認**: company_id による完全なデータ分離の定期検証
-- **認証ログ監視**: audit_log_entries による包括的なセキュリティ監視
-- **MFA推進**: 多要素認証の導入率向上とセキュリティ強化
-
-この最新のデータベース設計により、企業向けAIチャットボットサービスとして最高レベルの性能とセキュリティを提供しています。 
+**現在のアーキテクチャは、中規模〜大規模企業での本格運用に対応した堅牢な設計となっています。** 🎯 

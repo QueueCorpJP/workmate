@@ -162,7 +162,7 @@ class DocumentProcessorRecordBased:
             doc_id = await self._save_document_to_db(filename, user_id, company_id, file_size_mb, len(records))
             
             # レコードをチャンクとして保存
-            saved_chunks = await self._save_records_as_chunks(doc_id, records)
+            saved_chunks = await self._save_records_as_chunks(doc_id, records, company_id)
             
             # Embeddingを生成
             embedding_result = await self._generate_embeddings_for_records(doc_id, records)
@@ -188,8 +188,7 @@ class DocumentProcessorRecordBased:
     async def _save_document_to_db(self, filename: str, user_id: str, company_id: str, file_size_mb: float, record_count: int) -> str:
         """ドキュメント情報をデータベースに保存"""
         try:
-            from supabase_adapter import get_supabase_client
-            supabase = get_supabase_client()
+            from supabase_adapter import insert_data
             
             doc_id = str(uuid.uuid4())
             
@@ -197,27 +196,31 @@ class DocumentProcessorRecordBased:
                 "id": doc_id,
                 "name": filename,
                 "type": "excel_record_based",
-                "content": f"レコードベース処理されたExcelファイル（{record_count}レコード）",
                 "page_count": record_count,
                 "company_id": company_id,
                 "uploaded_by": user_id,
-                "timestamp": datetime.now().isoformat(),
-                "active": True
+                "uploaded_at": datetime.now().isoformat(),
+                "active": True,
+                "doc_id": doc_id  # ドキュメント識別子として自身のIDを設定
             }
             
-            result = supabase.table("document_sources").insert(document_data).execute()
+            # specialコラムは絶対に設定しない（ユーザーの要求通り）
             
-            if result.data:
-                logger.info(f"✅ ドキュメント保存完了: {doc_id}")
+            logger.info(f"🔄 document_sourcesテーブルへの保存開始（レコードベース）: {doc_id} - {filename}")
+            result = insert_data("document_sources", document_data)
+            
+            if result and result.data:
+                logger.info(f"✅ document_sourcesテーブル保存完了（レコードベース）: {doc_id} - {filename}")
                 return doc_id
             else:
-                raise Exception("ドキュメント保存に失敗しました")
+                logger.error(f"❌ document_sourcesテーブル保存失敗（レコードベース）: result={result}")
+                raise Exception("document_sourcesテーブルへのドキュメント保存に失敗しました")
                 
         except Exception as e:
-            logger.error(f"❌ ドキュメント保存エラー: {e}")
+            logger.error(f"❌ document_sourcesテーブル保存エラー（レコードベース）: {e}")
             raise
     
-    async def _save_records_as_chunks(self, doc_id: str, records: List[Dict[str, Any]]) -> int:
+    async def _save_records_as_chunks(self, doc_id: str, records: List[Dict[str, Any]], company_id: str) -> int:
         """レコードをチャンクとしてデータベースに保存"""
         try:
             from supabase_adapter import get_supabase_client
@@ -231,14 +234,15 @@ class DocumentProcessorRecordBased:
                     "doc_id": doc_id,
                     "content": record.get('content', ''),
                     "chunk_index": i,
-                    "token_count": record.get('token_estimate', 0),
+                    "company_id": company_id,  # company_idフィールドを追加
                     "metadata": {
                         "source_sheet": record.get('source_sheet', ''),
                         "record_index": record.get('record_index', i),
                         "record_type": record.get('record_type', 'single'),
                         "chunk_index": record.get('chunk_index', 0) if record.get('record_type') == 'split' else None
                     },
-                    "created_at": datetime.now().isoformat()
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat()
                 }
                 chunks_data.append(chunk_data)
             

@@ -72,7 +72,7 @@ class ParallelVectorSearchSystem:
                 raise ValueError("DATABASE_URL 環境変数が設定されていません")
             return db_url
 
-    async def parallel_comprehensive_search(self, query: str, company_id: str = None, max_results: int = 15) -> str:
+    async def parallel_comprehensive_search(self, query: str, company_id: str = None, max_results: int = 25) -> str:
         """包括的並列検索のメイン処理"""
         start_time = time.time()
         logger.info(f"🚀 並列包括検索開始: '{query}'")

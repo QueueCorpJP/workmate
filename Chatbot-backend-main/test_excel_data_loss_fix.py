@@ -1,212 +1,207 @@
+#!/usr/bin/env python3
 """
-🧪 Excel データ損失修正のテストスクリプト
-修正版ExcelDataCleanerFixedの動作を確認し、データ損失を検証
+Excel データ損失修正のテストスクリプト
+Ultra Conservative cleaner を最優先にした修正が効果的かテスト
 """
 
-import asyncio
+import sys
+import os
 import logging
-from modules.excel_data_cleaner_fixed import ExcelDataCleanerFixed
-from modules.excel_data_cleaner import ExcelDataCleaner
+import asyncio
 from modules.document_processor import DocumentProcessor
+from fastapi import UploadFile
+from io import BytesIO
 
-# ロギング設定
+# ログ設定
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-async def test_excel_data_loss_fix():
-    """
-    Excel データ損失修正のテスト
-    """
-    print("🧪 Excel データ損失修正テスト開始")
-    print("=" * 60)
+async def test_excel_processing_fix():
+    """修正されたExcel処理をテスト"""
     
-    # 実際のファイルを読み込み
+    # Excel ファイルのパス
     excel_file_path = "01_ISP案件一覧.xlsx"
     
+    if not os.path.exists(excel_file_path):
+        logger.error(f"❌ Excelファイルが見つかりません: {excel_file_path}")
+        return
+    
+    # ファイルを読み込み
+    with open(excel_file_path, 'rb') as f:
+        content = f.read()
+    
+    logger.info(f"📊 Excelファイル読み込み完了: {excel_file_path} ({len(content)} bytes)")
+    
+    # DocumentProcessorを初期化
     try:
-        with open(excel_file_path, 'rb') as f:
-            content = f.read()
+        processor = DocumentProcessor()
+        logger.info("✅ DocumentProcessor初期化完了")
+    except Exception as e:
+        logger.error(f"❌ DocumentProcessor初期化エラー: {e}")
+        return
+    
+    # UploadFileオブジェクトを模擬
+    class MockUploadFile:
+        def __init__(self, filename: str, content: bytes):
+            self.filename = filename
+            self.content = content
+            self.size = len(content)
+    
+    mock_file = MockUploadFile(excel_file_path, content)
+    
+    # Excel処理をテスト
+    logger.info("\n=== Excel処理テスト（修正版） ===")
+    try:
+        extracted_text = await processor._extract_text_from_excel(content)
         
-        print(f"📄 ファイル読み込み完了: {len(content)} bytes")
+        logger.info(f"✅ Excel処理成功")
+        logger.info(f"📊 抽出文字数: {len(extracted_text):,} 文字")
+        line_count = extracted_text.count('\n') + 1
+        logger.info(f"📊 抽出行数: {line_count} 行")
         
-        # 1. 従来版での処理
-        print("\n📊 テスト1: 従来版ExcelDataCleaner")
-        print("-" * 40)
+        # 特定のデータが含まれているかチェック
+        test_data = [
+            "ISP100001",
+            "C商事", 
+            "有限会社B",
+            "株式会社A",
+            "D工業",
+            "案件一覧",
+            "メタデータ",
+            "統計"
+        ]
         
-        try:
-            original_cleaner = ExcelDataCleaner()
-            original_result = original_cleaner.clean_excel_data(content)
-            print(f"✅ 従来版処理成功")
-            print(f"📄 処理結果文字数: {len(original_result)}")
-            print(f"📄 処理結果（最初の300文字）:")
-            print(original_result[:300])
-            print("..." if len(original_result) > 300 else "")
-            
-        except Exception as e:
-            print(f"❌ 従来版処理失敗: {e}")
-            original_result = ""
+        logger.info("\n=== データ存在確認 ===")
+        found_data = []
+        missing_data = []
         
-        # 2. 修正版での処理
-        print("\n📊 テスト2: 修正版ExcelDataCleanerFixed")
-        print("-" * 40)
-        
-        try:
-            fixed_cleaner = ExcelDataCleanerFixed()
-            fixed_result = fixed_cleaner.clean_excel_data(content)
-            print(f"✅ 修正版処理成功")
-            print(f"📄 処理結果文字数: {len(fixed_result)}")
-            print(f"📄 処理結果（最初の300文字）:")
-            print(fixed_result[:300])
-            print("..." if len(fixed_result) > 300 else "")
-            
-        except Exception as e:
-            print(f"❌ 修正版処理失敗: {e}")
-            fixed_result = ""
-        
-        # 3. DocumentProcessorでの処理
-        print("\n📊 テスト3: DocumentProcessor（修正版統合）")
-        print("-" * 40)
-        
-        try:
-            processor = DocumentProcessor()
-            
-            # UploadFileオブジェクトをモック
-            class MockUploadFile:
-                def __init__(self, filename, content):
-                    self.filename = filename
-                    self.content = content
-                
-                async def read(self):
-                    return self.content
-            
-            mock_file = MockUploadFile(excel_file_path, content)
-            processor_result = await processor._extract_text_from_excel(content)
-            
-            print(f"✅ DocumentProcessor処理成功")
-            print(f"📄 処理結果文字数: {len(processor_result)}")
-            print(f"📄 処理結果（最初の300文字）:")
-            print(processor_result[:300])
-            print("..." if len(processor_result) > 300 else "")
-            
-        except Exception as e:
-            print(f"❌ DocumentProcessor処理失敗: {e}")
-            processor_result = ""
-        
-        # 4. 結果比較
-        print("\n📊 結果比較")
-        print("-" * 40)
-        
-        if original_result and fixed_result:
-            improvement_ratio = len(fixed_result) / len(original_result)
-            print(f"📈 文字数改善率: {improvement_ratio:.2f}倍")
-            
-            if improvement_ratio > 1.2:
-                print("🎉 修正版で大幅な改善が確認されました！")
-            elif improvement_ratio > 1.0:
-                print("✅ 修正版で改善が確認されました")
+        for data in test_data:
+            if data in extracted_text:
+                found_data.append(data)
+                logger.info(f"✅ 発見: {data}")
             else:
-                print("⚠️ 修正版での改善が限定的です")
+                missing_data.append(data)
+                logger.warning(f"❌ 未発見: {data}")
         
-        # 5. チャンク分割テスト
-        print("\n📊 テスト4: チャンク分割")
-        print("-" * 40)
+        # 結果サマリー
+        logger.info(f"\n📊 データ存在確認結果:")
+        logger.info(f"   発見: {len(found_data)}/{len(test_data)} ({len(found_data)/len(test_data)*100:.1f}%)")
         
-        if fixed_result:
-            try:
-                processor = DocumentProcessor()
-                chunks = processor._split_text_into_chunks(fixed_result, excel_file_path)
-                
-                print(f"📄 生成チャンク数: {len(chunks)}")
-                
-                if chunks:
-                    token_counts = [chunk["token_count"] for chunk in chunks]
-                    avg_tokens = sum(token_counts) / len(token_counts)
-                    min_tokens = min(token_counts)
-                    max_tokens = max(token_counts)
-                    
-                    print(f"📊 トークン統計:")
-                    print(f"  - 平均: {avg_tokens:.1f}")
-                    print(f"  - 最小: {min_tokens}")
-                    print(f"  - 最大: {max_tokens}")
-                    
-                    # 最初の3チャンクの内容を表示
-                    print(f"\n📄 最初の3チャンクの内容:")
-                    for i, chunk in enumerate(chunks[:3]):
-                        print(f"チャンク{i}: {chunk['content'][:100]}...")
-                
-            except Exception as e:
-                print(f"❌ チャンク分割テスト失敗: {e}")
+        if missing_data:
+            logger.warning(f"⚠️ 未発見データ: {missing_data}")
+        else:
+            logger.info("🎉 全てのテストデータが発見されました！")
         
-        print("\n🎉 テスト完了")
+        # 抽出テキストの一部を表示
+        logger.info(f"\n=== 抽出テキストプレビュー（最初の1000文字） ===")
+        preview = extracted_text[:1000].replace('\n', '\\\\n')
+        logger.info(f"{preview}...")
         
-    except FileNotFoundError:
-        print(f"❌ ファイルが見つかりません: {excel_file_path}")
-        print("💡 カレントディレクトリにファイルを配置してください")
+        return {
+            "success": True,
+            "extracted_length": len(extracted_text),
+            "found_data": found_data,
+            "missing_data": missing_data,
+            "data_completeness": len(found_data)/len(test_data)*100
+        }
+        
     except Exception as e:
-        print(f"❌ テスト実行エラー: {e}")
+        logger.error(f"❌ Excel処理エラー: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
-def compare_data_extraction():
-    """
-    データ抽出の詳細比較
-    """
-    print("\n🔍 データ抽出詳細比較")
-    print("=" * 60)
+async def test_chunking_process():
+    """チャンク化処理もテスト"""
     
     excel_file_path = "01_ISP案件一覧.xlsx"
     
+    if not os.path.exists(excel_file_path):
+        logger.error(f"❌ Excelファイルが見つかりません: {excel_file_path}")
+        return
+    
+    with open(excel_file_path, 'rb') as f:
+        content = f.read()
+    
     try:
-        with open(excel_file_path, 'rb') as f:
-            content = f.read()
+        processor = DocumentProcessor()
         
-        # 従来版と修正版の詳細比較
-        original_cleaner = ExcelDataCleaner()
-        fixed_cleaner = ExcelDataCleanerFixed()
+        # テキスト抽出
+        extracted_text = await processor._extract_text_from_excel(content)
         
-        original_result = original_cleaner.clean_excel_data(content)
-        fixed_result = fixed_cleaner.clean_excel_data(content)
+        # チャンク化
+        logger.info("\n=== チャンク化処理テスト ===")
+        chunks = processor._split_text_into_chunks(extracted_text, excel_file_path)
         
-        # キーワード検索による比較
-        keywords = ["SS0", "ISP", "ステータス", "顧客情報", "獲得情報", "契約情報", "V付与済", "発行", "請求"]
+        logger.info(f"✅ チャンク化完了")
+        logger.info(f"📊 チャンク数: {len(chunks)}")
         
-        print("🔍 キーワード出現回数比較:")
-        for keyword in keywords:
-            original_count = original_result.count(keyword)
-            fixed_count = fixed_result.count(keyword)
-            improvement = fixed_count - original_count
+        # 各チャンクの情報を表示
+        total_chunk_chars = 0
+        for i, chunk in enumerate(chunks[:5]):  # 最初の5チャンクのみ表示
+            chunk_content = chunk["content"]
+            chunk_tokens = chunk["token_count"]
+            total_chunk_chars += len(chunk_content)
             
-            print(f"  {keyword}: 従来版={original_count}, 修正版={fixed_count}, 改善=+{improvement}")
+            logger.info(f"   チャンク{i+1}: {len(chunk_content)} 文字, {chunk_tokens} トークン")
+            preview_content = chunk_content[:100].replace('\n', ' ')
+            logger.info(f"     内容プレビュー: {preview_content}...")
         
-        # 行数比較
-        original_lines = len(original_result.split('\n'))
-        fixed_lines = len(fixed_result.split('\n'))
+        if len(chunks) > 5:
+            logger.info(f"   ... 他 {len(chunks) - 5} チャンク")
         
-        print(f"\n📊 行数比較:")
-        print(f"  従来版: {original_lines}行")
-        print(f"  修正版: {fixed_lines}行")
-        print(f"  改善: +{fixed_lines - original_lines}行")
+        # データ保持率を計算
+        data_retention = total_chunk_chars / len(extracted_text) * 100
+        logger.info(f"📊 データ保持率: {data_retention:.1f}% ({total_chunk_chars:,}/{len(extracted_text):,} 文字)")
+        
+        return {
+            "success": True,
+            "chunk_count": len(chunks),
+            "total_chunk_chars": total_chunk_chars,
+            "original_chars": len(extracted_text),
+            "data_retention": data_retention
+        }
         
     except Exception as e:
-        print(f"❌ 詳細比較エラー: {e}")
+        logger.error(f"❌ チャンク化処理エラー: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+async def main():
+    """メイン処理"""
+    logger.info("🚀 Excel データ損失修正テスト開始")
+    
+    # Excel処理テスト
+    excel_result = await test_excel_processing_fix()
+    
+    if excel_result["success"]:
+        # チャンク化テスト
+        chunk_result = await test_chunking_process()
+        
+        # 総合結果
+        logger.info("\n=== 総合テスト結果 ===")
+        logger.info(f"Excel処理: {'✅ 成功' if excel_result['success'] else '❌ 失敗'}")
+        if excel_result["success"]:
+            logger.info(f"  データ完全性: {excel_result['data_completeness']:.1f}%")
+            logger.info(f"  抽出文字数: {excel_result['extracted_length']:,}")
+        
+        if chunk_result and chunk_result["success"]:
+            logger.info(f"チャンク化: ✅ 成功")
+            logger.info(f"  チャンク数: {chunk_result['chunk_count']}")
+            logger.info(f"  データ保持率: {chunk_result['data_retention']:.1f}%")
+        
+        # 修正効果の評価
+        if excel_result["success"] and excel_result["data_completeness"] >= 95:
+            logger.info("🎉 修正が効果的です！データ損失が大幅に改善されました。")
+        elif excel_result["success"] and excel_result["data_completeness"] >= 80:
+            logger.info("✅ 修正が部分的に効果的です。さらなる改善の余地があります。")
+        else:
+            logger.warning("⚠️ まだデータ損失が発生しています。追加の修正が必要です。")
+    
+    logger.info("🏁 テスト完了")
 
 if __name__ == "__main__":
-    print("🚀 Excel データ損失修正テストシステム")
-    print("=" * 60)
-    
-    # 非同期テストを実行
-    asyncio.run(test_excel_data_loss_fix())
-    
-    # 詳細比較
-    compare_data_extraction()
-    
-    print("\n💡 修正内容:")
-    print("1. データフィルタリング基準の大幅緩和")
-    print("2. メタデータ除外ロジックの改善")
-    print("3. ヘッダー検出の精度向上")
-    print("4. ID・番号パターンの保護")
-    print("5. DocumentProcessorでの修正版統合")
-    
-    print("\n📝 期待される改善:")
-    print("- チャンク数の増加（より多くのデータ保持）")
-    print("- 重要な識別子（SS番号、ISP番号等）の保持")
-    print("- ステータス情報の完全保持")
-    print("- 質問応答精度の向上")
+    asyncio.run(main())

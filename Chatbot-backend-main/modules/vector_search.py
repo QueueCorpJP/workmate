@@ -168,7 +168,7 @@ class VectorSearchSystem:
             )
             """
     
-    def vector_similarity_search(self, query: str, company_id: str = None, limit: int = 5) -> List[Dict]:
+    def vector_similarity_search(self, query: str, company_id: str = None, limit: int = 20) -> List[Dict]:
         """ベクトル類似検索を実行（pgvector対応版）"""
         try:
             # クエリの埋め込み生成
@@ -269,7 +269,7 @@ class VectorSearchSystem:
             
             return []
     
-    def get_document_content_by_similarity(self, query: str, company_id: str = None, max_results: int = 10) -> str:
+    def get_document_content_by_similarity(self, query: str, company_id: str = None, max_results: int = 20) -> str:
         """類似度に基づいてドキュメントの内容を取得"""
         try:
             # ベクトル検索実行
