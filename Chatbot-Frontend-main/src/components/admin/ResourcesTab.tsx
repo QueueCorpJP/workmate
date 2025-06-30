@@ -39,6 +39,7 @@ import { GoogleDriveAuth } from '../GoogleDriveAuth';
 import { GoogleDriveFilePicker } from '../GoogleDriveFilePicker';
 import { GoogleAuthStorage } from '../../utils/googleAuthStorage';
 import { useAuth } from '../../contexts/AuthContext';
+import MultiFileUpload from '../MultiFileUpload';
 
 interface ResourcesTabProps {
   resources: Resource[];
@@ -73,6 +74,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
   
   // アップロードダイアログの状態
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [multiFileUploadOpen, setMultiFileUploadOpen] = useState(false);
   const [uploadTab, setUploadTab] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>("");
@@ -484,10 +486,10 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
           アップロードリソース
         </Typography>
         <Box sx={{ display: "flex", gap: 1 }}>
-          <Button 
-            variant="contained" 
+          <Button
+            variant="contained"
             startIcon={<AddIcon />}
-            onClick={() => setUploadDialogOpen(true)}
+            onClick={() => setMultiFileUploadOpen(true)}
             sx={{
               borderRadius: "12px",
               fontWeight: 600,
@@ -500,7 +502,19 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
               },
             }}
           >
-            新規アップロード
+            複数ファイルアップロード
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<AddIcon />}
+            onClick={() => setUploadDialogOpen(true)}
+            sx={{
+              borderRadius: "12px",
+              fontWeight: 600,
+              textTransform: "none",
+            }}
+          >
+            単一ファイル・URL
           </Button>
           <Button variant="outlined" onClick={onRefresh} disabled={isLoading}>
             更新
@@ -1026,6 +1040,18 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
         onClose={() => setDrivePickerOpen(false)}
         onFileSelect={handleDriveFileSelect}
         accessToken={driveAccessToken}
+      />
+
+      {/* 複数ファイルアップロードダイアログ */}
+      <MultiFileUpload
+        open={multiFileUploadOpen}
+        onClose={() => setMultiFileUploadOpen(false)}
+        onUploadComplete={() => {
+          onRefresh();
+          setAlertMessage('複数ファイルのアップロードが完了しました。');
+          setAlertSeverity('success');
+          setShowAlert(true);
+        }}
       />
 
       {/* 通知スナックバー */}
