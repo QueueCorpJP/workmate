@@ -54,7 +54,14 @@ set_chat_model(model)
 set_admin_model(model)
 
 # FastAPIアプリケーションの作成
-app = FastAPI()
+app = FastAPI(
+    title="WorkMate Chatbot API",
+    description="WorkMate AI Chatbot Backend API",
+    version="1.0.0",
+    docs_url="/chatbot/api/docs",
+    redoc_url="/chatbot/api/redoc",
+    openapi_url="/chatbot/api/openapi.json"
+)
 
 # グローバル例外ハンドラー
 @app.exception_handler(Exception)
