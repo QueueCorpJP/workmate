@@ -57,14 +57,7 @@ class VertexAIEmbeddingClient:
     
     def _setup_credentials(self):
         """認証情報を設定（3つの方法をサポート）"""
-        # 方法1: JSONファイルパス
-        service_account_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-        if service_account_path and os.path.exists(service_account_path):
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = service_account_path
-            logger.info(f"✅ サービスアカウント認証設定（ファイルパス）: {service_account_path}")
-            return
-        
-        # 方法2: JSON文字列を環境変数から読み込み
+        # 方法1: JSON文字列を環境変数から読み込み（最優先）
         credentials_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
         if credentials_json:
             try:
@@ -75,10 +68,17 @@ class VertexAIEmbeddingClient:
                 temp_file.close()
                 
                 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_file.name
-                logger.info(f"✅ サービスアカウント認証設定（環境変数JSON）: {temp_file.name}")
+                logger.info(f"✅ サービスアカウント認証設定（環境変数JSON・最優先）: {temp_file.name}")
                 return
             except json.JSONDecodeError as e:
                 logger.error(f"❌ JSON環境変数の解析エラー: {e}")
+        
+        # 方法2: JSONファイルパス
+        service_account_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        if service_account_path and os.path.exists(service_account_path):
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = service_account_path
+            logger.info(f"✅ サービスアカウント認証設定（ファイルパス）: {service_account_path}")
+            return
         
         # 方法3: 個別環境変数から構築
         project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
