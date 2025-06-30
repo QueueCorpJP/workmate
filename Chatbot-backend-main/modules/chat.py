@@ -8,6 +8,7 @@ import uuid
 import sys
 from datetime import datetime
 import logging
+from typing import Dict
 # PostgreSQL関連のインポート
 from psycopg2.extras import RealDictCursor
 from fastapi import HTTPException, Depends
@@ -24,12 +25,46 @@ import google.generativeai as genai
 from .config import setup_gemini
 from .utils import safe_print, safe_safe_print
 
-# 🚀 新しいリアルタイムRAGシステムのインポートを追加（最優先）
+# 🎯 完璧な検索システムのインポートを追加（最優先）
+try:
+    from .perfect_search_system import perfect_search, perfect_search_available
+    PERFECT_SEARCH_AVAILABLE = perfect_search_available()
+    if PERFECT_SEARCH_AVAILABLE:
+        safe_print("🎯 完璧な検索システムが利用可能です（最優先）")
+    else:
+        safe_print("⚠️ 完璧な検索システムの設定が不完全です")
+except ImportError as e:
+    PERFECT_SEARCH_AVAILABLE = False
+    safe_print(f"⚠️ 完璧な検索システムが利用できません: {e}")
+
+# 🇯🇵 日本語特化型検索システムのインポートを追加（フォールバック）
+try:
+    from .enhanced_japanese_search import enhanced_japanese_search, enhanced_japanese_search_available
+    ENHANCED_JAPANESE_SEARCH_AVAILABLE = enhanced_japanese_search_available()
+    if ENHANCED_JAPANESE_SEARCH_AVAILABLE:
+        safe_print("🇯🇵 日本語特化型検索システムが利用可能です（フォールバック）")
+    else:
+        safe_print("⚠️ 日本語特化型検索システムの設定が不完全です")
+except ImportError as e:
+    ENHANCED_JAPANESE_SEARCH_AVAILABLE = False
+    safe_print(f"⚠️ 日本語特化型検索システムが利用できません: {e}")
+
+# 🎯 超高精度検索システムのインポートを追加（フォールバック用）
+try:
+    from .ultra_accurate_search import get_ultra_accurate_search_instance
+    from .ultra_accurate_rag import get_ultra_accurate_rag_instance
+    ULTRA_ACCURATE_AVAILABLE = True
+    safe_print("🎯 超高精度検索システムが利用可能です（フォールバック用）")
+except ImportError as e:
+    ULTRA_ACCURATE_AVAILABLE = False
+    safe_print(f"⚠️ 超高精度検索システムが利用できません: {e}")
+
+# 🚀 新しいリアルタイムRAGシステムのインポートを追加（フォールバック用）
 try:
     from .realtime_rag import process_question_realtime, realtime_rag_available
     REALTIME_RAG_AVAILABLE = realtime_rag_available()
     if REALTIME_RAG_AVAILABLE:
-        safe_print("✅ リアルタイムRAGシステムが利用可能です")
+        safe_print("✅ リアルタイムRAGシステムが利用可能です（フォールバック用）")
     else:
         safe_print("⚠️ リアルタイムRAGシステムの設定が不完全です")
 except ImportError as e:
@@ -65,6 +100,18 @@ except ImportError as e:
     VECTOR_SEARCH_AVAILABLE = False
     safe_print(f"⚠️ ベクトル検索システムが利用できません: {e}")
 
+# 🎯 直接ベクトル検索システムのインポートを追加（embedding生成なし）
+try:
+    from .direct_vector_search import get_direct_vector_search_instance, direct_vector_search_available
+    DIRECT_VECTOR_SEARCH_AVAILABLE = direct_vector_search_available()
+    if DIRECT_VECTOR_SEARCH_AVAILABLE:
+        safe_print("🎯 直接ベクトル検索システムが利用可能です（embedding生成なし）")
+    else:
+        safe_print("⚠️ 直接ベクトル検索システムの設定が不完全です")
+except ImportError as e:
+    DIRECT_VECTOR_SEARCH_AVAILABLE = False
+    safe_print(f"⚠️ 直接ベクトル検索システムが利用できません: {e}")
+
 # 並列ベクトル検索システムのインポートを追加（フォールバック用）
 try:
     from .parallel_vector_search import get_parallel_vector_search_instance_sync, ParallelVectorSearchSystem
@@ -93,9 +140,77 @@ def safe_safe_print(text):
     """Windows環境でのUnicode文字エンコーディング問題を回避する安全なsafe_print関数"""
     safe_print(text)
 
-async def realtime_rag_search(query: str, company_id: str = None, company_name: str = "お客様の会社", max_results: int = 10) -> str:
+async def enhanced_japanese_rag_search(query: str, company_id: str = None, company_name: str = "お客様の会社", max_results: int = 10, include_chunk_visibility: bool = False) -> Dict:
     """
-    🚀 リアルタイムRAG検索 - 新しい最適化されたRAGフロー
+    🇯🇵 日本語特化型RAG検索 - 合同会社あおい問題解決用の最優先検索システム
+    日本語の会社名・代表者名検索に特化した高精度検索
+    """
+    if ENHANCED_JAPANESE_SEARCH_AVAILABLE:
+        try:
+            safe_print(f"🇯🇵 日本語特化型RAG検索開始: '{query}'")
+            
+            # 日本語特化型検索を実行
+            result = await enhanced_japanese_search(query, company_id)
+            
+            safe_print(f"🇯🇵 日本語特化型RAG検索完了")
+            return {
+                'final_answer': result,
+                'processing_success': True,
+                'chunk_visibility': None,
+                'search_method': 'enhanced_japanese_search'
+            }
+            
+        except Exception as e:
+            safe_print(f"❌ 日本語特化型RAG検索エラー: {e}")
+            # フォールバックとして超高精度RAGを使用
+            return await ultra_accurate_rag_search(query, company_id, company_name, max_results, include_chunk_visibility)
+    else:
+        safe_print("⚠️ 日本語特化型RAGが利用できないため、フォールバックを使用")
+        return await ultra_accurate_rag_search(query, company_id, company_name, max_results, include_chunk_visibility)
+
+async def ultra_accurate_rag_search(query: str, company_id: str = None, company_name: str = "お客様の会社", max_results: int = 10, include_chunk_visibility: bool = False) -> Dict:
+    """
+    🎯 超高精度RAG検索 - フォールバック用の超高精度検索システム
+    動的閾値、日本語特化、多次元スコアリングによる最高精度の検索
+    """
+    if ULTRA_ACCURATE_AVAILABLE:
+        try:
+            safe_print(f"🎯 超高精度RAG検索開始: '{query}'")
+            
+            # 超高精度RAGシステムを取得
+            ultra_rag = get_ultra_accurate_rag_instance()
+            
+            # 超高精度検索を実行（チャンク可視化オプション付き）
+            result = await ultra_rag.process_ultra_accurate_rag(
+                query,
+                company_id=company_id,
+                include_chunk_visibility=include_chunk_visibility
+            )
+            
+            safe_print(f"🎯 超高精度RAG検索完了")
+            return result
+            
+        except Exception as e:
+            safe_print(f"❌ 超高精度RAG検索エラー: {e}")
+            # フォールバックとしてリアルタイムRAGを使用
+            fallback_result = await realtime_rag_search_fallback(query, company_id, company_name, max_results)
+            return {
+                'final_answer': fallback_result,
+                'processing_success': True,
+                'chunk_visibility': None
+            }
+    else:
+        safe_print("⚠️ 超高精度RAGが利用できないため、フォールバックを使用")
+        fallback_result = await realtime_rag_search_fallback(query, company_id, company_name, max_results)
+        return {
+            'final_answer': fallback_result,
+            'processing_success': True,
+            'chunk_visibility': None
+        }
+
+async def realtime_rag_search_fallback(query: str, company_id: str = None, company_name: str = "お客様の会社", max_results: int = 10) -> str:
+    """
+    🚀 リアルタイムRAG検索 - フォールバック用
     Step 1〜5の完全なリアルタイム処理
     """
     safe_print(f"🚀 リアルタイムRAG検索開始: '{query[:50]}...'")
@@ -141,6 +256,123 @@ async def realtime_rag_search(query: str, company_id: str = None, company_name: 
     # フォールバック: 従来のRAG検索システムを使用
     safe_print("⚠️ フォールバック: 従来のRAG検索システムを使用")
     return simple_rag_search_fallback("", query, max_results, company_id)
+
+async def direct_vector_rag_search(query: str, company_id: str = None, company_name: str = "お客様の会社", max_results: int = 10) -> str:
+    """
+    🎯 直接ベクトルRAG検索 - embedding生成をスキップした高速検索
+    既存のベクトルデータを使用してマッチングを行う
+    """
+    safe_print(f"🎯 直接ベクトルRAG検索開始: '{query[:50]}...'")
+    
+    if not query or not query.strip():
+        safe_print("❌ 空のクエリ")
+        return "質問を入力してください。"
+    
+    # 🎯 【最優先】直接ベクトル検索システムを実行
+    if DIRECT_VECTOR_SEARCH_AVAILABLE:
+        try:
+            safe_print("⚡ 直接ベクトル検索システム実行中...")
+            
+            # 直接ベクトル検索システムを取得
+            direct_search_system = get_direct_vector_search_instance()
+            if direct_search_system:
+                safe_print("✅ 直接ベクトル検索インスタンス取得成功")
+                
+                # クエリに基づいてコンテンツベースのベクトル検索を実行
+                search_results = direct_search_system.search_with_content_based_vector(
+                    query, company_id, max_results * 2
+                )
+                
+                if search_results and len(search_results) > 0:
+                    safe_print(f"✅ 直接ベクトル検索成功: {len(search_results)}件の結果を取得")
+                    
+                    # 検索結果からコンテンツを構築
+                    relevant_content = []
+                    total_length = 0
+                    max_total_length = 30000
+                    
+                    for result in search_results:
+                        snippet = result.get('snippet', '') or ''
+                        doc_name = result.get('document_name', 'Unknown')
+                        similarity = result.get('similarity_score', 0.0)
+                        chunk_idx = result.get('chunk_index', 0)
+                        
+                        # 類似度閾値
+                        if similarity < 0.1:
+                            continue
+                        
+                        if snippet and len(snippet.strip()) > 0:
+                            content_piece = f"\n=== {doc_name} - チャンク{chunk_idx} (類似度: {similarity:.3f}) ===\n{snippet}\n"
+                            
+                            if total_length + len(content_piece) <= max_total_length:
+                                relevant_content.append(content_piece)
+                                total_length += len(content_piece)
+                            else:
+                                break
+                    
+                    if relevant_content:
+                        context = "\n".join(relevant_content)
+                        safe_print(f"📋 コンテキスト構築完了: {len(context)}文字")
+                        
+                        # Gemini APIを使用して回答を生成
+                        try:
+                            model = setup_gemini()
+                            prompt = f"""
+以下の情報を基に、ユーザーの質問に正確に答えてください。
+
+【質問】
+{query}
+
+【関連情報】
+{context}
+
+【回答の指針】
+- 提供された情報のみを使用して回答してください
+- 情報が不足している場合は、その旨を明記してください
+- 具体的で実用的な回答を心がけてください
+- 日本語で回答してください
+
+【回答】
+"""
+                            
+                            response = model.generate_content(prompt)
+                            answer = response.text if response and response.text else "申し訳ございませんが、回答を生成できませんでした。"
+                            
+                            safe_print(f"✅ 直接ベクトルRAG回答生成完了: {len(answer)}文字")
+                            return answer
+                            
+                        except Exception as e:
+                            safe_print(f"❌ 回答生成エラー: {e}")
+                            return f"関連情報は見つかりましたが、回答の生成中にエラーが発生しました: {str(e)}"
+                    
+                    else:
+                        safe_print("⚠️ 関連コンテンツが見つかりませんでした")
+                        return "申し訳ございませんが、ご質問に関連する情報が見つかりませんでした。"
+                
+                else:
+                    safe_print("⚠️ 直接ベクトル検索結果が空")
+                    # フォールバック: ランダムベクトル検索を試行
+                    safe_print("🎲 ランダムベクトル検索を試行中...")
+                    random_results = direct_search_system.search_with_random_vector(company_id, max_results)
+                    
+                    if random_results and len(random_results) > 0:
+                        safe_print(f"✅ ランダムベクトル検索成功: {len(random_results)}件の結果")
+                        return "データベースにはドキュメントが存在しますが、ご質問に直接関連する内容が見つかりませんでした。より具体的な質問をお試しください。"
+                    else:
+                        return "申し訳ございませんが、検索可能なドキュメントが見つかりませんでした。"
+            else:
+                safe_print("❌ 直接ベクトル検索インスタンス取得失敗")
+        
+        except Exception as e:
+            safe_print(f"❌ 直接ベクトル検索エラー: {e}")
+            import traceback
+            safe_print(f"詳細エラー: {traceback.format_exc()}")
+    else:
+        safe_print("❌ 直接ベクトル検索システムが利用できません")
+    
+    # フォールバック: 従来のRAG検索システムを使用
+    safe_print("⚠️ フォールバック: 従来のRAG検索システムを使用")
+    return await realtime_rag_search_fallback(query, company_id, company_name, max_results)
 
 def simple_rag_search_fallback(knowledge_text: str, query: str, max_results: int = 20, company_id: str = None) -> str:
     """
@@ -220,7 +452,7 @@ def simple_rag_search_fallback(knowledge_text: str, query: str, max_results: int
 
 def simple_rag_search(knowledge_text: str, query: str, max_results: int = 5, company_id: str = None) -> str:
     """
-    🚀 RAG検索のメインエントリーポイント - リアルタイムRAG優先
+    🎯 RAG検索のメインエントリーポイント - 超高精度RAG優先
     """
     # 非同期処理が必要な場合は、同期ラッパーを使用
     try:
@@ -232,9 +464,13 @@ def simple_rag_search(knowledge_text: str, query: str, max_results: int = 5, com
     except RuntimeError:
         # イベントループが実行されていない場合は、新しいループで実行
         try:
-            return asyncio.run(realtime_rag_search(query, company_id, "お客様の会社", max_results))
+            # 🎯 超高精度RAG検索を最優先で使用
+            if ULTRA_ACCURATE_AVAILABLE:
+                return asyncio.run(ultra_accurate_rag_search(query, company_id, "お客様の会社", max_results))
+            else:
+                return asyncio.run(realtime_rag_search_fallback(query, company_id, "お客様の会社", max_results))
         except Exception as e:
-            safe_print(f"❌ リアルタイムRAG実行エラー: {e}")
+            safe_print(f"❌ 超高精度/リアルタイムRAG実行エラー: {e}")
             return simple_rag_search_fallback(knowledge_text, query, max_results, company_id)
     
     # 詳細デバッグ情報を追加
@@ -851,17 +1087,18 @@ async def generate_casual_response(message_text: str, company_name: str) -> str:
         
         # 挨拶や一般的な会話専用のプロンプト
         casual_prompt = f"""
-あなたは{company_name}の親しみやすいアシスタントです。
-ユーザーからの挨拶や一般的な会話に対して、自然で親しみやすい返答をしてください。
+私は{company_name}のサポートスタッフです。お客様との自然な会話を大切にしています。
 
-返答の際の注意点：
-1. 親しみやすく、温かい口調で返答してください
-2. 会話を続けたい場合は、適切な質問で返してください
-3. 長すぎず、短すぎない適度な長さで返答してください
-4. 必要に応じて、お手伝いできることがあることを伝えてください
-5. 知識ベースの情報は参照せず、一般的な会話として返答してください
+お客様からのメッセージ: {message_text}
 
-ユーザーのメッセージ: {message_text}
+会話の際に心がけていること：
+• 温かく親しみやすい雰囲気で、お客様にリラックスしていただけるよう努めます
+• お客様のペースに合わせて、自然な会話の流れを作ります
+• 適度な長さで、分かりやすくお答えします
+• お困りのことがあれば、いつでもお手伝いできることをお伝えします
+• 専門的な質問については、詳しい情報をご案内できることもお知らせします
+
+それでは、お答えいたします：
 """
         
         response = model.generate_content(casual_prompt)
@@ -1123,11 +1360,173 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
             chunks = chunk_knowledge_base(active_knowledge_text, CHUNK_SIZE)
             safe_print(f"🔪 チャンク化完了: {len(chunks)}個のチャンク (チャンクサイズ: {CHUNK_SIZE}文字)")
             
-            # チャンク化されたテキストを結合してRAG検索（精度重視）
+            # 🎯 直接ベクトル検索システムを最優先で実行（embedding生成なし）
             chunked_text = '\n\n'.join(chunks[:100])  # 最大100チャンク（80,000文字）まで使用
-            active_knowledge_text = simple_rag_search(chunked_text, message_text, max_results=30, company_id=company_id)
             
-            safe_print(f"🎯 800文字チャンク+RAG検索完了 - 新サイズ: {len(active_knowledge_text):,} 文字")
+            # 直接ベクトル検索システムを試行（embedding生成をスキップ）
+            if DIRECT_VECTOR_SEARCH_AVAILABLE:
+                try:
+                    safe_print("🎯 直接ベクトル検索システムを実行中（embedding生成なし）...")
+                    direct_vector_result = await direct_vector_rag_search(
+                        message_text,
+                        company_id=company_id,
+                        company_name=current_company_name,
+                        max_results=30
+                    )
+                    
+                    if direct_vector_result and len(direct_vector_result.strip()) > 0:
+                        safe_print("✅ 直接ベクトル検索システム成功（embedding生成なし）")
+                        active_knowledge_text = direct_vector_result
+                    else:
+                        safe_print("⚠️ 直接ベクトル検索システム結果が空、完璧な検索システムにフォールバック")
+                        raise Exception("直接ベクトル検索システムの結果が空")
+                except Exception as e:
+                    safe_print(f"❌ 直接ベクトル検索システムエラー: {e}")
+                    safe_print("⚠️ 完璧な検索システムにフォールバック")
+                    
+                    # 🎯 完璧な検索システムをフォールバックとして実行
+                    if PERFECT_SEARCH_AVAILABLE:
+                        try:
+                            safe_print("🎯 完璧な検索システムを実行中...")
+                            perfect_result = await perfect_search(message_text, company_id=company_id)
+                            
+                            if perfect_result and len(perfect_result.strip()) > 0:
+                                safe_print("✅ 完璧な検索システム成功")
+                                active_knowledge_text = perfect_result
+                            else:
+                                safe_print("⚠️ 完璧な検索システム結果が空、日本語特化型検索にフォールバック")
+                                raise Exception("完璧な検索システムの結果が空")
+                        except Exception as e2:
+                            safe_print(f"❌ 完璧な検索システムエラー: {e2}")
+                            safe_print("⚠️ 日本語特化型検索にフォールバック")
+                            
+                            # 🇯🇵 日本語特化型検索をフォールバックとして実行
+                            if ENHANCED_JAPANESE_SEARCH_AVAILABLE:
+                                try:
+                                    safe_print("🇯🇵 日本語特化型RAG検索を実行中...")
+                                    enhanced_result = await enhanced_japanese_rag_search(
+                                        message_text,
+                                        company_id=company_id,
+                                        company_name=current_company_name,
+                                        max_results=30,
+                                        include_chunk_visibility=False
+                                    )
+                                    
+                                    if enhanced_result and enhanced_result.get('final_answer') and enhanced_result.get('processing_success'):
+                                        safe_print("✅ 日本語特化型RAG検索成功")
+                                        active_knowledge_text = enhanced_result['final_answer']
+                                    else:
+                                        safe_print("⚠️ 日本語特化型RAG検索失敗、従来のRAG検索にフォールバック")
+                                        active_knowledge_text = simple_rag_search(chunked_text, message_text, max_results=30, company_id=company_id)
+                                except Exception as e3:
+                                    safe_print(f"❌ 日本語特化型RAG検索エラー: {e3}")
+                                    safe_print("⚠️ 従来のRAG検索にフォールバック")
+                                    active_knowledge_text = simple_rag_search(chunked_text, message_text, max_results=30, company_id=company_id)
+                            else:
+                                safe_print("⚠️ 日本語特化型検索も利用不可、従来のRAG検索にフォールバック")
+                                active_knowledge_text = simple_rag_search(chunked_text, message_text, max_results=30, company_id=company_id)
+                    else:
+                        safe_print("⚠️ 完璧な検索システムも利用不可、日本語特化型検索にフォールバック")
+                        
+                        # 🇯🇵 日本語特化型検索を実行
+                        if ENHANCED_JAPANESE_SEARCH_AVAILABLE:
+                            try:
+                                safe_print("🇯🇵 日本語特化型RAG検索を実行中...")
+                                enhanced_result = await enhanced_japanese_rag_search(
+                                    message_text,
+                                    company_id=company_id,
+                                    company_name=current_company_name,
+                                    max_results=30,
+                                    include_chunk_visibility=False
+                                )
+                                
+                                if enhanced_result and enhanced_result.get('final_answer') and enhanced_result.get('processing_success'):
+                                    safe_print("✅ 日本語特化型RAG検索成功")
+                                    active_knowledge_text = enhanced_result['final_answer']
+                                else:
+                                    safe_print("⚠️ 日本語特化型RAG検索失敗、従来のRAG検索にフォールバック")
+                                    active_knowledge_text = simple_rag_search(chunked_text, message_text, max_results=30, company_id=company_id)
+                            except Exception as e2:
+                                safe_print(f"❌ 日本語特化型RAG検索エラー: {e2}")
+                                safe_print("⚠️ 従来のRAG検索にフォールバック")
+                                active_knowledge_text = simple_rag_search(chunked_text, message_text, max_results=30, company_id=company_id)
+                        else:
+                            safe_print("⚠️ 日本語特化型検索も利用不可、従来のRAG検索を実行")
+                            active_knowledge_text = simple_rag_search(chunked_text, message_text, max_results=30, company_id=company_id)
+            else:
+                safe_print("⚠️ 直接ベクトル検索システムが利用不可、完璧な検索システムを実行")
+                
+                # 🎯 完璧な検索システムを実行
+                if PERFECT_SEARCH_AVAILABLE:
+                    try:
+                        safe_print("🎯 完璧な検索システムを実行中...")
+                        perfect_result = await perfect_search(message_text, company_id=company_id)
+                        
+                        if perfect_result and len(perfect_result.strip()) > 0:
+                            safe_print("✅ 完璧な検索システム成功")
+                            active_knowledge_text = perfect_result
+                        else:
+                            safe_print("⚠️ 完璧な検索システム結果が空、日本語特化型検索にフォールバック")
+                            raise Exception("完璧な検索システムの結果が空")
+                    except Exception as e:
+                        safe_print(f"❌ 完璧な検索システムエラー: {e}")
+                        safe_print("⚠️ 日本語特化型検索にフォールバック")
+                        
+                        # 🇯🇵 日本語特化型検索を実行
+                        if ENHANCED_JAPANESE_SEARCH_AVAILABLE:
+                            try:
+                                safe_print("🇯🇵 日本語特化型RAG検索を実行中...")
+                                enhanced_result = await enhanced_japanese_rag_search(
+                                    message_text,
+                                    company_id=company_id,
+                                    company_name=current_company_name,
+                                    max_results=30,
+                                    include_chunk_visibility=False
+                                )
+                                
+                                if enhanced_result and enhanced_result.get('final_answer') and enhanced_result.get('processing_success'):
+                                    safe_print("✅ 日本語特化型RAG検索成功")
+                                    active_knowledge_text = enhanced_result['final_answer']
+                                else:
+                                    safe_print("⚠️ 日本語特化型RAG検索失敗、従来のRAG検索にフォールバック")
+                                    active_knowledge_text = simple_rag_search(chunked_text, message_text, max_results=30, company_id=company_id)
+                            except Exception as e2:
+                                safe_print(f"❌ 日本語特化型RAG検索エラー: {e2}")
+                                safe_print("⚠️ 従来のRAG検索にフォールバック")
+                                active_knowledge_text = simple_rag_search(chunked_text, message_text, max_results=30, company_id=company_id)
+                        else:
+                            safe_print("⚠️ 日本語特化型検索も利用不可、従来のRAG検索を実行")
+                            active_knowledge_text = simple_rag_search(chunked_text, message_text, max_results=30, company_id=company_id)
+                else:
+                    safe_print("⚠️ 完璧な検索システムも利用不可、日本語特化型検索を実行")
+                    
+                    # 🇯🇵 日本語特化型検索を実行
+                    if ENHANCED_JAPANESE_SEARCH_AVAILABLE:
+                        try:
+                            safe_print("🇯🇵 日本語特化型RAG検索を実行中...")
+                            enhanced_result = await enhanced_japanese_rag_search(
+                                message_text,
+                                company_id=company_id,
+                                company_name=current_company_name,
+                                max_results=30,
+                                include_chunk_visibility=False
+                            )
+                            
+                            if enhanced_result and enhanced_result.get('final_answer') and enhanced_result.get('processing_success'):
+                                safe_print("✅ 日本語特化型RAG検索成功")
+                                active_knowledge_text = enhanced_result['final_answer']
+                            else:
+                                safe_print("⚠️ 日本語特化型RAG検索失敗、従来のRAG検索にフォールバック")
+                                active_knowledge_text = simple_rag_search(chunked_text, message_text, max_results=30, company_id=company_id)
+                        except Exception as e:
+                            safe_print(f"❌ 日本語特化型RAG検索エラー: {e}")
+                            safe_print("⚠️ 従来のRAG検索にフォールバック")
+                            active_knowledge_text = simple_rag_search(chunked_text, message_text, max_results=30, company_id=company_id)
+                    else:
+                        safe_print("⚠️ 日本語特化型検索も利用不可、従来のRAG検索を実行")
+                        active_knowledge_text = simple_rag_search(chunked_text, message_text, max_results=30, company_id=company_id)
+            
+            safe_print(f"🎯 RAG検索完了 - 新サイズ: {len(active_knowledge_text):,} 文字")
         
         # 知識ベースのサイズを制限（精度とスピードのバランス）
         MAX_KNOWLEDGE_SIZE = 200000  # 20万文字制限（800文字×250チャンク相当）
@@ -1281,15 +1680,15 @@ async def process_chat(message: ChatMessage, db = Depends(get_db), current_user:
                 active_knowledge_text = active_knowledge_text[:reduced_knowledge_size] + "\n\n[注意: プロンプトサイズ制限のため、知識ベースを短縮しています]"
                 # プロンプトを再構築
                 prompt = f"""
-        あなたは親切で丁寧な対応ができる{current_company_name}のアシスタントです。
-        以下の知識ベースを参考に、ユーザーの質問に対って可能な限り具体的で役立つ回答を提供してください。
+        私は{current_company_name}のサポートスタッフとして、お客様のご質問にお答えします。
+        手元にある資料を活用して、実用的で分かりやすい情報をお伝えいたします。
 
-        利用可能なファイル: {', '.join(active_resource_names) if active_resource_names else ''}
+        参考にできる資料: {', '.join(active_resource_names) if active_resource_names else ''}
 
-        回答の際の注意点：
-        1. 常に丁寧な言葉遣いを心がけ、ユーザーに対して敬意を持って接してください
-        2. 知識ベースに情報がない場合でも、一般的な文脈で回答できる場合は適切に対応してください
-        3. ユーザーが「もっと詳しく」などと質問した場合は、前回の回答内容に関連する詳細情報を提供してください。「どのような情報について詳しく知りたいですか？」などと聞き返さないでください。
+        お客様への対応で大切にしていること：
+        • お客様の立場に立って、本当に役立つ情報をお伝えします
+        • 手元の資料にない内容でも、一般的な知識でお答えできることは丁寧にご案内します
+        • 「もっと詳しく教えて」とおっしゃった場合は、前回の内容をさらに掘り下げて具体的にご説明します
         4. 可能な限り具体的で実用的な情報を提供してください
         5. 知識ベースにOCRで抽出されたテキスト（PDF (OCR)と表示されている部分）が含まれている場合は、それが画像から抽出されたテキストであることを考慮してください
         6. OCRで抽出されたテキストには多少の誤りがある可能性がありますが、文脈から適切に解釈して回答してください
@@ -1872,29 +2271,32 @@ async def process_chat_chunked(message: ChatMessage, db = Depends(get_db), curre
             
             # 統合プロンプトの作成（全チャンク検索完了版）
             unified_prompt = f"""
-あなたは親切で丁寧な対応ができる{current_company_name}のアシスタントです。
-以下は全{len(raw_chunks)}チャンクの完全検索で発見された最良の知識ベース情報です。この情報を基に、ユーザーの質問に対して最も具体的で詳細な回答を提供してください。
+私は{current_company_name}のサポートスタッフとして、お客様のご質問にお答えします。
+手元にある全{len(raw_chunks)}件の資料から最も関連性の高い情報を見つけて、実用的で分かりやすくご案内いたします。
 
-**重要な指示:**
-1. 全ファイル全チャンクから選ばれた最良の情報を活用してください
-2. 質問に直接関連する情報を中心に、具体的で詳細な回答を作成してください
-3. 複数の結果から最も適切な情報を統合して回答してください
-4. **実際に知識ベースから有用な情報を見つけて回答した場合**、回答の最後に「情報ソース: [ファイル名]」を記載してください
-5. 回答は**Markdown記法**を使用して見やすく整理してください
+お客様への対応で大切にしていること：
+• 手元の豊富な資料から、お客様のご質問に最も適した情報を選んでお伝えします
+• ご質問に直接関わる内容を中心に、具体的で詳しい説明を心がけます
+• 複数の資料から得た情報を整理して、分かりやすくまとめてお伝えします
+• 参考にした資料がある場合は、最後に「参考資料: [ファイル名]」としてお知らせします
+• 見やすく整理された形で、お客様にとって役立つ情報をお伝えします
 
-検索統計: 
-- 対象ファイル: {len(active_resource_names)}個 ({', '.join(active_resource_names)})
-- 検索チャンク: 全{len(raw_chunks)}個
-- 発見結果: {len(all_rag_results)}個のバッチ
-- 選択結果: 上位{len(top_results)}個 (平均品質スコア: {average_quality:.2f}){special_instructions_text}
+検索結果の詳細:
+- 確認した資料: {len(active_resource_names)}件 ({', '.join(active_resource_names)})
+- 調査した項目: 全{len(raw_chunks)}件
+- 見つかった関連情報: {len(all_rag_results)}グループ
+- 選択した最適情報: 上位{len(top_results)}件 (関連度平均: {average_quality:.2f}){special_instructions_text}
 
-全チャンク検索で発見された最良の情報:
+手元の参考資料:
 {combined_rag_content}
 
+これまでのやり取り:
 {conversation_history}
 
-ユーザーの質問：
+お客様からのご質問：
 {message_text}
+
+それでは、ご質問にお答えいたします：
 """
             
             # Gemini API呼び出し（一度だけ）

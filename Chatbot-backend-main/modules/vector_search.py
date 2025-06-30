@@ -249,9 +249,37 @@ class VectorSearchSystem:
                     
                     logger.info(f"✅ ベクトル検索完了: {len(search_results)}件の結果")
                     
-                    # デバッグ: 上位3件の類似度を表示
-                    for i, result in enumerate(search_results[:3]):
-                        logger.info(f"  {i+1}. {result['document_name']} [チャンク{result['chunk_index']}] 類似度: {result['similarity_score']:.3f}")
+                    # 🔍 詳細チャンク選択ログ - 全結果を表示
+                    print("\n" + "="*80)
+                    print(f"🔍 【チャンク選択詳細ログ】クエリ: '{query[:50]}...'")
+                    print(f"📊 検索結果: {len(search_results)}件")
+                    print(f"🏢 会社IDフィルタ: {'適用 (' + company_id + ')' if company_id else '未適用（全データ検索）'}")
+                    print(f"🔧 pgvector: {'有効' if self.pgvector_available else '無効（フォールバック検索）'}")
+                    print("="*80)
+                    
+                    for i, result in enumerate(search_results):
+                        similarity = result['similarity_score']
+                        doc_name = result['document_name'] or 'Unknown'
+                        chunk_idx = result['chunk_index']
+                        snippet_preview = (result['snippet'] or '')[:100].replace('\n', ' ')
+                        
+                        # 類似度に基づく選択理由
+                        if similarity > 0.8:
+                            reason = "🟢 高類似度（非常に関連性が高い）"
+                        elif similarity > 0.5:
+                            reason = "🟡 中類似度（関連性あり）"
+                        elif similarity > 0.2:
+                            reason = "🟠 低類似度（部分的に関連）"
+                        else:
+                            reason = "🔴 極低類似度（関連性低い）"
+                        
+                        print(f"  {i+1:2d}. 📄 {doc_name}")
+                        print(f"      🧩 チャンク#{chunk_idx} | 🎯 類似度: {similarity:.4f} | {reason}")
+                        print(f"      📝 内容: {snippet_preview}...")
+                        print(f"      🔍 検索タイプ: {result['search_type']}")
+                        print()
+                    
+                    print("="*80 + "\n")
                     
                     return search_results
         
@@ -284,34 +312,43 @@ class VectorSearchSystem:
             total_length = 0
             max_total_length = 50000
             
-            logger.info(f"類似度順に{len(search_results)}件のチャンクを処理中...")
+            print("\n" + "="*80)
+            print(f"📋 【コンテンツ構築ログ】{len(search_results)}件のチャンクを処理中...")
+            print(f"🎯 類似度閾値: 0.15 (これ以下は除外)")
+            print(f"📏 最大文字数: {max_total_length:,}文字")
+            print("="*80)
             
             for i, result in enumerate(search_results):
                 similarity = result['similarity_score']
                 snippet = result['snippet'] or ""
+                doc_name = result['document_name'] or 'Unknown'
+                chunk_idx = result['chunk_index']
                 
-                # チャンク情報を含むログ
-                logger.info(f"  {i+1}. {result['document_name']} [チャンク{result['chunk_index']}] (類似度: {similarity:.3f})")
+                print(f"  {i+1:2d}. 📄 {doc_name} [チャンク#{chunk_idx}]")
+                print(f"      🎯 類似度: {similarity:.4f}")
                 
-                # 類似度閾値（pgvectorの有無に応じて調整）
-                threshold = 0.02 if self.pgvector_available else 0.1
+                # 類似度閾値（超高精度検索のため大幅に下げる）
+                threshold = 0.15  # より多くの関連結果を取得
                 if similarity < threshold:
-                    logger.info(f"    - 類似度が低いため除外 ({similarity:.3f} < {threshold})")
+                    print(f"      ❌ 除外理由: 類似度が閾値未満 ({similarity:.4f} < {threshold})")
+                    print()
                     continue
                 
                 # スニペットを追加
                 if snippet and len(snippet.strip()) > 0:
-                    content_piece = f"\n=== {result['document_name']} - チャンク{result['chunk_index']} (類似度: {similarity:.3f}) ===\n{snippet}\n"
+                    content_piece = f"\n=== {doc_name} - チャンク{chunk_idx} (類似度: {similarity:.3f}) ===\n{snippet}\n"
                     
                     if total_length + len(content_piece) <= max_total_length:
                         relevant_content.append(content_piece)
                         total_length += len(content_piece)
-                        logger.info(f"    - 追加完了 ({len(content_piece)}文字)")
+                        print(f"      ✅ 採用: {len(content_piece):,}文字追加 (累計: {total_length:,}文字)")
+                        print(f"      📝 内容プレビュー: {snippet[:100].replace(chr(10), ' ')}...")
                     else:
-                        logger.info(f"    - 文字数制限により除外")
+                        print(f"      ❌ 除外理由: 文字数制限超過 (追加予定: {len(content_piece):,}文字, 現在: {total_length:,}文字)")
                         break
                 else:
-                    logger.info(f"    - 空のコンテンツのためスキップ")
+                    print(f"      ❌ 除外理由: 空のコンテンツ")
+                print()
             
             final_content = "\n".join(relevant_content)
             logger.info(f"✅ 最終的な関連コンテンツ: {len(final_content)}文字")

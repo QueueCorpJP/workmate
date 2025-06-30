@@ -47,6 +47,39 @@ class ChatResponse(BaseModel):
     remaining_questions: Optional[int] = None
     limit_reached: Optional[bool] = None
 
+class ChunkReferenceInfo(BaseModel):
+    """参照チャンク情報"""
+    chunk_id: str
+    document_name: str
+    chunk_index: int
+    content_preview: str
+    scores: Dict[str, float]
+    selection_reason: str
+    search_method: str
+
+class ChunkSelectionInfo(BaseModel):
+    """チャンク選択情報"""
+    total_chunks_found: int
+    chunks_selected: int
+    dynamic_threshold: float
+    selection_criteria: Dict[str, Any]
+    query_analysis: Dict[str, Any]
+    summary: str
+
+class ChunkVisibilityInfo(BaseModel):
+    """チャンク可視化情報"""
+    chunk_references: List[ChunkReferenceInfo]
+    selection_analysis: ChunkSelectionInfo
+    metadata: Dict[str, Any]
+
+class EnhancedChatResponse(BaseModel):
+    """チャンク可視化機能付きチャットレスポンス"""
+    response: str
+    source: Optional[str] = None
+    remaining_questions: Optional[int] = None
+    limit_reached: Optional[bool] = None
+    chunk_visibility: Optional[ChunkVisibilityInfo] = None
+
 class ChatHistoryItem(BaseModel):
     id: str
     user_message: str

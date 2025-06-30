@@ -210,30 +210,72 @@ class SupabaseCursor:
                 return
                 
             columns = [col.strip() for col in columns_match.group(1).split(',')]
-            values = [val.strip() if isinstance(val, str) else val for val in columns_match.group(2).split(',')]
+            values_str = columns_match.group(2)
+            
+            # 値を適切に分割（カンマで区切られているが、文字列内のカンマは無視）
+            values = []
+            current_value = ""
+            in_quotes = False
+            quote_char = None
+            
+            for char in values_str:
+                if char in ["'", '"'] and not in_quotes:
+                    in_quotes = True
+                    quote_char = char
+                    current_value += char
+                elif char == quote_char and in_quotes:
+                    in_quotes = False
+                    quote_char = None
+                    current_value += char
+                elif char == ',' and not in_quotes:
+                    values.append(current_value.strip())
+                    current_value = ""
+                else:
+                    current_value += char
+            
+            if current_value.strip():
+                values.append(current_value.strip())
             
             # パラメータ置換
             if params:
                 if isinstance(params, (list, tuple)):
-                    for i, param in enumerate(params):
-                        if i < len(values):
-                            if isinstance(values[i], str) and values[i].strip() == '%s':
-                                values[i] = param
+                    param_index = 0
+                    for i, val in enumerate(values):
+                        if isinstance(val, str) and val.strip() == '%s':
+                            if param_index < len(params):
+                                values[i] = params[param_index]
+                                param_index += 1
             
             # データを構築
             data = {}
+            from datetime import datetime
+            
             for i, col in enumerate(columns):
                 if i < len(values):
-                    # 値が文字列かどうかを確認
-                    if isinstance(values[i], str):
-                        val = values[i].strip()
+                    val = values[i]
+                    
+                    # 値が文字列の場合の処理
+                    if isinstance(val, str):
+                        val = val.strip()
+                        
+                        # SQL関数の処理
+                        if val.upper() == 'CURRENT_TIMESTAMP':
+                            val = datetime.now().isoformat()
+                        elif val.upper() == 'NOW()':
+                            val = datetime.now().isoformat()
                         # 引用符を削除
-                        if val.startswith("'") and val.endswith("'"):
+                        elif val.startswith("'") and val.endswith("'"):
                             val = val[1:-1]
-                    else:
-                        # 文字列でない場合はそのまま使用
-                        val = values[i]
+                        elif val.startswith('"') and val.endswith('"'):
+                            val = val[1:-1]
+                    
                     data[col] = val
+            
+            # chat_historyテーブルの場合、idフィールドが必要
+            if self.table_name == 'chat_history' and 'id' not in data:
+                import uuid
+                data['id'] = str(uuid.uuid4())
+                print(f"⚠️ chat_historyテーブルにidフィールドが不足していたため自動生成: {data['id']}")
             
             # Supabase APIを呼び出す
             from supabase_adapter import insert_data

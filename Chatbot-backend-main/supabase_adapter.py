@@ -1,210 +1,243 @@
 """
-Supabase adapter for the chatbot application (Fixed version with schema cache refresh)
-This module provides functions to connect to Supabase and use it as a database backend
+Supabase アダプター
+Supabaseとの接続とCRUD操作を管理します
 """
-import os
-from dotenv import load_dotenv
-from supabase import create_client, Client
 
-# Load environment variables
+import os
+import logging
+from typing import Dict, Any, List, Optional, Union
+from dataclasses import dataclass
+from supabase import create_client, Client
+from dotenv import load_dotenv
+import uuid
+
+# 環境変数を読み込み
 load_dotenv()
 
-# Get Supabase credentials from environment variables
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_KEY")
+logger = logging.getLogger(__name__)
 
-# Supabaseクライアント設定（タイムアウト設定追加）
-client_options = {
-    "timeout": 600,  # 10分のタイムアウト（大きなファイル処理用）
-    "retry_count": 3,  # リトライ回数
-}
+@dataclass
+class SupabaseResult:
+    """Supabase操作の結果を格納するクラス"""
+    success: bool
+    data: Optional[List[Dict[str, Any]]] = None
+    error: Optional[str] = None
+    count: Optional[int] = None
 
-# Global client variable
-_supabase_client = None
+# グローバルSupabaseクライアント
+_supabase_client: Optional[Client] = None
 
-def create_fresh_client():
-    """Create a fresh Supabase client instance"""
-    try:
-        client = create_client(supabase_url, supabase_key)
-        # タイムアウト設定を適用
-        if hasattr(client, '_client'):
-            client._client.timeout = 600
-        return client
-    except Exception as e:
-        print(f"Supabase client creation error: {e}")
-        # フォールバック：デフォルト設定でクライアント作成
-        return create_client(supabase_url, supabase_key)
-
-def get_supabase_client(force_refresh=False):
-    """Get the Supabase client instance with optional refresh"""
+def get_supabase_client() -> Client:
+    """Supabaseクライアントのシングルトンインスタンスを取得"""
     global _supabase_client
     
-    if _supabase_client is None or force_refresh:
-        print("🔄 Creating fresh Supabase client...")
-        _supabase_client = create_fresh_client()
+    if _supabase_client is None:
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_KEY")
+        
+        if not url or not key:
+            raise ValueError("SUPABASE_URL と SUPABASE_KEY 環境変数が設定されていません")
+        
+        try:
+            _supabase_client = create_client(url, key)
+            logger.info("✅ Supabaseクライアント初期化完了")
+        except Exception as e:
+            logger.error(f"❌ Supabaseクライアント初期化エラー: {e}")
+            raise
     
     return _supabase_client
 
-def refresh_schema_cache():
-    """Force refresh the Supabase client to clear schema cache"""
-    global _supabase_client
-    print("🔄 Refreshing Supabase schema cache...")
-    _supabase_client = create_fresh_client()
-    return _supabase_client
-
-# Initialize the client
-supabase = get_supabase_client()
-
-def execute_query(query, params=None):
-    """Execute a SQL query on Supabase"""
-    # This is a simple wrapper around the Supabase client's rpc function
-    # You can use this to execute custom SQL queries
-    try:
-        client = get_supabase_client()
-        # print(f"Executing query: {query}")
-        result = client.rpc(
-            "execute_sql",
-            {"sql_query": query, "params": params or []}
-        ).execute()
-        
-        # Ensure we always return a list-like object
-        if result.data is None:
-            # print("Query result is None, returning empty list")
-            return []
-            
-        # If result.data is not a list (e.g., it's an integer from COUNT),
-        # wrap it in a list with appropriate structure
-        if not isinstance(result.data, list):
-            # print(f"Query result is not a list, type: {type(result.data)}, value: {result.data}")
-            # For COUNT queries, format as a list with a dict containing the count
-            if "COUNT(*)" in query.upper():
-                return [{"count": result.data}]
-            # For other non-list results, wrap in a list
-            return [result.data]
-        
-        # print(f"Query returned {len(result.data)} results")
-        return result.data
-    except Exception as e:
-        # print(f"Execute query error: {e}")
-        import traceback
-        # print(traceback.format_exc())
-        return []
-
-def insert_data(table, data, retry_with_fresh_client=True):
-    """Insert data into a table with automatic schema cache refresh on error"""
-    # Ensure all data values are properly converted to strings
-    if isinstance(data, dict):
-        # コンテンツサイズをチェック
-        content_size = 0
-        if 'content' in data and data['content']:
-            content_size = len(str(data['content']).encode('utf-8')) / (1024 * 1024)
-        
-        # 大きなコンテンツの場合は警告ログ
-        if content_size > 1:
-            print(f"⚠️ 大きなコンテンツを挿入中: {content_size:.2f}MB (テーブル: {table})")
-        
-        for key, value in data.items():
-            if value is None:
-                # Keep NULL values as NULL for integer fields
-                continue
-            elif not isinstance(value, (str, int, float, bool)):
-                data[key] = str(value)
-    elif isinstance(data, list):
-        for i, item in enumerate(data):
-            if isinstance(item, dict):
-                for key, value in item.items():
-                    if value is None:
-                        # Keep NULL values as NULL for integer fields
-                        continue
-                    elif not isinstance(value, (str, int, float, bool)):
-                        item[key] = str(value)
+def select_data(table: str, columns: str = "*", filters: Optional[Dict[str, Any]] = None, limit: Optional[int] = None) -> SupabaseResult:
+    """
+    データを検索
     
-    try:
-        # Get current client
-        client = get_supabase_client()
-        
-        # タイムアウト付きで実行
-        result = client.table(table).insert(data).execute()
-        
-        # 成功ログ
-        if isinstance(data, dict) and 'content' in data:
-            content_size = len(str(data['content']).encode('utf-8')) / (1024 * 1024)
-            if content_size > 0.1:  # 100KB以上の場合
-                print(f"✅ データ挿入成功: {content_size:.2f}MB (テーブル: {table})")
-        
-        return result
-        
-    except Exception as e:
-        # エラーの詳細をログ出力
-        error_msg = str(e)
-        
-        # スキーマキャッシュエラーの場合は自動的にリトライ
-        if "schema cache" in error_msg.lower() and retry_with_fresh_client:
-            print(f"🔄 スキーマキャッシュエラーを検出。新しいクライアントでリトライ中...")
-            
-            # 新しいクライアントを作成
-            fresh_client = refresh_schema_cache()
-            
-            try:
-                # 新しいクライアントでリトライ
-                result = fresh_client.table(table).insert(data).execute()
-                print(f"✅ リトライ成功: データ挿入完了 (テーブル: {table})")
-                return result
-            except Exception as retry_error:
-                print(f"❌ リトライも失敗: {retry_error}")
-                raise retry_error
-        
-        # その他のエラーまたはリトライ失敗の場合
-        if isinstance(data, dict) and 'content' in data:
-            content_size = len(str(data['content']).encode('utf-8')) / (1024 * 1024)
-            print(f"❌ データ挿入エラー: {content_size:.2f}MB (テーブル: {table}) - {error_msg}")
-        else:
-            print(f"❌ データ挿入エラー (テーブル: {table}) - {error_msg}")
-        
-        raise e
-
-def select_data(table, columns="*", filters=None):
-    """Select data from a table"""
+    Args:
+        table: テーブル名
+        columns: 取得する列（デフォルト: "*"）
+        filters: フィルタ条件のディクショナリ
+        limit: 取得件数制限
+    
+    Returns:
+        SupabaseResult: 操作結果
+    """
     try:
         client = get_supabase_client()
         query = client.table(table).select(columns)
         
+        # フィルタを適用
         if filters:
             for key, value in filters.items():
-                query = query.eq(key, value)
+                if value is not None:
+                    query = query.eq(key, value)
+        
+        # 制限を適用
+        if limit:
+            query = query.limit(limit)
         
         result = query.execute()
-        return result
+        
+        return SupabaseResult(
+            success=True,
+            data=result.data,
+            count=len(result.data) if result.data else 0
+        )
+        
     except Exception as e:
-        print(f"Select data error: {e}")
-        return None
+        logger.error(f"❌ SELECT操作エラー: {e}")
+        return SupabaseResult(
+            success=False,
+            error=str(e)
+        )
 
-def update_data(table, data, filters):
-    """Update data in a table"""
+def insert_data(table: str, data: Dict[str, Any]) -> SupabaseResult:
+    """
+    データを挿入
+    
+    Args:
+        table: テーブル名
+        data: 挿入するデータ
+    
+    Returns:
+        SupabaseResult: 操作結果
+    """
     try:
         client = get_supabase_client()
-        query = client.table(table).update(data)
         
-        for key, value in filters.items():
-            query = query.eq(key, value)
+        # IDが設定されていない場合は生成
+        if 'id' not in data:
+            data['id'] = str(uuid.uuid4())
         
-        result = query.execute()
-        return result
+        result = client.table(table).insert(data).execute()
+        
+        return SupabaseResult(
+            success=True,
+            data=result.data,
+            count=len(result.data) if result.data else 0
+        )
+        
     except Exception as e:
-        print(f"Update data error: {e}")
-        return None
+        logger.error(f"❌ INSERT操作エラー: {e}")
+        return SupabaseResult(
+            success=False,
+            error=str(e)
+        )
 
-def delete_data(table, filters):
-    """Delete data from a table"""
+def update_data(table: str, filter_key: str, filter_value: Any, data: Dict[str, Any]) -> SupabaseResult:
+    """
+    データを更新
+    
+    Args:
+        table: テーブル名
+        filter_key: フィルタキー
+        filter_value: フィルタ値
+        data: 更新するデータ
+    
+    Returns:
+        SupabaseResult: 操作結果
+    """
     try:
         client = get_supabase_client()
-        query = client.table(table).delete()
+        result = client.table(table).update(data).eq(filter_key, filter_value).execute()
         
-        for key, value in filters.items():
-            query = query.eq(key, value)
+        return SupabaseResult(
+            success=True,
+            data=result.data,
+            count=len(result.data) if result.data else 0
+        )
         
-        result = query.execute()
-        return result
     except Exception as e:
-        print(f"Delete data error: {e}")
-        return None
+        logger.error(f"❌ UPDATE操作エラー: {e}")
+        return SupabaseResult(
+            success=False,
+            error=str(e)
+        )
+
+def delete_data(table: str, filter_key: str, filter_value: Any) -> SupabaseResult:
+    """
+    データを削除
+    
+    Args:
+        table: テーブル名
+        filter_key: フィルタキー
+        filter_value: フィルタ値
+    
+    Returns:
+        SupabaseResult: 操作結果
+    """
+    try:
+        client = get_supabase_client()
+        result = client.table(table).delete().eq(filter_key, filter_value).execute()
+        
+        return SupabaseResult(
+            success=True,
+            data=result.data,
+            count=len(result.data) if result.data else 0
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ DELETE操作エラー: {e}")
+        return SupabaseResult(
+            success=False,
+            error=str(e)
+        )
+
+def execute_query(query: str, params: Optional[List[Any]] = None) -> SupabaseResult:
+    """
+    生のSQLクエリを実行
+    
+    Args:
+        query: SQLクエリ
+        params: クエリパラメータ
+    
+    Returns:
+        SupabaseResult: 操作結果
+    """
+    try:
+        client = get_supabase_client()
+        
+        # Supabase Python クライアントは直接的なSQL実行をサポートしていないため
+        # この関数は基本的なCRUD操作への変換が必要
+        logger.warning("⚠️ execute_query: 生のSQL実行は推奨されません。基本的なCRUD操作を使用してください。")
+        
+        return SupabaseResult(
+            success=False,
+            error="生のSQL実行はサポートされていません"
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ クエリ実行エラー: {e}")
+        return SupabaseResult(
+            success=False,
+            error=str(e)
+        )
+
+def test_connection() -> bool:
+    """
+    Supabase接続をテスト
+    
+    Returns:
+        bool: 接続成功の場合True
+    """
+    try:
+        client = get_supabase_client()
+        # 簡単なクエリでテスト
+        result = client.table('users').select('id').limit(1).execute()
+        logger.info("✅ Supabase接続テスト成功")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Supabase接続テスト失敗: {e}")
+        return False
+
+# 後方互換性のためのエイリアス
+def get_data(table: str, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """後方互換性のための関数"""
+    result = select_data(table, filters=filters)
+    return result.data if result.success else []
+
+def create_data(table: str, data: Dict[str, Any]) -> Optional[str]:
+    """後方互換性のための関数"""
+    result = insert_data(table, data)
+    if result.success and result.data:
+        return result.data[0].get('id')
+    return None 

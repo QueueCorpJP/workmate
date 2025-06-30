@@ -144,28 +144,103 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                 if rag_result and rag_result.get("answer"):
                     ai_response = rag_result["answer"]
                     status = rag_result.get("status", "unknown")
+                    search_method = rag_result.get("search_method", "unknown")
                     
                     if status == "completed":
                         safe_print(f"✅ リアルタイムRAG成功: {len(ai_response)}文字の回答を生成")
+                        safe_print(f"🔍 検索方法: {search_method}")
                         safe_print(f"📊 使用チャンク数: {rag_result.get('chunks_used', 0)}")
                         safe_print(f"📊 最高類似度: {rag_result.get('top_similarity', 0.0):.3f}")
                         
-                        # ソース情報を構築（リアルタイムRAGの結果から）
-                        source_info_list = [
-                            {
-                                "name": f"関連資料 (類似度: {rag_result.get('top_similarity', 0.0):.3f})",
-                                "type": "realtime_rag",
-                                "relevance": rag_result.get('top_similarity', 0.8)
-                            }
-                        ]
+                        # Gemini分析結果の表示
+                        if rag_result.get("gemini_analysis"):
+                            analysis = rag_result["gemini_analysis"]
+                            safe_print(f"🧠 Gemini分析結果:")
+                            safe_print(f"   意図: {analysis.get('intent', 'unknown')}")
+                            safe_print(f"   対象: {analysis.get('target', 'unknown')}")
+                            safe_print(f"   キーワード: {analysis.get('keywords', [])}")
+                        
+                        # SQL検索パターンの表示
+                        if rag_result.get("sql_patterns"):
+                            safe_print(f"🔍 SQL検索パターン: {len(rag_result['sql_patterns'])}個")
+                            for i, pattern in enumerate(rag_result["sql_patterns"][:3]):  # 最初の3個のみ表示
+                                safe_print(f"   {i+1}. {pattern}")
+                        
+                        # ソース情報を構築（リアルタイムRAGの結果から詳細情報を抽出）
+                        source_info_list = []
+                        
+                        # 実際のソース文書情報を取得
+                        source_documents = rag_result.get('source_documents', [])
+                        if source_documents:
+                            # 各ソース文書の詳細情報を追加
+                            for i, doc in enumerate(source_documents[:3]):  # 最大3個のソース文書を表示
+                                doc_name = doc.get('document_name', f'文書 {i+1}')
+                                doc_type = doc.get('document_type', 'unknown')
+                                similarity = doc.get('similarity_score', 0.0)
+                                content_preview = doc.get('content_preview', '')
+                                
+                                source_info_list.append({
+                                    "name": doc_name,
+                                    "type": doc_type,
+                                    "relevance": similarity,
+                                    "similarity_score": f"{similarity:.3f}",
+                                    "content_preview": content_preview,
+                                    "chunk_id": doc.get('chunk_id', '')
+                                })
+                            
+                            # 追加のソース文書がある場合
+                            total_sources = rag_result.get('total_sources', len(source_documents))
+                            if total_sources > 3:
+                                source_info_list.append({
+                                    "name": f"その他の関連資料 ({total_sources - 3}件)",
+                                    "type": "additional_sources",
+                                    "relevance": 0.7,
+                                    "total_additional": total_sources - 3
+                                })
+                        else:
+                            # フォールバック: メタデータから基本情報を構築
+                            chunks_used = rag_result.get('chunks_used', 0)
+                            search_method = rag_result.get('search_method', 'unknown')
+                            top_similarity = rag_result.get('top_similarity', 0.0)
+                            keywords = rag_result.get('keywords', [])
+                            
+                            if chunks_used > 0:
+                                # Gemini分析結果から対象エンティティを取得
+                                target_entity = ""
+                                if rag_result.get("gemini_analysis"):
+                                    target_entity = rag_result["gemini_analysis"].get('target_entity', '')
+                                
+                                # ソース情報を構築
+                                source_name = f"関連資料 ({search_method})"
+                                if target_entity:
+                                    source_name += f" - {target_entity}"
+                                if keywords:
+                                    source_name += f" [キーワード: {', '.join(keywords[:3])}]"
+                                
+                                source_info_list.append({
+                                    "name": source_name,
+                                    "type": "knowledge_base",
+                                    "relevance": top_similarity,
+                                    "search_method": search_method,
+                                    "chunks_count": chunks_used,
+                                    "keywords": keywords[:5],
+                                    "similarity_score": f"{top_similarity:.3f}"
+                                })
+                            else:
+                                # チャンクが使用されていない場合
+                                source_info_list.append({
+                                    "name": f"システム回答 ({search_method})",
+                                    "type": "system_response",
+                                    "relevance": 0.5
+                                })
                         
                         # チャット履歴をデータベースに保存
                         try:
                             with db.cursor(cursor_factory=RealDictCursor) as cursor:
                                 cursor.execute("""
-                                    INSERT INTO chat_history (user_id, company_id, user_message, ai_response, created_at)
-                                    VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-                                """, (user_id, company_id, message_text, ai_response))
+                                    INSERT INTO chat_history (id, user_id, company_id, user_message, bot_response, timestamp)
+                                    VALUES (%s, %s, %s, %s, %s, %s)
+                                """, (str(uuid.uuid4()), user_id, company_id, message_text, ai_response, datetime.now().isoformat()))
                                 db.commit()
                                 safe_print("✅ チャット履歴をデータベースに保存しました")
                         except Exception as e:
@@ -264,21 +339,21 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
         ]
         
         # 通常のプロンプト処理
-        prompt = f"""あなたは{company_name}のAIアシスタントです。以下の情報を基に、ユーザーの質問に正確で親切に回答してください。
+        prompt = f"""私は{company_name}のサポートスタッフとして、お客様のご質問にお答えします。手元の資料を参考に、実用的で分かりやすい情報をお伝えいたします。
 
-【重要な指示】
-1. 提供された情報のみを使用して回答してください
-2. 情報にない内容は推測せず、「提供された情報には記載がありません」と明記してください
-3. 回答は丁寧で分かりやすい日本語で行ってください
-4. 具体的な手順や連絡先がある場合は、正確に伝えてください
-
-【参考情報】
-{filtered_knowledge}
-
-【ユーザーの質問】
+お客様からのご質問：
 {message_text}
 
-【回答】"""
+手元の参考資料：
+{filtered_knowledge}
+
+お答えする際の心がけ：
+• 手元の資料に記載されている内容のみを基に、正確にお答えします
+• 資料に記載がない内容については、正直に「手元の資料には記載がございません」とお伝えします
+• 専門的な内容も、日常の言葉で分かりやすく説明します
+• 手続きや連絡先については、正確な情報を漏れなくご案内します
+
+それでは、ご質問にお答えいたします："""
 
         try:
             response = model.generate_content(prompt)
@@ -292,9 +367,9 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
         try:
             with db.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
-                    INSERT INTO chat_history (user_id, company_id, user_message, ai_response, created_at)
-                    VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-                """, (user_id, company_id, message_text, ai_response))
+                    INSERT INTO chat_history (id, user_id, company_id, user_message, bot_response, timestamp)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (str(uuid.uuid4()), user_id, company_id, message_text, ai_response, datetime.now().isoformat()))
                 db.commit()
                 safe_print("✅ チャット履歴をデータベースに保存しました")
         except Exception as e:

@@ -766,68 +766,43 @@ class DocumentProcessor:
                 raise Exception(f"PDF処理に失敗しました: {fallback_error}")
     
     async def _extract_text_from_excel(self, content: bytes) -> str:
-        """Excelファイルからテキストを抽出（データ損失防止版：Ultra Conservative最優先）"""
+        """Excelファイルからテキストを抽出（2段階フォールバック: 完全メタデータ版 → 超保守版）"""
         try:
-            # 最優先: 超保守版（データ損失を最小限に抑制）
-            from modules.excel_data_cleaner_ultra_conservative import ExcelDataCleanerUltraConservative
+            # 最優先: 完全メタデータ保持版（全メタデータ保持）
+            from modules.excel_data_cleaner_complete_metadata import ExcelDataCleanerCompleteMetadata
             
-            cleaner = ExcelDataCleanerUltraConservative()
+            cleaner = ExcelDataCleanerCompleteMetadata()
             cleaned_text = cleaner.clean_excel_data(content)
             
-            logger.info(f"✅ Excel処理完了（超保守版）: {len(cleaned_text)} 文字")
+            logger.info(f"✅ Excel処理完了（完全メタデータ版）: {len(cleaned_text)} 文字")
             return cleaned_text
             
         except ImportError:
-            # フォールバック1: 改良版
-            logger.warning("⚠️ 超保守版ExcelDataCleanerが利用できません。改良版を使用します。")
+            # フォールバック: 超保守版
+            logger.warning("⚠️ 完全メタデータ版ExcelDataCleanerが利用できません。超保守版を使用します。")
             try:
-                from modules.excel_data_cleaner_enhanced import ExcelDataCleanerEnhanced
-                cleaner = ExcelDataCleanerEnhanced()
+                from modules.excel_data_cleaner_ultra_conservative import ExcelDataCleanerUltraConservative
+                cleaner = ExcelDataCleanerUltraConservative()
                 cleaned_text = cleaner.clean_excel_data(content)
-                logger.info(f"✅ Excel処理完了（改良版）: {len(cleaned_text)} 文字")
+                logger.info(f"✅ Excel処理完了（超保守版）: {len(cleaned_text)} 文字")
                 return cleaned_text
             except ImportError:
-                # フォールバック2: 修正版
-                logger.warning("⚠️ 改良版ExcelDataCleanerが利用できません。修正版を使用します。")
-                try:
-                    from modules.excel_data_cleaner_fixed import ExcelDataCleanerFixed
-                    cleaner = ExcelDataCleanerFixed()
-                    cleaned_text = cleaner.clean_excel_data(content)
-                    logger.info(f"✅ Excel処理完了（修正版）: {len(cleaned_text)} 文字")
-                    return cleaned_text
-                except ImportError:
-                    # フォールバック3: 強化版
-                    logger.warning("⚠️ 修正版ExcelDataCleanerが利用できません。強化版を使用します。")
-                    try:
-                        from modules.excel_data_cleaner import ExcelDataCleaner
-                        cleaner = ExcelDataCleaner()
-                        cleaned_text = cleaner.clean_excel_data(content)
-                        logger.info(f"✅ Excel処理完了（強化版）: {len(cleaned_text)} 文字")
-                        return cleaned_text
-                    except Exception as e2:
-                        logger.warning(f"⚠️ 強化版Excel処理失敗、従来版にフォールバック: {e2}")
-                        return await self._extract_text_from_excel_fallback(content)
+                # 最終フォールバック: 従来版pandas処理
+                logger.warning("⚠️ 超保守版ExcelDataCleanerが利用できません。従来版pandas処理を使用します。")
+                return await self._extract_text_from_excel_fallback(content)
         except Exception as e:
-            logger.error(f"❌ Excel処理エラー（超保守版）: {e}")
-            # フォールバック: 改良版
-            logger.info("🔄 改良版Excel処理にフォールバック")
+            logger.error(f"❌ Excel処理エラー（完全メタデータ版）: {e}")
+            # フォールバック: 超保守版
+            logger.info("🔄 超保守版Excel処理にフォールバック")
             try:
-                from modules.excel_data_cleaner_enhanced import ExcelDataCleanerEnhanced
-                cleaner = ExcelDataCleanerEnhanced()
+                from modules.excel_data_cleaner_ultra_conservative import ExcelDataCleanerUltraConservative
+                cleaner = ExcelDataCleanerUltraConservative()
                 cleaned_text = cleaner.clean_excel_data(content)
-                logger.info(f"✅ Excel処理完了（改良版）: {len(cleaned_text)} 文字")
+                logger.info(f"✅ Excel処理完了（超保守版）: {len(cleaned_text)} 文字")
                 return cleaned_text
             except Exception as e2:
-                logger.warning(f"⚠️ 改良版Excel処理失敗、修正版にフォールバック: {e2}")
-                try:
-                    from modules.excel_data_cleaner_fixed import ExcelDataCleanerFixed
-                    cleaner = ExcelDataCleanerFixed()
-                    cleaned_text = cleaner.clean_excel_data(content)
-                    logger.info(f"✅ Excel処理完了（修正版）: {len(cleaned_text)} 文字")
-                    return cleaned_text
-                except Exception as e3:
-                    logger.warning(f"⚠️ 修正版Excel処理失敗、従来版にフォールバック: {e3}")
-                    return await self._extract_text_from_excel_fallback(content)
+                logger.warning(f"⚠️ 超保守版Excel処理失敗、従来版pandas処理にフォールバック: {e2}")
+                return await self._extract_text_from_excel_fallback(content)
     
     async def _extract_text_from_excel_fallback(self, content: bytes) -> str:
         """Excelファイルからテキストを抽出（従来版）"""

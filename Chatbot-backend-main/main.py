@@ -966,9 +966,9 @@ async def get_knowledge_base(current_user = Depends(get_current_user)):
 # チャットエンドポイント
 @app.post("/chatbot/api/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
-    """チャットメッセージを処理してGeminiからの応答を返す（シンプル高速処理）"""
+    """チャットメッセージを処理してGeminiからの応答を返す（Gemini質問分析統合版）"""
     # デバッグ用：現在のユーザー情報と利用制限を出力
-    print(f"=== シンプルチャット処理開始 ===")
+    print(f"=== 🧠 Gemini質問分析チャット処理開始 ===")
     print(f"ユーザー情報: {current_user}")
     
     # 現在の利用制限を取得して表示
@@ -980,17 +980,39 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
     message.user_id = current_user["id"]
     message.employee_name = current_user["name"]
     
-    # シンプルで高速なprocess_chat関数を使用
-    from modules.chat import process_chat
-    result = await process_chat(message, db, current_user)
-    
-    # 応答を返す
-    return ChatResponse(
-        response=result["response"],
-        source=result.get("source", ""),
-        remaining_questions=result.get("remaining_questions", 0),
-        limit_reached=result.get("limit_reached", False)
-    )
+    # 🧠 新しいGemini質問分析統合RAGシステムを優先使用
+    try:
+        from modules.chat_realtime_rag import process_chat_with_realtime_rag
+        print("🧠 Gemini質問分析統合RAGシステムを使用")
+        result = await process_chat_with_realtime_rag(message, db, current_user)
+        
+        # ChatResponseオブジェクトが返された場合はそのまま返す
+        if hasattr(result, 'response'):
+            return result
+        
+        # 辞書形式の場合はChatResponseに変換
+        return ChatResponse(
+            response=result.get("response", "システムエラーが発生しました"),
+            sources=result.get("sources", []),
+            remaining_questions=result.get("remaining_questions", 0),
+            limit_reached=result.get("limit_reached", False)
+        )
+        
+    except Exception as e:
+        print(f"⚠️ Gemini質問分析RAGエラー: {e}")
+        print("🔄 フォールバック: 従来のprocess_chat関数を使用")
+        
+        # フォールバック: 従来のprocess_chat関数を使用
+        from modules.chat import process_chat
+        result = await process_chat(message, db, current_user)
+        
+        # 応答を返す
+        return ChatResponse(
+            response=result["response"],
+            source=result.get("source", ""),
+            remaining_questions=result.get("remaining_questions", 0),
+            limit_reached=result.get("limit_reached", False)
+        )
 
 @app.post("/chatbot/api/chat-chunked-info", response_model=dict)
 async def chat_chunked_info(message: ChatMessage, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
@@ -1024,6 +1046,98 @@ async def chat_chunked_info(message: ChatMessage, current_user = Depends(get_cur
             "processing_success": False,
             "error": str(e)
         }
+@app.post("/chatbot/api/chat-with-chunks", response_model=dict)
+async def chat_with_chunk_visibility(message: ChatMessage, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """チャンク可視化機能付きチャット処理"""
+    try:
+        # ユーザーIDを設定
+        message.user_id = current_user["id"]
+        message.employee_name = current_user["name"]
+        
+        # 利用制限チェック
+        from modules.database import get_usage_limits
+        current_limits = get_usage_limits(current_user["id"], db)
+        logger.info(f"現在の利用制限: {current_limits}")
+        
+        # 超高精度RAG検索をチャンク可視化付きで実行
+        from modules.chat import ultra_accurate_rag_search
+        
+        # 会社IDを取得
+        company_id = None
+        if current_user.get("company_id"):
+            company_id = current_user["company_id"]
+        else:
+            # ユーザーテーブルから会社IDを取得
+            from supabase_adapter import select_data
+            user_result = select_data("users", columns="company_id", filters={"id": current_user["id"]})
+            if user_result.data and len(user_result.data) > 0:
+                company_id = user_result.data[0].get('company_id')
+        
+        # チャンク可視化付きでRAG検索を実行
+        rag_result = await ultra_accurate_rag_search(
+            query=message.text,
+            company_id=company_id,
+            company_name="お客様の会社",
+            max_results=15,
+            include_chunk_visibility=True
+        )
+        
+        # 利用制限の更新
+        remaining_questions = None
+        limit_reached = False
+        
+        if not current_limits.get("is_unlimited", False):
+            from modules.database import update_usage_count
+            updated_limits = update_usage_count(current_user["id"], "questions_used", db)
+            if updated_limits:
+                remaining_questions = updated_limits["questions_limit"] - updated_limits["questions_used"]
+                limit_reached = remaining_questions <= 0
+        
+        # チャット履歴を保存
+        from modules.token_counter import TokenUsageTracker
+        tracker = TokenUsageTracker(db)
+        
+        chat_id = tracker.save_chat_with_prompts(
+            user_message=message.text,
+            bot_response=rag_result.get('final_answer', ''),
+            user_id=current_user["id"],
+            prompt_references=len(rag_result.get('chunk_visibility', {}).get('chunk_references', [])),
+            company_id=company_id,
+            employee_id=getattr(message, 'employee_id', None),
+            employee_name=current_user["name"],
+            category="チャンク可視化",
+            sentiment="neutral",
+            model="ultra-accurate-rag"
+        )
+        
+        # レスポンスを構築
+        response_data = {
+            "response": rag_result.get('final_answer', '申し訳ございませんが、回答を生成できませんでした。'),
+            "source": "ultra_accurate_rag",
+            "remaining_questions": remaining_questions,
+            "limit_reached": limit_reached,
+            "chunk_visibility": rag_result.get('chunk_visibility'),
+            "processing_success": rag_result.get('processing_success', False),
+            "chat_id": chat_id
+        }
+        
+        return response_data
+        
+    except Exception as e:
+        logger.error(f"チャンク可視化チャット処理エラー: {str(e)}")
+        import traceback
+        logger.error(f"詳細エラー: {traceback.format_exc()}")
+        
+        return {
+            "response": f"申し訳ございませんが、システムエラーが発生しました: {str(e)}",
+            "source": "error",
+            "remaining_questions": 0,
+            "limit_reached": False,
+            "chunk_visibility": None,
+            "processing_success": False,
+            "error": str(e)
+        }
+
 
 # チャット履歴を取得するエンドポイント（ページネーション対応）
 @app.get("/chatbot/api/admin/chat-history")
