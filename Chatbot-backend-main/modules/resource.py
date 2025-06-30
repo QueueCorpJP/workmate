@@ -257,13 +257,25 @@ async def remove_resource_by_id(resource_id: str, db: Connection):
         chunks_count = chunks_result.count if chunks_result.count is not None else 0
         print(f"削除対象のchunks数: {chunks_count}")
         
-        # リソースを削除（ON DELETE CASCADEにより関連chunksも自動削除）
+        # まず関連するchunksを手動で削除
+        if chunks_count > 0:
+            print(f"🗑️ 関連chunks削除開始: {chunks_count}件")
+            chunks_delete_query = supabase.table("chunks").delete().eq("doc_id", resource_id)
+            chunks_delete_result = chunks_delete_query.execute()
+            
+            if chunks_delete_result.data is not None:
+                print(f"✅ 関連chunks削除成功: {chunks_count}件")
+            else:
+                print(f"⚠️ 関連chunks削除で警告が発生しましたが、処理を継続します")
+        else:
+            print(f"ℹ️ 削除対象のchunksがありません")
+        
+        # リソースを削除
         delete_query = supabase.table("document_sources").delete().eq("id", resource_id)
         delete_result = delete_query.execute()
         
-        if delete_result.data:
+        if delete_result.data is not None:
             print(f"✅ リソース削除成功: {resource_name}")
-            print(f"✅ 関連chunks自動削除: {chunks_count}件 (ON DELETE CASCADE)")
             return {
                 "name": resource_name,
                 "message": f"リソース '{resource_name}' と関連データ({chunks_count}件のchunks)を削除しました"
