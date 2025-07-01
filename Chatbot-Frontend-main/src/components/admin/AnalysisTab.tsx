@@ -73,7 +73,7 @@ import QueryStatsIcon from '@mui/icons-material/QueryStats';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import RepeatIcon from '@mui/icons-material/Repeat';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
-// api importを削除 - 独自API呼び出しを停止したため不要
+import api from '../../api';
 
 // Chart.jsのデフォルト設定をリセット
 defaults.font.family = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
@@ -211,6 +211,15 @@ interface EnhancedAnalysisResult {
     analysis_type: string;
     company_id?: string;
   };
+}
+
+// ソース参照アイテムの型定義
+interface SourceReferenceItem {
+  id: string;
+  name: string;
+  type: string;
+  reference_count: number;
+  last_referenced: string | null;
 }
 
 interface AnalysisTabProps {
@@ -409,16 +418,21 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
     setIsSourceReferencesLoading(true);
     try {
       const response = await api.get('/admin/analysis/source_references');
-      setSourceReferences(response.data);
-    } catch (error) {
+      setSourceReferences(response.data || []);
+    } catch (error: any) {
       console.error("Failed to fetch source references:", error);
+      // エラーが発生した場合は空配列を設定
+      setSourceReferences([]);
     } finally {
       setIsSourceReferencesLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchSourceReferences();
+    // apiが利用可能な場合のみfetchSourceReferencesを実行
+    if (api) {
+      fetchSourceReferences();
+    }
   }, []);
 
   return (

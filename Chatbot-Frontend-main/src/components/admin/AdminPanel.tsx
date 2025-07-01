@@ -264,6 +264,12 @@ const AdminPanel: React.FC = () => {
     console.log("🔍 [DEBUG] 現在の analysis:", analysis);
     console.log("🔍 [DEBUG] forceRefresh:", forceRefresh);
     
+    // 既に実行中の場合はスキップ
+    if (isAnalysisLoading || isEnhancedAnalysisLoading) {
+      console.log("🔍 [DEBUG] 既に分析中のためスキップ");
+      return;
+    }
+    
     if (analysis && Object.keys(analysis.category_distribution).length > 0 && !forceRefresh) {
       console.log("🔍 [DEBUG] 既に有効なデータがあるためスキップ");
       return; // 既に有効なデータがある場合は何もしない
@@ -351,7 +357,12 @@ const AdminPanel: React.FC = () => {
           setAnalysis(fallbackData);
         }
       } else {
-        console.error("🔍 [ERROR] 基本分析の取得に失敗:", basicData.reason);
+        // CanceledError の場合は無視
+        if (basicData.reason?.name === 'CanceledError' || basicData.reason?.message === 'canceled') {
+          console.log("🔍 [INFO] 基本分析がキャンセルされました");
+        } else {
+          console.error("🔍 [ERROR] 基本分析の取得に失敗:", basicData.reason);
+        }
       }
       
       // データベース強化分析データの処理（AI洞察なし）
@@ -371,13 +382,18 @@ const AdminPanel: React.FC = () => {
           setEnhancedAnalysis(null);
         }
       } else {
-        console.error("🔍 [ERROR] データベース強化分析の取得に失敗:", enhancedDatabaseData.reason);
+        // CanceledError の場合は無視
+        if (enhancedDatabaseData.reason?.name === 'CanceledError' || enhancedDatabaseData.reason?.message === 'canceled') {
+          console.log("🔍 [INFO] 強化分析がキャンセルされました");
+        } else {
+          console.error("🔍 [ERROR] データベース強化分析の取得に失敗:", enhancedDatabaseData.reason);
+        }
         setEnhancedAnalysis(null);
       }
       
     } catch (error: any) {
-      // AbortErrorの場合はユーザーによるキャンセルなので静かに処理
-      if (error.name === 'AbortError' || (error.message && error.message.includes('aborted'))) {
+      // AbortErrorやCanceledErrorの場合はユーザーによるキャンセルなので静かに処理
+      if (error.name === 'AbortError' || error.name === 'CanceledError' || error.message === 'canceled' || (error.message && error.message.includes('aborted'))) {
         console.log('🛑 分析処理がユーザーによってキャンセルされました');
         return;
       }
@@ -448,8 +464,8 @@ const AdminPanel: React.FC = () => {
       }
       
     } catch (error: any) {
-      // AbortErrorの場合はユーザーによるキャンセルなので静かに処理
-      if (error.name === 'AbortError' || (error.message && error.message.includes('aborted'))) {
+      // AbortErrorやCanceledErrorの場合はユーザーによるキャンセルなので静かに処理
+      if (error.name === 'AbortError' || error.name === 'CanceledError' || error.message === 'canceled' || (error.message && error.message.includes('aborted'))) {
         console.log('🛑 AI洞察生成がユーザーによってキャンセルされました');
         return;
       }

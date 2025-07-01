@@ -160,6 +160,12 @@ export class SharedDataService {
           console.error('📊 [SharedDataService] 分析データAPI呼び出し失敗:', error);
           console.error('📊 [SharedDataService] error.message:', error.message);
           console.error('📊 [SharedDataService] error.response:', error.response);
+          
+          // CanceledErrorの場合は特別な処理
+          if (error.name === 'CanceledError' || error.message === 'canceled') {
+            console.log('📊 [SharedDataService] 分析がキャンセルされました');
+          }
+          
           throw error;
         }
       },
@@ -192,6 +198,12 @@ export class SharedDataService {
           console.error('🔬 [SharedDataService] 強化分析データAPI呼び出し失敗:', error);
           console.error('🔬 [SharedDataService] error.message:', error.message);
           console.error('🔬 [SharedDataService] error.response:', error.response);
+          
+          // CanceledErrorの場合は特別な処理
+          if (error.name === 'CanceledError' || error.message === 'canceled') {
+            console.log('🔬 [SharedDataService] 強化分析がキャンセルされました');
+          }
+          
           throw error;
         }
       },
