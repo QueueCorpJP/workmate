@@ -439,8 +439,17 @@ class QuestionVariantsGenerator:
                 reason = variant_reasons[i-1] if i-1 < len(variant_reasons) else "生成理由不明"
                 logger.info(f"   {i}. {variant} (理由: {reason})")
             
+            # 🔥 必須パターン: 法人格の後ろに半角スペースのバリエーションを追加
+            essential_space_patterns = self._generate_essential_space_patterns(question)
+            for pattern in essential_space_patterns:
+                if pattern and pattern.strip() and pattern not in all_variants:
+                    all_variants.append(pattern.strip())
+                    logger.info(f"   ✅ 必須パターン追加: {pattern}")
+            
             # all_variantsを更新
             result.all_variants = all_variants
+            
+            logger.info(f"🎯 最終バリエーション数: {len(all_variants)}個（Gemini生成 + 必須パターン）")
             
             return result
             
@@ -468,6 +477,12 @@ class QuestionVariantsGenerator:
         for variant in all_variants:
             if variant and variant.strip() and variant not in unique_variants:
                 unique_variants.append(variant.strip())
+        
+        # 🔥 必須パターン: 法人格の後ろに半角スペースのバリエーションを追加
+        essential_space_patterns = self._generate_essential_space_patterns(original)
+        for pattern in essential_space_patterns:
+            if pattern and pattern.strip() and pattern not in unique_variants:
+                unique_variants.append(pattern.strip())
         
         logger.info(f"✅ ミニマル基本バリエーション生成完了: {len(unique_variants)}個のシンプルなバリエーション")
         logger.warning("⚠️ AIによる高精度バリエーション生成が推奨されます（GEMINI_API_KEYを設定してください）")
@@ -778,6 +793,93 @@ class QuestionVariantsGenerator:
                 if 1 < pos < len(text) - 1:
                     patterns.append(text[:pos] + ' ' + text[pos:])
                     patterns.append(text[:pos] + '　' + text[pos:])
+        
+        return patterns
+
+    def _generate_essential_space_patterns(self, text: str) -> List[str]:
+        """必須スペースパターン生成（法人格の後ろに半角スペース）"""
+        patterns = []
+        
+        # 法人格パターンの定義
+        company_patterns = [
+            # 基本的な法人格
+            r'(株式会社)([^\s])',  # 株式会社ABC → 株式会社 ABC
+            r'(有限会社)([^\s])',  # 有限会社ABC → 有限会社 ABC  
+            r'(合同会社)([^\s])',  # 合同会社ABC → 合同会社 ABC
+            r'(合資会社)([^\s])',  # 合資会社ABC → 合資会社 ABC
+            r'(合名会社)([^\s])',  # 合名会社ABC → 合名会社 ABC
+            
+            # 略称法人格
+            r'(㈱)([^\s])',        # ㈱ABC → ㈱ ABC
+            r'(㈲)([^\s])',        # ㈲ABC → ㈲ ABC
+            r'(\(株\))([^\s])',    # (株)ABC → (株) ABC
+            r'(（株）)([^\s])',     # （株）ABC → （株） ABC
+            r'(\(有\))([^\s])',    # (有)ABC → (有) ABC
+            r'(（有）)([^\s])',     # （有）ABC → （有） ABC
+            
+            # 社団・財団法人
+            r'(一般社団法人)([^\s])',   # 一般社団法人ABC → 一般社団法人 ABC
+            r'(公益社団法人)([^\s])',   # 公益社団法人ABC → 公益社団法人 ABC
+            r'(一般財団法人)([^\s])',   # 一般財団法人ABC → 一般財団法人 ABC
+            r'(公益財団法人)([^\s])',   # 公益財団法人ABC → 公益財団法人 ABC
+            r'(社会福祉法人)([^\s])',   # 社会福祉法人ABC → 社会福祉法人 ABC
+            r'(学校法人)([^\s])',       # 学校法人ABC → 学校法人 ABC
+            r'(医療法人)([^\s])',       # 医療法人ABC → 医療法人 ABC
+            
+            # 一般的な組織名パターン
+            r'([^\s]+会社)([^\s])',     # ABC会社DEF → ABC会社 DEF
+            r'([^\s]+工業)([^\s])',     # ABC工業DEF → ABC工業 DEF
+            r'([^\s]+社団)([^\s])',     # ABC社団DEF → ABC社団 DEF
+            r'([^\s]+法人)([^\s])',     # ABC法人DEF → ABC法人 DEF
+            r'([^\s]+協会)([^\s])',     # ABC協会DEF → ABC協会 DEF
+            r'([^\s]+組合)([^\s])',     # ABC組合DEF → ABC組合 DEF
+            r'([^\s]+財団)([^\s])',     # ABC財団DEF → ABC財団 DEF
+        ]
+        
+        # 逆パターン（スペースありからスペースなしへ）
+        reverse_patterns = [
+            r'(株式会社)\s+([^\s])',   # 株式会社 ABC → 株式会社ABC
+            r'(有限会社)\s+([^\s])',   # 有限会社 ABC → 有限会社ABC
+            r'(合同会社)\s+([^\s])',   # 合同会社 ABC → 合同会社ABC
+            r'(合資会社)\s+([^\s])',   # 合資会社 ABC → 合資会社ABC
+            r'(合名会社)\s+([^\s])',   # 合名会社 ABC → 合名会社ABC
+            r'(㈱)\s+([^\s])',         # ㈱ ABC → ㈱ABC
+            r'(㈲)\s+([^\s])',         # ㈲ ABC → ㈲ABC
+            r'(\(株\))\s+([^\s])',     # (株) ABC → (株)ABC
+            r'(（株）)\s+([^\s])',      # （株） ABC → （株）ABC
+            r'(\(有\))\s+([^\s])',     # (有) ABC → (有)ABC
+            r'(（有）)\s+([^\s])',      # （有） ABC → （有）ABC
+            r'(一般社団法人)\s+([^\s])', # 一般社団法人 ABC → 一般社団法人ABC
+            r'(公益社団法人)\s+([^\s])', # 公益社団法人 ABC → 公益社団法人ABC
+            r'(一般財団法人)\s+([^\s])', # 一般財団法人 ABC → 一般財団法人ABC
+            r'(公益財団法人)\s+([^\s])', # 公益財団法人 ABC → 公益財団法人ABC
+        ]
+        
+        # 法人格の後にスペースを追加するパターン
+        for pattern in company_patterns:
+            matches = re.finditer(pattern, text)
+            for match in matches:
+                # スペースを追加
+                new_text = text.replace(match.group(0), f"{match.group(1)} {match.group(2)}")
+                if new_text != text:
+                    patterns.append(new_text)
+        
+        # スペースありからスペースなしへのパターン
+        for pattern in reverse_patterns:
+            matches = re.finditer(pattern, text)
+            for match in matches:
+                # スペースを削除
+                new_text = text.replace(match.group(0), f"{match.group(1)}{match.group(2)}")
+                if new_text != text:
+                    patterns.append(new_text)
+        
+        # 全角スペースから半角スペースへの変換も追加
+        if '　' in text:  # 全角スペースがある場合
+            patterns.append(text.replace('　', ' '))  # 半角スペースに変換
+        
+        # 半角スペースから全角スペースへの変換も追加
+        if ' ' in text:  # 半角スペースがある場合
+            patterns.append(text.replace(' ', '　'))  # 全角スペースに変換
         
         return patterns
 
