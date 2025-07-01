@@ -2888,6 +2888,45 @@ async def admin_get_plan_history(current_user = Depends(get_admin_or_user), db: 
             detail=f"プラン履歴の取得中にエラーが発生しました: {str(e)}"
         )
 
+# 会社名関連エンドポイント
+@app.get("/chatbot/api/company-name", response_model=dict)
+async def get_company_name_endpoint(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """現在のユーザーの会社名を取得する"""
+    try:
+        print(f"会社名取得要求 - ユーザー: {current_user['email']}")
+        result = await get_company_name(current_user, db)
+        print(f"会社名取得結果: {result}")
+        return result
+    except Exception as e:
+        print(f"会社名取得エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"会社名の取得中にエラーが発生しました: {str(e)}"
+        )
+
+@app.post("/chatbot/api/company-name", response_model=dict)
+async def set_company_name_endpoint(request: dict, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """現在のユーザーの会社名を設定する"""
+    try:
+        print(f"会社名設定要求 - ユーザー: {current_user['email']}, 新会社名: {request.get('company_name')}")
+        
+        from modules.models import CompanyNameRequest
+        company_request = CompanyNameRequest(company_name=request.get('company_name', ''))
+        
+        result = await set_company_name(company_request, current_user, db)
+        print(f"会社名設定結果: {result}")
+        return result
+    except Exception as e:
+        print(f"会社名設定エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"会社名の設定中にエラーが発生しました: {str(e)}"
+        )
+
 # Google Drive連携エンドポイント
 @app.post("/chatbot/api/upload-from-drive")
 async def upload_from_google_drive(
@@ -3050,5 +3089,3 @@ if __name__ == "__main__":
     from modules.config import get_port
     port = get_port()
     uvicorn.run(app, host="0.0.0.0", port=port, timeout_keep_alive=600)
-
-
