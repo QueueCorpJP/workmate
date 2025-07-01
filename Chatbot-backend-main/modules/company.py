@@ -54,6 +54,10 @@ async def set_company_name(request: CompanyNameRequest, user=None, db: Connectio
     request: 新しい会社名のリクエスト
     user: 現在のユーザー情報。指定されていない場合はデフォルト会社名を更新する
     """
+    # 社員ロールの権限チェック
+    if user and user.get("role") == "employee":
+        raise HTTPException(status_code=403, detail="社員アカウントは会社名を変更できません。管理者にお問い合わせください。")
+    
     # 新しい会社名を取得
     new_company_name = request.company_name.strip()
     if not new_company_name:
@@ -124,7 +128,8 @@ async def set_company_name(request: CompanyNameRequest, user=None, db: Connectio
     else:
         company_id = create_company(new_company_name, db)
         update_company_id_by_email(company_id, user["email"], db)
-        
+        db.commit()  # コミットを追加
+        logger.info(f"新しい会社「{new_company_name}」を作成し、ユーザー {user['email']} に紐づけました")
 
     # 成功レスポンスを返す
     return {"company_name": new_company_name}
