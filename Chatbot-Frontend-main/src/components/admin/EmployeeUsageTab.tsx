@@ -877,17 +877,19 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                         <TableCell>
                           <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
                             <Tooltip title={`クリックで${!employee.usage_limits?.is_unlimited ? '本番版' : 'デモ版'}に切り替え`}>
-                              <Checkbox
-                                checked={!employee.usage_limits?.is_unlimited}
-                                onChange={() => handleToggleDemo(employee)}
-                                size="small"
-                                sx={{
-                                  color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
-                                  '&.Mui-checked': {
+                              <span>
+                                <Checkbox
+                                  checked={!employee.usage_limits?.is_unlimited}
+                                  onChange={() => handleToggleDemo(employee)}
+                                  size="small"
+                                  sx={{
                                     color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
-                                  }
-                                }}
-                              />
+                                    '&.Mui-checked': {
+                                      color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
+                                    }
+                                  }}
+                                />
+                              </span>
                             </Tooltip>
                             <Typography 
                               variant="caption" 
@@ -903,22 +905,24 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                         </TableCell>
                         <TableCell>
                           <Tooltip title="プラン変更履歴を表示">
-                            <IconButton
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenPlanHistory(employee);
-                              }}
-                              sx={{
-                                color: "primary.main",
-                                "&:hover": {
-                                  bgcolor: "primary.light",
-                                  color: "primary.dark",
-                                },
-                              }}
-                            >
-                              <TimelineIcon fontSize="small" />
-                            </IconButton>
+                            <span>
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenPlanHistory(employee);
+                                }}
+                                sx={{
+                                  color: "primary.main",
+                                  "&:hover": {
+                                    bgcolor: "primary.light",
+                                    color: "primary.dark",
+                                  },
+                                }}
+                              >
+                                <TimelineIcon fontSize="small" />
+                              </IconButton>
+                            </span>
                           </Tooltip>
                         </TableCell>
                       </>
@@ -957,23 +961,25 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                       <TableCell>
                         {(employee.role === "employee" || employee.role === "user") && onDeleteEmployee && (
                           <Tooltip title={employee.role === "employee" ? "社員を削除" : "管理者を削除"}>
-                            <IconButton
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteEmployee(employee);
-                              }}
-                              disabled={isEmployeeDeleting}
-                              sx={{
-                                color: "error.main",
-                                "&:hover": {
-                                  bgcolor: "error.light",
-                                  color: "error.dark",
-                                },
-                              }}
-                            >
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
+                            <span>
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteEmployee(employee);
+                                }}
+                                disabled={isEmployeeDeleting}
+                                sx={{
+                                  color: "error.main",
+                                  "&:hover": {
+                                    bgcolor: "error.light",
+                                    color: "error.dark",
+                                  },
+                                }}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </span>
                           </Tooltip>
                         )}
                       </TableCell>

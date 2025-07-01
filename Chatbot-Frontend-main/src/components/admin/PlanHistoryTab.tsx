@@ -147,19 +147,36 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
     setError(null);
     try {
       console.log("プラン履歴を取得中...");
+      console.log("現在のユーザー情報:", user);
+      console.log("管理者フラグ:", isAdmin);
+      
       const response = await api.get("/plan-history");
-      console.log("プラン履歴取得結果:", response.data);
+      console.log("プラン履歴取得結果 - 全体:", response);
+      console.log("プラン履歴取得結果 - data:", response.data);
+      console.log("response.data.success:", response.data?.success);
+      console.log("response.data.data:", response.data?.data);
+      console.log("response.data.data.users:", response.data?.data?.users);
+      console.log("response.data.data.analytics:", response.data?.data?.analytics);
       
       if (response.data && response.data.success && response.data.data) {
+        console.log("成功ブランチに入りました");
         if (response.data.data.users) {
+          console.log("ユーザーデータを設定:", response.data.data.users);
           setUserPlanHistories(response.data.data.users);
+        } else {
+          console.log("ユーザーデータが存在しません");
         }
         
         // 管理者用の分析データを設定
         if (isAdmin && response.data.data.analytics) {
+          console.log("管理者用分析データを設定:", response.data.data.analytics);
           setAnalyticsData(response.data.data.analytics);
+        } else {
+          console.log("管理者用分析データなし - isAdmin:", isAdmin, "analytics:", response.data.data.analytics);
         }
       } else {
+        console.log("レスポンス構造が期待と異なります");
+        console.log("setting empty arrays");
         setUserPlanHistories([]);
         setAnalyticsData(null);
       }
@@ -178,10 +195,12 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
   }, []);
 
   const getPlanDisplayName = (plan: string) => {
+    console.log("プラン名変換:", plan);
     switch (plan) {
       case "demo":
         return "デモ版";
       case "production":
+      case "unlimited":
         return "本番版";
       case "starter":
         return "スタータープラン";
@@ -190,6 +209,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
       case "enterprise":
         return "エンタープライズプラン";
       default:
+        console.log("未知のプラン名:", plan);
         return plan;
     }
   };
@@ -199,6 +219,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
       case "demo":
         return "warning";
       case "production":
+      case "unlimited":
         return "success";
       case "starter":
         return "info";
@@ -212,9 +233,10 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
   };
 
   const getChangeIcon = (fromPlan: string, toPlan: string) => {
-    if (fromPlan === "demo" && toPlan === "production") {
+    console.log("変更アイコン:", fromPlan, "→", toPlan);
+    if (fromPlan === "demo" && (toPlan === "production" || toPlan === "unlimited")) {
       return <TrendingUpIcon color="success" />;
-    } else if (fromPlan === "production" && toPlan === "demo") {
+    } else if ((fromPlan === "production" || fromPlan === "unlimited") && toPlan === "demo") {
       return <TrendingDownIcon color="warning" />;
     }
     return <HistoryIcon color="primary" />;
@@ -289,8 +311,12 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
       });
     });
 
-    const demoToProd = allChanges.filter(item => item.from_plan === "demo" && item.to_plan === "production");
-    const prodToDemo = allChanges.filter(item => item.from_plan === "production" && item.to_plan === "demo");
+    const demoToProd = allChanges.filter(item => 
+      item.from_plan === "demo" && (item.to_plan === "production" || item.to_plan === "unlimited")
+    );
+    const prodToDemo = allChanges.filter(item => 
+      (item.from_plan === "production" || item.from_plan === "unlimited") && item.to_plan === "demo"
+    );
     
     const demoToProdDurations = demoToProd.filter(item => item.duration_days).map(item => item.duration_days!);
     const avgDemoUsage = demoToProdDurations.length > 0 
@@ -639,6 +665,15 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
     );
   }
 
+  console.log("=== レンダリング時のステート ===");
+  console.log("userPlanHistories:", userPlanHistories);
+  console.log("userPlanHistories.length:", userPlanHistories.length);
+  console.log("analyticsData:", analyticsData);
+  console.log("isAdmin:", isAdmin);
+  console.log("currentTab:", currentTab);
+  console.log("表示条件:", (!isAdmin || currentTab === 0));
+  console.log("=== レンダリング時のステート終了 ===");
+
   return (
     <Box>
       {/* ヘッダー */}
@@ -663,12 +698,16 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
         </Button>
       </Box>
 
-              {/* 管理者用の分析表示 */}
-        {isAdmin && analyticsData && renderAnalytics()}
+      {/* 管理者用の分析表示 */}
+      {isAdmin && analyticsData && renderAnalytics()}
 
-        {/* 通常のプラン履歴表示（管理者の場合はタブ0の時のみ） */}
-              {(!isAdmin || currentTab === 0) && (
+      {/* 通常のプラン履歴表示（管理者の場合はタブ0の時のみ） */}
+      {(!isAdmin || currentTab === 0) && (
         <Box>
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            デバッグ情報: userPlanHistories.length = {userPlanHistories.length}
+          </Typography>
+          
           {/* プラン履歴テーブル */}
           {userPlanHistories.length === 0 ? (
             <EmptyState

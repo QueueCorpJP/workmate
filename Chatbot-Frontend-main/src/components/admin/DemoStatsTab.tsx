@@ -87,33 +87,35 @@ const DemoStatsTab: React.FC<DemoStatsTabProps> = ({
           </Box>
 
           <Tooltip title="データを更新">
-            <Button
-              variant="outlined"
-              color="primary"
-              onClick={onRefresh}
-              disabled={isLoading}
-              startIcon={<RefreshIcon />}
-              size={isMobile ? "small" : "medium"}
-              sx={{
-                borderRadius: "12px",
-                px: { xs: 1.5, sm: 2 },
-                py: { xs: 0.5, sm: 0.7 },
-                boxShadow: "0 2px 5px rgba(37, 99, 235, 0.08)",
-                borderColor: "rgba(37, 99, 235, 0.3)",
-                textTransform: "none",
-                fontWeight: 600,
-                fontSize: { xs: "0.7rem", sm: "0.75rem" },
-                "&:hover": {
-                  backgroundColor: "rgba(37, 99, 235, 0.04)",
-                  borderColor: "rgba(37, 99, 235, 0.5)",
-                  boxShadow: "0 3px 8px rgba(37, 99, 235, 0.12)",
-                  transform: "translateY(-1px)",
-                },
-                transition: "all 0.2s ease",
-              }}
-            >
-              {!isMobile && "更新"}
-            </Button>
+            <span>
+              <Button
+                variant="outlined"
+                color="primary"
+                onClick={onRefresh}
+                disabled={isLoading}
+                startIcon={<RefreshIcon />}
+                size={isMobile ? "small" : "medium"}
+                sx={{
+                  borderRadius: "12px",
+                  px: { xs: 1.5, sm: 2 },
+                  py: { xs: 0.5, sm: 0.7 },
+                  boxShadow: "0 2px 5px rgba(37, 99, 235, 0.08)",
+                  borderColor: "rgba(37, 99, 235, 0.3)",
+                  textTransform: "none",
+                  fontWeight: 600,
+                  fontSize: { xs: "0.7rem", sm: "0.75rem" },
+                  "&:hover": {
+                    backgroundColor: "rgba(37, 99, 235, 0.04)",
+                    borderColor: "rgba(37, 99, 235, 0.5)",
+                    boxShadow: "0 3px 8px rgba(37, 99, 235, 0.12)",
+                    transform: "translateY(-1px)",
+                  },
+                  transition: "all 0.2s ease",
+                }}
+              >
+                {!isMobile && "更新"}
+              </Button>
+            </span>
           </Tooltip>
         </Box>
 

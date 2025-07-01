@@ -1842,7 +1842,7 @@ async def admin_update_user_status(user_id: str, request: dict, current_user = D
     # adminロール、admin_userロール、または特別な管理者のみが実行可能
     is_admin = current_user["role"] == "admin"
     is_admin_user = current_user["role"] == "admin_user"
-    is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
+    is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"]
     
     print(f"=== ユーザーステータス変更権限チェック ===")
     print(f"操作者 {current_user['email']} (管理者: {is_admin}, admin_user: {is_admin_user}, 特別管理者: {is_special_admin})")
@@ -1921,13 +1921,13 @@ async def admin_update_user_status(user_id: str, request: dict, current_user = D
         print(f"新しい制限: 質問数{new_questions_limit} (使用済み: {current_questions_used}), アップロード数{new_uploads_limit} (使用済み: {current_uploads_used})")
         
         # 利用制限を更新
-        update_result = update_data("usage_limits", {
+        update_result = update_data("usage_limits", "user_id", user_id, {
             "is_unlimited": new_is_unlimited,
             "questions_limit": new_questions_limit,
             "questions_used": current_questions_used,
             "document_uploads_limit": new_uploads_limit,
             "document_uploads_used": current_uploads_used
-        }, "user_id", user_id)
+        })
         
         if update_result:
             print("本人のステータス更新完了")
@@ -2625,7 +2625,7 @@ async def admin_get_plan_history(current_user = Depends(get_admin_or_user), db: 
         # 権限チェック
         is_admin = current_user["role"] == "admin"
         is_admin_user = current_user["role"] == "admin_user"
-        is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
+        is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"]
         
         # 特定のcompany_idのユーザーも料金タブアクセスを許可
         is_special_company_user = current_user.get("company_id") == "77acc2e2-ce67-458d-bd38-7af0476b297a"
@@ -2660,8 +2660,7 @@ async def admin_get_plan_history(current_user = Depends(get_admin_or_user), db: 
                 plan_history_result = select_data(
                     "plan_history",
                     columns="id, user_id, from_plan, to_plan, changed_at, duration_days",
-                    filters={"user_id": f"in.({user_ids_str})"},
-                    order="changed_at.desc"
+                    filters={"user_id": f"in.({user_ids_str})"}
                 )
             else:
                 # 会社のユーザーが見つからない場合は空の結果
@@ -2670,18 +2669,27 @@ async def admin_get_plan_history(current_user = Depends(get_admin_or_user), db: 
             # 管理者は全ての履歴を取得
             plan_history_result = select_data(
                 "plan_history",
-                columns="id, user_id, from_plan, to_plan, changed_at, duration_days",
-                order="changed_at.desc"
+                columns="id, user_id, from_plan, to_plan, changed_at, duration_days"
             )
         
-        history_list = []
+        # プラン履歴をユーザー別に整理
+        user_plan_histories = {}
         if plan_history_result and plan_history_result.data:
-            for record in plan_history_result.data:
+            # changed_atで降順ソート（新しいものが先）
+            sorted_records = sorted(
+                plan_history_result.data, 
+                key=lambda x: x.get("changed_at", ""), 
+                reverse=True
+            )
+            
+            for record in sorted_records:
+                user_id = record["user_id"]
+                
                 # ユーザー情報を取得
                 user_result = select_data(
                     "users",
                     columns="name, email",
-                    filters={"id": record["user_id"]}
+                    filters={"id": user_id}
                 )
                 
                 user_name = "不明なユーザー"
@@ -2691,25 +2699,185 @@ async def admin_get_plan_history(current_user = Depends(get_admin_or_user), db: 
                     user_name = user_data.get("name", "名前なし")
                     user_email = user_data.get("email", "unknown@example.com")
                 
-                history_item = {
+                if user_id not in user_plan_histories:
+                    user_plan_histories[user_id] = {
+                        "user_id": user_id,
+                        "user_name": user_name,
+                        "user_email": user_email,
+                        "current_plan": record["to_plan"],  # 最新の変更後プラン
+                        "latest_change": record["changed_at"],
+                        "total_changes": 0,
+                        "changes": []
+                    }
+                
+                # 変更履歴を追加
+                user_plan_histories[user_id]["changes"].append({
                     "id": record["id"],
-                    "user_id": record["user_id"],
-                    "user_name": user_name,
-                    "user_email": user_email,
                     "from_plan": record["from_plan"],
                     "to_plan": record["to_plan"],
                     "changed_at": record["changed_at"],
                     "duration_days": record.get("duration_days")
+                })
+                user_plan_histories[user_id]["total_changes"] += 1
+        
+        # 管理者用の分析データを生成
+        analytics_data = None
+        if is_admin or is_admin_user or is_special_admin:
+            print("管理者用分析データを生成中...")
+            
+            # 会社別利用期間を取得
+            company_usage_periods = []
+            try:
+                companies_result = select_data("companies", columns="id, name")
+                if companies_result and companies_result.data:
+                    for company in companies_result.data:
+                        company_users_result = select_data("users", columns="id, created_at", filters={"company_id": company["id"]})
+                        if company_users_result and company_users_result.data:
+                            user_count = len(company_users_result.data)
+                            # 最古のユーザー作成日を取得
+                            created_dates = [user.get("created_at") for user in company_users_result.data if user.get("created_at")]
+                            if created_dates:
+                                start_date = min(created_dates)
+                                from datetime import datetime
+                                start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                                now_dt = datetime.now(start_dt.tzinfo)
+                                usage_days = (now_dt - start_dt).days
+                                usage_months = max(1, usage_days // 30)
+                                
+                                company_usage_periods.append({
+                                    "company_name": company["name"],
+                                    "user_count": user_count,
+                                    "usage_days": usage_days,
+                                    "start_date": start_date,
+                                    "usage_months": usage_months
+                                })
+            except Exception as e:
+                print(f"会社別利用期間取得エラー: {e}")
+            
+            # ユーザー別利用期間を取得
+            user_usage_periods = []
+            try:
+                for user_data in user_plan_histories.values():
+                    user_result = select_data("users", columns="created_at, company_id", filters={"id": user_data["user_id"]})
+                    if user_result and user_result.data:
+                        user_info = user_result.data[0]
+                        created_at = user_info.get("created_at")
+                        company_id = user_info.get("company_id")
+                        
+                        if created_at:
+                            from datetime import datetime
+                            start_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                            now_dt = datetime.now(start_dt.tzinfo)
+                            usage_days = (now_dt - start_dt).days
+                            usage_months = max(1, usage_days // 30)
+                            
+                            # 会社名を取得
+                            company_name = "不明な会社"
+                            if company_id:
+                                company_result = select_data("companies", columns="name", filters={"id": company_id})
+                                if company_result and company_result.data:
+                                    company_name = company_result.data[0].get("name", "不明な会社")
+                            
+                            user_usage_periods.append({
+                                "user_id": user_data["user_id"],
+                                "email": user_data["user_email"],
+                                "name": user_data["user_name"],
+                                "company_name": company_name,
+                                "usage_days": usage_days,
+                                "start_date": created_at,
+                                "usage_months": usage_months
+                            })
+            except Exception as e:
+                print(f"ユーザー別利用期間取得エラー: {e}")
+            
+            # アクティブユーザー分析
+            active_users_data = {
+                "total_active_users": len(user_plan_histories),
+                "active_users_by_company": {},
+                "active_users_list": [],
+                "analysis_period": "全期間"
+            }
+            
+            # プラン継続性分析
+            continuity_stats = {
+                "never_changed": 0,
+                "changed_once": 0,
+                "changed_multiple": 0,
+                "demo_to_prod_stayed": 0,
+                "prod_to_demo_returned": 0
+            }
+            
+            plan_retention = {
+                "demo_users": 0,
+                "production_users": 0,
+                "demo_avg_duration": 0,
+                "production_avg_duration": 0
+            }
+            
+            for user_data in user_plan_histories.values():
+                total_changes = user_data["total_changes"]
+                current_plan = user_data["current_plan"]
+                
+                # 変更回数統計
+                if total_changes == 0:
+                    continuity_stats["never_changed"] += 1
+                elif total_changes == 1:
+                    continuity_stats["changed_once"] += 1
+                else:
+                    continuity_stats["changed_multiple"] += 1
+                
+                # 現在のプラン統計
+                if current_plan in ["demo", "unlimited"]:
+                    if current_plan == "demo":
+                        plan_retention["demo_users"] += 1
+                    else:
+                        plan_retention["production_users"] += 1
+                
+                # プラン変更パターン分析
+                changes = user_data["changes"]
+                if len(changes) >= 2:
+                    # 最新の変更を確認
+                    latest = changes[0]
+                    if latest["from_plan"] == "demo" and latest["to_plan"] in ["unlimited", "production"]:
+                        continuity_stats["demo_to_prod_stayed"] += 1
+                    elif latest["from_plan"] in ["unlimited", "production"] and latest["to_plan"] == "demo":
+                        continuity_stats["prod_to_demo_returned"] += 1
+            
+            analytics_data = {
+                "company_usage_periods": company_usage_periods,
+                "user_usage_periods": user_usage_periods,
+                "active_users": active_users_data,
+                "plan_continuity": {
+                    "total_users": len(user_plan_histories),
+                    "continuity_stats": continuity_stats,
+                    "plan_retention": plan_retention,
+                    "duration_analysis": {
+                        "demo_duration_samples": 0,
+                        "production_duration_samples": 0
+                    }
                 }
-                history_list.append(history_item)
+            }
         
-        print(f"プラン履歴取得完了: {len(history_list)}件")
+        # フロントエンドが期待する形式でデータを返す
+        user_plan_histories_list = list(user_plan_histories.values())
         
-        return {
+        result = {
             "success": True,
-            "history": history_list,
-            "count": len(history_list)
+            "data": {
+                "users": user_plan_histories_list
+            },
+            "count": len(user_plan_histories_list)
         }
+        
+        # 管理者の場合は分析データも追加
+        if analytics_data:
+            result["data"]["analytics"] = analytics_data
+        
+        print(f"プラン履歴取得完了: {len(user_plan_histories_list)}件のユーザー")
+        if analytics_data:
+            print(f"分析データ: 会社 {len(analytics_data['company_usage_periods'])}件, ユーザー {len(analytics_data['user_usage_periods'])}件")
+        
+        return result
         
     except Exception as e:
         print(f"プラン履歴取得エラー: {str(e)}")

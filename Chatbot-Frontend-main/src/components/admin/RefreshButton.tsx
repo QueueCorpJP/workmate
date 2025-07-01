@@ -17,24 +17,26 @@ const RefreshButton: React.FC<RefreshButtonProps> = ({
 }) => {
   return (
     <Tooltip title={tooltip}>
-      <IconButton
-        onClick={onRefresh}
-        disabled={isLoading}
-        size={size}
-        color="primary"
-        sx={{
-          transition: 'transform 0.2s ease',
-          '&:hover': {
-            transform: 'rotate(180deg)',
-          },
-        }}
-      >
-        {isLoading ? (
-          <CircularProgress size={size === "small" ? 16 : size === "large" ? 28 : 24} />
-        ) : (
-          <RefreshIcon />
-        )}
-      </IconButton>
+      <span>
+        <IconButton
+          onClick={onRefresh}
+          disabled={isLoading}
+          size={size}
+          color="primary"
+          sx={{
+            transition: 'transform 0.2s ease',
+            '&:hover': {
+              transform: 'rotate(180deg)',
+            },
+          }}
+        >
+          {isLoading ? (
+            <CircularProgress size={size === "small" ? 16 : size === "large" ? 28 : 24} />
+          ) : (
+            <RefreshIcon />
+          )}
+        </IconButton>
+      </span>
     </Tooltip>
   );
 };
