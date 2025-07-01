@@ -383,61 +383,105 @@ def get_enhanced_analytics(db, company_id: str = None) -> Dict[str, Any]:
         return {}
 
 def get_resource_reference_analysis(db, company_id: str = None) -> Dict[str, Any]:
-    """資料の参照回数分析"""
+    """資料参照回数分析（CRUD操作で実装）"""
     try:
-        # チャット履歴から資料参照データを取得
-        base_query = """
-        SELECT 
-            ds.name as resource_name,
-            ds.type as resource_type,
-            COUNT(ch.id) as reference_count,
-            COUNT(DISTINCT ch.employee_id) as unique_users,
-            COUNT(DISTINCT DATE(ch.timestamp)) as unique_days,
-            MAX(ch.timestamp) as last_referenced,
-            AVG(CASE 
-                WHEN ch.sentiment = 'positive' THEN 3
-                WHEN ch.sentiment = 'neutral' THEN 2
-                WHEN ch.sentiment = 'negative' THEN 1
-                ELSE 2
-            END) as avg_satisfaction
-        FROM chat_history ch
-        LEFT JOIN document_sources ds ON ds.id = ANY(
-            SELECT unnest(string_to_array(ch.source_document, ','))::int
-        )
-        WHERE ds.name IS NOT NULL
-        """
-        
+        # chat_historyテーブルから関連データを取得
+        chat_filters = {}
         if company_id:
-            base_query += f" AND ch.company_id = '{company_id}'"
+            chat_filters["company_id"] = company_id
         
-        base_query += """
-        GROUP BY ds.name, ds.type
-        ORDER BY reference_count DESC
-        """
+        chat_result = select_data("chat_history", 
+                                 columns="source_document, employee_id, timestamp, sentiment", 
+                                 filters=chat_filters)
         
-        result = execute_query(base_query)
-        
-        if not result:
+        if not chat_result or not chat_result.data:
             return {
                 "resources": [],
                 "total_references": 0,
                 "most_referenced": None,
                 "least_referenced": None,
-                "summary": "データが不足しています"
+                "summary": "チャット履歴データが不足しています"
             }
         
+        # document_sourcesテーブルから資料情報を取得
+        doc_filters = {}
+        if company_id:
+            doc_filters["company_id"] = company_id
+        
+        doc_result = select_data("document_sources", 
+                                columns="name, type, id",
+                                filters=doc_filters)
+        
+        # 資料名のマッピングを作成
+        doc_mapping = {}
+        if doc_result and doc_result.data:
+            for doc in doc_result.data:
+                doc_mapping[doc.get("name", "")] = {
+                    "name": safe_str(doc.get("name", "不明")),
+                    "type": safe_str(doc.get("type", "不明"))
+                }
+        
+        # チャット履歴から参照回数を集計
+        resource_stats = {}
+        for chat in chat_result.data:
+            source_doc = safe_str(chat.get("source_document", ""))
+            if source_doc and source_doc != "" and source_doc != "None":
+                if source_doc not in resource_stats:
+                    doc_info = doc_mapping.get(source_doc, {"name": source_doc, "type": "不明"})
+                    resource_stats[source_doc] = {
+                        "name": doc_info["name"],
+                        "type": doc_info["type"],
+                        "reference_count": 0,
+                        "unique_users": set(),
+                        "unique_days": set(),
+                        "last_referenced": None,
+                        "sentiments": []
+                    }
+                
+                resource_stats[source_doc]["reference_count"] += 1
+                
+                employee_id = safe_str(chat.get("employee_id", ""))
+                if employee_id:
+                    resource_stats[source_doc]["unique_users"].add(employee_id)
+                
+                timestamp = safe_str(chat.get("timestamp", ""))
+                if timestamp:
+                    date_part = timestamp.split(" ")[0] if " " in timestamp else timestamp.split("T")[0]
+                    resource_stats[source_doc]["unique_days"].add(date_part)
+                    resource_stats[source_doc]["last_referenced"] = timestamp
+                
+                sentiment = safe_str(chat.get("sentiment", "neutral"))
+                resource_stats[source_doc]["sentiments"].append(sentiment)
+        
+        # 結果をフォーマット
         resources = []
-        for row in result:
+        for source_doc, stats in resource_stats.items():
+            # 平均満足度を計算（sentiment based）
+            sentiments = stats["sentiments"]
+            sentiment_score = 2.0  # デフォルト
+            if sentiments:
+                positive_count = sentiments.count("positive")
+                neutral_count = sentiments.count("neutral") 
+                negative_count = sentiments.count("negative")
+                total_sentiments = len(sentiments)
+                if total_sentiments > 0:
+                    sentiment_score = (positive_count * 3 + neutral_count * 2 + negative_count * 1) / total_sentiments
+            
+            unique_users_count = len(stats["unique_users"])
+            
             resources.append({
-                "name": safe_str(row.get("resource_name", "不明")),
-                "type": safe_str(row.get("resource_type", "不明")),
-                "reference_count": safe_int(row.get("reference_count", 0)),
-                "unique_users": safe_int(row.get("unique_users", 0)),
-                "unique_days": safe_int(row.get("unique_days", 0)),
-                "last_referenced": safe_str(row.get("last_referenced")),
-                "avg_satisfaction": round(safe_float(row.get("avg_satisfaction", 2.0)), 2) if row.get("avg_satisfaction") else 2.0,
-                "usage_intensity": round(safe_int(row.get("reference_count", 0)) / max(safe_int(row.get("unique_users", 1)), 1), 2)
+                "name": stats["name"],
+                "type": stats["type"],
+                "reference_count": stats["reference_count"],
+                "unique_users": unique_users_count,
+                "unique_days": len(stats["unique_days"]),
+                "last_referenced": stats["last_referenced"],
+                "avg_satisfaction": round(sentiment_score, 2),
+                "usage_intensity": round(stats["reference_count"] / max(unique_users_count, 1), 2)
             })
+        
+        # 参照回数で降順ソート
+        resources.sort(key=lambda x: x["reference_count"], reverse=True)
         
         total_references = sum(r["reference_count"] for r in resources)
         most_referenced = resources[0] if resources else None
@@ -463,39 +507,18 @@ def get_resource_reference_analysis(db, company_id: str = None) -> Dict[str, Any
         }
 
 def get_category_distribution_analysis(db, company_id: str = None) -> Dict[str, Any]:
-    """質問カテゴリ分布と偏り分析"""
+    """質問カテゴリ分布と偏り分析（CRUD操作で実装）"""
     try:
-        # カテゴリ別の詳細分析
-        base_query = """
-        SELECT 
-            category,
-            COUNT(*) as count,
-            COUNT(DISTINCT employee_id) as unique_users,
-            COUNT(DISTINCT DATE(timestamp)) as unique_days,
-            AVG(CASE 
-                WHEN sentiment = 'positive' THEN 3
-                WHEN sentiment = 'neutral' THEN 2
-                WHEN sentiment = 'negative' THEN 1
-                ELSE 2
-            END) as avg_sentiment_score,
-            SUM(CASE WHEN sentiment = 'positive' THEN 1 ELSE 0 END) as positive_count,
-            SUM(CASE WHEN sentiment = 'neutral' THEN 1 ELSE 0 END) as neutral_count,
-            SUM(CASE WHEN sentiment = 'negative' THEN 1 ELSE 0 END) as negative_count
-        FROM chat_history
-        WHERE category IS NOT NULL AND category != ''
-        """
-        
+        # chat_historyテーブルからカテゴリ関連データを取得
+        chat_filters = {}
         if company_id:
-            base_query += f" AND company_id = '{company_id}'"
+            chat_filters["company_id"] = company_id
         
-        base_query += """
-        GROUP BY category
-        ORDER BY count DESC
-        """
+        chat_result = select_data("chat_history", 
+                                 columns="category, employee_id, timestamp, sentiment", 
+                                 filters=chat_filters)
         
-        result = execute_query(base_query)
-        
-        if not result:
+        if not chat_result or not chat_result.data:
             return {
                 "categories": [],
                 "distribution": {},
@@ -503,24 +526,68 @@ def get_category_distribution_analysis(db, company_id: str = None) -> Dict[str, 
                 "summary": "カテゴリデータが不足しています"
             }
         
-        categories = []
+        # カテゴリ別統計を集計
+        category_stats = {}
         total_questions = 0
         
-        for row in result:
-            # 安全なデータ変換を使用
-            count = safe_int(row.get("count", 0))
-            total_questions += count
+        for chat in chat_result.data:
+            category = safe_str(chat.get("category", "")).strip()
+            if not category or category == "None":
+                category = "未分類"
+            
+            if category not in category_stats:
+                category_stats[category] = {
+                    "category": category,
+                    "count": 0,
+                    "unique_users": set(),
+                    "unique_days": set(),
+                    "sentiments": []
+                }
+            
+            category_stats[category]["count"] += 1
+            total_questions += 1
+            
+            employee_id = safe_str(chat.get("employee_id", ""))
+            if employee_id:
+                category_stats[category]["unique_users"].add(employee_id)
+            
+            timestamp = safe_str(chat.get("timestamp", ""))
+            if timestamp:
+                date_part = timestamp.split(" ")[0] if " " in timestamp else timestamp.split("T")[0]
+                category_stats[category]["unique_days"].add(date_part)
+            
+            sentiment = safe_str(chat.get("sentiment", "neutral"))
+            category_stats[category]["sentiments"].append(sentiment)
+        
+        # カテゴリリストを作成
+        categories = []
+        for category, stats in category_stats.items():
+            sentiments = stats["sentiments"]
+            
+            # 感情別カウント
+            positive_count = sentiments.count("positive")
+            neutral_count = sentiments.count("neutral")
+            negative_count = sentiments.count("negative")
+            
+            # 平均感情スコア計算
+            if sentiments:
+                avg_sentiment_score = (positive_count * 3 + neutral_count * 2 + negative_count * 1) / len(sentiments)
+            else:
+                avg_sentiment_score = 2.0
             
             categories.append({
-                "category": safe_str(row.get("category", "不明")),
-                "count": count,
-                "unique_users": safe_int(row.get("unique_users", 0)),
-                "unique_days": safe_int(row.get("unique_days", 0)),
-                "avg_sentiment_score": round(safe_float(row.get("avg_sentiment_score", 2.0)), 2),
-                "positive_count": safe_int(row.get("positive_count", 0)),
-                "neutral_count": safe_int(row.get("neutral_count", 0)),
-                "negative_count": safe_int(row.get("negative_count", 0))
+                "category": category,
+                "count": stats["count"],
+                "unique_users": len(stats["unique_users"]),
+                "unique_days": len(stats["unique_days"]),
+                "avg_sentiment_score": round(avg_sentiment_score, 2),
+                "positive_count": positive_count,
+                "neutral_count": neutral_count,
+                "negative_count": negative_count
             })
+        
+        # カウント順でソート
+        categories.sort(key=lambda x: x["count"], reverse=True)
         
         # 分布とバイアス分析
         distribution = {}
@@ -545,8 +612,8 @@ def get_category_distribution_analysis(db, company_id: str = None) -> Dict[str, 
             }
         
         # トップ3とボトム3を特定
-        top_categories = sorted(categories, key=lambda x: x["count"], reverse=True)[:3]
-        bottom_categories = sorted(categories, key=lambda x: x["count"])[:3] if len(categories) > 3 else []
+        top_categories = categories[:3]
+        bottom_categories = categories[-3:] if len(categories) > 3 else []
         
         return {
             "categories": categories,
@@ -571,54 +638,82 @@ def get_category_distribution_analysis(db, company_id: str = None) -> Dict[str, 
         }
 
 def get_active_user_trends(db, company_id: str = None, days: int = 30) -> Dict[str, Any]:
-    """アクティブユーザー推移分析"""
+    """アクティブユーザー推移分析（CRUD操作で実装）"""
     try:
-        # 日別アクティブユーザー数
-        base_query = """
-        SELECT 
-            DATE(timestamp) as date,
-            COUNT(DISTINCT employee_id) as active_users,
-            COUNT(*) as total_messages,
-            COUNT(DISTINCT employee_name) as unique_names,
-            AVG(CASE 
-                WHEN sentiment = 'positive' THEN 1 
-                ELSE 0 
-            END) as positive_ratio
-        FROM chat_history
-        WHERE timestamp >= %s
-        """
+        from datetime import datetime, timedelta
         
+        # 過去指定日数分のチャット履歴を取得
+        chat_filters = {}
         if company_id:
-            base_query += f" AND company_id = '{company_id}'"
+            chat_filters["company_id"] = company_id
         
-        base_query += """
-        GROUP BY DATE(timestamp)
-        ORDER BY DATE(timestamp)
-        """
+        chat_result = select_data("chat_history", 
+                                 columns="employee_id, employee_name, timestamp, sentiment", 
+                                 filters=chat_filters)
         
-        # 過去30日間のデータを取得
-        start_date = datetime.now() - timedelta(days=days)
-        params = [start_date.strftime('%Y-%m-%d')]
-        
-        # パラメータ置換
-        formatted_query = base_query.replace('%s', f"'{params[0]}'")
-        result = execute_query(formatted_query)
-        
-        if not result:
+        if not chat_result or not chat_result.data:
             return {
                 "daily_trends": [],
                 "weekly_trends": [],
                 "summary": "ユーザー活動データが不足しています"
             }
         
+        # 日付フィルタリング
+        start_date = datetime.now() - timedelta(days=days)
+        filtered_chats = []
+        
+        for chat in chat_result.data:
+            timestamp_str = safe_str(chat.get("timestamp", ""))
+            if timestamp_str:
+                try:
+                    # タイムスタンプをパース
+                    if "T" in timestamp_str:
+                        chat_date = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00')).replace(tzinfo=None)
+                    else:
+                        chat_date = datetime.strptime(timestamp_str.split('.')[0], '%Y-%m-%d %H:%M:%S')
+                    
+                    if chat_date >= start_date:
+                        filtered_chats.append({
+                            "employee_id": safe_str(chat.get("employee_id", "")),
+                            "employee_name": safe_str(chat.get("employee_name", "")),
+                            "date": chat_date.date(),
+                            "sentiment": safe_str(chat.get("sentiment", "neutral"))
+                        })
+                except:
+                    continue  # パースできない日付はスキップ
+        
+        # 日別統計を集計
+        daily_stats = {}
+        for chat in filtered_chats:
+            date_str = chat["date"].strftime('%Y-%m-%d')
+            
+            if date_str not in daily_stats:
+                daily_stats[date_str] = {
+                    "date": date_str,
+                    "active_users": set(),
+                    "unique_names": set(),
+                    "total_messages": 0,
+                    "positive_count": 0
+                }
+            
+            daily_stats[date_str]["active_users"].add(chat["employee_id"])
+            daily_stats[date_str]["unique_names"].add(chat["employee_name"])
+            daily_stats[date_str]["total_messages"] += 1
+            
+            if chat["sentiment"] == "positive":
+                daily_stats[date_str]["positive_count"] += 1
+        
+        # 日次トレンドリストを作成
         daily_trends = []
-        for row in result:
+        for date_str, stats in sorted(daily_stats.items()):
+            positive_ratio = round(stats["positive_count"] / stats["total_messages"], 2) if stats["total_messages"] > 0 else 0
+            
             daily_trends.append({
-                "date": safe_str(row.get("date")),
-                "active_users": safe_int(row.get("active_users", 0)),
-                "total_messages": safe_int(row.get("total_messages", 0)),
-                "unique_names": safe_int(row.get("unique_names", 0)),
-                "positive_ratio": round(safe_float(row.get("positive_ratio", 0)), 2)
+                "date": date_str,
+                "active_users": len(stats["active_users"]),
+                "total_messages": stats["total_messages"],
+                "unique_names": len(stats["unique_names"]),
+                "positive_ratio": positive_ratio
             })
         
         # 週次トレンド計算
@@ -642,6 +737,9 @@ def get_active_user_trends(db, company_id: str = None, days: int = 30) -> Dict[s
                     })
         
         # トレンド分析
+        trend_direction = "insufficient_data"
+        trend_percentage = 0
+        
         if len(daily_trends) >= 7:
             recent_week = daily_trends[-7:]
             previous_week = daily_trends[-14:-7] if len(daily_trends) >= 14 else []
@@ -651,9 +749,6 @@ def get_active_user_trends(db, company_id: str = None, days: int = 30) -> Dict[s
             
             trend_direction = "increasing" if recent_avg > previous_avg else "decreasing" if recent_avg < previous_avg else "stable"
             trend_percentage = round(((recent_avg - previous_avg) / previous_avg * 100), 2) if previous_avg > 0 else 0
-        else:
-            trend_direction = "insufficient_data"
-            trend_percentage = 0
         
         return {
             "daily_trends": daily_trends,
@@ -679,31 +774,18 @@ def get_active_user_trends(db, company_id: str = None, days: int = 30) -> Dict[s
         }
 
 def get_unresolved_repeat_analysis(db, company_id: str = None) -> Dict[str, Any]:
-    """未解決・再質問の傾向分析"""
+    """未解決・再質問の傾向分析（CRUD操作で実装）"""
     try:
-        # 類似質問の検出（簡易版）
-        base_query = """
-        SELECT 
-            employee_id,
-            employee_name,
-            user_message,
-            bot_response,
-            timestamp,
-            sentiment,
-            category,
-            LENGTH(bot_response) as response_length
-        FROM chat_history
-        WHERE employee_id IS NOT NULL
-        """
-        
+        # chat_historyテーブルから必要なデータを取得
+        chat_filters = {}
         if company_id:
-            base_query += f" AND company_id = '{company_id}'"
+            chat_filters["company_id"] = company_id
         
-        base_query += " ORDER BY employee_id, timestamp"
+        chat_result = select_data("chat_history", 
+                                 columns="employee_id, employee_name, user_message, bot_response, timestamp, sentiment, category", 
+                                 filters=chat_filters)
         
-        result = execute_query(base_query)
-        
-        if not result:
+        if not chat_result or not chat_result.data:
             return {
                 "repeat_questions": [],
                 "unresolved_patterns": [],
@@ -712,20 +794,27 @@ def get_unresolved_repeat_analysis(db, company_id: str = None) -> Dict[str, Any]
         
         # ユーザー別の質問履歴を構築
         user_questions = {}
-        for row in result:
-            employee_id = safe_str(row.get("employee_id"))
+        for chat in chat_result.data:
+            employee_id = safe_str(chat.get("employee_id", ""))
+            if not employee_id or employee_id == "None":
+                continue
+                
             if employee_id not in user_questions:
                 user_questions[employee_id] = []
             
             user_questions[employee_id].append({
-                "message": safe_str(row.get("user_message", "")),
-                "response": safe_str(row.get("bot_response", "")),
-                "timestamp": safe_str(row.get("timestamp")),
-                "sentiment": safe_str(row.get("sentiment", "neutral")),
-                "category": safe_str(row.get("category", "")),
-                "response_length": safe_int(row.get("response_length", 0)),
-                "employee_name": safe_str(row.get("employee_name", ""))
+                "message": safe_str(chat.get("user_message", "")),
+                "response": safe_str(chat.get("bot_response", "")),
+                "timestamp": safe_str(chat.get("timestamp", "")),
+                "sentiment": safe_str(chat.get("sentiment", "neutral")),
+                "category": safe_str(chat.get("category", "")),
+                "response_length": len(safe_str(chat.get("bot_response", ""))),
+                "employee_name": safe_str(chat.get("employee_name", ""))
             })
+        
+        # 各ユーザーの質問を時系列でソート
+        for employee_id in user_questions:
+            user_questions[employee_id].sort(key=lambda x: x["timestamp"])
         
         # 再質問パターンの検出
         repeat_questions = []
@@ -749,8 +838,13 @@ def get_unresolved_repeat_analysis(db, company_id: str = None) -> Dict[str, Any]
                     
                     if similarity > 0.3:  # 30%以上の類似性
                         try:
-                            time_diff = datetime.fromisoformat(next_q["timestamp"].replace('Z', '+00:00')) - \
-                                       datetime.fromisoformat(current["timestamp"].replace('Z', '+00:00'))
+                            from datetime import datetime
+                            if "T" in current["timestamp"] and "T" in next_q["timestamp"]:
+                                time1 = datetime.fromisoformat(current["timestamp"].replace('Z', '+00:00'))
+                                time2 = datetime.fromisoformat(next_q["timestamp"].replace('Z', '+00:00'))
+                                time_diff = time2 - time1
+                            else:
+                                time_diff = "不明"
                         except:
                             time_diff = "不明"
                         
@@ -815,33 +909,18 @@ def get_unresolved_repeat_analysis(db, company_id: str = None) -> Dict[str, Any]
         }
 
 def get_detailed_sentiment_analysis(db, company_id: str = None) -> Dict[str, Any]:
-    """詳細な感情分析"""
+    """詳細な感情分析（CRUD操作で実装）"""
     try:
-        # 感情分析データの取得
-        base_query = """
-        SELECT 
-            sentiment,
-            category,
-            COUNT(*) as count,
-            COUNT(DISTINCT employee_id) as unique_users,
-            AVG(LENGTH(user_message)) as avg_question_length,
-            AVG(LENGTH(bot_response)) as avg_response_length,
-            DATE(timestamp) as date
-        FROM chat_history
-        WHERE sentiment IS NOT NULL
-        """
-        
+        # chat_historyテーブルから感情データを取得
+        chat_filters = {}
         if company_id:
-            base_query += f" AND company_id = '{company_id}'"
+            chat_filters["company_id"] = company_id
         
-        base_query += """
-        GROUP BY sentiment, category, DATE(timestamp)
-        ORDER BY date DESC, count DESC
-        """
+        chat_result = select_data("chat_history", 
+                                 columns="sentiment, category, employee_id, user_message, bot_response, timestamp", 
+                                 filters=chat_filters)
         
-        result = execute_query(base_query)
-        
-        if not result:
+        if not chat_result or not chat_result.data:
             return {
                 "sentiment_distribution": {},
                 "sentiment_by_category": {},
@@ -854,30 +933,35 @@ def get_detailed_sentiment_analysis(db, company_id: str = None) -> Dict[str, Any
         sentiment_by_category = {}
         temporal_sentiment = {}
         
-        for row in result:
-            sentiment = safe_str(row.get("sentiment", "neutral"))
-            category = safe_str(row.get("category", "その他"))
-            date = safe_str(row.get("date", ""))
-            count = safe_int(row.get("count", 0))
+        for chat in chat_result.data:
+            sentiment = safe_str(chat.get("sentiment", "neutral"))
+            category = safe_str(chat.get("category", "その他"))
+            timestamp = safe_str(chat.get("timestamp", ""))
+            
+            # 日付を抽出
+            if timestamp:
+                date = timestamp.split(" ")[0] if " " in timestamp else timestamp.split("T")[0]
+            else:
+                date = "不明"
             
             # 全体の感情分布
             if sentiment not in sentiment_distribution:
                 sentiment_distribution[sentiment] = 0
-            sentiment_distribution[sentiment] += count
+            sentiment_distribution[sentiment] += 1
             
             # カテゴリ別感情分布
             if category not in sentiment_by_category:
                 sentiment_by_category[category] = {}
             if sentiment not in sentiment_by_category[category]:
                 sentiment_by_category[category][sentiment] = 0
-            sentiment_by_category[category][sentiment] += count
+            sentiment_by_category[category][sentiment] += 1
             
             # 時系列感情推移
             if date not in temporal_sentiment:
                 temporal_sentiment[date] = {}
             if sentiment not in temporal_sentiment[date]:
                 temporal_sentiment[date][sentiment] = 0
-            temporal_sentiment[date][sentiment] += count
+            temporal_sentiment[date][sentiment] += 1
         
         # 感情スコア計算
         total_responses = sum(sentiment_distribution.values())
@@ -913,7 +997,7 @@ def get_detailed_sentiment_analysis(db, company_id: str = None) -> Dict[str, Any
         }
 
 async def generate_gemini_insights(analytics_data: Dict[str, Any], db, company_id: str = None) -> str:
-    """Geminiを使用して分析データから洞察を生成（全チャット履歴を含む）"""
+    """Geminiを使用して分析データから洞察を生成（CRUD操作で実装）"""
     try:
         # Gemini設定を確認
         from modules.config import setup_gemini
@@ -922,52 +1006,45 @@ async def generate_gemini_insights(analytics_data: Dict[str, Any], db, company_i
         if not model:
             return "Gemini APIが利用できません。基本的な統計分析のみ表示しています。"
         
-        # 全チャット履歴を取得（大幅に増量）
-        chat_history_query = """
-        SELECT 
-            employee_name,
-            user_message,
-            bot_response,
-            timestamp,
-            sentiment,
-            category,
-            company_name
-        FROM chat_history
-        WHERE 1=1
-        """
-        
+        # 全チャット履歴を取得（CRUD操作で実装）
+        chat_filters = {}
         if company_id:
-            chat_history_query += f" AND company_id = '{company_id}'"
+            chat_filters["company_id"] = company_id
         
-        chat_history_query += " ORDER BY timestamp DESC LIMIT 2000"  # 最新2000件を取得（大幅増量）
+        chat_result = select_data("chat_history", 
+                                 columns="employee_name, user_message, bot_response, timestamp, sentiment, category, company_id",
+                                 filters=chat_filters)
         
-        chat_history = execute_query(chat_history_query)
-        
-        # チャット履歴をテキスト形式に変換（より多くのデータを含める）
+        # チャット履歴をテキスト形式に変換
         chat_history_text = ""
         recent_patterns = []
-        if chat_history:
+        
+        if chat_result and chat_result.data:
             # 最新300件の詳細なやり取りを分析用に整形
-            for i, row in enumerate(chat_history[:300]):
-                timestamp = safe_str(row.get('timestamp', ''))
-                employee_name = safe_str(row.get('employee_name', '匿名'))
-                sentiment = safe_str(row.get('sentiment', 'neutral'))
-                user_message = safe_str(row.get('user_message', ''))
-                bot_response = safe_str(row.get('bot_response', ''))
-                category = safe_str(row.get('category', 'なし'))
+            chat_data = chat_result.data
+            # タイムスタンプでソート（新しいものから）
+            chat_data.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+            
+            for i, chat in enumerate(chat_data[:300]):
+                timestamp = safe_str(chat.get('timestamp', ''))
+                employee_name = safe_str(chat.get('employee_name', '匿名'))
+                sentiment = safe_str(chat.get('sentiment', 'neutral'))
+                user_message = safe_str(chat.get('user_message', ''))
+                bot_response = safe_str(chat.get('bot_response', ''))
+                category = safe_str(chat.get('category', 'なし'))
                 
-                # より詳細なパターン抽出
+                # 詳細なパターン抽出
                 recent_patterns.append({
                     'index': i + 1,
                     'employee': employee_name,
                     'sentiment': sentiment,
-                    'question': user_message[:300],  # 文字数制限を緩和
-                    'response': bot_response[:300],  # 文字数制限を緩和
+                    'question': user_message[:300],
+                    'response': bot_response[:300],
                     'category': category,
                     'timestamp': timestamp[:10]  # 日付のみ
                 })
             
-            # より構造化されたチャット履歴テキスト
+            # 構造化されたチャット履歴テキスト
             chat_history_text = "### 最新のやり取りパターン（最新300件）\n\n"
             for pattern in recent_patterns[:50]:  # 代表的な50件を詳細表示
                 chat_history_text += f"**{pattern['index']}. [{pattern['timestamp']}] {pattern['employee']} ({pattern['sentiment']})**\n"
@@ -975,12 +1052,12 @@ async def generate_gemini_insights(analytics_data: Dict[str, Any], db, company_i
                 chat_history_text += f"回答: {pattern['response']}\n"
                 chat_history_text += f"カテゴリ: {pattern['category']}\n\n"
         
-        # より詳細で実用的なプロンプトを作成
+        # 詳細で実用的なプロンプトを作成
         prompt = f"""
 あなたは企業のAIチャットボット分析専門家です。以下のデータから6つの分析項目に分けて回答してください。
 
 # 📊 データ概要
-- 総チャット履歴数: {len(chat_history) if chat_history else 0}件
+- 総チャット履歴数: {len(chat_result.data) if chat_result and chat_result.data else 0}件
 - 総参照回数: {analytics_data.get('resource_reference_count', {}).get('total_references', 0)}回
 - アクティブリソース: {analytics_data.get('resource_reference_count', {}).get('active_resources', 0)}個
 - 総質問数: {analytics_data.get('category_distribution_analysis', {}).get('total_questions', 0)}件

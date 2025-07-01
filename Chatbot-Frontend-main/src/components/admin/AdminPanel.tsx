@@ -254,9 +254,6 @@ const AdminPanel: React.FC = () => {
   // 強化分析データの状態
   const [enhancedAnalysis, setEnhancedAnalysis] = useState<any>(null);
   const [isEnhancedAnalysisLoading, setIsEnhancedAnalysisLoading] = useState(false);
-  
-  // 分析処理のAbortController
-  const [analysisAbortController, setAnalysisAbortController] = useState<AbortController | null>(null);
 
   // 分析データの取得（共有サービス使用、強化分析も並行取得）
   const fetchAnalysis = async (forceRefresh = false) => {
@@ -270,20 +267,11 @@ const AdminPanel: React.FC = () => {
       return;
     }
     
-    if (analysis && Object.keys(analysis.category_distribution).length > 0 && !forceRefresh) {
+    // 強制更新でない場合、既存データがあればスキップ
+    if (!forceRefresh && analysis && Object.keys(analysis.category_distribution || {}).length > 0 && enhancedAnalysis) {
       console.log("🔍 [DEBUG] 既に有効なデータがあるためスキップ");
-      return; // 既に有効なデータがある場合は何もしない
+      return;
     }
-
-    // 既存の分析処理をキャンセル
-    if (analysisAbortController) {
-      console.log('🛑 既存の分析処理をキャンセルします...');
-      analysisAbortController.abort();
-    }
-
-    // 新しいAbortControllerを作成
-    const newAbortController = new AbortController();
-    setAnalysisAbortController(newAbortController);
 
     console.log("🔍 [DEBUG] ローディング状態を開始");
     setIsAnalysisLoading(true);
@@ -301,10 +289,10 @@ const AdminPanel: React.FC = () => {
       }
       
       console.log("🔍 [DEBUG] 基本分析とデータベース強化分析を並行取得開始");
-      // 基本分析とデータベース強化分析を並行取得（高速）
+      // 基本分析とデータベース強化分析を並行取得（AbortSignal削除）
       const [basicData, enhancedDatabaseData] = await Promise.allSettled([
-        SharedDataService.getAnalysis(newAbortController.signal),
-        SharedDataService.getEnhancedAnalysisDatabase(newAbortController.signal)
+        SharedDataService.getAnalysis(),
+        SharedDataService.getEnhancedAnalysisDatabase()
       ]);
       
       console.log("🔍 [DEBUG] Promise.allSettled 完了");
@@ -357,12 +345,7 @@ const AdminPanel: React.FC = () => {
           setAnalysis(fallbackData);
         }
       } else {
-        // CanceledError の場合は無視
-        if (basicData.reason?.name === 'CanceledError' || basicData.reason?.message === 'canceled') {
-          console.log("🔍 [INFO] 基本分析がキャンセルされました");
-        } else {
-          console.error("🔍 [ERROR] 基本分析の取得に失敗:", basicData.reason);
-        }
+        console.error("🔍 [ERROR] 基本分析の取得に失敗:", basicData.reason);
       }
       
       // データベース強化分析データの処理（AI洞察なし）
@@ -382,22 +365,11 @@ const AdminPanel: React.FC = () => {
           setEnhancedAnalysis(null);
         }
       } else {
-        // CanceledError の場合は無視
-        if (enhancedDatabaseData.reason?.name === 'CanceledError' || enhancedDatabaseData.reason?.message === 'canceled') {
-          console.log("🔍 [INFO] 強化分析がキャンセルされました");
-        } else {
-          console.error("🔍 [ERROR] データベース強化分析の取得に失敗:", enhancedDatabaseData.reason);
-        }
+        console.error("🔍 [ERROR] データベース強化分析の取得に失敗:", enhancedDatabaseData.reason);
         setEnhancedAnalysis(null);
       }
       
     } catch (error: any) {
-      // AbortErrorやCanceledErrorの場合はユーザーによるキャンセルなので静かに処理
-      if (error.name === 'AbortError' || error.name === 'CanceledError' || error.message === 'canceled' || (error.message && error.message.includes('aborted'))) {
-        console.log('🛑 分析処理がユーザーによってキャンセルされました');
-        return;
-      }
-      
       console.error("🔍 [ERROR] 分析データの取得に失敗しました:", error);
       console.error("🔍 [ERROR] エラーの詳細:", error.stack);
       // エラーメッセージを表示
@@ -408,8 +380,6 @@ const AdminPanel: React.FC = () => {
       console.log("🔍 [DEBUG] ローディング状態を終了");
       setIsAnalysisLoading(false);
       setIsEnhancedAnalysisLoading(false);
-      // 完了したらAbortControllerをクリア
-      setAnalysisAbortController(null);
       console.log("🔍 [DEBUG] fetchAnalysis 完了");
     }
   };
@@ -427,29 +397,13 @@ const AdminPanel: React.FC = () => {
       return;
     }
     
-    // 既に進行中の分析処理がある場合はキャンセル
-    if (analysisAbortController) {
-      console.log('🛑 既存の分析処理をキャンセル');
-      analysisAbortController.abort();
-    }
-    
-    // 新しいAbortControllerを作成
-    const newAbortController = new AbortController();
-    setAnalysisAbortController(newAbortController);
-    
     setIsEnhancedAnalysisLoading(true);
     
     try {
       console.log("🤖 AI洞察生成開始...");
       const { SharedDataService } = await import('../../services/sharedDataService');
       
-      const aiInsightsData = await SharedDataService.getAIInsights(newAbortController.signal);
-      
-      // 分析がキャンセルされた場合は処理を中断
-      if (newAbortController.signal.aborted) {
-        console.log('🛑 AI洞察生成がキャンセルされました');
-        return;
-      }
+      const aiInsightsData = await SharedDataService.getAIInsights();
       
       console.log("🤖 AI洞察取得結果:", aiInsightsData);
       
@@ -464,12 +418,6 @@ const AdminPanel: React.FC = () => {
       }
       
     } catch (error: any) {
-      // AbortErrorやCanceledErrorの場合はユーザーによるキャンセルなので静かに処理
-      if (error.name === 'AbortError' || error.name === 'CanceledError' || error.message === 'canceled' || (error.message && error.message.includes('aborted'))) {
-        console.log('🛑 AI洞察生成がユーザーによってキャンセルされました');
-        return;
-      }
-      
       console.error("AI洞察の生成に失敗しました:", error);
       
       // エラー時は既存のデータにエラーメッセージを設定
@@ -482,8 +430,6 @@ const AdminPanel: React.FC = () => {
       }
     } finally {
       setIsEnhancedAnalysisLoading(false);
-      // 完了したらAbortControllerをクリア
-      setAnalysisAbortController(null);
     }
   };
 
@@ -727,13 +673,9 @@ const AdminPanel: React.FC = () => {
   // コンポーネントがアンマウントされる際のクリーンアップ
   useEffect(() => {
     return () => {
-      // 進行中の分析処理をキャンセル
-      if (analysisAbortController) {
-        console.log('🧹 AdminPanel: コンポーネントアンマウント - 進行中の分析をキャンセル');
-        analysisAbortController.abort();
-      }
+      console.log('🧹 AdminPanel: コンポーネントアンマウント');
     };
-  }, [analysisAbortController]);
+  }, []);
 
   // 会社詳細情報の取得
   const fetchCompanyDetails = async () => {
@@ -976,19 +918,6 @@ const AdminPanel: React.FC = () => {
 
   // タブが変更されたときのハンドラ（キャッシュ活用で高速化）
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
-    const previousTabIndex = getActualTabIndex(tabValue);
-    const nextTabIndex = getActualTabIndex(newValue);
-    
-    // 分析タブから他のタブに移動する場合、進行中の分析処理をキャンセル
-    if (previousTabIndex === 1 && nextTabIndex !== 1 && analysisAbortController) {
-      console.log('🛑 分析タブから離れるため、進行中の分析をキャンセルします');
-      analysisAbortController.abort();
-      setAnalysisAbortController(null);
-      // ローディング状態もリセット
-      setIsAnalysisLoading(false);
-      setIsEnhancedAnalysisLoading(false);
-    }
-    
     setTabValue(newValue);
 
     // タブに応じてデータを取得（キャッシュがあれば即座に表示）
@@ -1002,23 +931,14 @@ const AdminPanel: React.FC = () => {
       case 1: // 分析
         console.log("📋 [TAB_CHANGE] 分析タブに切り替え");
         console.log("📋 [TAB_CHANGE] 現在の analysis:", analysis);
-        console.log("📋 [TAB_CHANGE] analysis?.category_distribution:", analysis?.category_distribution);
-        console.log("📋 [TAB_CHANGE] Object.keys(analysis?.category_distribution || {}).length:", Object.keys(analysis?.category_distribution || {}).length);
+        console.log("📋 [TAB_CHANGE] 現在の enhancedAnalysis:", enhancedAnalysis);
         
-        // 基本分析データがない場合は自動で取得
-        if (!analysis || Object.keys(analysis.category_distribution).length === 0) {
-          console.log("📋 [TAB_CHANGE] 分析データがないため fetchAnalysis() を実行");
+        // データがない場合のみ自動で取得（重複取得を防止）
+        if (!analysis || Object.keys(analysis?.category_distribution || {}).length === 0 || !enhancedAnalysis) {
+          console.log("📋 [TAB_CHANGE] 分析データが不足しているため fetchAnalysis() を実行");
           fetchAnalysis();
         } else {
           console.log("📋 [TAB_CHANGE] 分析データが既に存在するためスキップ");
-        }
-        
-        // 強化分析データがない場合も自動で取得
-        if (!enhancedAnalysis) {
-          console.log("📋 [TAB_CHANGE] 強化分析データがないため fetchAnalysis() を実行");
-          fetchAnalysis();
-        } else {
-          console.log("📋 [TAB_CHANGE] 強化分析データが既に存在:", enhancedAnalysis);
         }
         break;
       case 2: // 社員管理

@@ -469,7 +469,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
   const handleCloseSpecialDialog = () => {
     setSpecialDialogOpen(false);
     setEditingResource(null);
-    // テキストはクリアしない - 次回開いた時に前回の内容を表示
+    setSpecialText(""); // テキストをクリア
   };
 
   return (

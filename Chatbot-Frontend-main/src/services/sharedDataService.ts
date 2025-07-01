@@ -139,7 +139,7 @@ export class SharedDataService {
   /**
    * 分析データを取得（共有キャッシュ使用）
    */
-  static async getAnalysis(abortSignal?: AbortSignal): Promise<any> {
+  static async getAnalysis(): Promise<any> {
     console.log('📊 [SharedDataService] getAnalysis 開始');
     
     return withSharedCache(
@@ -147,9 +147,7 @@ export class SharedDataService {
       async () => {
         console.log('📊 [SharedDataService] 分析データAPI呼び出し開始: /admin/analyze-chats');
         try {
-          const response = await api.get('/admin/analyze-chats', {
-            signal: abortSignal
-          });
+          const response = await api.get('/admin/analyze-chats');
           console.log('📊 [SharedDataService] 分析データAPI呼び出し成功');
           console.log('📊 [SharedDataService] response.status:', response.status);
           console.log('📊 [SharedDataService] response.data:', response.data);
@@ -160,24 +158,17 @@ export class SharedDataService {
           console.error('📊 [SharedDataService] 分析データAPI呼び出し失敗:', error);
           console.error('📊 [SharedDataService] error.message:', error.message);
           console.error('📊 [SharedDataService] error.response:', error.response);
-          
-          // CanceledErrorの場合は特別な処理
-          if (error.name === 'CanceledError' || error.message === 'canceled') {
-            console.log('📊 [SharedDataService] 分析がキャンセルされました');
-          }
-          
           throw error;
         }
       },
-      10 * 60 * 1000, // 10分キャッシュ（計算コストが高い）
-      abortSignal // AbortSignalをwithSharedCacheに渡す
+      10 * 60 * 1000 // 10分キャッシュ（計算コストが高い）
     );
   }
 
   /**
    * 強化分析データを取得（データベース分析のみ・高速）
    */
-  static async getEnhancedAnalysisDatabase(abortSignal?: AbortSignal): Promise<any> {
+  static async getEnhancedAnalysisDatabase(): Promise<any> {
     console.log('🔬 [SharedDataService] getEnhancedAnalysisDatabase 開始');
     
     return withSharedCache(
@@ -185,9 +176,7 @@ export class SharedDataService {
       async () => {
         console.log('🔬 [SharedDataService] 強化分析データAPI呼び出し開始: /admin/enhanced-analysis?include_ai_insights=false');
         try {
-          const response = await api.get('/admin/enhanced-analysis?include_ai_insights=false', {
-            signal: abortSignal
-          });
+          const response = await api.get('/admin/enhanced-analysis?include_ai_insights=false');
           console.log('🔬 [SharedDataService] 強化分析データAPI呼び出し成功');
           console.log('🔬 [SharedDataService] response.status:', response.status);
           console.log('🔬 [SharedDataService] response.data:', response.data);
@@ -198,53 +187,40 @@ export class SharedDataService {
           console.error('🔬 [SharedDataService] 強化分析データAPI呼び出し失敗:', error);
           console.error('🔬 [SharedDataService] error.message:', error.message);
           console.error('🔬 [SharedDataService] error.response:', error.response);
-          
-          // CanceledErrorの場合は特別な処理
-          if (error.name === 'CanceledError' || error.message === 'canceled') {
-            console.log('🔬 [SharedDataService] 強化分析がキャンセルされました');
-          }
-          
           throw error;
         }
       },
-      10 * 60 * 1000, // 10分キャッシュ
-      abortSignal
+      10 * 60 * 1000 // 10分キャッシュ
     );
   }
 
   /**
    * AI洞察データを取得（Gemini分析・20秒程度）
    */
-  static async getAIInsights(abortSignal?: AbortSignal): Promise<any> {
+  static async getAIInsights(): Promise<any> {
     return withSharedCache(
       'ai-insights-shared',
       async () => {
         console.log('🤖 AI洞察を生成中（Gemini分析・共有）...');
-        const response = await api.get('/admin/ai-insights', {
-          signal: abortSignal
-        });
+        const response = await api.get('/admin/ai-insights');
         return response.data;
       },
-      30 * 60 * 1000, // 30分キャッシュ（Gemini処理が重いため長期保持）
-      abortSignal
+      30 * 60 * 1000 // 30分キャッシュ（Gemini処理が重いため長期保持）
     );
   }
 
   /**
    * 強化分析データを取得（AI洞察も含む・従来互換）
    */
-  static async getEnhancedAnalysis(abortSignal?: AbortSignal): Promise<any> {
+  static async getEnhancedAnalysis(): Promise<any> {
     return withSharedCache(
       'enhanced-analysis-full-shared',
       async () => {
         console.log('🔄 強化分析データを取得中（AI洞察含む・共有）...');
-        const response = await api.get('/admin/enhanced-analysis?include_ai_insights=true', {
-          signal: abortSignal
-        });
+        const response = await api.get('/admin/enhanced-analysis?include_ai_insights=true');
         return response.data;
       },
-      15 * 60 * 1000, // 15分キャッシュ
-      abortSignal
+      15 * 60 * 1000 // 15分キャッシュ
     );
   }
 

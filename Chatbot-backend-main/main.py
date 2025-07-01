@@ -38,6 +38,7 @@ from modules.admin import (
 from modules.company import get_company_name, set_company_name
 from modules.auth import get_current_user, get_current_admin, register_new_user, get_admin_or_user, get_company_admin, get_user_with_delete_permission, get_user_creation_permission
 from modules.resource import get_uploaded_resources_by_company_id, toggle_resource_active_by_id, remove_resource_by_id
+from modules import admin
 import json
 from modules.validation import validate_login_input, validate_user_input
 import csv
@@ -128,6 +129,9 @@ async def log_requests(request: Request, call_next):
 
 # アプリケーション起動時にデータベースを初期化
 init_db()
+
+# admin.pyのルーターを登録
+app.include_router(admin.router, prefix="/chatbot/api/admin", tags=["admin"])
 
 # データベース整合性をチェック
 try:
@@ -1810,17 +1814,18 @@ async def admin_update_resource_special(resource_id: str, request: dict, current
         if "description" in request:
             update_fields["description"] = request["description"]
         if "special_instructions" in request:
-            update_fields["special_instructions"] = request["special_instructions"]
+            update_fields["special"] = request["special_instructions"]  # データベースのフィールド名はspecial
         if "special" in request:
-            update_fields["special_instructions"] = request["special"]
+            update_fields["special"] = request["special"]  # データベースのフィールド名はspecial
         
         if not update_fields:
             raise HTTPException(status_code=400, detail="更新可能なフィールドが指定されていません")
         
-        # リソースを更新
-        update_result = update_data("document_sources", update_fields, "id", decoded_id)
+        # リソースを更新（引数の順番を修正）
+        update_result = update_data("document_sources", "id", decoded_id, update_fields)
         
-        if update_result:
+        if update_result and update_result.success:
+            print(f"✅ スペシャル更新成功: {decoded_id} - {update_fields}")
             return {
                 "success": True, 
                 "message": "リソースが正常に更新されました",
@@ -1828,7 +1833,9 @@ async def admin_update_resource_special(resource_id: str, request: dict, current
                 "updated_fields": list(update_fields.keys())
             }
         else:
-            raise HTTPException(status_code=500, detail="リソースの更新に失敗しました")
+            error_msg = update_result.error if update_result else "不明なエラー"
+            print(f"❌ スペシャル更新失敗: {decoded_id} - エラー: {error_msg}")
+            raise HTTPException(status_code=500, detail=f"リソースの更新に失敗しました: {error_msg}")
         
     except HTTPException:
         raise
