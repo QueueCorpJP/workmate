@@ -235,11 +235,13 @@ class VectorSearchSystem:
                     # 結果を辞書のリストに変換
                     search_results = []
                     for row in results:
+                        # document_sources.nameフィールドのみを使用してソース情報を設定
+                        document_name = row['name'] if row['name'] else 'Unknown'
                         search_results.append({
                             'chunk_id': row['chunk_id'],
                             'document_id': row['document_id'],
                             'chunk_index': row['chunk_index'],
-                            'document_name': row['name'],
+                            'document_name': document_name,
                             'document_type': row['type'],
                             'special': row['special'],
                             'snippet': row['snippet'],

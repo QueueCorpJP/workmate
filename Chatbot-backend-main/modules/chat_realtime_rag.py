@@ -210,12 +210,9 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                                 if rag_result.get("gemini_analysis"):
                                     target_entity = rag_result["gemini_analysis"].get('target_entity', '')
                                 
-                                # ソース情報を構築
-                                source_name = f"関連資料 ({search_method})"
-                                if target_entity:
-                                    source_name += f" - {target_entity}"
-                                if keywords:
-                                    source_name += f" [キーワード: {', '.join(keywords[:3])}]"
+                                # ソース情報は document_sources.name のみを使用
+                                # 検索方法やキーワードは含めない
+                                source_name = "関連資料"
                                 
                                 source_info_list.append({
                                     "name": source_name,
