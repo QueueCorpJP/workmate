@@ -28,7 +28,7 @@ from modules.models import (
 )
 from modules.knowledge import process_url, process_file, get_knowledge_base_info
 from modules.knowledge.google_drive import GoogleDriveHandler
-from modules.chat import process_chat, process_chat_chunked, set_model as set_chat_model
+from modules.chat import process_chat_message as process_chat, process_chunked_chat as process_chat_chunked, set_model as set_chat_model
 from modules.admin import (
     get_chat_history, get_chat_history_paginated, analyze_chats, get_employee_details,
     get_employee_usage, get_uploaded_resources, toggle_resource_active,
