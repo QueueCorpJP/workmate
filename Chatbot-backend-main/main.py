@@ -997,17 +997,50 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
         print("🧠 Gemini質問分析統合RAGシステムを使用")
         result = await process_chat_with_realtime_rag(message, db, current_user)
         
-        # ChatResponseオブジェクトが返された場合はそのまま返す
+        # ChatResponseオブジェクトが返された場合
         if hasattr(result, 'response'):
-            return result
+            # sourcesフィールドからsource文字列を生成
+            source_text = ""
+            if hasattr(result, 'sources') and result.sources:
+                # sourcesからファイル名を抽出してカンマ区切りで結合
+                source_names = []
+                for source in result.sources[:3]:  # 最大3つのソースを表示
+                    source_name = source.get('name', '') if isinstance(source, dict) else str(source)
+                    if source_name and source_name not in ['システム回答', 'unknown']:
+                        source_names.append(source_name)
+                source_text = ', '.join(source_names) if source_names else ""
+            
+            print(f"📄 抽出されたソース情報: '{source_text}'")
+            
+            # 新しいChatResponseを作成してsourceフィールドを設定
+            return ChatResponse(
+                response=result.response,
+                source=source_text,
+                remaining_questions=getattr(result, 'remaining_questions', None),
+                limit_reached=getattr(result, 'limit_reached', None)
+            )
         
-        # 辞書形式の場合はChatResponseに変換
-        return ChatResponse(
-            response=result.get("response", "システムエラーが発生しました"),
-            sources=result.get("sources", []),
-            remaining_questions=result.get("remaining_questions", 0),
-            limit_reached=result.get("limit_reached", False)
-        )
+        # 辞書形式の場合
+        source_text = ""
+        if isinstance(result, dict):
+            # sourcesフィールドからsource文字列を生成
+            sources = result.get("sources", [])
+            if sources:
+                source_names = []
+                for source in sources[:3]:  # 最大3つのソースを表示
+                    source_name = source.get('name', '') if isinstance(source, dict) else str(source)
+                    if source_name and source_name not in ['システム回答', 'unknown']:
+                        source_names.append(source_name)
+                source_text = ', '.join(source_names) if source_names else ""
+            
+            print(f"📄 辞書から抽出されたソース情報: '{source_text}'")
+            
+            return ChatResponse(
+                response=result.get("response", "システムエラーが発生しました"),
+                source=source_text,
+                remaining_questions=result.get("remaining_questions", 0),
+                limit_reached=result.get("limit_reached", False)
+            )
         
     except Exception as e:
         print(f"⚠️ Gemini質問分析RAGエラー: {e}")

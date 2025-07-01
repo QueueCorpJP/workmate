@@ -1,15 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Paper, Fade, Tooltip, IconButton, Divider, useTheme, useMediaQuery } from '@mui/material';
+import { Box, Typography, Paper, Fade, useTheme, useMediaQuery } from '@mui/material';
 import DescriptionIcon from '@mui/icons-material/Description';
 import LinkIcon from '@mui/icons-material/Link';
-import InfoIcon from '@mui/icons-material/Info';
 import ArticleIcon from '@mui/icons-material/Article';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import TextSnippetIcon from '@mui/icons-material/TextSnippet';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import VerifiedIcon from '@mui/icons-material/Verified';
-import BookmarkIcon from '@mui/icons-material/Bookmark';
 
 interface SourceCitationProps {
   source: string;
@@ -19,69 +16,55 @@ const SourceCitation: React.FC<SourceCitationProps> = ({ source }) => {
   const [animate, setAnimate] = useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'md'));
   
   useEffect(() => {
     // マウント時にアニメーションを開始
     setAnimate(true);
   }, []);
 
-  if (!source || !source.trim()) return null;
+  // 強化されたデバッグログ
+  console.log("=== SourceCitation コンポーネント (強化版) ===");
+  console.log("受信したsource:", source);
+  console.log("sourceの型:", typeof source);
+  console.log("sourceの長さ:", source ? source.length : 'null/undefined');
+  console.log("source の詳細内容:", JSON.stringify(source));
 
-  // 不要なソース情報を除外
-  const trimmedSource = source.trim();
-  const invalidSources = [
-    'なし',
-    'デバッグ',
-    'debug',
-    'Debug',
-    'DEBUG',
-    'Source: "なし"',
-    'デバッグ - Source: "なし"',
-    '情報なし',
-    '該当なし',
-    '不明',
-    'unknown',
-    'Unknown',
-    'UNKNOWN',
-    'null',
-    'undefined',
-    ''
-  ];
-  
-  // 無効なソース情報の場合は表示しない
-  if (invalidSources.some(invalid => 
-    trimmedSource === invalid || 
-    trimmedSource.toLowerCase() === invalid.toLowerCase() ||
-    trimmedSource.includes('デバッグ') ||
-    trimmedSource.includes('debug') ||
-    trimmedSource.startsWith('デバッグ -') ||
-    trimmedSource.startsWith('debug -') ||
-    /^デバッグ\s*-\s*source\s*:\s*["']?なし["']?\s*$/i.test(trimmedSource) ||
-    /^debug\s*-\s*source\s*:\s*["']?(none|null|なし)["']?\s*$/i.test(trimmedSource)
-  )) {
+  // 大幅に緩和された条件チェック - 空文字列、null、undefinedのみを除外
+  if (!source || source === "" || source === "null" || source === "undefined") {
+    console.log("❌ 完全に空のソース情報のため表示をスキップ");
     return null;
   }
 
-  console.log("SourceCitation受信ソース:", source);
+  // 文字列でない場合は文字列に変換
+  const sourceString = String(source).trim();
+  
+  // より緩い無効判定 - 本当に不要なもののみ除外
+  const strictInvalidSources = [
+    '',
+    'null',
+    'undefined',
+    'なし',
+    'none',
+    'None',
+    'NONE'
+  ];
+  
+  if (strictInvalidSources.includes(sourceString.toLowerCase())) {
+    console.log("❌ 厳格な無効判定により表示をスキップ:", sourceString);
+    return null;
+  }
 
-  // 複数のソースを処理する（ [file1.pdf], [file2.pdf] 形式に対応）
-  const parseMultipleSources = (sourceText: string) => {
+  console.log("✅ SourceCitation表示を実行します:", sourceString);
+
+  // ソース解析（シンプル化）
+  const parseSourceInfo = (sourceText: string) => {
     console.log("ソース解析開始:", sourceText);
     
-    // [filename] 形式で囲まれたファイル名を抽出
-    const bracketMatches = sourceText.match(/\[([^\]]+)\]/g);
-    if (bracketMatches) {
-      const result = bracketMatches.map(match => match.slice(1, -1)); // [] を除去
-      console.log("ブラケット形式で解析:", result);
-      return result;
-    }
-    
-    // カンマ区切りのソースを処理
+    // 単純にカンマ区切りで分割
     if (sourceText.includes(',')) {
-      const result = sourceText.split(',').map(s => s.trim());
-      console.log("カンマ区切りで解析:", result);
-      return result;
+      const sources = sourceText.split(',').map(s => s.trim()).filter(s => s.length > 0);
+      console.log("カンマ区切りで解析:", sources);
+      return sources;
     }
     
     // 単一のソース
@@ -89,138 +72,90 @@ const SourceCitation: React.FC<SourceCitationProps> = ({ source }) => {
     return [sourceText];
   };
 
-  const sources = parseMultipleSources(source);
+  const sources = parseSourceInfo(sourceString);
+  console.log("最終的に表示するソース:", sources);
   
-  // 最初のソースを基準にファイル情報を取得（表示用）
-  const firstSource = sources[0];
-  const isUrl = firstSource.startsWith('http://') || firstSource.startsWith('https://');
-  
-  // ページ番号の抽出 - 複数のフォーマットに対応
-  // 例: (P.14) または (P.14-15) または (緊急時対応、5)
-  const pageMatch = firstSource.match(/\((?:P\.)?(\d+(?:-\d+)?|[^)]+)\)$/);
-  const pageInfo = pageMatch ? pageMatch[1] : null;
-  
-  // ページ番号を除いたソース名
-  const sourceName = pageMatch
-    ? firstSource.replace(/\s*\([^)]+\)$/, '')
-    : firstSource;
-  
-
+  // ファイルタイプのアイコンを取得する関数（緑色統一）
+  const getFileIcon = (filename: string) => {
+    const lowerName = filename.toLowerCase();
+    const iconColor = '#4CAF50'; // 緑色に統一
+    
+    if (lowerName.startsWith('http://') || lowerName.startsWith('https://')) {
+      return <LinkIcon fontSize="small" sx={{ color: iconColor }} />;
+    }
+    if (lowerName.endsWith('.pdf')) {
+      return <PictureAsPdfIcon fontSize="small" sx={{ color: iconColor }} />;
+    }
+    if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
+      return <TableChartIcon fontSize="small" sx={{ color: iconColor }} />;
+    }
+    if (lowerName.endsWith('.txt')) {
+      return <TextSnippetIcon fontSize="small" sx={{ color: iconColor }} />;
+    }
+    return <DescriptionIcon fontSize="small" sx={{ color: iconColor }} />;
+  };
 
   return (
-    <Fade in={animate} timeout={800}>
-      <Box sx={{ mt: 2, mb: 1 }}>
-        {/* 情報ソースヘッダー */}
+    <Fade in={animate} timeout={600}>
+      <Box sx={{ mt: 1.5, mb: 0.5 }}>
+        {/* 情報ソースヘッダー（写真と同じスタイル） */}
         <Typography
           variant="body2"
           sx={{
-            color: 'text.secondary',
+            color: '#666',
+            fontSize: '0.875rem',
             mb: 1,
-            fontSize: '0.875rem'
+            fontWeight: 400,
           }}
         >
-          情報ソース：{sources.length > 1 ? sources.join('、') : sourceName}{pageInfo && `（${pageInfo.includes('ページ') ? pageInfo : `ページ${pageInfo}`}）`}
+          情報ソース：
         </Typography>
         
-        {/* ファイルカード */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {sources.map((currentSource, index) => {
-            // 各ソースのファイル情報を個別に取得
-            const sourceIsUrl = currentSource.startsWith('http://') || currentSource.startsWith('https://');
-            const sourcePageMatch = currentSource.match(/\((?:P\.)?(\d+(?:-\d+)?|[^)]+)\)$/);
-            const sourcePageInfo = sourcePageMatch ? sourcePageMatch[1] : null;
-            const cleanSourceName = sourcePageMatch
-              ? currentSource.replace(/\s*\([^)]+\)$/, '')
+        {/* ファイルカード（写真と同じデザイン） */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+          {sources.slice(0, 3).map((currentSource, index) => {
+            // ページ番号を抽出（存在する場合）
+            const pageMatch = currentSource.match(/\((?:P\.)?(\d+(?:-\d+)?|[^)]+)\)$/);
+            const cleanName = pageMatch 
+              ? currentSource.replace(/\s*\([^)]+\)$/, '') 
               : currentSource;
+            const pageInfo = pageMatch ? pageMatch[1] : null;
             
-            // 各ソースのファイルタイプ情報を取得
-            const getSourceFileTypeInfo = (sourceName: string) => {
-              if (sourceName.includes('緊急') || sourceName.includes('災害') || sourceName.includes('防災')) {
-                return {
-                  icon: <VerifiedIcon fontSize="small" sx={{ color: '#d32f2f' }} />,
-                  colors: { light: '#ffebee', main: '#d32f2f' }
-                };
-              }
-              
-              if (sourceName.includes('マニュアル') || sourceName.includes('ハンドブック') || sourceName.includes('ガイド')) {
-                return {
-                  icon: <BookmarkIcon fontSize="small" sx={{ color: '#7b1fa2' }} />,
-                  colors: { light: '#f3e5f5', main: '#7b1fa2' }
-                };
-              }
-              
-              if (sourceIsUrl) {
-                return {
-                  icon: <LinkIcon fontSize="small" sx={{ color: '#1976d2' }} />,
-                  colors: { light: '#e3f2fd', main: '#1976d2' }
-                };
-              }
-              
-              if (sourceName.endsWith('.pdf')) {
-                return {
-                  icon: <PictureAsPdfIcon fontSize="small" sx={{ color: '#f44336' }} />,
-                  colors: { light: '#ffebee', main: '#f44336' }
-                };
-              }
-              
-              if (sourceName.endsWith('.xlsx') || sourceName.endsWith('.xls')) {
-                return {
-                  icon: <TableChartIcon fontSize="small" sx={{ color: '#2e7d32' }} />,
-                  colors: { light: '#e8f5e9', main: '#2e7d32' }
-                };
-              }
-              
-              if (sourceName.endsWith('.txt')) {
-                return {
-                  icon: <TextSnippetIcon fontSize="small" sx={{ color: '#0288d1' }} />,
-                  colors: { light: '#e1f5fe', main: '#0288d1' }
-                };
-              }
-              
-              return {
-                icon: <ArticleIcon fontSize="small" sx={{ color: '#ed6c02' }} />,
-                colors: { light: '#fff3e0', main: '#ed6c02' }
-              };
-            };
-
-            const sourceFileInfo = getSourceFileTypeInfo(cleanSourceName);
+            const isUrl = cleanName.startsWith('http://') || cleanName.startsWith('https://');
             
             return (
               <Paper
                 key={index}
-                elevation={1}
+                elevation={0}
                 sx={{
                   display: 'flex',
                   alignItems: 'center',
                   p: 1.5,
                   borderRadius: '8px',
-                  backgroundColor: sourceFileInfo.colors.light,
-                  border: `1px solid ${sourceFileInfo.colors.main}20`,
+                  backgroundColor: '#E8F5E8', // 薄い緑色の背景（写真と同じ）
+                  border: '1px solid #C8E6C9', // 緑色のボーダー（写真と同じ）
+                  cursor: isUrl ? 'pointer' : 'default',
                   transition: 'all 0.2s ease',
-                  cursor: sourceIsUrl ? 'pointer' : 'default',
-                  '&:hover': {
-                    backgroundColor: sourceFileInfo.colors.light,
-                    transform: sourceIsUrl ? 'translateY(-1px)' : 'none',
-                    boxShadow: sourceIsUrl ? '0 2px 8px rgba(0,0,0,0.1)' : '0 1px 3px rgba(0,0,0,0.1)'
-                  }
+                  '&:hover': isUrl ? {
+                    backgroundColor: '#DDF4DD',
+                    transform: 'translateY(-1px)',
+                    boxShadow: '0 2px 8px rgba(76, 175, 80, 0.15)'
+                  } : {}
                 }}
-                onClick={sourceIsUrl ? () => window.open(cleanSourceName, '_blank') : undefined}
+                onClick={isUrl ? () => window.open(cleanName, '_blank') : undefined}
               >
-                {/* ファイルアイコン */}
+                {/* ファイルアイコン（写真と同じスタイル） */}
                 <Box
                   sx={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    width: 32,
-                    height: 32,
-                    borderRadius: '6px',
-                    backgroundColor: 'white',
+                    width: 24,
+                    height: 24,
                     mr: 1.5,
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
                   }}
                 >
-                  {sourceFileInfo.icon}
+                  {getFileIcon(cleanName)}
                 </Box>
                 
                 {/* ファイル情報 */}
@@ -229,38 +164,38 @@ const SourceCitation: React.FC<SourceCitationProps> = ({ source }) => {
                     variant="body2"
                     sx={{
                       fontWeight: 500,
-                      color: 'text.primary',
+                      color: '#2E7D32', // 濃い緑色（写真と同じ）
                       fontSize: '0.875rem',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap'
                     }}
-                    title={cleanSourceName}
+                    title={cleanName}
                   >
-                    {cleanSourceName}
+                    {cleanName}
                   </Typography>
                   
-                  {sourcePageInfo && (
+                  {pageInfo && (
                     <Typography
                       variant="caption"
                       sx={{
-                        color: 'text.secondary',
+                        color: '#4CAF50', // 緑色（写真と同じ）
                         fontSize: '0.75rem',
                         display: 'block',
                         mt: 0.25
                       }}
                     >
-                      {sourcePageInfo.includes('ページ') ? sourcePageInfo : `${sourcePageInfo}ページ目`}
+                      {pageInfo.includes('ページ') ? pageInfo : `${pageInfo}ページ目`}
                     </Typography>
                   )}
                 </Box>
                 
-                {sourceIsUrl && (
+                {isUrl && (
                   <Box sx={{ ml: 1 }}>
                     <OpenInNewIcon 
                       sx={{ 
                         fontSize: '1rem', 
-                        color: 'text.secondary',
+                        color: '#4CAF50',
                         opacity: 0.7
                       }} 
                     />
@@ -269,6 +204,22 @@ const SourceCitation: React.FC<SourceCitationProps> = ({ source }) => {
               </Paper>
             );
           })}
+          
+          {/* 3個以上のソースがある場合は省略表示 */}
+          {sources.length > 3 && (
+            <Typography
+              variant="caption"
+              sx={{
+                color: '#666',
+                fontSize: '0.8rem',
+                fontStyle: 'italic',
+                textAlign: 'center',
+                mt: 0.5
+              }}
+            >
+              他{sources.length - 3}件の資料
+            </Typography>
+          )}
         </Box>
       </Box>
     </Fade>
