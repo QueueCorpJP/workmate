@@ -1811,6 +1811,8 @@ async def admin_update_resource_special(resource_id: str, request: dict, current
             update_fields["description"] = request["description"]
         if "special_instructions" in request:
             update_fields["special_instructions"] = request["special_instructions"]
+        if "special" in request:
+            update_fields["special_instructions"] = request["special"]
         
         if not update_fields:
             raise HTTPException(status_code=400, detail="更新可能なフィールドが指定されていません")
