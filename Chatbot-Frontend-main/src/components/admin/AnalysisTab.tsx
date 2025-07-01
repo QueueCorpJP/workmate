@@ -49,13 +49,13 @@ import {
   PolarAreaController,
   defaults
 } from 'chart.js';
-import { AnalysisResult, categoryColors, sentimentColors } from './types';
+import { AnalysisResult, categoryColors } from './types';
 import LoadingIndicator from './LoadingIndicator';
-import { getCategoryChartData, getSentimentChartData, exportAnalysisToCSV } from './utils';
+import { getCategoryChartData, exportAnalysisToCSV } from './utils';
 import MarkdownRenderer from '../MarkdownRenderer';
 import InsightsIcon from '@mui/icons-material/Insights';
 import CategoryIcon from '@mui/icons-material/Category';
-import MoodIcon from '@mui/icons-material/Mood';
+
 import LiveHelpIcon from '@mui/icons-material/LiveHelp';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ChatIcon from '@mui/icons-material/Chat';
@@ -119,17 +119,14 @@ interface EnhancedAnalysisResult {
       count: number;
       unique_users: number;
       unique_days: number;
-      avg_sentiment_score: number;
-      positive_count: number;
-      neutral_count: number;
-      negative_count: number;
+
     }>;
     distribution: Record<string, { count: number; percentage: number }>;
     bias_analysis: Record<string, {
       bias_score: number;
       is_over_represented: boolean;
       is_under_represented: boolean;
-      sentiment_bias: string;
+
     }>;
     top_categories: any[];
     bottom_categories: any[];
@@ -143,7 +140,7 @@ interface EnhancedAnalysisResult {
       active_users: number;
       total_messages: number;
       unique_names: number;
-      positive_ratio: number;
+
     }>;
     weekly_trends: Array<{
       week_start: string;
@@ -169,8 +166,7 @@ interface EnhancedAnalysisResult {
       repeat_question: string;
       time_between: string;
       similarity_score: number;
-      first_sentiment: string;
-      repeat_sentiment: string;
+
       category: string;
     }>;
     unresolved_patterns: Array<{
@@ -179,7 +175,7 @@ interface EnhancedAnalysisResult {
       question: string;
       response: string;
       timestamp: string;
-      sentiment: string;
+
       category: string;
       response_length: number;
       issue_type: string;
@@ -193,17 +189,7 @@ interface EnhancedAnalysisResult {
     };
     summary: string;
   };
-  sentiment_analysis: {
-    sentiment_distribution: Record<string, number>;
-    sentiment_by_category: Record<string, Record<string, number>>;
-    temporal_sentiment: Array<{
-      date: string;
-      sentiments: Record<string, number>;
-    }>;
-    overall_sentiment_score: number;
-    total_responses: number;
-    summary: string;
-  };
+
   ai_insights: string;
   analysis_metadata: {
     generated_at: string;
@@ -812,12 +798,6 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                 icon: <RepeatIcon />,
                 content: enhancedAnalysis.unresolved_and_repeat_analysis,
                 color: '#ed6c02'
-              },
-              { 
-                title: '詳細感情分析', 
-                icon: <MoodIcon />,
-                content: enhancedAnalysis.sentiment_analysis,
-                color: '#9c27b0'
               }
             ].map((section, index) => (
               <Grid item xs={12} key={index}>
@@ -1060,7 +1040,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
                             )}
                           </Box>
                         )}
-                        {(index === 1 || index === 3 || index === 4) && (
+                        {(index === 1 || index === 3) && (
                           <Paper 
                             elevation={0}
                             sx={{

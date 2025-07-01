@@ -665,14 +665,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
     );
   }
 
-  console.log("=== レンダリング時のステート ===");
-  console.log("userPlanHistories:", userPlanHistories);
-  console.log("userPlanHistories.length:", userPlanHistories.length);
-  console.log("analyticsData:", analyticsData);
-  console.log("isAdmin:", isAdmin);
-  console.log("currentTab:", currentTab);
-  console.log("表示条件:", (!isAdmin || currentTab === 0));
-  console.log("=== レンダリング時のステート終了 ===");
+
 
   return (
     <Box>
@@ -704,10 +697,6 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
       {/* 通常のプラン履歴表示（管理者の場合はタブ0の時のみ） */}
       {(!isAdmin || currentTab === 0) && (
         <Box>
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            デバッグ情報: userPlanHistories.length = {userPlanHistories.length}
-          </Typography>
-          
           {/* プラン履歴テーブル */}
           {userPlanHistories.length === 0 ? (
             <EmptyState
