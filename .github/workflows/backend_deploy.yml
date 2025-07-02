@@ -57,17 +57,19 @@ jobs:
     - name: Create remote deployment directory
       run: |
         echo "📂 リモートデプロイディレクトリを作成しています..."
+        REMOTE_BASE="/home/${{ secrets.EC2_USER }}/workmate"
         ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
-          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "mkdir -p /home/${{ secrets.EC2_USER }}/workmate/Chatbot-backend-main"
+          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "mkdir -p $REMOTE_BASE/Chatbot-backend-main"
         echo "✅ リモートデプロイディレクトリ作成完了"
 
     # ------------- 新ステップ: 差分アップロード (ネイティブ scp) -------------
     - name: Copy backend source to EC2 (native scp)
       run: |
         echo "📤 scp で差分アップロード開始..."
+        REMOTE_BASE="/home/${{ secrets.EC2_USER }}/workmate"
         scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa -r \
             Chatbot-backend-main/* \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/workmate/Chatbot-backend-main/ || { echo "❌ scp アップロードに失敗しました"; exit 1; }
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:$REMOTE_BASE/Chatbot-backend-main/ || { echo "❌ scp アップロードに失敗しました"; exit 1; }
         echo "✅ scp アップロード完了"
 
     - name: Test workflow and clean up
@@ -103,12 +105,13 @@ jobs:
     - name: Remote install & restart backend
       run: |
         echo "🚀 リモートインストールとバックエンド再起動開始..."
+        REMOTE_BASE="/home/${{ secrets.EC2_USER }}/workmate"
         ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
           ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
           set -e
-          DEPLOY_PATH="${{ secrets.EC2_PATH }}"
-          echo "[Deploy] cd $DEPLOY_PATH/Chatbot-backend-main"
-          cd $DEPLOY_PATH/Chatbot-backend-main || { echo "ディレクトリが存在しません"; exit 1; }
+          DEPLOY_PATH="$REMOTE_BASE/Chatbot-backend-main"
+          echo "[Deploy] cd $DEPLOY_PATH"
+          cd $DEPLOY_PATH || { echo "ディレクトリが存在しません"; exit 1; }
           source /opt/workmate-venv/bin/activate
           echo "[Deploy] pip install -r requirements.txt --upgrade --quiet"
           pip install -r requirements.txt --upgrade --quiet
