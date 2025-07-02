@@ -53,6 +53,14 @@ jobs:
         ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo 'SSH接続成功'" || { echo "❌ SSH接続に失敗しました"; exit 1; }
         echo "✅ SSH接続が成功しました"
 
+    # ------------- 新ステップ: リモートディレクトリ作成 -------------
+    - name: Create remote deployment directory
+      run: |
+        echo "📂 リモートデプロイディレクトリを作成しています..."
+        ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
+          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "mkdir -p /home/${{ secrets.EC2_USER }}/workmate/Chatbot-backend-main"
+        echo "✅ リモートデプロイディレクトリ作成完了"
+
     # ------------- 新ステップ: 差分アップロード (ネイティブ scp) -------------
     - name: Copy backend source to EC2 (native scp)
       run: |
