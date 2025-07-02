@@ -40,6 +40,17 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
+    # ------------- 新ステップ: 差分アップロード -------------
+    - name: Copy backend source to EC2 (SCP diff upload)
+      uses: appleboy/scp-action@v0.1.5
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        source: "Chatbot-backend-main/*"
+        target: "/home/${{ secrets.EC2_USER }}/workmate/Chatbot-backend-main"
+        rm: true
+
     - name: Test workflow and clean up
       run: |
         echo "🚀 GitHub Actionsワークフローが動作しています"
@@ -80,323 +91,27 @@ jobs:
         }
         echo "✅ SSH接続が成功しました"
 
-    - name: Prepare backend files
-      run: |
-        echo "📦 バックエンドファイル準備..."
-        cd Chatbot-backend-main
-        
-        # GitHub Actions環境でのディスクスペース確保のため、
-        # テスト関連ファイルを除外
-        rm -rf tests/
-        rm -f requirements-test.txt
-        rm -rf venv/
-        rm -rf __pycache__/
-        rm -f *.log
-        
-        # 不要なファイルを除外してアーカイブ作成
-        tar --exclude='.git' \
-            --exclude='__pycache__' \
-            --exclude='*.pyc' \
-            --exclude='.env' \
-            --exclude='node_modules' \
-            --exclude='venv' \
-            --exclude='*.log' \
-            --exclude='dist' \
-            --exclude='build' \
-            --exclude='coverage' \
-            --exclude='.pytest_cache' \
-            --exclude='.coverage' \
-            --exclude='tests' \
-            --exclude='requirements-test.txt' \
-            -czf ../backend.tar.gz .
-        
-        echo "📦 アーカイブ内容確認:"
-        tar -tzf ../backend.tar.gz | head -20
-        
-        echo "✅ ファイル準備完了"
+    # ------------- 旧ステップ削除: Prepare backend files -------------
 
-    - name: Deploy backend
-      run: |
-        echo "📤 バックエンドファイル転送開始..."
-        
-        # アーカイブをサーバーに転送
-        scp -o ConnectTimeout=30 -o ServerAliveInterval=10 backend.tar.gz ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/
-        
-        echo "🚀 バックエンドデプロイ実行..."
-        ssh -o ConnectTimeout=30 -o ServerAliveInterval=10 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
+    # ------------- 旧ステップ削除: Deploy backend (tar 展開) -------------
+
+    # ------------- 新ステップ: 依存関係インストール＆再起動 -------------
+    - name: Remote install & restart backend
+      uses: appleboy/ssh-action@v0.1.7
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
           set -e
-          
-          # パス設定
           DEPLOY_PATH="${{ secrets.EC2_PATH }}"
-          
-          echo "📂 デプロイパス: $DEPLOY_PATH"
-          echo "👤 現在のユーザー: $(whoami)"
-          echo "📂 現在のディレクトリ: $(pwd)"
-          
-          # デプロイディレクトリ準備
-          echo "🗂️ デプロイディレクトリ準備..."
-          mkdir -p $DEPLOY_PATH
-          cd $DEPLOY_PATH
-          
-          # ディスク容量確認と古いファイル削除
-          echo "💾 ディスク容量確認..."
-          df -h $DEPLOY_PATH
-          
-          echo "🧹 古いファイル削除（ディスク容量確保）..."
-          
-          # ディスク容量が90%以上の場合、強力なクリーンアップを実行
-          DISK_USAGE=$(df $DEPLOY_PATH | tail -1 | awk '{print $5}' | sed 's/%//')
-          echo "現在のディスク使用率: ${DISK_USAGE}%"
-          
-          if [ "$DISK_USAGE" -gt 90 ]; then
-            echo "⚠️ ディスク使用率が90%を超えています。強力なクリーンアップを実行します..."
-            
-            # 古いログファイルを削除
-            sudo find /var/log -name "*.log" -type f -mtime +7 -delete 2>/dev/null || true
-            sudo find /var/log -name "*.log.*" -type f -mtime +3 -delete 2>/dev/null || true
-            
-            # PM2ログファイルをクリーンアップ
-            if command -v pm2 >/dev/null 2>&1; then
-              pm2 flush 2>/dev/null || true
-            fi
-            
-            # tmpディレクトリのクリーンアップ
-            sudo find /tmp -type f -mtime +1 -delete 2>/dev/null || true
-            
-            # ユーザーのキャッシュディレクトリクリーンアップ
-            rm -rf ~/.cache/* 2>/dev/null || true
-            rm -rf ~/.npm/_cacache 2>/dev/null || true
-            
-            # Pythonキャッシュのクリーンアップ
-            find $HOME -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-            find $HOME -name "*.pyc" -delete 2>/dev/null || true
-            
-            # パッケージマネージャーのキャッシュクリーンアップ
-            if command -v dnf >/dev/null 2>&1; then
-              sudo dnf clean all 2>/dev/null || true
-            elif command -v yum >/dev/null 2>&1; then
-              sudo yum clean all 2>/dev/null || true
-            fi
-            
-            echo "ディスクスペース確保後の容量:"
-            df -h $DEPLOY_PATH
-          fi
-          
-          # .envファイル以外の古いファイルを削除
-          find . -maxdepth 1 -type f ! -name '.env' ! -name '.env.*' -delete 2>/dev/null || true
-          find . -maxdepth 1 -type d ! -name '.' ! -name 'venv' -exec rm -rf {} + 2>/dev/null || true
-          
-          # 古いvenvも削除してディスク容量を確保
-          if [ "$DISK_USAGE" -gt 85 ]; then
-            echo "ディスク容量確保のため既存のvenvを削除します..."
-            rm -rf venv 2>/dev/null || true
-          fi
-          
-          # 新しいファイルを展開
-          echo "📦 ファイル展開..."
-          tar -xzf /tmp/backend.tar.gz
-          
-          echo "✅ ファイル展開完了"
-          
-          # Pythonパッケージインストール
-          echo "📥 依存関係インストール..."
-          
-          # Python環境確認
-          echo "🐍 Python環境確認..."
-          python3 --version || echo "Python3が見つかりません"
-          
-          # pipの確認・インストール
-          echo "📦 pip確認・インストール..."
-          if ! command -v pip >/dev/null 2>&1 && ! command -v pip3 >/dev/null 2>&1 && ! python3 -m pip --version >/dev/null 2>&1; then
-            echo "pipが見つかりません。インストールを試行します..."
-            # Amazon Linux 2023の場合
-            if command -v dnf >/dev/null 2>&1; then
-              echo "Amazon Linux 2023でpipをインストール中..."
-              sudo dnf install -y python3-pip python3-devel || echo "pipインストールに失敗しました"
-            elif command -v yum >/dev/null 2>&1; then
-              echo "YUMでpipをインストール中..."
-              sudo yum install -y python3-pip python3-devel || echo "pipインストールに失敗しました"
-            elif command -v apt >/dev/null 2>&1; then
-              echo "APTでpipをインストール中..."
-              sudo apt update && sudo apt install -y python3-pip python3-dev || echo "pipインストールに失敗しました"
-            fi
-          fi
-          
-          # PostgreSQLおよび開発パッケージのインストール
-          echo "🐘 PostgreSQL開発パッケージインストール..."
-          if command -v dnf >/dev/null 2>&1; then
-            echo "Amazon Linux 2023で開発パッケージをインストール中..."
-            sudo dnf install -y postgresql15-devel gcc gcc-c++ libffi-devel openssl-devel || echo "開発パッケージインストールに失敗しました"
-          elif command -v yum >/dev/null 2>&1; then
-            echo "YUMで開発パッケージをインストール中..."
-            sudo yum install -y postgresql-devel gcc gcc-c++ libffi-devel openssl-devel || echo "開発パッケージインストールに失敗しました"
-          elif command -v apt >/dev/null 2>&1; then
-            echo "APTで開発パッケージをインストール中..."
-            sudo apt update && sudo apt install -y libpq-dev gcc g++ libffi-dev libssl-dev || echo "開発パッケージインストールに失敗しました"
-          fi
-          
-          # pipコマンドの決定
-          PIP_CMD=""
-          if command -v pip3 >/dev/null 2>&1; then
-            PIP_CMD="pip3"
-          elif command -v pip >/dev/null 2>&1; then
-            PIP_CMD="pip"
-          elif python3 -m pip --version >/dev/null 2>&1; then
-            PIP_CMD="python3 -m pip"
-          else
-            echo "⚠️ pipコマンドが見つかりません。手動でのセットアップが必要です。"
-            PIP_CMD="python3 -m pip"
-          fi
-          
-          echo "使用するpipコマンド: $PIP_CMD"
-          
-          if [ -f "requirements.txt" ]; then
-            # 仮想環境のセットアップ
-            echo "🏠 仮想環境セットアップ..."
-            if [ ! -d "venv" ]; then
-              echo "新しい仮想環境を作成します..."
-              python3 -m venv venv
-            else
-              echo "既存の仮想環境を使用します"
-            fi
-            
-            # 仮想環境をアクティベート
-            source venv/bin/activate
-            echo "仮想環境をアクティベートしました: $(which python)"
-            
-            # requirements.txtの変更チェック（ハッシュベース）
-            REQUIREMENTS_CHANGED=false
-            CURRENT_HASH=$(md5sum requirements.txt 2>/dev/null | cut -d' ' -f1 || echo "new")
-            STORED_HASH=$(cat .requirements_hash 2>/dev/null || echo "")
-            
-            if [ "$CURRENT_HASH" != "$STORED_HASH" ]; then
-              echo "📝 requirements.txtに変更が検出されました"
-              REQUIREMENTS_CHANGED=true
-            else
-              echo "📝 requirements.txtに変更はありません"
-            fi
-            
-            # パッケージインストール（必要な場合のみ）
-            if [ "$REQUIREMENTS_CHANGED" = true ]; then
-              echo "📦 パッケージインストール実行..."
-              echo "⏱️ 初回または変更があるため、パッケージを再インストールします（数分かかる場合があります）"
-              
-              # pipキャッシュディレクトリの設定とクリーンアップ
-              export PIP_CACHE_DIR="$HOME/.cache/pip"
-              echo "🧹 pipキャッシュをクリーンアップ..."
-              rm -rf $PIP_CACHE_DIR/*
-              mkdir -p $PIP_CACHE_DIR
-              echo "💾 pipキャッシュディレクトリ: $PIP_CACHE_DIR"
-              
-              # インストール時間計測開始
-              INSTALL_START=$(date +%s)
-              
-              # pipアップグレードとホイールインストール
-              $PIP_CMD install --upgrade pip setuptools wheel
-              
-              # 大きなパッケージを個別にインストール（エラー時も続行）
-              echo "📦 大きなパッケージを個別にインストール..."
-              
-              # 必須パッケージを最初にインストール
-              $PIP_CMD install --no-cache-dir fastapi==0.109.2 uvicorn==0.27.1 python-multipart python-dotenv==1.0.1
-              
-              # Google関連パッケージ
-              $PIP_CMD install --no-cache-dir google-generativeai==0.3.2 google-api-python-client google-auth-httplib2 google-auth-oauthlib google-auth
-              
-              # データベース関連
-              $PIP_CMD install --no-cache-dir asyncpg==0.30.0 psycopg2-binary==2.9.10 supabase
-              
-              # ファイル処理関連（サイズが大きいものは個別に）
-              $PIP_CMD install --no-cache-dir PyPDF2==3.0.1 beautifulsoup4==4.12.2 aiofiles==24.1.0 requests==2.31.0
-              
-              # 画像処理関連（オプショナル）
-              $PIP_CMD install --no-cache-dir pillow || echo "⚠️ Pillowのインストールに失敗しました（続行）"
-              $PIP_CMD install --no-cache-dir pymupdf==1.23.7 || echo "⚠️ PyMuPDFのインストールに失敗しました（続行）"
-              $PIP_CMD install --no-cache-dir pdf2image==1.16.3 || echo "⚠️ pdf2imageのインストールに失敗しました（続行）"
-              
-              # AWS関連
-              $PIP_CMD install --no-cache-dir boto3==1.37.22 || echo "⚠️ boto3のインストールに失敗しました（続行）"
-              
-              # オプショナルなパッケージ（エラーを無視）
-              $PIP_CMD install --no-cache-dir youtube_transcript_api || echo "⚠️ youtube_transcript_apiのインストールに失敗しました（続行）"
-              $PIP_CMD install --no-cache-dir yt-dlp || echo "⚠️ yt-dlpのインストールに失敗しました（続行）"
-              $PIP_CMD install --no-cache-dir tiktoken || echo "⚠️ tiktokenのインストールに失敗しました（続行）"
-              
-              # データ処理関連（オプショナル）
-              $PIP_CMD install --no-cache-dir pandas openpyxl xlrd python-docx || echo "⚠️ データ処理パッケージのインストールに失敗しました（続行）"
-              
-              # RAG関連
-              $PIP_CMD install --no-cache-dir bm25s scikit-learn numpy || echo "⚠️ RAG関連パッケージのインストールに失敗しました（続行）"
-              
-              # aiohttp
-              $PIP_CMD install --no-cache-dir aiohttp || echo "⚠️ aiohttpのインストールに失敗しました（続行）"
-              
-              # Playwrightは最後に（大きいため）
-              $PIP_CMD install --no-cache-dir playwright || echo "⚠️ Playwrightのインストールに失敗しました（続行）"
-              
-              # インストール時間計測終了
-              INSTALL_END=$(date +%s)
-              INSTALL_TIME=$((INSTALL_END - INSTALL_START))
-              echo "⏱️ パッケージインストール時間: ${INSTALL_TIME}秒"
-              
-              # requirements.txtのハッシュ保存
-              echo "$CURRENT_HASH" > .requirements_hash
-              echo "✅ requirements.txtハッシュを保存しました"
-              
-              # Playwrightブラウザインストール（存在する場合）
-              if $PIP_CMD show playwright >/dev/null 2>&1; then
-                echo "🌐 Playwrightブラウザインストール..."
-                python3 -m playwright install chromium || echo "Playwrightブラウザインストールに失敗しました"
-              fi
-            else
-              echo "⚡ requirements.txtに変更がないため、パッケージインストールをスキップします"
-              # pipとsetuptoolsのみ更新
-              $PIP_CMD install --upgrade pip setuptools wheel --quiet
-            fi
-            
-            echo "✅ Pythonパッケージ準備完了"
-          else
-            echo "❌ requirements.txtが見つかりません"
-          fi
-          
-          # PM2でアプリケーション再起動
-          echo "🔄 アプリケーション再起動..."
-          if command -v pm2 >/dev/null 2>&1; then
-            # PM2プロセス確認
-            pm2 list
-            
-            # アプリケーション名を確認して再起動（優先順位付き）
-            if pm2 describe chatbot-backend >/dev/null 2>&1; then
-              echo "chatbot-backend を再起動します..."
-              pm2 restart chatbot-backend
-            elif pm2 describe workmate-backend >/dev/null 2>&1; then
-              echo "workmate-backend を再起動します..."
-              pm2 restart workmate-backend
-            elif pm2 describe app >/dev/null 2>&1; then
-              echo "app を再起動します..."
-              pm2 restart app
-            else
-              echo "新しいPM2プロセスを開始します..."
-              pm2 start main.py --name chatbot-backend
-            fi
-            
-            # PM2プロセス状態確認
-            pm2 list
-            pm2 save
-          else
-            echo "PM2が見つかりません。直接Pythonで起動を試行します..."
-            nohup python main.py > app.log 2>&1 &
-          fi
-          
-          echo "📊 デプロイ結果確認:"
-          ls -la $DEPLOY_PATH/ | head -20
-          
-          echo "🧹 一時ファイル削除..."
-          rm -f /tmp/backend.tar.gz
-          
-          echo "✅ バックエンドデプロイ完了"
-        ENDSSH
-        echo "✅ デプロイプロセス完了"
+          echo "[Deploy] cd $DEPLOY_PATH/Chatbot-backend-main"
+          cd $DEPLOY_PATH/Chatbot-backend-main || { echo "ディレクトリが存在しません"; exit 1; }
+          source /opt/workmate-venv/bin/activate
+          echo "[Deploy] pip install -r requirements.txt --upgrade --quiet"
+          pip install -r requirements.txt --upgrade --quiet
+          echo "[Deploy] restart workmate.service"
+          sudo systemctl restart workmate.service
 
     - name: Verify deployment
       run: |
