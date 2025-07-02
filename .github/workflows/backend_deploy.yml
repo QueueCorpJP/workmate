@@ -107,11 +107,12 @@ jobs:
         echo "🚀 リモートインストールとバックエンド再起動開始..."
         REMOTE_BASE="/home/${{ secrets.EC2_USER }}/workmate"
         ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
-          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
           set -e
+          REMOTE_BASE="/home/$USER/workmate"
           DEPLOY_PATH="$REMOTE_BASE/Chatbot-backend-main"
           echo "[Deploy] cd $DEPLOY_PATH"
-          cd $DEPLOY_PATH || { echo "ディレクトリが存在しません"; exit 1; }
+          cd "$DEPLOY_PATH" || { echo "ディレクトリが存在しません"; exit 1; }
           source /opt/workmate-venv/bin/activate
           echo "[Deploy] pip install -r requirements.txt --upgrade --quiet"
           pip install -r requirements.txt --upgrade --quiet
