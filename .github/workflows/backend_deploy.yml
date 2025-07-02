@@ -40,16 +40,26 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
-    # ------------- 新ステップ: 差分アップロード -------------
-    - name: Copy backend source to EC2 (SCP diff upload)
-      uses: appleboy/scp-action@v0.1.5
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USER }}
-        key: ${{ secrets.EC2_SSH_KEY }}
-        source: "Chatbot-backend-main/*"
-        target: "/home/${{ secrets.EC2_USER }}/workmate/Chatbot-backend-main"
-        rm: true
+    # ------------- 新ステップ: SSH設定 -------------
+    - name: Setup SSH
+      run: |
+        echo "🔑 SSH設定開始..."
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+        echo "🔗 SSH接続テスト:"
+        ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo 'SSH接続成功'" || { echo "❌ SSH接続に失敗しました"; exit 1; }
+        echo "✅ SSH接続が成功しました"
+
+    # ------------- 新ステップ: 差分アップロード (ネイティブ scp) -------------
+    - name: Copy backend source to EC2 (native scp)
+      run: |
+        echo "📤 scp で差分アップロード開始..."
+        scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa -r \
+            Chatbot-backend-main/* \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/workmate/Chatbot-backend-main/
+        echo "✅ scp アップロード完了"
 
     - name: Test workflow and clean up
       run: |
@@ -75,21 +85,6 @@ jobs:
         
         echo "最終的なディスク使用状況:"
         df -h
-
-    - name: Setup SSH
-      run: |
-        echo "🔑 SSH設定開始..."
-        mkdir -p ~/.ssh
-        echo "${{ secrets.EC2_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
-        
-        echo "🔗 SSH接続テスト:"
-        ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo 'SSH接続成功'" || {
-          echo "❌ SSH接続に失敗しました"
-          exit 1
-        }
-        echo "✅ SSH接続が成功しました"
 
     # ------------- 旧ステップ削除: Prepare backend files -------------
 
