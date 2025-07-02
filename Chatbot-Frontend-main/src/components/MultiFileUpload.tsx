@@ -113,7 +113,7 @@ const MultiFileUpload: React.FC<MultiFileUploadProps> = ({
         const formData = new FormData();
         formData.append('file', files[i].file);
 
-        const response = await api.post('/upload-knowledge', formData, {
+        const response = await api.post('/v1/upload-document', formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
           },

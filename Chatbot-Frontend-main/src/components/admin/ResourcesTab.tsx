@@ -182,7 +182,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await api.post("/upload-knowledge", formData, {
+      const response = await api.post("/v1/upload-document", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
@@ -585,6 +585,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
                         hour: "2-digit",
                         minute: "2-digit",
                         second: "2-digit",
+                        timeZone: "Asia/Tokyo",
                       })
                       : "情報なし"}
                   </TableCell>
@@ -1073,4 +1074,4 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
   );
 };
 
-export default ResourcesTab;
+export default  ResourcesTab;

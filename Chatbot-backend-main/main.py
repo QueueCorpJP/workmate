@@ -39,6 +39,7 @@ from modules.company import get_company_name, set_company_name
 from modules.auth import get_current_user, get_current_admin, register_new_user, get_admin_or_user, get_company_admin, get_user_with_delete_permission, get_user_creation_permission
 from modules.resource import get_uploaded_resources_by_company_id, toggle_resource_active_by_id, remove_resource_by_id
 from modules import admin
+from modules import upload_api  # upload_apiをインポート
 import json
 from modules.validation import validate_login_input, validate_user_input
 import csv
@@ -132,6 +133,9 @@ init_db()
 
 # admin.pyのルーターを登録
 app.include_router(admin.router, prefix="/chatbot/api/admin", tags=["admin"])
+
+# upload_api.pyのルーターを登録
+app.include_router(upload_api.router, prefix="/chatbot/api/v1", tags=["documents"])
 
 # データベース整合性をチェック
 try:

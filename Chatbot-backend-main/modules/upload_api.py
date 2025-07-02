@@ -27,7 +27,7 @@ from .resource import get_uploaded_resources_by_company_id, toggle_resource_acti
 logger = logging.getLogger(__name__)
 
 # APIルーター
-router = APIRouter(prefix="/api/v1", tags=["documents"])
+router = APIRouter(tags=["documents"])
 
 # 定数
 MAX_FILE_SIZE_MB = 50  # 最大ファイルサイズ
@@ -375,16 +375,3 @@ async def _get_document_chunk_info(doc_id: str, db: Connection) -> Dict[str, Any
             "inactive_chunks": 0,
             "chunk_indices": []
         }
-
-# エラーハンドラー
-@router.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    """HTTPエラーハンドラー"""
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "success": False,
-            "error": exc.detail,
-            "status_code": exc.status_code
-        }
-    )

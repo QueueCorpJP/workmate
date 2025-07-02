@@ -1,7 +1,7 @@
 /**
- * Format a date string to a localized format
- * @param dateString - The date string to format
- * @returns Formatted date string
+ * Format a date string to a localized format in JST
+ * @param dateString - The date string to format (assumed to be UTC)
+ * @returns Formatted date string in Japan time
  */
 export const formatDate = (dateString: string): string => {
   if (!dateString) return '情報なし';
@@ -13,7 +13,8 @@ export const formatDate = (dateString: string): string => {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit'
+    second: '2-digit',
+    timeZone: 'Asia/Tokyo'
   }).format(date);
 };
 

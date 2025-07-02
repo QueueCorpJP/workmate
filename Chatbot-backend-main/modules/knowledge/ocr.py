@@ -14,11 +14,12 @@ model = setup_gemini()
 async def ocr_with_gemini(images, instruction, chunk_size=8):
     """Geminiを使用して画像からテキストを抽出する（8ページずつ分割処理）"""
     prompt_base = f"""
-    {instruction}
-    This is a page from a PDF document. Extract all text content while preserving the structure.
-    Pay special attention to tables, columns, headers, and any structured content.
-    Maintain paragraph breaks and formatting.
-    """
+{instruction}
+
+このページはPDF文書の1ページです。上記の指針に従って、このページから全てのテキストを抽出してください。
+元の文書構造を維持し、表・リスト・見出しなどの構造化されたコンテンツに特に注意を払ってください。
+段落の区切りやフォーマットを維持してください。
+"""
 
     async def process_page(idx, image):
         def sync_call():
@@ -94,20 +95,25 @@ async def ocr_pdf_to_text_from_bytes(pdf_content: bytes):
 
         # Define instruction for Gemini OCR
         instruction = """
-        Extract ALL text content from these document pages.
-        For tables:
-        1. Maintain the table structure using markdown table format.
-        2. Preserve all column headers and row labels.
-        3. Ensure numerical data is accurately captured.
-        For multi-column layouts:
-        1. Process columns from left to right.
-        2. Clearly separate content from different columns.
-        For charts and graphs:
-        1. Describe the chart type.
-        2. Extract any visible axis labels, legends, and data points.
-        3. Extract any title or caption.
-        Preserve all headers, footers, page numbers, and footnotes.
-        """
+このページから全ての文字・数字・情報を抽出してください。
+
+抽出方針：
+• 全ての文字を漏れなく読み取る
+• 不鮮明でも推測して抽出（空白より推測が有用）
+• 表・リスト・見出しの構造を維持
+
+形式：
+• 見出し: # ## ###
+• 表: markdown形式（| 列1 | 列2 |）
+• 不鮮明: [推測]を付けて抽出
+
+推測指針：
+• 文脈・形状から合理的に推測
+• 型番・金額・日付は特に重要
+• 読めない場合は[判読困難]
+
+全ての情報を抽出してください。推測でも情報があることが重要です。
+"""
 
         # Extract text using Gemini OCR
         extracted_text = await ocr_with_gemini(images, instruction)
