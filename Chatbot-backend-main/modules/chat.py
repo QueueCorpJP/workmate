@@ -189,7 +189,7 @@ def health_check():
         health_status['timestamp'] = datetime.datetime.now().isoformat()
         
         return health_status
-        
+
     except Exception as e:
         return {
             'status': 'unhealthy',

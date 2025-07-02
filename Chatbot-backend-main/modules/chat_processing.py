@@ -4,6 +4,9 @@
 """
 import asyncio
 from typing import Dict, Any, Optional, List
+import uuid
+from datetime import datetime
+from supabase_adapter import select_data, insert_data
 from .chat_config import (
     safe_print, HTTPException, model, get_db_cursor,
     USAGE_LIMIT_ENABLED, USAGE_LIMIT_PER_HOUR, CONTEXT_CACHING_ENABLED
@@ -73,6 +76,74 @@ def record_usage(user_id: str, tokens_used: int = 0):
     except Exception as e:
         safe_print(f"Error recording usage: {e}")
 
+async def save_chat_history(
+    user_id: str,
+    user_message: str,
+    bot_response: str,
+    company_id: Optional[str] = None,
+    category: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    source_document: Optional[str] = None,
+    source_page: Optional[str] = None,
+    model_name: str = 'gemini-2.5-flash',
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    cost_usd: float = 0.0,
+    employee_id: Optional[str] = None,
+    employee_name: Optional[str] = None,
+) -> None:
+    """
+    チャット履歴をSupabaseの chat_history テーブルに保存する
+    """
+    try:
+        safe_print(f"[DB SAVE] save_chat_history called for user {user_id}. Message: {user_message[:50]}...")
+        
+        chat_id = str(uuid.uuid4())
+        timestamp = datetime.now().isoformat()
+
+        # company_id が提供されていない場合、user_id から取得を試みる
+        if company_id is None and user_id != "anonymous":
+            safe_print(f"[DB SAVE] Attempting to get company_id for user {user_id}")
+            user_data_result = select_data("users", filters={"id": user_id}, columns="company_id")
+            if user_data_result and user_data_result.data:
+                company_id = user_data_result.data[0].get("company_id")
+                safe_print(f"[DB SAVE] Found company_id: {company_id} for user {user_id}")
+            else:
+                safe_print(f"[DB SAVE] No company_id found for user {user_id}")
+
+        # employee_id が明示的に渡されていない場合は user_id を利用する
+        effective_employee_id = employee_id or user_id
+
+        data = {
+            "id": chat_id,
+            "user_message": user_message,
+            "bot_response": bot_response,
+            "timestamp": timestamp,
+            "category": category,
+            "sentiment": sentiment,
+            "employee_id": effective_employee_id,
+            "employee_name": employee_name,
+            "user_id": user_id,
+            "company_id": company_id,
+            "source_document": source_document,
+            "source_page": source_page,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+            "model_name": model_name,
+            "cost_usd": cost_usd,
+        }
+
+        result = insert_data("chat_history", data)
+        if result.success:
+            safe_print(f"[DB SAVE] Chat history successfully saved to Supabase for user {user_id} with id {chat_id}")
+        else:
+            safe_print(f"[DB SAVE] Failed to save chat history to Supabase: {result.error}")
+    except Exception as e:
+        safe_print(f"[DB SAVE] Unexpected error saving chat history: {e}")
+        import traceback
+        safe_print(traceback.format_exc())
+
 async def process_chat_message(
     message: str, 
     user_id: str = "anonymous", 
@@ -111,6 +182,10 @@ async def process_chat_message(
             
             # 使用量を記録
             record_usage(user_id, len(response))
+            
+            # チャット履歴を保存
+            safe_print(f"[PROCESS] Saving casual chat history for user {user_id}")
+            await save_chat_history(user_id, message, response, category=intent_info.get('category'))
             
             return {
                 'response': response,
@@ -153,6 +228,23 @@ async def process_chat_message(
             # 使用量を記録
             record_usage(user_id, len(response))
             
+            # チャット履歴を保存
+            source_document = None
+            source_page = None
+            if search_results and isinstance(search_results, list) and len(search_results) > 0:
+                first_result = search_results[0]
+                if 'metadata' in first_result:
+                    source_document = first_result['metadata'].get('source_document')
+                    source_page = first_result['metadata'].get('source_page')
+
+            safe_print(f"[PROCESS] Saving RAG chat history for user {user_id}. Source: {source_document}, Page: {source_page}")
+            await save_chat_history(
+                user_id, message, response,
+                category=intent_info.get('category'),
+                source_document=source_document,
+                source_page=source_page
+            )
+            
             return {
                 'response': response,
                 'intent': intent_info,
@@ -166,6 +258,10 @@ async def process_chat_message(
         
         # 使用量を記録
         record_usage(user_id, len(response))
+        
+        # チャット履歴を保存
+        safe_print(f"[PROCESS] Saving basic chat history for user {user_id}")
+        await save_chat_history(user_id, message, response, category=intent_info.get('category'))
         
         return {
             'response': response,
@@ -285,7 +381,6 @@ def build_response_prompt(
     special_instructions_text = ""
     if company_id:
         try:
-            from supabase_adapter import select_data
             # アクティブなリソースの特別指示を取得
             special_result = select_data(
                 "document_sources", 

@@ -242,17 +242,22 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                                     "relevance": 0.5
                                 })
                         
-                        # チャット履歴をデータベースに保存
+                        # Supabase にチャット履歴を保存
                         try:
-                            with db.cursor(cursor_factory=RealDictCursor) as cursor:
-                                cursor.execute("""
-                                    INSERT INTO chat_history (id, user_id, company_id, user_message, bot_response, timestamp)
-                                    VALUES (%s, %s, %s, %s, %s, %s)
-                                """, (str(uuid.uuid4()), user_id, company_id, message_text, ai_response, datetime.now().isoformat()))
-                                db.commit()
-                                safe_print("✅ チャット履歴をデータベースに保存しました")
+                            from modules.chat_processing import save_chat_history
+                            await save_chat_history(
+                                user_id=user_id or "anonymous",
+                                user_message=message_text,
+                                bot_response=ai_response,
+                                company_id=company_id,
+                                employee_id=user_id,
+                                employee_name=current_user.get("name") if current_user else None,
+                                category="realtime_rag",
+                                sentiment="neutral",
+                                model_name="realtime-rag"
+                            )
                         except Exception as e:
-                            safe_print(f"⚠️ チャット履歴保存エラー: {e}")
+                            safe_print(f"⚠️ Supabase へのチャット履歴保存エラー: {e}")
                         
                         return ChatResponse(
                             response=ai_response,
@@ -415,17 +420,22 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
             safe_print(f"❌ 応答生成エラー: {e}")
             ai_response = "申し訳ございませんが、システムエラーが発生しました。しばらく時間をおいてから再度お試しください。"
         
-        # チャット履歴をデータベースに保存
+        # Supabase にチャット履歴を保存
         try:
-            with db.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
-                    INSERT INTO chat_history (id, user_id, company_id, user_message, bot_response, timestamp)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """, (str(uuid.uuid4()), user_id, company_id, message_text, ai_response, datetime.now().isoformat()))
-                db.commit()
-                safe_print("✅ チャット履歴をデータベースに保存しました")
+            from modules.chat_processing import save_chat_history
+            await save_chat_history(
+                user_id=user_id or "anonymous",
+                user_message=message_text,
+                bot_response=ai_response,
+                company_id=company_id,
+                employee_id=user_id,
+                employee_name=current_user.get("name") if current_user else None,
+                category="realtime_rag_fallback",
+                sentiment="neutral",
+                model_name="realtime-rag-fallback"
+            )
         except Exception as e:
-            safe_print(f"⚠️ チャット履歴保存エラー: {e}")
+            safe_print(f"⚠️ Supabase へのチャット履歴保存エラー: {e}")
         
         # レスポンスを返す
         return ChatResponse(

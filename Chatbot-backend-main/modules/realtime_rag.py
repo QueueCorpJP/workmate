@@ -20,6 +20,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import json
 from datetime import datetime
+import urllib.parse  # 追加
 
 # 環境変数の読み込み
 load_dotenv()

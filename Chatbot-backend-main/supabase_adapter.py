@@ -102,13 +102,22 @@ def insert_data(table: str, data: Dict[str, Any]) -> SupabaseResult:
     """
     try:
         client = get_supabase_client()
-        
-        # IDが設定されていない場合は生成
-        if 'id' not in data:
+
+        # usage_limits テーブルには id カラムが存在しないため自動付与しない
+        if table != "usage_limits" and 'id' not in data:
             data['id'] = str(uuid.uuid4())
-        
-        result = client.table(table).insert(data).execute()
-        
+
+        try:
+            result = client.table(table).insert(data).execute()
+        except Exception as inner_e:
+            # id カラムが無いと怒られた場合は id を外してリトライ
+            err_msg = str(inner_e)
+            if "Could not find the 'id' column" in err_msg and 'id' in data:
+                _ = data.pop('id', None)
+                result = client.table(table).insert(data).execute()
+            else:
+                raise
+
         return SupabaseResult(
             success=True,
             data=result.data,

@@ -670,53 +670,99 @@ class DocumentProcessor:
             raise
     
     async def _extract_text_from_pdf(self, content: bytes) -> str:
-        """PDFからテキストを抽出（Gemini直接処理でシンプル化）"""
+        """PDF からテキストを抽出する
+
+        1. PyMuPDF でまずテキストレイヤーを抽出し、文字化け行をカウント。
+        2. 文字化け行が 3 行以上ある場合のみ Gemini OCR にフォールバック。
+        3. PyMuPDF が失敗した場合も Gemini OCR にフォールバック。
+        """
+
+        from modules.knowledge.pdf import check_text_corruption, fix_mojibake_text
+        import fitz
+        import asyncio, tempfile, os
+
+        # -----------------------------
+        # Step 1: PyMuPDF 抽出を試みる
+        # -----------------------------
         try:
-            logger.info("🔄 Gemini直接処理でPDFテキスト抽出開始")
-            
-            # Geminiクライアント初期化
+            logger.info("📄 PyMuPDF で PDF テキスト抽出開始")
+
+            doc = fitz.open(stream=content, filetype="pdf")
+            text_parts = []
+            corrupted_lines = 0
+
+            for page_num, page in enumerate(doc, start=1):
+                page_text = page.get_text("text") or ""
+                fixed_text = fix_mojibake_text(page_text)
+
+                # 文字化け行カウント（シンプル判定でログ抑制）
+                import re
+                mojibake_pattern = re.compile(r'[縺繧\ufffd]|\(cid:')
+                for line in page_text.splitlines():
+                    if mojibake_pattern.search(line):
+                        corrupted_lines += 1
+
+                if fixed_text.strip():
+                    text_parts.append(f"=== ページ {page_num} ===\n{fixed_text}")
+
+            doc.close()
+
+            if text_parts:
+                combined_text = "\n\n".join(text_parts)
+            else:
+                combined_text = ""
+
+            # 文字化け行が 3 行未満ならそのまま返す
+            if combined_text and corrupted_lines < 3:
+                logger.info(f"✅ PyMuPDF 抽出成功 (文字化け行: {corrupted_lines})")
+                return combined_text
+            elif combined_text:
+                logger.warning(f"⚠️ 文字化け行 {corrupted_lines} 行検出。Gemini OCR にフォールバック")
+            else:
+                logger.warning("⚠️ PyMuPDF が有効なテキストを抽出できませんでした。Gemini OCR にフォールバック")
+
+        except Exception as pymupdf_error:
+            logger.error(f"PyMuPDF 抽出エラー: {pymupdf_error}")
+
+        # -----------------------------
+        # Step 2: Gemini OCR フォールバック
+        # -----------------------------
+        try:
+            logger.info("🔄 Gemini OCR で PDF テキスト抽出開始")
+
+            # Gemini クライアント初期化
             self._init_gemini_client()
-            
-            # PDFファイルを一時保存
-            import tempfile
-            import os
-            
+
             with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_file:
                 tmp_file.write(content)
                 tmp_file_path = tmp_file.name
-            
+
             try:
-                # シンプルなプロンプト
-                prompt = """
-                このPDFファイルの内容を正確にテキストとして抽出してください。
-                
-                重要な指示：
-                1. 文書の構造（見出し、段落、表、リストなど）を保持してください
-                2. 日本語の文字化けがあれば適切に修正してください  
-                3. 表がある場合は、行と列の構造を保持してください
-                4. ページ番号や章構成があれば識別してください
-                5. 図表のキャプションも含めて抽出してください
-                
-                出力は元のPDF構造を保った形で、読みやすいテキストとして出力してください。
-                """
-                
-                # PDFファイルを直接Geminiにアップロード（新SDK）
+                prompt = (
+                    "このPDFファイルの内容を正確にテキストとして抽出してください。\n\n"
+                    "重要な指示：\n"
+                    "1. 文書の構造（見出し、段落、表、リストなど）を保持してください\n"
+                    "2. 日本語の文字化けがあれば適切に修正してください\n"
+                    "3. 表がある場合は、行と列の構造を保持してください\n"
+                    "4. ページ番号や章構成があれば識別してください\n"
+                    "5. 図表のキャプションも含めて抽出してください"
+                )
+
+                # PDF を Gemini へアップロード（新 SDK）
                 uploaded_file = await asyncio.to_thread(
                     self.gemini_client.files.upload,
                     file=tmp_file_path
                 )
-                
-                # 同期処理を非同期で実行
+
                 response = await asyncio.to_thread(
                     self.gemini_client.models.generate_content,
-                    model='gemini-1.5-flash',
+                    model="gemini-1.5-flash",
                     contents=[prompt, uploaded_file]
                 )
-                
+
                 if response.text and response.text.strip():
-                    logger.info(f"✅ Gemini PDF処理成功: {len(response.text)} 文字")
-                    
-                    # アップロードファイルを削除（新SDK）
+                    logger.info(f"✅ Gemini OCR 処理成功: {len(response.text)} 文字")
+                    # アップロードファイル削除
                     try:
                         await asyncio.to_thread(
                             self.gemini_client.files.delete,
@@ -724,46 +770,45 @@ class DocumentProcessor:
                         )
                     except:
                         pass
-                        
                     return response.text
                 else:
-                    raise Exception("GeminiからPDFテキストを取得できませんでした")
-                    
+                    raise Exception("Gemini OCR からテキストを取得できませんでした")
             finally:
-                # 一時ファイル削除
                 if os.path.exists(tmp_file_path):
                     os.unlink(tmp_file_path)
-            
-        except Exception as e:
-            logger.error(f"Gemini PDF処理エラー: {e}")
-            
-            # フォールバック: 従来のPyPDF2処理（最小限）
-            try:
-                logger.info("🔙 フォールバック: PyPDF2処理")
-                import PyPDF2
-                from io import BytesIO
-                
-                pdf_reader = PyPDF2.PdfReader(BytesIO(content))
-                text_parts = []
-                
-                for page_num, page in enumerate(pdf_reader.pages):
-                    try:
-                        page_text = page.extract_text()
-                        if page_text and page_text.strip():
-                            text_parts.append(f"=== ページ {page_num + 1} ===\n{page_text}")
-                    except Exception as page_error:
-                        logger.warning(f"PDF ページ {page_num + 1} 抽出エラー: {page_error}")
-                        continue
-                
-                if text_parts:
-                    logger.info(f"✅ PyPDF2フォールバック成功: {len(text_parts)} ページ")
-                    return "\n\n".join(text_parts)
-                else:
-                    raise Exception("PDFからテキストを抽出できませんでした")
-                
-            except Exception as fallback_error:
-                logger.error(f"PyPDF2フォールバック処理エラー: {fallback_error}")
-                raise Exception(f"PDF処理に失敗しました: {fallback_error}")
+
+        except Exception as gemini_error:
+            logger.error(f"Gemini OCR 処理エラー: {gemini_error}")
+
+        # -----------------------------
+        # Step 3: 最終フォールバック PyPDF2
+        # -----------------------------
+        logger.info("🔙 最終フォールバック: PyPDF2 抽出を試行")
+        try:
+            import PyPDF2
+            from io import BytesIO
+
+            pdf_reader = PyPDF2.PdfReader(BytesIO(content))
+            text_parts = []
+
+            for page_num, page in enumerate(pdf_reader.pages):
+                try:
+                    page_text = page.extract_text()
+                    if page_text and page_text.strip():
+                        text_parts.append(f"=== ページ {page_num + 1} ===\n{page_text}")
+                except Exception as page_error:
+                    logger.warning(f"PDF ページ {page_num + 1} 抽出エラー: {page_error}")
+                    continue
+
+            if text_parts:
+                logger.info(f"✅ PyPDF2 フォールバック成功: {len(text_parts)} ページ")
+                return "\n\n".join(text_parts)
+            else:
+                raise Exception("PDF からテキストを抽出できませんでした")
+
+        except Exception as final_error:
+            logger.error(f"PyPDF2 フォールバック処理エラー: {final_error}")
+            raise Exception(f"PDF 処理に失敗しました: {final_error}")
     
     async def _extract_text_from_excel(self, content: bytes) -> str:
         """Excelファイルからテキストを抽出（2段階フォールバック: 完全メタデータ版 → 超保守版）"""

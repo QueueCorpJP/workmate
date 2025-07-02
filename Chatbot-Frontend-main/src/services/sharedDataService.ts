@@ -132,7 +132,7 @@ export class SharedDataService {
         const response = await api.get(url);
         return response.data;
       },
-      2 * 60 * 1000 // 2分キャッシュ
+      0 // キャッシュを無効化 (以前は 2 * 60 * 1000)
     );
   }
 

@@ -159,28 +159,23 @@ async def refresh_knowledge_base():
 
 def get_chat_history(user_id: str = None, db = None):
     """チャット履歴を取得する"""
-    print(f"チャット履歴取得APIが呼び出されました (user_id: {user_id})")
+    print(f"[ADMIN_HISTORY] get_chat_history 呼び出し: user_id={user_id}")
     try:
         from supabase_adapter import select_data
         
-        # Supabaseからチャット履歴を取得
         if user_id:
-            # print(f"ユーザーID {user_id} でフィルタリングします")
-            # 特定のユーザーの履歴を取得
             result = select_data("chat_history", filters={"employee_id": user_id})
+            print(f"[ADMIN_HISTORY] SupabaseからユーザーID {user_id} のチャット履歴を取得完了。件数: {len(result.data) if result and result.data else 0}")
         else:
-            # print("全ユーザーのチャット履歴を取得します")
-            # 全履歴を取得
             result = select_data("chat_history")
+            print(f"[ADMIN_HISTORY] Supabaseから全ユーザーのチャット履歴を取得完了。件数: {len(result.data) if result and result.data else 0}")
         
         if not result or not result.data:
-            # print("チャット履歴が見つかりませんでした")
+            print("[ADMIN_HISTORY] チャット履歴が見つかりませんでした。")
             return []
         
         chat_history = result.data
-        # print(f"チャット履歴取得結果: {len(chat_history)}件")
         
-        # データ形式を統一
         formatted_history = []
         for chat in chat_history:
             item = {
@@ -197,17 +192,15 @@ def get_chat_history(user_id: str = None, db = None):
             }
             formatted_history.append(item)
         
-        # タイムスタンプで降順ソート
         formatted_history.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         
-        # print(f"チャット履歴変換結果: {len(formatted_history)}件")
+        print(f"[ADMIN_HISTORY] 最終的にフォーマットされたチャット履歴件数: {len(formatted_history)}")
         return formatted_history
-        
     except Exception as e:
-        print(f"チャット履歴取得エラー: {e}")
+        print(f"[ADMIN_HISTORY] get_chat_history エラー: {e}")
         import traceback
         print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"チャット履歴取得中にエラーが発生しました: {str(e)}")
+        return []
 
 def get_chat_history_paginated(user_id: str = None, db = None, limit: int = 30, offset: int = 0):
     """ページネーション対応のチャット履歴を取得する"""
@@ -1012,31 +1005,25 @@ async def analyze_chats(user_id: str = None, db = None, company_id: str = None):
 
 def get_chat_history_by_company_paginated(company_id: str, db = None, limit: int = 30, offset: int = 0):
     """会社IDでフィルタリングしたページネーション対応のチャット履歴を取得する"""
-    print(f"🔍 [COMPANY CHAT DEBUG] get_chat_history_by_company_paginated 開始")
-    print(f"  - company_id: {company_id}")
-    print(f"  - limit: {limit}, offset: {offset}")
+    print(f"[ADMIN_HISTORY] get_chat_history_by_company_paginated 呼び出し: company_id={company_id}, limit={limit}, offset={offset}")
     
     try:
         from supabase_adapter import select_data
         
-        # まず会社の全ユーザーIDを取得
         users_result = select_data("users", columns="id", filters={"company_id": company_id})
         
         if not users_result or not users_result.data:
-            print(f"🔍 [COMPANY CHAT DEBUG] 会社ID {company_id} のユーザーが見つかりません")
+            print(f"[ADMIN_HISTORY] 会社ID {company_id} のユーザーが見つかりません。チャット履歴なし。")
             return [], 0
         
         user_ids = [user["id"] for user in users_result.data]
-        print(f"🔍 [COMPANY CHAT DEBUG] 会社のユーザーID一覧: {user_ids}")
+        print(f"[ADMIN_HISTORY] 会社のユーザーID一覧: {user_ids}")
         
-        # 会社のユーザーのチャット履歴を取得（ページネーション対応）
-        # 複数のユーザーのデータを取得するため、各ユーザーごとに取得して結合
         all_chat_data = []
         total_count = 0
         
         for user_id in user_ids:
             try:
-                # 各ユーザーのチャット履歴の全件数を取得
                 user_count_result = select_data(
                     "chat_history", 
                     columns="id", 
@@ -1045,7 +1032,6 @@ def get_chat_history_by_company_paginated(company_id: str, db = None, limit: int
                 user_count = len(user_count_result.data) if user_count_result and user_count_result.data else 0
                 total_count += user_count
                 
-                # 各ユーザーのチャット履歴を取得
                 user_result = select_data(
                     "chat_history", 
                     columns="*", 
@@ -1055,39 +1041,34 @@ def get_chat_history_by_company_paginated(company_id: str, db = None, limit: int
                 
                 if user_result and user_result.data:
                     all_chat_data.extend(user_result.data)
-                    print(f"🔍 [COMPANY CHAT DEBUG] ユーザー {user_id}: {len(user_result.data)}件のチャット")
+                    print(f"[ADMIN_HISTORY] ユーザー {user_id}: {len(user_result.data)}件のチャット履歴をSupabaseから取得")
                 
             except Exception as e:
-                print(f"🔍 [COMPANY CHAT DEBUG] ユーザー {user_id} のデータ取得エラー: {e}")
+                print(f"[ADMIN_HISTORY] ユーザー {user_id} のデータ取得エラー: {e}")
                 continue
         
-        print(f"🔍 [COMPANY CHAT DEBUG] 全ユーザーのチャット合計: {len(all_chat_data)}件")
+        print(f"[ADMIN_HISTORY] 全ユーザーのチャット合計（Supabaseから取得）: {len(all_chat_data)}件")
         
-        # タイムスタンプでソート（降順）
         all_chat_data.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         
-        # ページネーション適用
         start_idx = offset
         end_idx = offset + limit
         result_data = all_chat_data[start_idx:end_idx]
         
-        print(f"🔍 [COMPANY CHAT DEBUG] ページネーション後: {len(result_data)}件 (offset: {offset}, limit: {limit})")
+        print(f"[ADMIN_HISTORY] ページネーション適用後: {len(result_data)}件 (offset: {offset}, limit: {limit})")
         
         if not result_data:
-            print(f"🔍 [COMPANY CHAT DEBUG] 会社のチャット履歴が見つかりません")
+            print("[ADMIN_HISTORY] 会社のチャット履歴が見つかりません。")
             return [], total_count
         
         chat_history = result_data
-        print(f"🔍 [COMPANY CHAT DEBUG] チャット履歴取得結果: {len(chat_history)}件 (全体: {total_count}件)")
         
-        # ユーザー名を取得してマッピング
         users_detail_result = select_data("users", columns="id, name", filters={"company_id": company_id})
         user_name_map = {}
         if users_detail_result and users_detail_result.data:
             for user in users_detail_result.data:
                 user_name_map[user["id"]] = user.get("name", "不明なユーザー")
         
-        # データ形式を統一
         formatted_history = []
         for chat in chat_history:
             employee_id = chat.get("employee_id", "")
@@ -1107,34 +1088,31 @@ def get_chat_history_by_company_paginated(company_id: str, db = None, limit: int
             }
             formatted_history.append(item)
         
-        print(f"🔍 [COMPANY CHAT DEBUG] チャット履歴変換結果: {len(formatted_history)}件")
+        print(f"[ADMIN_HISTORY] 最終的にフォーマットされたページネーションチャット履歴件数: {len(formatted_history)}")
         return formatted_history, total_count
         
     except Exception as e:
-        print(f"🔍 [COMPANY CHAT DEBUG] 会社チャット履歴取得エラー: {e}")
+        print(f"[ADMIN_HISTORY] get_chat_history_by_company_paginated エラー: {e}")
         import traceback
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"会社チャット履歴取得中にエラーが発生しました: {str(e)}")
 
 def get_chat_history_by_company(company_id: str, db = None):
     """会社IDでフィルタリングしたチャット履歴を取得する（フォールバック用）"""
-    print(f"🔍 [COMPANY CHAT DEBUG] get_chat_history_by_company 開始")
-    print(f"  - company_id: {company_id}")
+    print(f"[ADMIN_HISTORY] get_chat_history_by_company 呼び出し: company_id={company_id}")
     
     try:
         from supabase_adapter import select_data
         
-        # まず会社の全ユーザーIDを取得
         users_result = select_data("users", columns="id", filters={"company_id": company_id})
         
         if not users_result or not users_result.data:
-            print(f"🔍 [COMPANY CHAT DEBUG] 会社ID {company_id} のユーザーが見つかりません")
+            print(f"[ADMIN_HISTORY] 会社ID {company_id} のユーザーが見つかりません。チャット履歴なし。")
             return []
         
         user_ids = [user["id"] for user in users_result.data]
-        print(f"🔍 [COMPANY CHAT DEBUG] 会社のユーザーID一覧: {user_ids}")
+        print(f"[ADMIN_HISTORY] 会社のユーザーID一覧: {user_ids}")
         
-        # IN句でフィルタリング
         user_ids_str = ','.join([f"'{uid}'" for uid in user_ids])
         
         result = select_data(
@@ -1145,20 +1123,18 @@ def get_chat_history_by_company(company_id: str, db = None):
         )
         
         if not result or not result.data:
-            print(f"🔍 [COMPANY CHAT DEBUG] 会社のチャット履歴が見つかりません")
+            print("[ADMIN_HISTORY] 会社のチャット履歴が見つかりません。")
             return []
         
         chat_history = result.data
-        print(f"🔍 [COMPANY CHAT DEBUG] チャット履歴取得結果: {len(chat_history)}件")
+        print(f"[ADMIN_HISTORY] Supabaseから会社のチャット履歴を取得完了。件数: {len(chat_history)}")
         
-        # ユーザー名を取得してマッピング
         users_detail_result = select_data("users", columns="id, name", filters={"company_id": company_id})
         user_name_map = {}
         if users_detail_result and users_detail_result.data:
             for user in users_detail_result.data:
                 user_name_map[user["id"]] = user.get("name", "不明なユーザー")
         
-        # データ形式を統一
         formatted_history = []
         for chat in chat_history:
             employee_id = chat.get("employee_id", "")
@@ -1178,11 +1154,11 @@ def get_chat_history_by_company(company_id: str, db = None):
             }
             formatted_history.append(item)
         
-        print(f"🔍 [COMPANY CHAT DEBUG] チャット履歴変換結果: {len(formatted_history)}件")
+        print(f"[ADMIN_HISTORY] 最終的にフォーマットされた会社のチャット履歴件数: {len(formatted_history)}")
         return formatted_history
         
     except Exception as e:
-        print(f"🔍 [COMPANY CHAT DEBUG] 会社チャット履歴取得エラー: {e}")
+        print(f"[ADMIN_HISTORY] get_chat_history_by_company エラー: {e}")
         import traceback
         print(traceback.format_exc())
         return []

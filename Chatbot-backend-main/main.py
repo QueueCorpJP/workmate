@@ -172,6 +172,32 @@ async def login(credentials: UserLogin, db: SupabaseConnection = Depends(get_db)
     # 利用制限情報を取得
     limits = get_usage_limits(user["id"], db)
     
+    # もし usage_limits が存在しなければデフォルトを生成
+    if limits is None:
+        from modules.database import insert_data
+
+        # ロールに応じてデフォルト値を決定
+        is_unlimited = user["role"] in ["admin", "admin_user"] or user["email"] == "queue@queueu-tech.jp"
+        default_limits = {
+            "user_id": user["id"],
+            "document_uploads_used": 0,
+            "document_uploads_limit": 999999 if is_unlimited else 10,
+            "questions_used": 0,
+            "questions_limit": 999999 if is_unlimited else 10,
+            "is_unlimited": is_unlimited
+        }
+
+        try:
+            insert_data("usage_limits", default_limits)
+            limits = default_limits
+        except Exception as e:
+            logger.error(f"usage_limits 自動作成に失敗しました: {str(e)}")
+            # それでも作成できなければエラーを返す
+            raise HTTPException(
+                status_code=500,
+                detail="usage_limits レコードの自動生成に失敗しました。管理者にお問い合わせください。"
+            )
+    
     return {
         "id": user["id"],
         "email": user["email"],
