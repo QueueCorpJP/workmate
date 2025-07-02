@@ -45,7 +45,7 @@ jobs:
       run: |
         echo "🔑 SSH設定開始..."
         mkdir -p ~/.ssh
-        echo "${{ secrets.EC2_SSH_KEY }}" | tr -d '\r' | sed 's/\\n/\n/g' > ~/.ssh/id_rsa
+        echo "${{ secrets.EC2_KEY }}" | tr -d '\r' | sed 's/\\n/\n/g' > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
         
@@ -66,7 +66,7 @@ jobs:
         echo "📤 scp で差分アップロード開始..."
         scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa -r \
             Chatbot-backend-main/* \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/workmate/Chatbot-backend-main/
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/workmate/Chatbot-backend-main/ || { echo "❌ scp アップロードに失敗しました"; exit 1; }
         echo "✅ scp アップロード完了"
 
     - name: Test workflow and clean up
