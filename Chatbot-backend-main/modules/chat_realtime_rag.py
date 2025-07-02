@@ -78,8 +78,19 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
             raise HTTPException(status_code=500, detail="Gemini model is not initialized")
         
         # ユーザー情報の取得
-        user_id = current_user.get('user_id') if current_user else None
+        user_id = current_user.get('id') if current_user else None  # 'user_id'ではなく'id'
         company_id = current_user.get('company_id') if current_user else None
+        
+        # company_idが直接ない場合はデータベースから取得
+        if not company_id and user_id:
+            try:
+                from supabase_adapter import select_data
+                user_result = select_data("users", columns="company_id", filters={"id": user_id})
+                if user_result.data and len(user_result.data) > 0:
+                    company_id = user_result.data[0].get('company_id')
+                    safe_print(f"🏢 データベースから会社ID取得: {company_id}")
+            except Exception as e:
+                safe_print(f"⚠️ データベースから会社ID取得エラー: {e}")
         
         # メッセージテキストの取得（複数の属性をサポート）
         message_text = ""
@@ -96,7 +107,7 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
         if user_id:
             try:
                 check_usage_limits(user_id, db)
-                update_usage_count(user_id, db)
+                update_usage_count(user_id, "questions_used", db)  # fieldパラメータを追加
             except HTTPException as e:
                 return ChatResponse(
                     response=e.detail,
@@ -335,8 +346,45 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
             for name in resource_names
         ]
         
-        # 通常のプロンプト処理
-        prompt = f"""あなたは{company_name}の社内向け丁寧で親切なアシスタントです。
+        # 🎯 特別指示をプロンプトの一番前に配置
+        special_instructions_text = ""
+        if company_id:
+            try:
+                from supabase_adapter import select_data
+                # アクティブなリソースの特別指示を取得
+                special_result = select_data(
+                    "document_sources", 
+                    columns="name,special", 
+                    filters={
+                        "company_id": company_id,
+                        "active": True
+                    }
+                )
+                
+                if special_result.data:
+                    special_instructions = []
+                    safe_print(f"🎯 特別指示チェック開始: {len(special_result.data)}件のリソース")
+                    
+                    for i, resource in enumerate(special_result.data, 1):
+                        special_instruction = resource.get('special')
+                        if special_instruction and special_instruction.strip():
+                            resource_name = resource.get('name', 'Unknown')
+                            special_instructions.append(f"{i}. 【{resource_name}】: {special_instruction.strip()}")
+                            safe_print(f"   ✅ 特別指示発見: {resource_name}")
+                    
+                    if special_instructions:
+                        special_instructions_text = "特別な回答指示（以下のリソースを参照する際は、各リソースの指示に従ってください）：\n" + "\n".join(special_instructions) + "\n\n"
+                        safe_print(f"✅ {len(special_instructions)}件の特別指示をプロンプトに追加")
+                    else:
+                        safe_print(f"ℹ️ 特別指示が設定されたリソースが見つかりませんでした")
+                else:
+                    safe_print(f"ℹ️ 会社のリソースが見つかりませんでした")
+                    
+            except Exception as e:
+                safe_print(f"⚠️ 特別指示取得エラー: {e}")
+        
+        # 通常のプロンプト処理（特別指示を一番前に配置）
+        prompt = f"""{special_instructions_text}あなたは{company_name}の社内向け丁寧で親切なアシスタントです。
 
 回答の際の重要な指針：
 • 回答は丁寧な敬語で行ってください

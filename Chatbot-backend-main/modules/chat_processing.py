@@ -263,7 +263,8 @@ def build_response_prompt(
     message: str, 
     search_results: str, 
     conversation_context: str = "",
-    intent_info: Dict[str, Any] = None
+    intent_info: Dict[str, Any] = None,
+    company_id: str = None
 ) -> str:
     """
     応答生成用のプロンプトを構築
@@ -273,15 +274,44 @@ def build_response_prompt(
         search_results: 検索結果
         conversation_context: 会話コンテキスト
         intent_info: 意図情報
+        company_id: 会社ID（特別指示取得用）
         
     Returns:
         構築されたプロンプト
     """
     prompt_parts = []
     
-    # システムプロンプト
-    prompt_parts.append("""
-あなたは親切で知識豊富なAIアシスタントです。
+    # 🎯 特別指示をプロンプトの一番前に配置
+    special_instructions_text = ""
+    if company_id:
+        try:
+            from supabase_adapter import select_data
+            # アクティブなリソースの特別指示を取得
+            special_result = select_data(
+                "document_sources", 
+                columns="name,special", 
+                filters={
+                    "company_id": company_id,
+                    "active": True
+                }
+            )
+            
+            if special_result.data:
+                special_instructions = []
+                for i, resource in enumerate(special_result.data, 1):
+                    special_instruction = resource.get('special')
+                    if special_instruction and special_instruction.strip():
+                        resource_name = resource.get('name', 'Unknown')
+                        special_instructions.append(f"{i}. 【{resource_name}】: {special_instruction.strip()}")
+                
+                if special_instructions:
+                    special_instructions_text = "特別な回答指示（以下のリソースを参照する際は、各リソースの指示に従ってください）：\n" + "\n".join(special_instructions) + "\n\n"
+                    
+        except Exception as e:
+            safe_print(f"⚠️ 特別指示取得エラー: {e}")
+    
+    # 特別指示 + システムプロンプト
+    prompt_parts.append(f"""{special_instructions_text}あなたは親切で知識豊富なAIアシスタントです。
 以下の検索結果を参考にして、ユーザーの質問に正確で有用な回答を日本語で提供してください。
 
 回答の際は以下の点に注意してください：

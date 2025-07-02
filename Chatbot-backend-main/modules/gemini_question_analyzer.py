@@ -141,7 +141,7 @@ class GeminiQuestionAnalyzer:
 - 電話番号が含まれる場合: 電話番号そのものを最重要キーワードとして含める
 - 企業名を求める場合: 「社名」「会社名」「企業名」「株式会社」「有限会社」「合同会社」を含める
 - 連絡先を求める場合: 「電話」「TEL」「連絡先」「住所」「メール」を含める
-- 代表者を求める場合: 「代表者」「社長」「代表取締役」「責任者」を含める
+- 代表者を求める場合: 「代表者」「社長」「代表取締役」「責任者」「トップ」「CEO」「リーダー」「経営者」「オーナー」を含める
 - 具体的な固有名詞（電話番号、会社名、人名など）は必ず含める
 - 一般的な助詞（の、を、は、が、に、で、と、から、まで）は除外する
 
@@ -161,7 +161,7 @@ class GeminiQuestionAnalyzer:
   "intent": "specific_info",
   "confidence": 0.90,
   "target_entity": "代表者名",
-  "keywords": ["ABC株式会社", "代表者", "社長", "代表取締役", "責任者"],
+  "keywords": ["ABC株式会社", "代表者", "社長", "代表取締役", "責任者", "トップ", "CEO", "リーダー"],
   "reasoning": "特定企業の代表者名を求める具体的情報の質問"
 }}
 
@@ -202,9 +202,12 @@ JSON形式のみで回答してください：
             keywords = analysis_data.get("keywords", [])
             reasoning = analysis_data.get("reasoning", "Gemini分析結果")
             
-            # キーワードの後処理（重複除去、空文字除去）
+            # キーワードの後処理（重複除去、空文字除去、同義語正規化）
             keywords = [k.strip() for k in keywords if k and k.strip()]
             keywords = list(dict.fromkeys(keywords))  # 順序を保ちながら重複除去
+            
+            # 🔥 同義語正規化を無効化（OR検索で対応）
+            # keywords = self._normalize_synonyms(keywords)
             
             # SQL検索パターンの生成
             sql_patterns = self._generate_sql_patterns(intent, target_entity, keywords)
@@ -241,7 +244,7 @@ JSON形式のみで回答してください：
         question_lower = question.lower()
         
         # 意図の判定
-        if any(word in question_lower for word in ['代表者', '社長', '連絡先', '電話', '住所', '料金', '価格']):
+        if any(word in question_lower for word in ['代表者', '社長', 'トップ', 'ceo', '連絡先', '電話', '住所', '料金', '価格']):
             intent = QueryIntent.SPECIFIC_INFO
             confidence = 0.8
         elif any(word in question_lower for word in ['なぜ', 'どう', '理由', '背景']):
@@ -298,8 +301,8 @@ JSON形式のみで回答してください：
             intent = QueryIntent.SPECIFIC_INFO
             confidence = 0.8
         
-        if '代表者' in question or '社長' in question:
-            keywords.extend(['代表者', '社長', '代表取締役', '責任者'])
+        if any(word in question for word in ['代表者', '社長', 'トップ', 'CEO', 'リーダー', '経営者', 'オーナー']):
+            keywords.extend(['代表者', '社長', '代表取締役', '責任者', 'トップ', 'CEO', 'リーダー', '経営者', 'オーナー'])
             target_entity = "代表者"
             intent = QueryIntent.SPECIFIC_INFO
             confidence = 0.8
@@ -311,7 +314,10 @@ JSON形式のみで回答してください：
         
         # 重複除去と空文字除去
         keywords = [k.strip() for k in keywords if k and k.strip()]
-        keywords = list(dict.fromkeys(keywords))  # 順序を保ちながら重複除去
+        keywords = list(dict.fromkeys(keywords))
+        
+        # 🔥 同義語正規化を無効化（OR検索で対応）
+        # keywords = self._normalize_synonyms(keywords)
         
         # 対象エンティティの推測（キーワードから）
         if not target_entity:
@@ -339,6 +345,99 @@ JSON形式のみで回答してください：
         logger.info(f"🏷️ フォールバックキーワード: {keywords}")
         
         return result
+    
+    def _normalize_synonyms(self, keywords: List[str]) -> List[str]:
+        """
+        同義語正規化: 検索精度を上げるため、同義語グループの中で最も検索しやすいキーワードのみを残す
+        """
+        # 同義語グループの定義（最初の要素が優先キーワード）
+        synonym_groups = [
+            # 役職関連
+            ['代表者', 'トップ', 'CEO', 'ceo', 'リーダー', '経営者', 'オーナー', '社長', '代表取締役', '責任者'],
+            # 会社関連
+            ['会社', '企業', '法人', '事業者', '組織'],
+            # 連絡先関連
+            ['電話番号', 'TEL', 'Tel', 'tel', 'ＴＥＬ', '電話'],
+            # 住所関連
+            ['住所', '所在地', '場所', '位置', 'アドレス'],
+            # 質問関連
+            ['教えて', '知りたい', '聞きたい', '分からない'],
+        ]
+        
+        normalized_keywords = keywords.copy()
+        
+        for group in synonym_groups:
+            priority_keyword = group[0]  # グループの最初が優先キーワード
+            found_keywords = [k for k in normalized_keywords if k in group]
+            
+            if len(found_keywords) > 1:
+                # 複数の同義語が見つかった場合、優先キーワード以外を除去
+                for keyword in found_keywords:
+                    if keyword != priority_keyword:
+                        try:
+                            normalized_keywords.remove(keyword)
+                            logger.info(f"🔄 同義語正規化: '{keyword}' → '{priority_keyword}'")
+                        except ValueError:
+                            pass  # 既に除去済み
+        
+        logger.info(f"✅ 同義語正規化完了: {len(keywords)}個 → {len(normalized_keywords)}個")
+        return normalized_keywords
+    
+    def _classify_keywords(self, keywords: List[str]) -> Tuple[List[str], Dict[str, List[str]]]:
+        """
+        キーワードを固有名詞（必須）と同義語グループ（選択）に分類
+        
+        Returns:
+            Tuple[必須キーワード, 同義語グループ辞書]
+        """
+        # 同義語グループの定義
+        synonym_groups_def = {
+            'position': ['代表者', 'トップ', 'CEO', 'ceo', 'リーダー', '経営者', 'オーナー', '社長', '代表取締役', '責任者'],
+            'company_type': ['会社', '企業', '法人', '事業者', '組織', '株式会社', '有限会社', '合同会社'],
+            'contact': ['電話番号', 'TEL', 'Tel', 'tel', 'ＴＥＬ', '電話', '連絡先'],
+            'location': ['住所', '所在地', '場所', '位置', 'アドレス'],
+            'question_words': ['教えて', '知りたい', '聞きたい', '分からない'],
+        }
+        
+        required_keywords = []
+        found_synonym_groups = {}
+        
+        for keyword in keywords:
+            is_synonym = False
+            
+            # 同義語グループに属するかチェック
+            for group_name, group_words in synonym_groups_def.items():
+                if keyword in group_words:
+                    if group_name not in found_synonym_groups:
+                        found_synonym_groups[group_name] = []
+                    found_synonym_groups[group_name].append(keyword)
+                    is_synonym = True
+                    break
+            
+            # 同義語グループに属さない場合は固有名詞として扱う
+            if not is_synonym:
+                # 電話番号パターンのチェック
+                phone_patterns = [
+                    r'\d{2,4}-\d{2,4}-\d{4}',
+                    r'\d{3}-\d{3}-\d{4}',
+                    r'\(\d{2,4}\)\s*\d{2,4}-\d{4}',
+                    r'\d{10,11}'
+                ]
+                
+                is_phone = any(re.match(pattern, keyword) for pattern in phone_patterns)
+                
+                # メールアドレスパターンのチェック
+                is_email = re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', keyword)
+                
+                # 固有名詞として分類（会社名、人名、電話番号、メールアドレスなど）
+                if (len(keyword) >= 2 and not keyword in ['です', 'ます', 'ている', 'だ', 'である']) or is_phone or is_email:
+                    required_keywords.append(keyword)
+        
+        logger.info(f"🔍 キーワード分類結果:")
+        logger.info(f"   固有名詞（必須）: {required_keywords}")
+        logger.info(f"   同義語グループ（選択）: {found_synonym_groups}")
+        
+        return required_keywords, found_synonym_groups
     
     def _generate_sql_patterns(self, intent: QueryIntent, target_entity: str, keywords: List[str]) -> List[str]:
         """SQL検索パターンの生成（キーワードベース）"""
@@ -383,70 +482,92 @@ JSON形式のみで回答してください：
                     
                     # キーワードベースの検索を実行
                     if analysis.keywords:
-                        # 1. 全キーワードのAND検索
+                        # 🔥 スマート検索: 固有名詞（AND）+ 同義語グループ（OR）
                         if len(analysis.keywords) >= 2:
-                            logger.info(f"🔍 全キーワードAND検索: {analysis.keywords}")
+                            logger.info(f"🔍 スマート検索（固有名詞AND + 同義語OR）: {analysis.keywords}")
+                            
+                            # キーワードを固有名詞と同義語グループに分類
+                            required_keywords, synonym_groups = self._classify_keywords(analysis.keywords)
                             
                             # WHERE句の構築
                             where_conditions = []
                             params = []
                             
-                            for keyword in analysis.keywords:
-                                # 特殊文字を含む場合は正規表現検索を使用
+                            # 1. 固有名詞は必須（AND）
+                            for keyword in required_keywords:
                                 if any(char in keyword for char in ['-', '(', ')', '.']):
                                     where_conditions.append("c.content ~* %s")
-                                    # 特殊文字をエスケープ
-                                    escaped_keyword = re.escape(keyword)
-                                    params.append(escaped_keyword)
+                                    params.append(re.escape(keyword))
                                 else:
                                     where_conditions.append("c.content ILIKE %s")
                                     params.append(f"%{keyword}%")
                             
-                            sql = f"""
-                            SELECT DISTINCT
-                                c.id as chunk_id,
-                                c.doc_id as document_id,
-                                c.chunk_index,
-                                c.content as snippet,
-                                ds.name as document_name,
-                                ds.type as document_type,
-                                1.0 as score
-                            FROM chunks c
-                            LEFT JOIN document_sources ds ON ds.id = c.doc_id
-                            WHERE c.content IS NOT NULL
-                              AND LENGTH(c.content) > 10
-                              AND ({' AND '.join(where_conditions)})
-                            """
+                            # 2. 同義語グループは選択（OR）
+                            for group_name, synonyms in synonym_groups.items():
+                                if synonyms:
+                                    or_conditions = []
+                                    for synonym in synonyms:
+                                        if any(char in synonym for char in ['-', '(', ')', '.']):
+                                            or_conditions.append("c.content ~* %s")
+                                            params.append(re.escape(synonym))
+                                        else:
+                                            or_conditions.append("c.content ILIKE %s")
+                                            params.append(f"%{synonym}%")
+                                    
+                                    if or_conditions:
+                                        where_conditions.append(f"({' OR '.join(or_conditions)})")
                             
-                            # 会社IDフィルタ
-                            if company_id:
-                                sql += " AND c.company_id = %s"
-                                params.append(company_id)
-                            
-                            sql += " ORDER BY score DESC LIMIT %s"
-                            params.append(limit)
-                            
-                            try:
-                                cur.execute(sql, params)
-                                results = cur.fetchall()
+                            if where_conditions:
+                                sql = f"""
+                                SELECT DISTINCT
+                                    c.id as chunk_id,
+                                    c.doc_id as document_id,
+                                    c.chunk_index,
+                                    c.content as snippet,
+                                    ds.name as document_name,
+                                    ds.type as document_type,
+                                    1.0 as score
+                                FROM chunks c
+                                LEFT JOIN document_sources ds ON ds.id = c.doc_id
+                                WHERE c.content IS NOT NULL
+                                  AND LENGTH(c.content) > 10
+                                  AND ({' AND '.join(where_conditions)})
+                                """
                                 
-                                for row in results:
-                                    # 重複チェック
-                                    if not any(r.chunk_id == row['chunk_id'] for r in all_results):
-                                        all_results.append(SearchResult(
-                                            chunk_id=row['chunk_id'],
-                                            document_id=row['document_id'],
-                                            document_name=row['document_name'] or 'Unknown',
-                                            content=row['snippet'] or '',
-                                            score=row['score'],
-                                            search_method='sql_and_keywords',
-                                            metadata={'keywords': analysis.keywords}
-                                        ))
+                                # 会社IDフィルタ
+                                if company_id:
+                                    sql += " AND c.company_id = %s"
+                                    params.append(company_id)
                                 
-                                logger.info(f"✅ 全キーワードAND検索で{len(results)}件の結果")
+                                sql += " ORDER BY score DESC LIMIT %s"
+                                params.append(limit)
                                 
-                            except Exception as e:
-                                logger.warning(f"⚠️ 全キーワードAND検索エラー: {e}")
+                                try:
+                                    cur.execute(sql, params)
+                                    results = cur.fetchall()
+                                    
+                                    for row in results:
+                                        # 重複チェック
+                                        if not any(r.chunk_id == row['chunk_id'] for r in all_results):
+                                            all_results.append(SearchResult(
+                                                chunk_id=row['chunk_id'],
+                                                document_id=row['document_id'],
+                                                document_name=row['document_name'] or 'Unknown',
+                                                content=row['snippet'] or '',
+                                                score=row['score'],
+                                                search_method='sql_smart_search',
+                                                metadata={
+                                                    'required_keywords': required_keywords,
+                                                    'synonym_groups': synonym_groups
+                                                }
+                                            ))
+                                    
+                                    logger.info(f"✅ スマート検索で{len(results)}件の結果")
+                                    logger.info(f"   必須キーワード: {required_keywords}")
+                                    logger.info(f"   同義語グループ: {list(synonym_groups.keys())}")
+                                    
+                                except Exception as e:
+                                    logger.warning(f"⚠️ スマート検索エラー: {e}")
                         
                         # 2. 個別キーワード検索（結果が少ない場合）
                         if len(all_results) < limit:

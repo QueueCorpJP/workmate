@@ -260,7 +260,7 @@ class RealtimeRAGProcessor:
             logger.error(f"❌ Step 3エラー: 類似検索失敗 - {e}")
             raise
     
-    async def step4_generate_answer(self, question: str, similar_chunks: List[Dict], company_name: str = "お客様の会社") -> str:
+    async def step4_generate_answer(self, question: str, similar_chunks: List[Dict], company_name: str = "お客様の会社", company_id: str = None) -> str:
         """
         💡 Step 4. LLMへ送信
         Top-K チャンクと元の質問を Gemini Flash 2.5 に渡して、要約せずに「原文ベース」で回答を生成
@@ -312,8 +312,45 @@ class RealtimeRAGProcessor:
             print(f"   📏 総文字数: {len(context):,}文字")
             print("="*80 + "\n")
             
-            # 改善されたプロンプト構築（より具体的で確実な回答を得るため）
-            prompt = f"""あなたは{company_name}の社内向け丁寧で親切なアシスタントです。
+            # 🎯 特別指示を取得してプロンプトの一番前に配置
+            special_instructions_text = ""
+            if company_id:
+                try:
+                    with psycopg2.connect(self.db_url, cursor_factory=RealDictCursor) as conn:
+                        with conn.cursor() as cur:
+                            # アクティブなリソースの特別指示を取得
+                            sql = """
+                            SELECT DISTINCT ds.name, ds.special
+                            FROM document_sources ds 
+                            WHERE ds.company_id = %s 
+                            AND ds.active = true 
+                            AND ds.special IS NOT NULL 
+                            AND ds.special != ''
+                            ORDER BY ds.name
+                            """
+                            cur.execute(sql, [company_id])
+                            special_results = cur.fetchall()
+                            
+                            if special_results:
+                                special_instructions = []
+                                print(f"🎯 特別指示を取得しました: {len(special_results)}件")
+                                for i, row in enumerate(special_results, 1):
+                                    resource_name = row['name']
+                                    special_instruction = row['special']
+                                    special_instructions.append(f"{i}. 【{resource_name}】: {special_instruction}")
+                                    print(f"   {i}. {resource_name}: {special_instruction}")
+                                
+                                special_instructions_text = "特別な回答指示（以下のリソースを参照する際は、各リソースの指示に従ってください）：\n" + "\n".join(special_instructions) + "\n\n"
+                                print(f"✅ 特別指示をプロンプトに追加完了")
+                            else:
+                                print(f"ℹ️ 特別指示が設定されたリソースが見つかりませんでした")
+                                
+                except Exception as e:
+                    print(f"⚠️ 特別指示取得エラー: {e}")
+                    logger.warning(f"特別指示取得エラー: {e}")
+            
+            # 改善されたプロンプト構築（特別指示を一番前に配置）
+            prompt = f"""{special_instructions_text}あなたは{company_name}の社内向け丁寧で親切なアシスタントです。
 
 ご質問：
 {question}
@@ -560,7 +597,7 @@ class RealtimeRAGProcessor:
                 }
             
             # Step 4: LLM回答生成
-            answer = await self.step4_generate_answer(processed_question, similar_chunks, company_name)
+            answer = await self.step4_generate_answer(processed_question, similar_chunks, company_name, company_id)
             
             # Step 5: 回答表示（使用されたチャンク情報を含める）
             result = await self.step5_display_answer(answer, metadata, similar_chunks)
