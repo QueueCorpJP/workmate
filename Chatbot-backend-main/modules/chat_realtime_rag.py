@@ -106,7 +106,17 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
         # 使用制限チェック
         if user_id:
             try:
-                check_usage_limits(user_id, db)
+                usage_check_result = check_usage_limits(user_id, "question", db)
+                allowed = usage_check_result["allowed"]
+                remaining = usage_check_result["remaining"]
+                is_unlimited = usage_check_result["is_unlimited"]
+                
+                if not allowed:
+                    logger.warning(f"⚠️ ユーザーID: {user_id} は質問制限に達しました。")
+                    return ChatResponse(
+                        response="申し訳ございませんが、質問制限に達しました。しばらく時間をおいてから再度お試しください。",
+                        sources=[]
+                    )
                 update_usage_count(user_id, "questions_used", db)  # fieldパラメータを追加
             except HTTPException as e:
                 return ChatResponse(
