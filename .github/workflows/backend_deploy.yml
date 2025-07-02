@@ -102,49 +102,30 @@ jobs:
       run: |
         echo "🚀 リモートインストールとバックエンド再起動開始..."
         REMOTE_BASE="/home/${{ secrets.EC2_USER }}/workmate"
-        ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-        set -eux
-        REMOTE_BASE="$HOME/workmate"
-        echo "DEBUG: REMOTE_BASE=$REMOTE_BASE"
-        DEPLOY_PATH="$REMOTE_BASE/Chatbot-backend-main"
-        echo "DEBUG: DEPLOY_PATH=$DEPLOY_PATH"
-        ls -la "$REMOTE_BASE" || true
-        ls -la "$DEPLOY_PATH" || true
-
-        # venv が無ければ作成
-        if [ ! -f /opt/workmate-venv/bin/activate ]; then
-          echo "WARNING: /opt/workmate-venv が無いので新規作成します"
-          python3 -m venv /opt/workmate-venv
-        fi
-        source /opt/workmate-venv/bin/activate
-        cd "$DEPLOY_PATH"
-        echo "[Deploy] pip install -r requirements.txt --upgrade --quiet"
-        pip install -r requirements.txt --upgrade --quiet
-        echo "[Deploy] restart workmate.service"
-        sudo systemctl restart workmate.service
-EOF
+        
+        # 依存関係のインストールとサービス再起動を実行
+        ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+          'set -eux; REMOTE_BASE="$HOME/workmate"; DEPLOY_PATH="$REMOTE_BASE/Chatbot-backend-main"; echo "DEBUG: REMOTE_BASE=$REMOTE_BASE"; echo "DEBUG: DEPLOY_PATH=$DEPLOY_PATH"; ls -la "$REMOTE_BASE" || true; ls -la "$DEPLOY_PATH" || true; if [ ! -f /opt/workmate-venv/bin/activate ]; then echo "WARNING: /opt/workmate-venv が無いので新規作成します"; python3 -m venv /opt/workmate-venv; fi; source /opt/workmate-venv/bin/activate; cd "$DEPLOY_PATH"; echo "[Deploy] pip install -r requirements.txt --upgrade --quiet"; pip install -r requirements.txt --upgrade --quiet; echo "[Deploy] restart workmate.service"; sudo systemctl restart workmate.service'
+        
         echo "✅ リモートインストールとバックエンド再起動完了"
 
     - name: Verify deployment
       run: |
         echo "🔍 デプロイ検証..."
-        ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-        echo "🌐 サーバープロセス確認:"
-        ps aux | grep -E "(python|main\.py)" | grep -v grep || echo "Pythonプロセスが見つかりません"
-        echo ""
-        echo "🔧 PM2プロセス確認:"
-        if command -v pm2 >/dev/null 2>&1; then
-          pm2 list
-        else
-          echo "PM2が見つかりません"
-        fi
-        echo ""
-        echo "🚀 実行中のWebサーバー:"
-        netstat -tlnp | grep -E ":(8083|8000|3000)" || echo "バックエンドサーバーが見つかりません"
-EOF
         
-        if [ $? -eq 0 ]; then
-          echo "✅ デプロイ検証完了"
-        else
-          echo "⚠️ 検証でいくつかの問題が見つかりました"
-        fi
+        # サーバープロセス確認
+        echo "🌐 サーバープロセス確認:"
+        ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+          'ps aux | grep -E "(python|main\.py)" | grep -v grep || echo "Pythonプロセスが見つかりません"'
+        
+        # PM2プロセス確認
+        echo "🔧 PM2プロセス確認:"
+        ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+          'if command -v pm2 >/dev/null 2>&1; then pm2 list; else echo "PM2が見つかりません"; fi'
+        
+        # Webサーバー確認
+        echo "🚀 実行中のWebサーバー:"
+        ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+          'netstat -tlnp | grep -E ":(8083|8000|3000)" || echo "バックエンドサーバーが見つかりません"'
+        
+        echo "✅ デプロイ検証完了"
