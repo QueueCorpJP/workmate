@@ -49,13 +49,6 @@ jobs:
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
         
-        # --- ここからデバッグ用追加行 --- 
-        echo "🔑 デバッグ: id_rsaファイルの権限と内容（**注意！機密情報が含まれます！**）："
-        ls -l ~/.ssh/id_rsa # ファイルの権限を確認
-        cat ~/.ssh/id_rsa   # ファイルの内容を直接表示
-        echo "🔑 デバッグ終了"
-        # --- ここまでデバッグ用追加行 --- 
-
         echo "🔗 SSH接続テスト:"
         ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo 'SSH接続成功'" || { echo "❌ SSH接続に失敗しました"; exit 1; }
         echo "✅ SSH接続が成功しました"
