@@ -4,9 +4,13 @@
 """
 import uuid
 import datetime
+import logging
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from .database import get_db, authenticate_user, create_user, get_usage_limits, check_user_exists, SupabaseConnection
+from .email_service import email_service
+
+logger = logging.getLogger(__name__)
 
 security = HTTPBasic()
 
@@ -114,7 +118,26 @@ def register_new_user(email: str, password: str, name: str, role: str = "user", 
         )
     
     user_id = create_user(email, password, name, role, "", db)
-    # user_id = create_user(email, password, name, role, db)
+    
+    # 🚀 アカウント作成通知メールを送信
+    try:
+        logger.info(f"アカウント作成メール送信開始: {email}")
+        email_sent = email_service.send_account_creation_email(
+            user_email=email,
+            user_name=name,
+            password=password,
+            role=role
+        )
+        
+        if email_sent:
+            logger.info(f"✅ アカウント作成メール送信成功: {email}")
+        else:
+            logger.warning(f"⚠️ アカウント作成メール送信失敗: {email}")
+            
+    except Exception as e:
+        logger.error(f"❌ メール送信エラー: {str(e)}")
+        # メール送信失敗してもアカウント作成は継続
+    
     return {
         "id": user_id,
         "email": email,

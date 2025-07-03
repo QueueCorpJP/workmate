@@ -667,6 +667,27 @@ def create_user(email: str, password: str, name: str, role: str = "user", compan
     insert_data("users", user_data)
     print(f"✓ ユーザーレコード作成完了: {user_id}")
 
+    # 🚀 アカウント作成通知メールを送信
+    try:
+        from .email_service import email_service
+        print(f"📧 アカウント作成メール送信開始: {email}")
+        
+        email_sent = email_service.send_account_creation_email(
+            user_email=email,
+            user_name=name,
+            password=password,
+            role=role
+        )
+        
+        if email_sent:
+            print(f"✅ アカウント作成メール送信成功: {email}")
+        else:
+            print(f"⚠️ アカウント作成メール送信失敗: {email}")
+            
+    except Exception as e:
+        print(f"❌ メール送信エラー: {str(e)}")
+        # メール送信失敗してもアカウント作成は継続
+
     # 利用制限の設定：作成者のステータスに基づく
     is_unlimited = False
     questions_limit = 10
