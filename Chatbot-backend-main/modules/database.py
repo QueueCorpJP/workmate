@@ -1798,7 +1798,7 @@ def check_new_columns_exist(db: SupabaseConnection = None) -> dict:
     try:
         from supabase_adapter import execute_query
         
-        # テーブル構造を確認
+        # テーブル構造を確
         result = execute_query("SELECT column_name FROM information_schema.columns WHERE table_name = 'chat_history'")
         
         columns = []
