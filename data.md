@@ -29,7 +29,7 @@
 | `monthly_token_usage` | 80 kB | 月次トークン使用量 | 6件 |
 | `company_settings` | 24 kB | 企業設定 | 3件 |
 
----
+--
 
 ## 1. companies テーブル
 **企業情報を管理するマスターテーブル**
