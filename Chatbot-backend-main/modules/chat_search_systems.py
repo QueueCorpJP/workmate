@@ -157,7 +157,7 @@ async def multi_system_search(query: str, limit: int = 10) -> List[Dict[str, Any
 
 async def database_search_fallback(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
-    データベース直接検索フォールバック
+    データベース直接検索フォールバック（バリエーション対応）
     """
     try:
         cursor = get_db_cursor()
@@ -165,23 +165,70 @@ async def database_search_fallback(query: str, limit: int = 10) -> List[Dict[str
             safe_print("Database cursor not available")
             return []
         
-        # 基本的なSQL検索（現在のスキーマに合わせて修正）
+        # 🔄 バリエーション生成を組み込み
+        try:
+            from .question_variants_generator import generate_question_variants
+            safe_print(f"Generating query variants for: {query}")
+            variants_result = await generate_question_variants(query)
+            search_terms = variants_result.all_variants
+            safe_print(f"Generated {len(search_terms)} query variants")
+        except Exception as e:
+            safe_print(f"Variant generation failed, using original query: {e}")
+            search_terms = [query]
+        
+        # 最大10個のバリエーションに制限（パフォーマンス考慮）
+        search_terms = search_terms[:10]
+        
+        if not search_terms:
+            search_terms = [query]
+        
+        # 🎯 OR条件でSQL検索を構築
+        where_conditions = []
+        params = []
+        
+        for term in search_terms:
+            if term and term.strip():
+                where_conditions.append("c.content ILIKE %s")
+                params.append(f"%{term.strip()}%")
+        
+        if not where_conditions:
+            where_conditions.append("c.content ILIKE %s")
+            params.append(f"%{query}%")
+        
+        # OR条件を結合
+        or_conditions = " OR ".join(where_conditions)
+        
+        # スコアリングを改善（複数条件マッチでスコア向上）
+        score_cases = []
+        for i, term in enumerate(search_terms):
+            if term and term.strip():
+                score_cases.append(f"CASE WHEN c.content ILIKE %s THEN 1.0 ELSE 0 END")
+                params.append(f"%{term.strip()}%")
+        
+        if not score_cases:
+            score_cases.append(f"CASE WHEN c.content ILIKE %s THEN 1.0 ELSE 0 END")
+            params.append(f"%{query}%")
+        
+        score_calculation = " + ".join(score_cases)
+        
+        # 検索クエリ構築
         search_query = f"""
         SELECT c.id, ds.name as title, c.content, '' as url, 
-               CASE 
-                   WHEN c.content ILIKE %s THEN 1.0
-                   ELSE 0.5
-               END as rank
+               ({score_calculation}) as rank
         FROM chunks c
         LEFT JOIN document_sources ds ON c.doc_id = ds.id
         WHERE c.content IS NOT NULL 
           AND LENGTH(c.content) > 10
-          AND c.content ILIKE %s
+          AND ({or_conditions})
         ORDER BY rank DESC, LENGTH(c.content) DESC
         LIMIT %s
         """
         
-        cursor.execute(search_query, (f"%{query}%", f"%{query}%", limit))
+        # LIMIT パラメータを追加
+        params.append(limit)
+        
+        safe_print(f"Executing SQL search with {len(search_terms)} variants: {search_terms}")
+        cursor.execute(search_query, params)
         rows = cursor.fetchall()
         
         results = []
@@ -196,7 +243,7 @@ async def database_search_fallback(query: str, limit: int = 10) -> List[Dict[str
                 'score': float(row[4]) if row[4] else 0.0
             })
         
-        safe_print(f"Database fallback search returned {len(results)} results")
+        safe_print(f"Database fallback search with variants returned {len(results)} results")
         return results
         
     except Exception as e:
