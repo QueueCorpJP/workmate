@@ -346,9 +346,13 @@ class QuestionVariantsGenerator:
         try:
             # 質問の言語に適応した言い換えプロンプト
             prompt = f"""
-以下の質問に対して、意味を変えずに表記だけを変えた50個の言い換えバリエーションを生成してください。
+以下の質問に対して、意味を変えずに表記だけを変えた10個の言い換えバリエーションを生成してください。
 
-元の質問: 「{question}」
+【法人格のスペース規則（厳守）】
+・『会社』という語を含む法人格（例: 株式会社、有限会社、合同会社、㈱ など）の直後には、必ず半角スペースを 1 つ入れてください。
+  例）
+    ×「株式会社ABC」 → ○「株式会社 ABC」
+    ×「(株)ABC」     → ○"(株) ABC"
 
 【重要な制約】
 - 質問の意味・内容は絶対に変更しない
@@ -359,7 +363,7 @@ class QuestionVariantsGenerator:
 【言い換えの範囲（質問の言語に応じて適用）】
 - 文字種変換（全角⇔半角、大文字⇔小文字、カタカナ⇔ひらがななど）
 - スペースの有無（半角スペース、全角スペース、スペースなし）
-- 法人格や組織名の表記バリエーション
+- 法人格や組織名の表記バリエーション（※上記スペース規則を厳守）
 - 同義語での置き換え（その言語での自然な同義語）
 - 敬語レベルやフォーマル度の調整
 - 句読点・記号の有無や種類
@@ -371,7 +375,7 @@ class QuestionVariantsGenerator:
 - 意味が変わる変更は禁止
 - 質問の言語に適した自然な表現の範囲内で
 
-以下のJSON形式で50個の言い換えを回答してください：
+以下のJSON形式で10個の言い換えを回答してください：
 
 {{
   "variants": [
@@ -383,7 +387,7 @@ class QuestionVariantsGenerator:
       "text": "言い換え2", 
       "reason": "変更内容の説明"
     }},
-    ... (50個まで)
+    ... (10個まで)
   ]
 }}
 """
@@ -425,9 +429,19 @@ class QuestionVariantsGenerator:
             for variant_data in variants:
                 variant = variant_data.get("text", "")
                 reason = variant_data.get("reason", "")
-                if variant and variant.strip() and variant not in all_variants:
+                if variant and variant.strip():
                     all_variants.append(variant.strip())
                     variant_reasons.append(reason)
+            
+            # 重複除去（順序保持）
+            unique_variants = list(dict.fromkeys(all_variants))
+            unique_reasons = []
+            for variant in unique_variants:
+                idx = all_variants.index(variant)
+                unique_reasons.append(variant_reasons[idx])
+            
+            all_variants = unique_variants
+            variant_reasons = unique_reasons
             
             result = QuestionVariants(
                 original=question,
@@ -455,6 +469,16 @@ class QuestionVariantsGenerator:
                 if pattern and pattern.strip() and pattern not in all_variants:
                     all_variants.append(pattern.strip())
                     logger.info(f"   ✅ 必須パターン追加: {pattern}")
+            
+            # 会社の後ろに半角スペースを強制するルールを適用
+            all_variants = self._apply_company_space_rule(all_variants)
+            
+            # 重複再除去して10個に制限
+            dedup = []
+            for v in all_variants:
+                if v not in dedup:
+                    dedup.append(v)
+            all_variants = dedup[:10]
             
             # all_variantsを更新
             result.all_variants = all_variants
@@ -485,14 +509,23 @@ class QuestionVariantsGenerator:
         # 重複除去
         unique_variants = []
         for variant in all_variants:
-            if variant and variant.strip() and variant not in unique_variants:
+            if variant and variant.strip():
                 unique_variants.append(variant.strip())
+        
+        # 重複除去（順序保持）
+        unique_variants = list(dict.fromkeys(unique_variants))
         
         # 🔥 必須パターン: 法人格の後ろに半角スペースのバリエーションを追加
         essential_space_patterns = self._generate_essential_space_patterns(original)
         for pattern in essential_space_patterns:
             if pattern and pattern.strip() and pattern not in unique_variants:
                 unique_variants.append(pattern.strip())
+        
+        # 会社の後ろに半角スペースを強制するルールを適用
+        unique_variants = self._apply_company_space_rule(unique_variants)
+        
+        # 10個に制限
+        unique_variants = unique_variants[:10]
         
         logger.info(f"✅ ミニマル基本バリエーション生成完了: {len(unique_variants)}個のシンプルなバリエーション")
         logger.warning("⚠️ AIによる高精度バリエーション生成が推奨されます（GEMINI_API_KEYを設定してください）")
@@ -837,7 +870,7 @@ class QuestionVariantsGenerator:
             r'(医療法人)([^\s])',       # 医療法人ABC → 医療法人 ABC
             
             # 一般的な組織名パターン
-            r'([^\s]+会社)([^\s])',     # ABC会社DEF → ABC会社 DEF
+            r'(会社)([^\s])',     # 会社ABC → 会社 ABC
             r'([^\s]+工業)([^\s])',     # ABC工業DEF → ABC工業 DEF
             r'([^\s]+社団)([^\s])',     # ABC社団DEF → ABC社団 DEF
             r'([^\s]+法人)([^\s])',     # ABC法人DEF → ABC法人 DEF
@@ -892,6 +925,35 @@ class QuestionVariantsGenerator:
             patterns.append(text.replace(' ', '　'))  # 全角スペースに変換
         
         return patterns
+
+    def _apply_company_space_rule(self, variants: List[str]) -> List[str]:
+        """バリエーション内の『会社』の後に必ず半角スペースを入れるルールを適用
+
+        例: "会社ABC" → "会社 ABC"
+        複数スペースや全角スペースが存在する場合は半角スペース1つに正規化します。
+        """
+        processed: List[str] = []
+
+        # 法人格リスト（必ず半角スペースを入れたい語）
+        legal_entities = [
+            '株式会社', '有限会社', '合同会社', '合資会社', '合名会社',
+            '一般社団法人', '公益社団法人', '一般財団法人', '公益財団法人',
+            '社会福祉法人', '学校法人', '医療法人',
+            '㈱', '㈲', '(株)', '（株）', '(有)', '（有）', '会社'
+        ]
+
+        # 正規表現パターン生成
+        patterns = [(re.compile(fr'({re.escape(le)})[\s　]*([^\s　])'), le) for le in legal_entities]
+
+        for txt in variants:
+            new_txt = txt
+            for pattern, le in patterns:
+                new_txt = pattern.sub(rf"{le} \2", new_txt)
+            # 重複半角スペースを1つに
+            new_txt = re.sub(r" {2,}", " ", new_txt)
+            if new_txt not in processed and new_txt.strip():
+                processed.append(new_txt.strip())
+        return processed
 
     async def generate_variants(self, question: str) -> QuestionVariants:
         """

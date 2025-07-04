@@ -1229,12 +1229,18 @@ async def admin_get_chat_history(
     # 権限チェック
     is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
     is_admin = current_user["role"] == "admin"
+    is_admin_user = current_user["role"] == "admin_user"
     is_user = current_user["role"] == "user"
     is_employee = current_user["role"] == "employee"
+    
+    # 会社管理者の判定（user=管理者, admin_user=社長）
+    is_company_manager = is_user or is_admin_user
     
     print(f"🔍 [CHAT HISTORY DEBUG] 権限チェック:")
     print(f"  - is_special_admin: {is_special_admin}")
     print(f"  - is_admin: {is_admin}")
+    print(f"  - is_admin_user: {is_admin_user}")
+    print(f"  - is_company_manager: {is_company_manager}")
     print(f"  - is_user: {is_user}")
     print(f"  - is_employee: {is_employee}")
     
@@ -1244,18 +1250,12 @@ async def admin_get_chat_history(
             # 特別な管理者の場合は全ユーザーのチャットを取得
             chat_history, total_count = get_chat_history_paginated(None, db, limit, offset)
         elif is_admin:
-            print(f"🔍 [CHAT HISTORY DEBUG] 管理者として会社のチャットを取得")
-            # 管理者の場合は自分の会社のチャットを取得
-            company_id = current_user.get("company_id")
-            print(f"🔍 [CHAT HISTORY DEBUG] company_id: {company_id}")
-            if company_id:
-                chat_history, total_count = get_chat_history_by_company_paginated(company_id, db, limit, offset)
-            else:
-                print(f"🔍 [CHAT HISTORY DEBUG] company_idがないため自分のチャットのみ取得")
-                chat_history, total_count = get_chat_history_paginated(current_user["id"], db, limit, offset)
-        elif is_user:
-            print(f"🔍 [CHAT HISTORY DEBUG] ユーザーとして会社のチャットを取得")
-            # ユーザーの場合は自分の会社のチャットを取得
+            print(f"🔍 [CHAT HISTORY DEBUG] システム管理者として全チャットを取得")
+            # adminロールは全ユーザーのチャットを取得
+            chat_history, total_count = get_chat_history_paginated(None, db, limit, offset)
+        elif is_company_manager:
+            print(f"🔍 [CHAT HISTORY DEBUG] 会社管理者として会社のチャットを取得")
+            # user（管理者）・admin_user（社長）の場合は自分の会社のチャットを取得
             company_id = current_user.get("company_id")
             print(f"🔍 [CHAT HISTORY DEBUG] company_id: {company_id}")
             if company_id:
@@ -1279,7 +1279,10 @@ async def admin_get_chat_history(
         if is_special_admin:
             print(f"🔍 [CHAT HISTORY DEBUG] フォールバック: 特別管理者として全チャット取得")
             chat_history = get_chat_history(None, db)
-        elif is_admin or is_user:
+        elif is_admin:
+            print(f"🔍 [CHAT HISTORY DEBUG] フォールバック: システム管理者として全チャット取得")
+            chat_history = get_chat_history(None, db)
+        elif is_company_manager:
             print(f"🔍 [CHAT HISTORY DEBUG] フォールバック: 会社チャット取得")
             company_id = current_user.get("company_id")
             if company_id:

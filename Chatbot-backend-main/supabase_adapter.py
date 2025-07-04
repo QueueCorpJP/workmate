@@ -47,7 +47,7 @@ def get_supabase_client() -> Client:
     
     return _supabase_client
 
-def select_data(table: str, columns: str = "*", filters: Optional[Dict[str, Any]] = None, limit: Optional[int] = None) -> SupabaseResult:
+def select_data(table: str, columns: str = "*", filters: Optional[Dict[str, Any]] = None, limit: Optional[int] = None, offset: Optional[int] = None, order: Optional[str] = None) -> SupabaseResult:
     """
     データを検索
     
@@ -56,6 +56,8 @@ def select_data(table: str, columns: str = "*", filters: Optional[Dict[str, Any]
         columns: 取得する列（デフォルト: "*"）
         filters: フィルタ条件のディクショナリ
         limit: 取得件数制限
+        offset: オフセット（ページネーション用）
+        order: ソート順（例: "timestamp desc"）
     
     Returns:
         SupabaseResult: 操作結果
@@ -70,8 +72,19 @@ def select_data(table: str, columns: str = "*", filters: Optional[Dict[str, Any]
                 if value is not None:
                     query = query.eq(key, value)
         
-        # 制限を適用
-        if limit:
+        # ソート順を適用
+        if order:
+            # "timestamp desc" や "created_at asc" などの形式をパース
+            order_parts = order.strip().split()
+            if len(order_parts) >= 1:
+                column = order_parts[0]
+                ascending = len(order_parts) == 1 or order_parts[1].lower() != 'desc'
+                query = query.order(column, desc=not ascending)
+        
+        # オフセットを適用
+        if offset:
+            query = query.range(offset, offset + (limit or 1000) - 1)
+        elif limit:
             query = query.limit(limit)
         
         result = query.execute()

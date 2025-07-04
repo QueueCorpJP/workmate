@@ -122,7 +122,8 @@ class GeminiQuestionAnalyzer:
         
         if not self.gemini_model:
             logger.warning("⚠️ Geminiモデルが利用できません。フォールバック分析を実行")
-            return self._fallback_analysis(question)
+            fallback_result = self._fallback_analysis(question)
+            return await self._append_variants(question, fallback_result)
         
         try:
             # 改善されたGemini 2.5 Flashプロンプト
@@ -181,7 +182,8 @@ JSON形式のみで回答してください：
             
             if not response or not response.text:
                 logger.warning("⚠️ Geminiからの応答が空です")
-                return self._fallback_analysis(question)
+                fallback_result = self._fallback_analysis(question)
+                return await self._append_variants(question, fallback_result)
             
             # JSON解析
             try:
@@ -193,7 +195,8 @@ JSON形式のみで回答してください：
                     analysis_data = json.loads(json_match.group())
                 else:
                     logger.warning("⚠️ Gemini応答からJSONを抽出できません")
-                    return self._fallback_analysis(question)
+                    fallback_result = self._fallback_analysis(question)
+                    return await self._append_variants(question, fallback_result)
             
             # 結果の構築
             intent = QueryIntent(analysis_data.get("intent", "unknown"))
@@ -225,16 +228,20 @@ JSON形式のみで回答してください：
                 reasoning=reasoning
             )
             
-            logger.info(f"✅ Gemini分析完了: {intent.value} (信頼度: {confidence:.2f})")
+            # バリエーションを追加
+            result = await self._append_variants(question, result)
+            
+            logger.info(f"✅ Gemini分析完了: {intent.value} (信頼度: {confidence:.2f}) | キーワード数: {len(result.keywords)}")
             logger.info(f"🎯 対象エンティティ: {target_entity}")
-            logger.info(f"🏷️ キーワード: {keywords}")
+            logger.info(f"🏷️ キーワード: {result.keywords}")
             logger.info(f"💭 判定理由: {reasoning}")
             
             return result
             
         except Exception as e:
             logger.error(f"❌ Gemini分析エラー: {e}")
-            return self._fallback_analysis(question)
+            fallback_result = self._fallback_analysis(question)
+            return await self._append_variants(question, fallback_result)
     
     def _fallback_analysis(self, question: str) -> QueryAnalysisResult:
         """フォールバック分析（Geminiが利用できない場合）"""
@@ -531,7 +538,7 @@ JSON形式のみで回答してください：
                                 LEFT JOIN document_sources ds ON ds.id = c.doc_id
                                 WHERE c.content IS NOT NULL
                                   AND LENGTH(c.content) > 10
-                                  AND ({' AND '.join(where_conditions)})
+                                  AND ({' OR '.join(where_conditions)})
                                 """
                                 
                                 # 会社IDフィルタ
@@ -946,6 +953,44 @@ JSON形式のみで回答してください：
             logger.info(f"    🎯 スコア: {result.score:.4f}")
             logger.info(f"    🔍 検索方法: {result.search_method}")
             logger.info(f"    📝 内容プレビュー: {result.content[:100]}...")
+
+    async def _append_variants(self, question: str, result: QueryAnalysisResult) -> QueryAnalysisResult:
+        """QuestionVariantsGenerator で得たバリエーションを keywords に追加する"""
+        try:
+            from modules.question_variants_generator import generate_question_variants, variants_generator_available  # 遅延 import で循環回避
+        except Exception:
+            return result  # ジェネレーターが読み込めない場合は何もしない
+
+        if not variants_generator_available():
+            return result
+
+        try:
+            variants = await generate_question_variants(question)
+            additional = variants.all_variants if variants and variants.all_variants else []
+            if additional:
+                merged = list(dict.fromkeys(result.keywords + additional))
+                # 法人格ベースで半角スペース正規化
+                extra = []
+                legal_entities = [
+                    '株式会社', '有限会社', '合同会社', '合資会社', '合名会社',
+                    '一般社団法人', '公益社団法人', '一般財団法人', '公益財団法人',
+                    '社会福祉法人', '学校法人', '医療法人',
+                    '㈱', '㈲', '(株)', '（株）', '(有)', '（有）'
+                ]
+                patterns = [re.compile(fr'({re.escape(le)})[\s　]*([^\s　])') for le in legal_entities]
+                for kw in merged:
+                    for pattern in patterns:
+                        if pattern.search(kw):
+                            spaced = pattern.sub(r"\1 \2", kw)
+                            if spaced and spaced not in merged and spaced not in extra:
+                                extra.append(spaced)
+                            break
+                merged.extend(extra)
+                result.keywords = merged
+                logger.info(f"🔄 バリエーション追加: +{len(additional)+len(extra)} → 総キーワード {len(merged)} 個 (半角スペース正規化含む)")
+        except Exception as e:
+            logger.error(f"❌ バリエーション生成エラー: {e}")
+        return result
 
 # グローバルインスタンス
 _gemini_analyzer_instance = None

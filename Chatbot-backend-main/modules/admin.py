@@ -1024,30 +1024,66 @@ def get_chat_history_by_company_paginated(company_id: str, db = None, limit: int
         
         for user_id in user_ids:
             try:
-                user_count_result = select_data(
+                # employee_id または user_id のどちらかでマッチするチャット履歴を検索
+                user_count_result1 = select_data(
                     "chat_history", 
                     columns="id", 
                     filters={"employee_id": user_id}
                 )
-                user_count = len(user_count_result.data) if user_count_result and user_count_result.data else 0
+                user_count_result2 = select_data(
+                    "chat_history", 
+                    columns="id", 
+                    filters={"user_id": user_id}
+                )
+                user_count1 = len(user_count_result1.data) if user_count_result1 and user_count_result1.data else 0
+                user_count2 = len(user_count_result2.data) if user_count_result2 and user_count_result2.data else 0
+                user_count = user_count1 + user_count2
                 total_count += user_count
                 
-                user_result = select_data(
+                # employee_id でのチャット履歴取得
+                user_result1 = select_data(
                     "chat_history", 
                     columns="*", 
                     filters={"employee_id": user_id},
                     order="timestamp desc"
                 )
                 
-                if user_result and user_result.data:
-                    all_chat_data.extend(user_result.data)
-                    print(f"[ADMIN_HISTORY] ユーザー {user_id}: {len(user_result.data)}件のチャット履歴をSupabaseから取得")
+                # user_id でのチャット履歴取得
+                user_result2 = select_data(
+                    "chat_history", 
+                    columns="*", 
+                    filters={"user_id": user_id},
+                    order="timestamp desc"
+                )
+                
+                # 両方の結果をマージ
+                user_chat_count = 0
+                if user_result1 and user_result1.data:
+                    all_chat_data.extend(user_result1.data)
+                    user_chat_count += len(user_result1.data)
+                
+                if user_result2 and user_result2.data:
+                    all_chat_data.extend(user_result2.data)
+                    user_chat_count += len(user_result2.data)
+                
+                if user_chat_count > 0:
+                    print(f"[ADMIN_HISTORY] ユーザー {user_id}: {user_chat_count}件のチャット履歴をSupabaseから取得")
                 
             except Exception as e:
                 print(f"[ADMIN_HISTORY] ユーザー {user_id} のデータ取得エラー: {e}")
                 continue
         
         print(f"[ADMIN_HISTORY] 全ユーザーのチャット合計（Supabaseから取得）: {len(all_chat_data)}件")
+        
+        # 重複除去（同じIDのチャット履歴が複数あった場合）
+        unique_chats = {}
+        for chat in all_chat_data:
+            chat_id = chat.get("id")
+            if chat_id and chat_id not in unique_chats:
+                unique_chats[chat_id] = chat
+        
+        all_chat_data = list(unique_chats.values())
+        print(f"[ADMIN_HISTORY] 重複除去後: {len(all_chat_data)}件")
         
         all_chat_data.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         
