@@ -180,19 +180,38 @@ JSON形式のみで回答してください：
                 }
             )
             
-            if not response or not response.text:
+            if not response or not response.candidates:
                 logger.warning("⚠️ Geminiからの応答が空です")
                 fallback_result = self._fallback_analysis(question)
                 return await self._append_variants(question, fallback_result)
             
-            # JSON解析
+            # レスポンスからテキストコンテンツを抽出
             try:
-                analysis_data = json.loads(response.text.strip())
+                extracted_text = ""
+                for part in response.candidates[0].content.parts:
+                    if hasattr(part, 'text'):
+                        extracted_text += part.text
+                
+                if not extracted_text:
+                    logger.warning("⚠️ Gemini応答からテキストコンテンツを抽出できませんでした")
+                    fallback_result = self._fallback_analysis(question)
+                    return await self._append_variants(question, fallback_result)
+                
+                logger.info("✅ Gemini応答からテキストコンテンツを抽出しました。")
+                analysis_data = json.loads(extracted_text.strip())
+                logger.info("✅ JSONを正常に解析しました。")
             except json.JSONDecodeError:
-                # JSONでない場合は、JSON部分を抽出
-                json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
+                # JSONでない場合は、Markdownコードブロック内のJSONを抽出
+                json_match = re.search(r'```json\n(.*?)```', extracted_text, re.DOTALL)
                 if json_match:
-                    analysis_data = json.loads(json_match.group())
+                    try:
+                        analysis_data = json.loads(json_match.group(1).strip())
+                        logger.info("✅ Markdownコードブロック内のJSONを抽出しました。")
+                        logger.info("✅ JSONを正常に解析しました。")
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"⚠️ 抽出されたJSONの解析に失敗: {e}")
+                        fallback_result = self._fallback_analysis(question)
+                        return await self._append_variants(question, fallback_result)
                 else:
                     logger.warning("⚠️ Gemini応答からJSONを抽出できません")
                     fallback_result = self._fallback_analysis(question)

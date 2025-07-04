@@ -25,7 +25,7 @@ class BatchEmbeddingGenerator:
     
     def __init__(self):
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.embedding_model = "gemini-embedding-001"  # Vertex AI gemini-embedding-001を使用（3072次元）
+        self.embedding_model = "models/gemini-embedding-001"  # Vertex AI gemini-embedding-001を使用（3072次元）
         self.auto_generate = os.getenv("AUTO_GENERATE_EMBEDDINGS", "false").lower() == "true"
         self.supabase = None
         
@@ -265,9 +265,10 @@ class BatchEmbeddingGenerator:
     
     async def generate_embeddings_for_document(self, doc_id: str, max_chunks: int = None) -> bool:
         """指定されたドキュメントのチャンクに対してバッチエンベディング生成"""
+        # 強制実行モードでは auto_generate チェックをスキップ
         if not self.auto_generate:
-            logger.info("🔄 AUTO_GENERATE_EMBEDDINGS=false のため、自動エンベディング生成をスキップ")
-            return True
+            logger.info("🔄 AUTO_GENERATE_EMBEDDINGS=false ですが、強制実行モードで処理を続行します")
+            # return True をコメントアウトして処理を続行
         
         if not self._init_clients():
             return False
@@ -329,9 +330,10 @@ class BatchEmbeddingGenerator:
     
     async def generate_embeddings_for_all_pending(self, limit: int = None) -> bool:
         """全ての未処理チャンクに対してバッチエンベディング生成"""
+        # 強制実行モードでは auto_generate チェックをスキップ
         if not self.auto_generate:
-            logger.info("🔄 AUTO_GENERATE_EMBEDDINGS=false のため、自動エンベディング生成をスキップ")
-            return True
+            logger.info("🔄 AUTO_GENERATE_EMBEDDINGS=false ですが、強制実行モードで処理を続行します")
+            # return True をコメントアウトして処理を続行
         
         if not self._init_clients():
             return False

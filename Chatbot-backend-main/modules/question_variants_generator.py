@@ -91,7 +91,7 @@ class QuestionVariantsGenerator:
                 return None
             
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-2.0-flash-exp')
+            model = genai.GenerativeModel('models/gemini-2.0-flash')
             return model
         except Exception as e:
             logger.error(f"❌ Gemini設定エラー: {e}")
@@ -346,48 +346,27 @@ class QuestionVariantsGenerator:
         try:
             # 質問の言語に適応した言い換えプロンプト
             prompt = f"""
-以下の質問に対して、意味を変えずに表記だけを変えた10個の言い換えバリエーションを生成してください。
+あなたは質問バリエーションを生成する専門のAIです。与えられた質問に対して、意味を変えずに表記だけを変更したバリエーションを、以下のJSON形式で**のみ**生成してください。**JSON以外の一切のテキスト（説明、前書き、後書きなど）は含めないでください。**
 
-【法人格のスペース規則（厳守）】
+【法人格のスペース規則（重要）】
 ・『会社』という語を含む法人格（例: 株式会社、有限会社、合同会社、㈱ など）の直後には、必ず半角スペースを 1 つ入れてください。
   例）
     ×「株式会社ABC」 → ○「株式会社 ABC」
     ×「(株)ABC」     → ○"(株) ABC"
 
 【重要な制約】
-- 質問の意味・内容は絶対に変更しない
-- あくまで「言い換え」に限定する
-- 表記方法・文字種のみの変更
-- 同じ意味での異なる表現のみ
+- 質問の意味・内容は絶対に変更しないこと。
+- あくまで「表記の言い換え」に限定し、新しい情報を追加しないこと。
+- 文字種変換（全角⇔半角、大文字⇔小文字、カタカナ⇔ひらがななど）、スペースの有無（半角スペース、全角スペース、スペースなし）、法人格や組織名の表記バリエーション、同義語での置き換え、句読点・記号の有無や種類、その言語固有の表記ゆれや慣用表現を考慮してバリエーションを作成すること。
 
-【言い換えの範囲（質問の言語に応じて適用）】
-- 文字種変換（全角⇔半角、大文字⇔小文字、カタカナ⇔ひらがななど）
-- スペースの有無（半角スペース、全角スペース、スペースなし）
-- 法人格や組織名の表記バリエーション（※上記スペース規則を厳守）
-- 同義語での置き換え（その言語での自然な同義語）
-- 敬語レベルやフォーマル度の調整
-- 句読点・記号の有無や種類
-- その言語固有の表記ゆれや慣用表現
+**質問:**
+{question}
 
-【厳守事項】
-- 質問している内容は絶対に変えない
-- 新しい要素は追加しない
-- 意味が変わる変更は禁止
-- 質問の言語に適した自然な表現の範囲内で
-
-以下のJSON形式で10個の言い換えを回答してください：
-
+**以下のJSON形式で、最大10個のバリエーションを生成してください。余計な説明は含めないでください。**
 {{
   "variants": [
-    {{
-      "text": "言い換え1",
-      "reason": "変更内容の説明"
-    }},
-    {{
-      "text": "言い換え2", 
-      "reason": "変更内容の説明"
-    }},
-    ... (10個まで)
+    {{"text": "バリエーション1", "reason": "変更内容の説明"}},
+    {{"text": "バリエーション2", "reason": "変更内容の説明"}}
   ]
 }}
 """
@@ -408,16 +387,25 @@ class QuestionVariantsGenerator:
                 return self._generate_basic_variants(question)
             
             # JSON解析
+            json_content_to_parse = response.text.strip()
+            
+            # まず、MarkdownコードブロックからJSON内容を正確に抽出
+            # r'```json\s*(\{.*?\})\s*```' は、`json`の後の空白と、JSONオブジェクトの開始・終了、その後の空白、
+            # そして最後の` ``` `を考慮しています。`.*?`は非貪欲マッチで、最初の`}`で停止します。
+            json_match = re.search(r'```json\s*(\{.*?\})\s*```', json_content_to_parse, re.DOTALL)
+            
+            if json_match:
+                json_content_to_parse = json_match.group(1) # グループ1はJSONオブジェクトのみ
+                logger.info("✅ Markdownコードブロック内のJSONを抽出しました。")
+            else:
+                logger.warning("⚠️ Markdownコードブロック内のJSONが見つかりませんでした。応答全体をJSONとして解析を試みます。")
+
             try:
-                variants_data = json.loads(response.text.strip())
-            except json.JSONDecodeError:
-                # JSONでない場合は、JSON部分を抽出
-                json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
-                if json_match:
-                    variants_data = json.loads(json_match.group())
-                else:
-                    logger.warning("⚠️ Gemini応答からJSONを抽出できません")
-                    return self._generate_basic_variants(question)
+                variants_data = json.loads(json_content_to_parse)
+                logger.info("✅ JSONを正常に解析しました。")
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ 最終的なJSON解析エラー: {e}. 基本バリエーション生成にフォールバックします。")
+                return self._generate_basic_variants(question)
             
             # バリエーションを構築
             variants = variants_data.get("variants", [])

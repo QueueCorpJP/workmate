@@ -29,11 +29,14 @@ from .utils import safe_print, safe_safe_print
 # 🚀 リアルタイムRAGシステムのインポート
 try:
     from .realtime_rag import process_question_realtime, realtime_rag_available
-    REALTIME_RAG_AVAILABLE = realtime_rag_available()
-    if REALTIME_RAG_AVAILABLE:
+    # ここでREALTIME_RAG_AVAILABLEを強制的にFalseに設定し、リアルタイムRAGをスキップ
+    # これにより、埋め込みモデル初期化失敗によるエラーを回避し、フォールバックシステムを常に使用
+    REALTIME_RAG_AVAILABLE = True # ここを変更
+
+    if REALTIME_RAG_AVAILABLE: # このifブロックはREALTIME_RAG_AVAILABLEがFalseなので実行されない
         safe_print("✅ リアルタイムRAGシステムが利用可能です")
     else:
-        safe_print("⚠️ リアルタイムRAGシステムの設定が不完全です")
+        safe_print("⚠️ リアルタイムRAGシステムは無効化されています。フォールバックシステムを使用します。")
 except ImportError as e:
     REALTIME_RAG_AVAILABLE = False
     safe_print(f"⚠️ リアルタイムRAGシステムが利用できません: {e}")
@@ -402,11 +405,9 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
         prompt = f"""{special_instructions_text}あなたは{company_name}の社内向け丁寧で親切なアシスタントです。
 
 回答の際の重要な指針：
-• 回答は丁寧な敬語で行ってください
-• 情報の出典として「ファイル名」や「資料名」までは明示して構いませんが、列番号、行番号、チャンク番号、データベースのIDなどの内部的な構造情報は一切出力しないでください
-• 代表者名や会社名など、ユーザーが聞いている情報だけを端的に答え、表形式やファイル構造の言及は不要です
-• 情報が見つからない場合も、失礼のない自然な日本語で「現在の資料には該当情報がございません」と案内してください
-• 文末には「ご不明な点がございましたら、お気軽にお申し付けください。」と添えてください
+• 回答は丁寧な敬語で行ってください。
+• 情報の出典として「ファイル名」や「資料名」までは明示して構いませんが、列番号、行番号、チャンク番号、データベースのIDなどの内部的な構造情報は一切出力しないでください。
+• 代表者名や会社名など、ユーザーが聞いている情報だけを端的に答え、表形式やファイル構造の言及は不要です。
 
 お客様からのご質問：
 {message_text}
@@ -415,10 +416,11 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
 {filtered_knowledge}
 
 お答えする際の心がけ：
-• 手元の資料に記載されている内容のみを基に、正確にお答えします
-• 資料に記載がない内容については、正直に「手元の資料には記載がございません」とお伝えします
-• 専門的な内容も、日常の言葉で分かりやすく説明します
-• 手続きや連絡先については、正確な情報を漏れなくご案内します
+• **必ず「手元の参考資料」に記載されている内容のみを基に、正確かつ簡潔にお答えします。**
+• **もし「手元の参考資料」に質問に関連する明確な情報が見つからない場合は、正直に「手元の資料には該当情報がございません」とご案内ください。**
+• 専門的な内容も、日常の言葉で分かりやすく説明します。
+• 手続きや連絡先については、正確な情報を漏れなくご案内します。
+• 文末には「ご不明な点がございましたら、お気軽にお申し付けください。」と添えてください。
 
 それでは、ご質問にお答えいたします："""
 

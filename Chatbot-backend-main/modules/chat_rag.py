@@ -18,16 +18,21 @@ async def rag_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     try:
         safe_print(f"Starting RAG search for query: {query}")
         
+        # 🎯 まずSQL検索を試行（エンベディングなしでも動作）
+        safe_print("Trying SQL database search first...")
+        results = await database_search_fallback(query, limit)
+        
+        if results:
+            safe_print(f"SQL search succeeded with {len(results)} results")
+            return results
+        
+        safe_print("SQL search returned no results, trying smart search system")
         # スマート検索システムを使用
         results = await smart_search_system(query, limit)
         
         if not results:
             safe_print("Smart search returned no results, trying fallback")
             results = await fallback_search_system(query, limit)
-        
-        if not results:
-            safe_print("All search systems failed, trying database fallback")
-            results = await database_search_fallback(query, limit)
         
         safe_print(f"RAG search completed with {len(results)} results")
         return results
@@ -42,6 +47,16 @@ async def enhanced_rag_search(query: str, limit: int = 10) -> List[Dict[str, Any
     """
     try:
         safe_print(f"Starting enhanced RAG search for query: {query}")
+        
+        # 🎯 まずSQL検索を試行（エンベディングなしでも動作）
+        safe_print("Trying SQL database search first...")
+        sql_results = await database_search_fallback(query, limit)
+        
+        if sql_results:
+            safe_print(f"SQL search succeeded with {len(sql_results)} results")
+            return sql_results
+        
+        safe_print("SQL search returned no results, trying enhanced vector search")
         
         # クエリ拡張
         expanded_query = expand_query(query)
@@ -90,6 +105,16 @@ async def parallel_rag_search(query: str, limit: int = 10) -> List[Dict[str, Any
     """
     try:
         safe_print(f"Starting parallel RAG search for query: {query}")
+        
+        # 🎯 まずSQL検索を試行（エンベディングなしでも動作）
+        safe_print("Trying SQL database search first...")
+        sql_results = await database_search_fallback(query, limit)
+        
+        if sql_results:
+            safe_print(f"SQL search succeeded with {len(sql_results)} results")
+            return sql_results
+        
+        safe_print("SQL search returned no results, trying parallel vector search")
         
         # 複数の検索戦略を並列実行
         search_tasks = [

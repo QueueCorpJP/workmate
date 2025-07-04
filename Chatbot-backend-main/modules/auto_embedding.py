@@ -23,7 +23,7 @@ class AutoEmbeddingGenerator:
     
     def __init__(self):
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
+        self.embedding_model = os.getenv("EMBEDDING_MODEL", "models/gemini-embedding-001")
         self.auto_generate = os.getenv("AUTO_GENERATE_EMBEDDINGS", "false").lower() == "true"
         self.use_vertex_ai = os.getenv("USE_VERTEX_AI", "true").lower() == "true"
         self.supabase = None
@@ -63,9 +63,10 @@ class AutoEmbeddingGenerator:
     
     async def generate_embeddings_for_document(self, doc_id: str, max_chunks: int = 50) -> bool:
         """指定されたドキュメントのチャンクに対してエンベディングを生成"""
+        # 強制実行モードでは auto_generate チェックをスキップ
         if not self.auto_generate:
-            logger.info("🔄 AUTO_GENERATE_EMBEDDINGS=false のため、自動エンベディング生成をスキップ")
-            return True
+            logger.info("🔄 AUTO_GENERATE_EMBEDDINGS=false ですが、強制実行モードで処理を続行します")
+            # return True をコメントアウトして処理を続行
         
         if not self._init_clients():
             return False
@@ -153,11 +154,65 @@ class AutoEmbeddingGenerator:
             logger.error(f"❌ エンベディング生成エラー: {e}")
             return False
     
+    async def generate_chunk_embedding(self, chunk_id: str, content: str) -> bool:
+        """単一チャンクのエンベディングを生成"""
+        if not self._init_clients():
+            return False
+        
+        try:
+            if not content or not content.strip():
+                logger.warning(f"⚠️ 空のコンテンツをスキップ: chunk_id={chunk_id}")
+                return False
+            
+            embedding_vector = None
+            
+            if self.use_vertex_ai and self.vertex_ai_client:
+                # Vertex AI使用
+                embedding_vector = self.vertex_ai_client.generate_embedding(content)
+            else:
+                # 標準Gemini API使用
+                response = genai.embed_content(
+                    model=self.embedding_model,
+                    content=content
+                )
+                
+                # gemini-embedding-exp-03-07は辞書形式で{'embedding': [...]}を返す
+                if isinstance(response, dict) and 'embedding' in response:
+                    embedding_vector = response['embedding']
+                elif hasattr(response, 'embedding') and response.embedding:
+                    embedding_vector = response.embedding
+                else:
+                    logger.error(f"🔍 予期しないレスポンス形式: {type(response)}")
+            
+            if embedding_vector and len(embedding_vector) > 0:
+                # データベースに保存
+                update_result = update_data(
+                    "chunks",
+                    {"embedding": embedding_vector},
+                    "id",
+                    chunk_id
+                )
+                
+                if update_result.success:
+                    logger.info(f"✅ チャンク {chunk_id} エンベディング保存完了 ({len(embedding_vector)}次元)")
+                    return True
+                else:
+                    logger.error(f"❌ チャンク {chunk_id} エンベディング保存失敗: {update_result.error}")
+                    return False
+            else:
+                logger.error(f"❌ チャンク {chunk_id} エンベディング生成失敗: 無効なレスポンス")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ チャンク {chunk_id} エンベディング生成エラー: {e}")
+            return False
+    
     async def generate_embeddings_for_chunks(self, chunk_ids: List[str]) -> bool:
         """指定されたチャンクIDリストに対してエンベディングを生成"""
+        # 強制実行モードでは auto_generate チェックをスキップ
         if not self.auto_generate:
-            logger.info("🔄 AUTO_GENERATE_EMBEDDINGS=false のため、自動エンベディング生成をスキップ")
-            return True
+            logger.info("🔄 AUTO_GENERATE_EMBEDDINGS=false ですが、強制実行モードで処理を続行します")
+            # return True をコメントアウトして処理を続行
         
         if not chunk_ids:
             logger.info("📋 処理対象のチャンクがありません")

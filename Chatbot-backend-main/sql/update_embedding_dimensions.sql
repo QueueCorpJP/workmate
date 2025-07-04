@@ -1,18 +1,18 @@
 -- 🔧 Embedding次元数修正スクリプト
--- gemini-embedding-001モデルは3072次元のベクトルを生成するため、
--- データベーススキーマを768次元から3072次元に更新
+-- text-multilingual-embedding-002モデルは768次元のベクトルを生成するため、
+-- データベーススキーマを768次元に更新
 
 -- 既存のembeddingカラムを削除して再作成
 ALTER TABLE chunks DROP COLUMN IF EXISTS embedding;
 
--- 新しい3072次元のembeddingカラムを追加
-ALTER TABLE chunks ADD COLUMN embedding VECTOR(3072);
+-- 新しい768次元のembeddingカラムを追加
+ALTER TABLE chunks ADD COLUMN embedding VECTOR(768);
 
 -- インデックスを再作成（pgvector拡張が必要）
 -- CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 -- コメント更新
-COMMENT ON COLUMN chunks.embedding IS 'Gemini Vertex AI生成の3072次元ベクトル（gemini-embedding-001）';
+COMMENT ON COLUMN chunks.embedding IS 'Gemini Vertex AI生成の768次元ベクトル（text-multilingual-embedding-002）';
 
 -- 統計情報更新
 ANALYZE chunks;

@@ -878,71 +878,20 @@ class DocumentProcessor:
             return 50  # デフォルトスコア
     
     async def _extract_text_from_excel(self, content: bytes) -> str:
-        """Excelファイルからテキストを抽出（2段階フォールバック: 完全メタデータ版 → 超保守版）"""
+        """Excelファイルからテキストを抽出（ExcelDataCleanerを使用）"""
         try:
-            # 最優先: 完全メタデータ保持版（全メタデータ保持）
-            from modules.excel_data_cleaner_complete_metadata import ExcelDataCleanerCompleteMetadata
+            from modules.excel_data_cleaner import ExcelDataCleaner
             
-            cleaner = ExcelDataCleanerCompleteMetadata()
+            cleaner = ExcelDataCleaner()
             cleaned_text = cleaner.clean_excel_data(content)
             
-            logger.info(f"✅ Excel処理完了（完全メタデータ版）: {len(cleaned_text)} 文字")
+            logger.info(f"✅ Excel処理完了（ExcelDataCleaner使用）: {len(cleaned_text)} 文字")
             return cleaned_text
             
-        except ImportError:
-            # フォールバック: 超保守版
-            logger.warning("⚠️ 完全メタデータ版ExcelDataCleanerが利用できません。超保守版を使用します。")
-            try:
-                from modules.excel_data_cleaner_ultra_conservative import ExcelDataCleanerUltraConservative
-                cleaner = ExcelDataCleanerUltraConservative()
-                cleaned_text = cleaner.clean_excel_data(content)
-                logger.info(f"✅ Excel処理完了（超保守版）: {len(cleaned_text)} 文字")
-                return cleaned_text
-            except ImportError:
-                # 最終フォールバック: 従来版pandas処理
-                logger.warning("⚠️ 超保守版ExcelDataCleanerが利用できません。従来版pandas処理を使用します。")
-                return await self._extract_text_from_excel_fallback(content)
         except Exception as e:
-            logger.error(f"❌ Excel処理エラー（完全メタデータ版）: {e}")
-            # フォールバック: 超保守版
-            logger.info("🔄 超保守版Excel処理にフォールバック")
-            try:
-                from modules.excel_data_cleaner_ultra_conservative import ExcelDataCleanerUltraConservative
-                cleaner = ExcelDataCleanerUltraConservative()
-                cleaned_text = cleaner.clean_excel_data(content)
-                logger.info(f"✅ Excel処理完了（超保守版）: {len(cleaned_text)} 文字")
-                return cleaned_text
-            except Exception as e2:
-                logger.warning(f"⚠️ 超保守版Excel処理失敗、従来版pandas処理にフォールバック: {e2}")
-                return await self._extract_text_from_excel_fallback(content)
-    
-    async def _extract_text_from_excel_fallback(self, content: bytes) -> str:
-        """Excelファイルからテキストを抽出（従来版）"""
-        try:
-            import pandas as pd
-            from io import BytesIO
-            
-            # 全シートを読み込み
-            excel_file = pd.ExcelFile(BytesIO(content))
-            text_parts = []
-            
-            for sheet_name in excel_file.sheet_names:
-                try:
-                    df = pd.read_excel(excel_file, sheet_name=sheet_name)
-                    
-                    # データフレームをテキストに変換
-                    sheet_text = f"=== シート: {sheet_name} ===\n"
-                    sheet_text += df.to_string(index=False, na_rep='')
-                    text_parts.append(sheet_text)
-                    
-                except Exception as e:
-                    logger.warning(f"Excel シート {sheet_name} 処理エラー: {e}")
-                    continue
-            
-            return "\n\n".join(text_parts)
-            
-        except Exception as e:
-            logger.error(f"Excel処理エラー（従来版）: {e}")
+            logger.error(f"❌ Excel処理エラー（ExcelDataCleaner）: {e}")
+            # エラー発生時は、データ抽出を断念し、空文字列を返すか、適切なエラーメッセージを返す
+            # ここではエラーを再raiseして、上位でハンドリングさせることを推奨
             raise
     
     async def _extract_text_from_word(self, content: bytes) -> str:

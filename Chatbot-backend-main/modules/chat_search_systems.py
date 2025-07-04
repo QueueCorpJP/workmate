@@ -84,6 +84,7 @@ async def fallback_search_system(query: str, limit: int = 10) -> List[Dict[str, 
         ("Vector Search", vector_search_system),
         ("Parallel Search", parallel_search_system),
         ("Direct Search", direct_search_system),
+        ("Database Fallback Search", database_search_fallback),
     ]
     
     for system_name, search_func in search_systems:
@@ -154,10 +155,60 @@ async def multi_system_search(query: str, limit: int = 10) -> List[Dict[str, Any
         safe_print(f"Error in multi-system search: {e}")
         return await fallback_search_system(query, limit)
 
+async def database_search_fallback(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    データベース直接検索フォールバック
+    """
+    try:
+        cursor = get_db_cursor()
+        if not cursor:
+            safe_print("Database cursor not available")
+            return []
+        
+        # 基本的なSQL検索（現在のスキーマに合わせて修正）
+        search_query = f"""
+        SELECT c.id, ds.name as title, c.content, '' as url, 
+               CASE 
+                   WHEN c.content ILIKE %s THEN 1.0
+                   ELSE 0.5
+               END as rank
+        FROM chunks c
+        LEFT JOIN document_sources ds ON c.doc_id = ds.id
+        WHERE c.content IS NOT NULL 
+          AND LENGTH(c.content) > 10
+          AND c.content ILIKE %s
+        ORDER BY rank DESC, LENGTH(c.content) DESC
+        LIMIT %s
+        """
+        
+        cursor.execute(search_query, (f"%{query}%", f"%{query}%", limit))
+        rows = cursor.fetchall()
+        
+        results = []
+        for row in rows:
+            # document_sources.nameフィールドのみを使用してソース情報を設定
+            title = row[1] if row[1] else 'Unknown'
+            results.append({
+                'id': row[0],
+                'title': title,
+                'content': row[2],
+                'url': row[3],
+                'score': float(row[4]) if row[4] else 0.0
+            })
+        
+        safe_print(f"Database fallback search returned {len(results)} results")
+        return results
+        
+    except Exception as e:
+        safe_print(f"Database fallback search error: {e}")
+        return []
+
 async def smart_search_system(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
     スマート検索システム - クエリの特性に応じて最適な検索システムを選択
     """
+    safe_print(f"Starting smart search for query: {query}")
+
     # 日本語が含まれているかチェック
     has_japanese = any('\u3040' <= char <= '\u309F' or '\u30A0' <= char <= '\u30FF' or '\u4E00' <= char <= '\u9FAF' for char in query)
     
@@ -183,45 +234,3 @@ async def smart_search_system(query: str, limit: int = 10) -> List[Dict[str, Any
     else:
         safe_print("Using multi-system search as default")
         return await multi_system_search(query, limit)
-
-async def database_search_fallback(query: str, limit: int = 10) -> List[Dict[str, Any]]:
-    """
-    データベース直接検索フォールバック
-    """
-    try:
-        cursor = get_db_cursor()
-        if not cursor:
-            safe_print("Database cursor not available")
-            return []
-        
-        # 基本的なSQL検索
-        search_query = f"""
-        SELECT id, title, content, url, 
-               ts_rank(to_tsvector('japanese', title || ' ' || content), plainto_tsquery('japanese', %s)) as rank
-        FROM knowledge_base 
-        WHERE to_tsvector('japanese', title || ' ' || content) @@ plainto_tsquery('japanese', %s)
-        ORDER BY rank DESC
-        LIMIT %s
-        """
-        
-        cursor.execute(search_query, (query, query, limit))
-        rows = cursor.fetchall()
-        
-        results = []
-        for row in rows:
-            # document_sources.nameフィールドのみを使用してソース情報を設定
-            title = row[1] if row[1] else 'Unknown'
-            results.append({
-                'id': row[0],
-                'title': title,
-                'content': row[2],
-                'url': row[3],
-                'score': float(row[4]) if row[4] else 0.0
-            })
-        
-        safe_print(f"Database fallback search returned {len(results)} results")
-        return results
-        
-    except Exception as e:
-        safe_print(f"Database fallback search error: {e}")
-        return []
