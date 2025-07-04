@@ -43,7 +43,8 @@ except ImportError as e:
 
 # フォールバック用の従来システム
 try:
-    from .chat import simple_rag_search_fallback, is_casual_conversation, generate_casual_response
+    from .chat_additional import rag_search_with_fallback
+    from .chat import is_casual_conversation, generate_casual_response
     FALLBACK_AVAILABLE = True
     safe_print("✅ フォールバックシステムが利用可能です")
 except ImportError as e:
@@ -343,7 +344,8 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
         safe_print(f"📊 知識ベースサイズ: {len(knowledge_text):,}文字")
         
         # フォールバックRAG検索を実行
-        filtered_knowledge = simple_rag_search_fallback(knowledge_text, message_text, max_results=15, company_id=company_id)
+        search_results = await rag_search_with_fallback(message_text, limit=15)
+        filtered_knowledge = "\n".join([result.get('content', '') for result in search_results]) if search_results else ""
         
         safe_print(f"✅ フォールバックRAG検索完了: {len(filtered_knowledge):,}文字の関連情報を取得")
         

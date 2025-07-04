@@ -974,7 +974,7 @@ JSON形式のみで回答してください：
             logger.info(f"    📝 内容プレビュー: {result.content[:100]}...")
 
     async def _append_variants(self, question: str, result: QueryAnalysisResult) -> QueryAnalysisResult:
-        """QuestionVariantsGenerator で得たバリエーションを keywords に追加する"""
+        """QuestionVariantsGenerator で得たバリエーションを keywords に追加する（重要キーワード抽出）"""
         try:
             from modules.question_variants_generator import generate_question_variants, variants_generator_available  # 遅延 import で循環回避
         except Exception:
@@ -987,7 +987,21 @@ JSON形式のみで回答してください：
             variants = await generate_question_variants(question)
             additional = variants.all_variants if variants and variants.all_variants else []
             if additional:
-                merged = list(dict.fromkeys(result.keywords + additional))
+                # 🎯 バリエーションから重要キーワードを抽出
+                important_keywords = []
+                
+                # 元のキーワードを保持
+                important_keywords.extend(result.keywords)
+                
+                # 各バリエーションから重要キーワードを抽出
+                for variant in additional:
+                    if len(variant) <= 10:  # 10文字以下の短い語句はそのまま使用
+                        important_keywords.append(variant)
+                    else:
+                        # 長い文章から重要キーワードを抽出
+                        extracted_keywords = self._extract_important_keywords_from_text(variant)
+                        important_keywords.extend(extracted_keywords)
+                
                 # 法人格ベースで半角スペース正規化
                 extra = []
                 legal_entities = [
@@ -997,19 +1011,65 @@ JSON形式のみで回答してください：
                     '㈱', '㈲', '(株)', '（株）', '(有)', '（有）'
                 ]
                 patterns = [re.compile(fr'({re.escape(le)})[\s　]*([^\s　])') for le in legal_entities]
-                for kw in merged:
+                for kw in important_keywords:
                     for pattern in patterns:
                         if pattern.search(kw):
                             spaced = pattern.sub(r"\1 \2", kw)
-                            if spaced and spaced not in merged and spaced not in extra:
+                            if spaced and spaced not in important_keywords and spaced not in extra:
                                 extra.append(spaced)
                             break
-                merged.extend(extra)
-                result.keywords = merged
-                logger.info(f"🔄 バリエーション追加: +{len(additional)+len(extra)} → 総キーワード {len(merged)} 個 (半角スペース正規化含む)")
+                important_keywords.extend(extra)
+                
+                # 重複除去とフィルタリング
+                merged = list(dict.fromkeys(important_keywords))
+                
+                # 最大10個に制限（パフォーマンス考慮）
+                result.keywords = merged[:10]
+                
+                logger.info(f"🔄 バリエーション追加: +{len(additional)} → 総キーワード {len(result.keywords)} 個 (半角スペース正規化含む)")
         except Exception as e:
             logger.error(f"❌ バリエーション生成エラー: {e}")
         return result
+
+    def _extract_important_keywords_from_text(self, text: str) -> List[str]:
+        """
+        テキストから重要なキーワードを抽出（重複あり）
+        """
+        keywords = []
+        
+        # 名詞的な単語を抽出（日本語の場合）
+        # カタカナ語（3文字以上）
+        katakana_words = re.findall(r'[ァ-ヶー]{3,}', text)
+        keywords.extend(katakana_words)
+        
+        # 漢字を含む単語（2文字以上）
+        kanji_words = re.findall(r'[一-龠]{2,}', text)
+        keywords.extend(kanji_words)
+        
+        # ひらがな（特定の重要語）
+        important_hiragana = ['やすい', 'たかい', 'おおきい', 'ちいさい', 'あたらしい', 'ふるい']
+        for word in important_hiragana:
+            if word in text:
+                keywords.append(word)
+        
+        # アルファベット（2文字以上）
+        alphabet_words = re.findall(r'[a-zA-Z]{2,}', text)
+        keywords.extend(alphabet_words)
+        
+        # 数字を含む語
+        number_words = re.findall(r'[0-9]+[円万千百十億兆台個件名人]', text)
+        keywords.extend(number_words)
+        
+        # 特別な語彙
+        special_words = ['安い', 'パソコン', 'PC', '価格', '値段', '料金', '費用', 'コスト', '低価格', '格安', '安価']
+        for word in special_words:
+            if word in text:
+                keywords.append(word)
+        
+        # 重複を除去し、空文字列を除外
+        keywords = list(set([k for k in keywords if k.strip()]))
+        
+        return keywords[:5]  # 最大5個
 
 # グローバルインスタンス
 _gemini_analyzer_instance = None

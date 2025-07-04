@@ -157,7 +157,7 @@ async def multi_system_search(query: str, limit: int = 10) -> List[Dict[str, Any
 
 async def database_search_fallback(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
-    データベース直接検索フォールバック（バリエーション対応）
+    データベース直接検索フォールバック（重要キーワード抽出対応）
     """
     try:
         cursor = get_db_cursor()
@@ -176,79 +176,135 @@ async def database_search_fallback(query: str, limit: int = 10) -> List[Dict[str
             safe_print(f"Variant generation failed, using original query: {e}")
             search_terms = [query]
         
-        # 最大10個のバリエーションに制限（パフォーマンス考慮）
-        search_terms = search_terms[:10]
+        # 🎯 重要キーワード抽出: 長い文章から重要な単語のみを抽出
+        important_keywords = []
         
-        if not search_terms:
-            search_terms = [query]
+        # 元のクエリから重要キーワードを抽出
+        query_keywords = extract_important_keywords(query)
+        important_keywords.extend(query_keywords)
         
-        # 🎯 OR条件でSQL検索を構築
-        where_conditions = []
-        params = []
-        
+        # バリエーションからも重要キーワードを抽出（長い文章は除外）
         for term in search_terms:
-            if term and term.strip():
-                where_conditions.append("c.content ILIKE %s")
-                params.append(f"%{term.strip()}%")
+            if len(term) <= 10:  # 10文字以下の短い語句のみ使用
+                important_keywords.append(term)
+            else:
+                # 長い文章からキーワードを抽出
+                term_keywords = extract_important_keywords(term)
+                important_keywords.extend(term_keywords)
         
-        if not where_conditions:
-            where_conditions.append("c.content ILIKE %s")
-            params.append(f"%{query}%")
+        # 重複を除去し、最大10個に制限
+        important_keywords = list(set(important_keywords))[:10]
+        safe_print(f"Extracted important keywords: {important_keywords}")
         
-        # OR条件を結合
-        or_conditions = " OR ".join(where_conditions)
+        if not important_keywords:
+            important_keywords = [query]  # フォールバック
         
-        # スコアリングを改善（複数条件マッチでスコア向上）
-        score_cases = []
-        for i, term in enumerate(search_terms):
-            if term and term.strip():
-                score_cases.append(f"CASE WHEN c.content ILIKE %s THEN 1.0 ELSE 0 END")
-                params.append(f"%{term.strip()}%")
+        # 🔍 重要キーワードによるスマートスコアリング検索
+        # 各キーワードをOR条件で検索し、複数マッチにボーナスを付与
+        keyword_conditions = []
+        parameters = []
         
-        if not score_cases:
-            score_cases.append(f"CASE WHEN c.content ILIKE %s THEN 1.0 ELSE 0 END")
-            params.append(f"%{query}%")
+        for i, keyword in enumerate(important_keywords):
+            keyword_conditions.append(f"c.content ILIKE %s")
+            parameters.append(f"%{keyword}%")
         
-        score_calculation = " + ".join(score_cases)
-        
-        # 検索クエリ構築
-        search_query = f"""
-        SELECT c.id, ds.name as title, c.content, '' as url, 
-               ({score_calculation}) as rank
-        FROM chunks c
-        LEFT JOIN document_sources ds ON c.doc_id = ds.id
-        WHERE c.content IS NOT NULL 
-          AND LENGTH(c.content) > 10
-          AND ({or_conditions})
-        ORDER BY rank DESC, LENGTH(c.content) DESC
-        LIMIT %s
+        # SQL文を構築
+        sql_query = f"""
+            SELECT 
+                c.id,
+                ds.name as title,
+                c.content,
+                '' as url,
+                -- スコアリング: 複数キーワードマッチにボーナス
+                CASE 
+                    {' + '.join([f"WHEN c.content ILIKE %s THEN 1.0" for _ in important_keywords])}
+                    ELSE 0.0
+                END as rank
+            FROM chunks c
+            LEFT JOIN document_sources ds ON c.doc_id = ds.id
+            WHERE c.content IS NOT NULL 
+              AND LENGTH(c.content) > 10
+              AND ({' OR '.join(keyword_conditions)})
+            ORDER BY rank DESC, LENGTH(c.content) DESC
+            LIMIT %s
         """
         
-        # LIMIT パラメータを追加
-        params.append(limit)
+        # パラメータを構築（スコアリング用 + 条件用 + LIMIT用）
+        all_parameters = []
+        # スコアリング用パラメータ
+        for keyword in important_keywords:
+            all_parameters.append(f"%{keyword}%")
+        # 条件用パラメータ
+        all_parameters.extend(parameters)
+        # LIMIT用パラメータ
+        all_parameters.append(limit)
         
-        safe_print(f"Executing SQL search with {len(search_terms)} variants: {search_terms}")
-        cursor.execute(search_query, params)
-        rows = cursor.fetchall()
+        safe_print(f"Executing SQL search with {len(important_keywords)} keywords")
+        cursor.execute(sql_query, all_parameters)
         
         results = []
-        for row in rows:
-            # document_sources.nameフィールドのみを使用してソース情報を設定
-            title = row[1] if row[1] else 'Unknown'
+        for row in cursor.fetchall():
             results.append({
                 'id': row[0],
-                'title': title,
-                'content': row[2],
-                'url': row[3],
-                'score': float(row[4]) if row[4] else 0.0
+                'title': row[1] or 'Unknown Document',
+                'content': row[2] or '',
+                'url': row[3] or '',
+                'similarity': float(row[4]) if row[4] else 0.0,
+                'metadata': {
+                    'source': 'database_search_fallback',
+                    'keywords': important_keywords
+                }
             })
         
-        safe_print(f"Database fallback search with variants returned {len(results)} results")
+        safe_print(f"Database search found {len(results)} results")
         return results
         
     except Exception as e:
-        safe_print(f"Database fallback search error: {e}")
+        safe_print(f"Database search error: {e}")
         return []
+
+def extract_important_keywords(text: str) -> List[str]:
+    """
+    テキストから重要なキーワードを抽出
+    """
+    import re
+    
+    # 基本的なキーワード抽出
+    keywords = []
+    
+    # 名詞的な単語を抽出（日本語の場合）
+    # カタカナ語（3文字以上）
+    katakana_words = re.findall(r'[ァ-ヶー]{3,}', text)
+    keywords.extend(katakana_words)
+    
+    # 漢字を含む単語（2文字以上）
+    kanji_words = re.findall(r'[一-龠]{2,}', text)
+    keywords.extend(kanji_words)
+    
+    # ひらがな（特定の重要語）
+    important_hiragana = ['やすい', 'たかい', 'おおきい', 'ちいさい', 'あたらしい', 'ふるい']
+    for word in important_hiragana:
+        if word in text:
+            keywords.append(word)
+    
+    # アルファベット（2文字以上）
+    alphabet_words = re.findall(r'[a-zA-Z]{2,}', text)
+    keywords.extend(alphabet_words)
+    
+    # 数字を含む語
+    number_words = re.findall(r'[0-9]+[円万千百十億兆台個件名人]', text)
+    keywords.extend(number_words)
+    
+    # 特別な語彙
+    special_words = ['安い', 'パソコン', 'PC', '価格', '値段', '料金', '費用', 'コスト']
+    for word in special_words:
+        if word in text:
+            keywords.append(word)
+    
+    # 重複を除去し、空文字列を除外
+    keywords = list(set([k for k in keywords if k.strip()]))
+    
+    return keywords[:5]  # 最大5個
 
 async def smart_search_system(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
