@@ -47,28 +47,46 @@ jobs:
         echo "$KEY" > id_rsa && chmod 600 id_rsa
         
         echo "📤 静的ファイルをEC2に同期..."
-        # 一時ディレクトリにアップロードしてからsudoで移動
-        rsync -avz --delete -e "ssh -i id_rsa -o StrictHostKeyChecking=no" \
-          Chatbot-Frontend-main/dist/ $USER@$HOST:/tmp/webapp_dist/
-        
-        echo "🔄 ファイル権限設定とNginx再起動..."
+        BUILD_DIR="Chatbot-Frontend-main/dist/"
+        TMP_REMOTE="/tmp/webapp_dist"
+
+        rsync -az --delete -e "ssh -i id_rsa -o StrictHostKeyChecking=no" \
+          "$BUILD_DIR" $USER@$HOST:"$TMP_REMOTE" || { echo "❌ rsync 失敗"; exit 1; }
+
+        echo "🔄 アトミック切替とNginx再起動..."
         ssh -i id_rsa -o StrictHostKeyChecking=no $USER@$HOST << 'ENDSSH'
-          # 一時ディレクトリから本番ディレクトリに移動
-          sudo rm -rf /var/www/html/*
-          sudo cp -r /tmp/webapp_dist/* /var/www/html/
-          sudo rm -rf /tmp/webapp_dist
-          
-          # ファイル権限設定
-          sudo chown -R nginx:nginx /var/www/html/ || sudo chown -R www-data:www-data /var/www/html/
-          sudo chmod -R 755 /var/www/html/
-          
-          # Let's Encrypt用ディレクトリの権限確保
-          sudo mkdir -p /var/www/html/.well-known/acme-challenge
-          sudo chown -R nginx:nginx /var/www/html/.well-known || sudo chown -R www-data:www-data /var/www/html/.well-known
-          
-          # Nginx設定テストと再起動
+          set -eux
+          TMP_REMOTE="/tmp/webapp_dist"
+          WEB_ROOT="/var/www/html"
+          DEPLOY_DIR="/var/www/html_$(date +%Y%m%d%H%M%S)"
+
+          # 配置先ディレクトリを用意しコピー
+          sudo mkdir -p "${DEPLOY_DIR}"
+          sudo cp -r "${TMP_REMOTE}"/* "${DEPLOY_DIR}/"
+
+          # 重要ファイル存在チェック
+          if ! sudo ls "${DEPLOY_DIR}/static/js/sharedDataService-"*".js" > /dev/null 2>&1; then
+            echo "❌ 必須チャンク(sharedDataService)が見つかりません。ロールバックします";
+            exit 1;
+          fi
+
+          # 旧ディレクトリをバックアップしながらアトミックに切替え
+          sudo mv "${WEB_ROOT}" "${WEB_ROOT}_backup_$(date +%s)" || true
+          sudo mv "${DEPLOY_DIR}" "${WEB_ROOT}"
+
+          # 一時ディレクトリ削除
+          sudo rm -rf ${TMP_REMOTE}
+
+          # 古いリリースを最大3世代残して掃除
+          sudo ls -dt /var/www/html_* | tail -n +4 | xargs -r sudo rm -rf || true
+
+          # 権限設定
+          sudo chown -R nginx:nginx "${DEPLOY_DIR}" || sudo chown -R www-data:www-data "${DEPLOY_DIR}"
+          sudo chmod -R 755 "${DEPLOY_DIR}"
+
+          # Nginxリロード
           sudo nginx -t && sudo systemctl reload nginx
-          
+           
           echo "✅ デプロイ完了"
         ENDSSH
         
