@@ -16,6 +16,7 @@ import AdminPanel from "./AdminPanel";
 import CompanySettings from "./CompanySettings";
 import CompanyNameModal from "./CompanyNameModal";
 import LoginPage from "./LoginPage";
+import PasswordResetPage from "./PasswordResetPage";
 import UserGuide from "./UserGuide";
 import GuideBook from "./GuideBook";
 import { CompanyProvider, useCompany } from "./contexts/CompanyContext";
@@ -270,6 +271,7 @@ function AppContent() {
       <Router>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/password-reset" element={<PasswordResetPage />} />
           <Route path="/guide" element={<GuideBook />} />
           <Route
             path="/"

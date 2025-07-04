@@ -17,29 +17,30 @@ import {
   Toolbar,
   FormHelperText,
 } from "@mui/material";
-import { useAuth } from "./contexts/AuthContext";
-import { useCompany } from "./contexts/CompanyContext";
 import ChatIcon from "@mui/icons-material/Chat";
 import HomeIcon from "@mui/icons-material/Home";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import LockResetIcon from "@mui/icons-material/LockReset";
 import { validateEmail, validatePassword } from "./utils/validation";
 
-function LoginPage() {
+function PasswordResetPage() {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string>("");
-  const [passwordError, setPasswordError] = useState<string>("");
+  const [currentPasswordError, setCurrentPasswordError] = useState<string>("");
+  const [newPasswordError, setNewPasswordError] = useState<string>("");
+  const [confirmPasswordError, setConfirmPasswordError] = useState<string>("");
   const [showValidation, setShowValidation] = useState(false);
   
-  const { login } = useAuth();
-  const { companyName, setCompanyName } = useCompany();
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-  const isTablet = useMediaQuery(theme.breakpoints.between("sm", "md"));
 
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -51,31 +52,61 @@ function LoginPage() {
     }
   };
 
-  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCurrentPasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    setPassword(value);
+    setCurrentPassword(value);
+    
+    if (showValidation && value.trim() === "") {
+      setCurrentPasswordError("現在のパスワードを入力してください");
+    } else {
+      setCurrentPasswordError("");
+    }
+  };
+
+  const handleNewPasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setNewPassword(value);
     
     if (showValidation) {
       const validation = validatePassword(value);
-      setPasswordError(validation.isValid ? "" : validation.message);
+      setNewPasswordError(validation.isValid ? "" : validation.message);
+    }
+  };
+
+  const handleConfirmPasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setConfirmPassword(value);
+    
+    if (showValidation) {
+      if (value !== newPassword) {
+        setConfirmPasswordError("新しいパスワードと一致しません");
+      } else {
+        setConfirmPasswordError("");
+      }
     }
   };
 
   const validateForm = () => {
     const emailValidation = validateEmail(email);
-    const passwordValidation = validatePassword(password);
+    const newPasswordValidation = validatePassword(newPassword);
     
     setEmailError(emailValidation.isValid ? "" : emailValidation.message);
-    setPasswordError(passwordValidation.isValid ? "" : passwordValidation.message);
+    setCurrentPasswordError(currentPassword.trim() === "" ? "現在のパスワードを入力してください" : "");
+    setNewPasswordError(newPasswordValidation.isValid ? "" : newPasswordValidation.message);
+    setConfirmPasswordError(confirmPassword !== newPassword ? "新しいパスワードと一致しません" : "");
     
-    return emailValidation.isValid && passwordValidation.isValid;
+    return emailValidation.isValid && 
+           currentPassword.trim() !== "" && 
+           newPasswordValidation.isValid && 
+           confirmPassword === newPassword;
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handlePasswordReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setShowValidation(true);
     setIsLoading(true);
     setError(null);
+    setSuccess(null);
 
     // フォームバリデーション
     if (!validateForm()) {
@@ -84,14 +115,50 @@ function LoginPage() {
     }
 
     try {
-      await login(email, password);
-      setCompanyName(localStorage.getItem("companyName") || "");
-      navigate("/");
+      console.log("Sending password reset request...");
+      const response = await fetch("/chatbot/api/auth/reset-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: email,
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      });
+      
+      console.log("Response status:", response.status);
+      console.log("Response headers:", response.headers);
+
+      let data;
+      try {
+        const responseText = await response.text();
+        if (responseText) {
+          data = JSON.parse(responseText);
+        } else {
+          data = {};
+        }
+      } catch (jsonError) {
+        console.error("JSON parsing error:", jsonError);
+        throw new Error("サーバーからの応答が無効です。");
+      }
+
+      if (!response.ok) {
+        throw new Error(data.detail || `サーバーエラー: ${response.status}`);
+      }
+
+      setSuccess("パスワードが正常に更新されました。新しいパスワードでログインしてください。");
+      
+      // 3秒後にログインページに遷移
+      setTimeout(() => {
+        navigate("/login");
+      }, 3000);
+
     } catch (err: any) {
-      console.error("Login error:", err);
+      console.error("Password reset error:", err);
       setError(
-        err.response?.data?.detail ||
-          "ログインに失敗しました。メールアドレスとパスワードを確認してください。"
+        err.message || "パスワードリセットに失敗しました。入力内容を確認してください。"
       );
     } finally {
       setIsLoading(false);
@@ -269,7 +336,7 @@ function LoginPage() {
                 alignItems: "center",
               }}
             >
-              {/* Logo Section */}
+              {/* Header Section */}
               <Box
                 sx={{
                   display: "flex",
@@ -280,9 +347,9 @@ function LoginPage() {
                   pt: 2,
                 }}
               >
-                {/* Company Name */}
+                {/* Title */}
                 <Typography
-                  variant="h3"
+                  variant="h4"
                   component="div"
                   sx={{
                     fontWeight: 800,
@@ -297,10 +364,10 @@ function LoginPage() {
                     letterSpacing: "0.5px",
                   }}
                 >
-                  ワークメイトAI
+                  パスワードリセット
                 </Typography>
 
-                {/* AI Assistant Badge */}
+                {/* Icon Badge */}
                 <Box
                   sx={{
                     display: "flex",
@@ -321,7 +388,7 @@ function LoginPage() {
                       mr: 1,
                     }}
                   >
-                    <ChatIcon sx={{ fontSize: "1rem" }} />
+                    <LockResetIcon sx={{ fontSize: "1rem" }} />
                   </Avatar>
                   <Typography
                     variant="body2"
@@ -330,7 +397,7 @@ function LoginPage() {
                       color: "#2563EB",
                     }}
                   >
-                    AIアシスタント
+                    セキュリティ管理
                   </Typography>
                 </Box>
               </Box>              
@@ -338,7 +405,7 @@ function LoginPage() {
 
             <Box
               component="form"
-              onSubmit={handleLogin}
+              onSubmit={handlePasswordReset}
               sx={{
                 width: "100%",
                 "& .MuiTextField-root": {
@@ -356,6 +423,8 @@ function LoginPage() {
                 autoFocus={!isMobile}
                 value={email}
                 onChange={handleEmailChange}
+                error={!!emailError}
+                helperText={emailError}
                 InputProps={{
                   sx: {
                     borderRadius: 2,
@@ -371,19 +440,19 @@ function LoginPage() {
                   },
                 }}
               />
-              {emailError && (
-                <FormHelperText error>{emailError}</FormHelperText>
-              )}
+
               <TextField
                 required
                 fullWidth
-                name="password"
-                label="パスワード"
+                name="currentPassword"
+                label="現在のパスワード"
                 type="password"
-                id="password"
+                id="currentPassword"
                 autoComplete="current-password"
-                value={password}
-                onChange={handlePasswordChange}
+                value={currentPassword}
+                onChange={handleCurrentPasswordChange}
+                error={!!currentPasswordError}
+                helperText={currentPasswordError}
                 InputProps={{
                   sx: {
                     borderRadius: 2,
@@ -399,9 +468,63 @@ function LoginPage() {
                   },
                 }}
               />
-              {passwordError && (
-                <FormHelperText error>{passwordError}</FormHelperText>
-              )}
+
+              <TextField
+                required
+                fullWidth
+                name="newPassword"
+                label="新しいパスワード"
+                type="password"
+                id="newPassword"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={handleNewPasswordChange}
+                error={!!newPasswordError}
+                helperText={newPasswordError}
+                InputProps={{
+                  sx: {
+                    borderRadius: 2,
+                    backgroundColor: "rgba(255, 255, 255, 0.8)",
+                    transition: "all 0.3s ease",
+                    "&:hover": {
+                      boxShadow: "0 0 0 1px rgba(37, 99, 235, 0.15)",
+                    },
+                    "&.Mui-focused": {
+                      boxShadow: "0 0 0 2px rgba(37, 99, 235, 0.2)",
+                      backgroundColor: "white",
+                    },
+                  },
+                }}
+              />
+
+              <TextField
+                required
+                fullWidth
+                name="confirmPassword"
+                label="新しいパスワード（確認）"
+                type="password"
+                id="confirmPassword"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={handleConfirmPasswordChange}
+                error={!!confirmPasswordError}
+                helperText={confirmPasswordError}
+                InputProps={{
+                  sx: {
+                    borderRadius: 2,
+                    backgroundColor: "rgba(255, 255, 255, 0.8)",
+                    transition: "all 0.3s ease",
+                    "&:hover": {
+                      boxShadow: "0 0 0 1px rgba(37, 99, 235, 0.15)",
+                    },
+                    "&.Mui-focused": {
+                      boxShadow: "0 0 0 2px rgba(37, 99, 235, 0.2)",
+                      backgroundColor: "white",
+                    },
+                  },
+                }}
+              />
+
               <Button
                 type="submit"
                 fullWidth
@@ -427,7 +550,7 @@ function LoginPage() {
                 {isLoading ? (
                   <CircularProgress size={24} color="inherit" />
                 ) : (
-                  "ログイン"
+                  "パスワードを更新"
                 )}
               </Button>
             </Box>
@@ -446,6 +569,20 @@ function LoginPage() {
               </Alert>
             )}
 
+            {success && (
+              <Alert
+                severity="success"
+                sx={{
+                  width: "100%",
+                  mt: 2,
+                  borderRadius: 2,
+                  border: "1px solid rgba(46, 125, 50, 0.1)",
+                }}
+              >
+                {success}
+              </Alert>
+            )}
+
             {/* Footer Links */}
             <Box
               sx={{
@@ -458,6 +595,21 @@ function LoginPage() {
                 gap: { xs: 2, sm: 3 },
               }}
             >
+              <Link
+                component={RouterLink}
+                to="/login"
+                sx={{
+                  color: "text.secondary",
+                  textDecoration: "none",
+                  fontSize: "0.875rem",
+                  transition: "color 0.2s",
+                  "&:hover": {
+                    color: "primary.main",
+                  },
+                }}
+              >
+                ログインページに戻る
+              </Link>
               <Link
                 href="https://www.workmate-ai.com"
                 target="_blank"
@@ -474,50 +626,6 @@ function LoginPage() {
               >
                 ホームページ
               </Link>
-              <Link
-                component={RouterLink}
-                to="/guide"
-                sx={{
-                  color: "text.secondary",
-                  textDecoration: "none",
-                  fontSize: "0.875rem",
-                  transition: "color 0.2s",
-                  "&:hover": {
-                    color: "primary.main",
-                  },
-                }}
-              >
-                ガイドブック
-              </Link>
-              <Link
-                component={RouterLink}
-                to="/password-reset"
-                sx={{
-                  color: "text.secondary",
-                  textDecoration: "none",
-                  fontSize: "0.875rem",
-                  transition: "color 0.2s",
-                  "&:hover": {
-                    color: "primary.main",
-                  },
-                }}
-              >
-                パスワードリセット
-              </Link>
-              <Link
-                href="#"
-                sx={{
-                  color: "text.secondary",
-                  textDecoration: "none",
-                  fontSize: "0.875rem",
-                  transition: "color 0.2s",
-                  "&:hover": {
-                    color: "primary.main",
-                  },
-                }}
-              >
-                お問い合わせ対応
-              </Link>
             </Box>
           </Paper>
         </Container>
@@ -526,4 +634,4 @@ function LoginPage() {
   );
 }
 
-export default LoginPage;
+export default PasswordResetPage;
