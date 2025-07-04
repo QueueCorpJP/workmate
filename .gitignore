@@ -56,4 +56,29 @@ Thumbs.db
 *.log
 bun.lockb
 .vercel/
-.cache/ 
+.cache/
+
+# ==== Python extra caches ====
+.mypy_cache/
+.coverage
+htmlcov/
+coverage*.xml
+
+# ==== Test caches ====
+.pytest_cache/
+
+# ==== Merge conflict leftovers ====
+*.orig
+*.rej
+
+# ==== Editor / IDE ====
+.vscode/
+.idea/
+
+# ==== Temp files ====
+*.tmp
+*.temp
+
+# ==== Nested virtual env ====
+**/venv/
+**/.venv/ 
