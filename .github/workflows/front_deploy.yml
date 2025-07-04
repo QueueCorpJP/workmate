@@ -70,19 +70,16 @@ jobs:
             exit 1;
           fi
 
-          # 旧ディレクトリをバックアップしながらアトミックに切替え
+          # 権限設定（移動前に行い、その後WEB_ROOTに対して再度保証）
+          sudo chown -R nginx:nginx "${DEPLOY_DIR}" || true
+          sudo chmod -R 755 "${DEPLOY_DIR}"
+
+          # 旧→新へ切替
           sudo mv "${WEB_ROOT}" "${WEB_ROOT}_backup_$(date +%s)" || true
           sudo mv "${DEPLOY_DIR}" "${WEB_ROOT}"
 
-          # 一時ディレクトリ削除
-          sudo rm -rf ${TMP_REMOTE}
-
-          # 古いリリースを最大3世代残して掃除
-          sudo ls -dt /var/www/html_* | tail -n +4 | xargs -r sudo rm -rf || true
-
-          # 権限設定
-          sudo chown -R nginx:nginx "${DEPLOY_DIR}" || sudo chown -R www-data:www-data "${DEPLOY_DIR}"
-          sudo chmod -R 755 "${DEPLOY_DIR}"
+          # 最終権限確認（nginxユーザーがない環境でもエラーにならないようtrueを付ける）
+          sudo chown -R nginx:nginx "${WEB_ROOT}" || true
 
           # Nginxリロード
           sudo nginx -t && sudo systemctl reload nginx
