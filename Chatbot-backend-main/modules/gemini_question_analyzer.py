@@ -544,6 +544,33 @@ JSON形式のみで回答してください：
                                         where_conditions.append(f"({' OR '.join(or_conditions)})")
                             
                             if where_conditions:
+                                # 固有名詞条件と同義語グループ条件を分離
+                                required_conditions = []
+                                optional_conditions = []
+                                
+                                # 固有名詞条件を識別
+                                for i, keyword in enumerate(required_keywords):
+                                    if i < len(where_conditions):
+                                        required_conditions.append(where_conditions[i])
+                                
+                                # 同義語グループ条件を識別
+                                for j in range(len(required_keywords), len(where_conditions)):
+                                    optional_conditions.append(where_conditions[j])
+                                
+                                # SQL WHERE句の構築
+                                where_clause_parts = []
+                                
+                                # 固有名詞は OR で結合（いずれか一つの表記が含まれていれば良い）
+                                if required_conditions:
+                                    where_clause_parts.append(f"({' OR '.join(required_conditions)})")
+                                
+                                # 同義語グループは追加条件として AND で結合
+                                if optional_conditions:
+                                    where_clause_parts.extend(optional_conditions)
+                                
+                                # 最終的なWHERE句
+                                final_where = ' AND '.join(where_clause_parts)
+                                
                                 sql = f"""
                                 SELECT DISTINCT
                                     c.id as chunk_id,
@@ -557,7 +584,7 @@ JSON形式のみで回答してください：
                                 LEFT JOIN document_sources ds ON ds.id = c.doc_id
                                 WHERE c.content IS NOT NULL
                                   AND LENGTH(c.content) > 10
-                                  AND ({' OR '.join(where_conditions)})
+                                  AND {final_where}
                                 """
                                 
                                 # 会社IDフィルタ
