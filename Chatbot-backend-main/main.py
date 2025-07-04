@@ -270,6 +270,69 @@ async def register(user_data: UserRegister, db: SupabaseConnection = Depends(get
             detail=f"登録に失敗しました: {str(e)}"
         )
 
+# パスワードリセットのためのモデル
+from pydantic import BaseModel as PydanticBaseModel
+
+class PasswordResetRequest(PydanticBaseModel):
+    email: str
+    current_password: str
+    new_password: str
+
+@app.post("/chatbot/api/auth/reset-password")
+async def reset_password(request: PasswordResetRequest, db: SupabaseConnection = Depends(get_db)):
+    """パスワードリセット"""
+    from modules.database import authenticate_user, update_user_password
+    from modules.validation import validate_login_input, validate_password_input
+    
+    # 入力値バリデーション
+    is_valid, errors = validate_login_input(request.email, request.current_password)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="; ".join(errors)
+        )
+    
+    # 新しいパスワードの検証
+    is_password_valid, password_errors = validate_password_input(request.new_password)
+    if not is_password_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="; ".join(password_errors)
+        )
+    
+    # 現在のパスワードで認証
+    user = authenticate_user(request.email, request.current_password, db)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="現在のメールアドレスまたはパスワードが正しくありません。"
+        )
+    
+    # 新しいパスワードが現在のパスワードと同じでないことを確認
+    if request.current_password == request.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="新しいパスワードは現在のパスワードと異なる必要があります。"
+        )
+    
+    try:
+        # パスワードを更新
+        success = update_user_password(user["id"], request.new_password, db)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="パスワードの更新に失敗しました。"
+            )
+        
+        return {"message": "パスワードが正常に更新されました。"}
+    
+    except Exception as e:
+        logger.error(f"パスワードリセットエラー: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="パスワードリセット中にエラーが発生しました。"
+        )
+
 @app.post("/chatbot/api/admin/register-user", response_model=UserResponse)
 async def admin_register_user(user_data: AdminUserCreate, current_user = Depends(get_user_creation_permission), db: SupabaseConnection = Depends(get_db)):
     """管理者による新規ユーザー登録"""

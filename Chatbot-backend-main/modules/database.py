@@ -912,6 +912,25 @@ def authenticate_user(email: str, password: str, db: SupabaseConnection) -> dict
         print(f"認証エラー: {e}")
         return None
 
+def update_user_password(user_id: str, new_password: str, db: SupabaseConnection) -> bool:
+    """ユーザーのパスワードを更新します"""
+    try:
+        from supabase_adapter import update_data
+        
+        # パスワードを更新
+        result = update_data("users", "id", user_id, {"password": new_password})
+        
+        if result.success:
+            print(f"パスワード更新成功: user_id={user_id}")
+            return True
+        else:
+            print(f"パスワード更新失敗: {result.error}")
+            return False
+            
+    except Exception as e:
+        print(f"パスワード更新エラー: {e}")
+        return False
+
 def get_users_by_company(company_id: str, db: SupabaseConnection) -> list:
     """会社に所属するユーザーを取得します"""
     result = select_data("users", filters={"company_id": company_id})

@@ -173,4 +173,17 @@ def validate_login_input(email: str, password: str) -> Tuple[bool, List[str]]:
     elif len(password) < 1:
         errors.append("パスワードを入力してください")
     
-    return len(errors) == 0, errors 
+    return len(errors) == 0, errors
+
+def validate_password_input(password: str) -> Tuple[bool, List[str]]:
+    """
+    パスワード入力専用のバリデーション関数
+    validate_password の戻り値を (bool, List[str]) 形式に変換して返します。
+    Args:
+        password (str): 検証対象のパスワード
+    Returns:
+        Tuple[bool, List[str]]: (有効かどうか, エラーメッセージのリスト)
+    """
+    is_valid, error_msg = validate_password(password)
+    # validate_password は単一メッセージを返すため、リストに変換して統一
+    return is_valid, ([] if is_valid else [error_msg]) 
