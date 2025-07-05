@@ -168,14 +168,17 @@ class RealtimeRAGProcessor:
         """
         🔍 Step 3. 類似チャンク検索（Top-K）
         Supabaseの chunks テーブルから、ベクトル距離が近いチャンクを pgvector を用いて取得
+        PDFファイルを含むすべてのファイルタイプを平等に検索対象とする
         """
         logger.info(f"🔍 Step 3: 類似チャンク検索開始 (Top-{top_k})")
         
         try:
             with psycopg2.connect(self.db_url, cursor_factory=RealDictCursor) as conn:
                 with conn.cursor() as cur:
-                    # pgvectorを使用したベクトル類似検索SQL
-                    sql = """
+                    # 🔍 まず、埋め込みベクトルが利用可能なチャンクでベクトル類似検索
+                    vector_str = '[' + ','.join(map(str, query_embedding)) + ']'
+                    
+                    sql_vector = """
                     SELECT
                         c.id,
                         c.doc_id,
@@ -183,32 +186,39 @@ class RealtimeRAGProcessor:
                         c.content,
                         ds.name as document_name,
                         ds.type as document_type,
-                        1 - (c.embedding <=> %s) as similarity_score
+                        1 - (c.embedding <=> %s) as similarity_score,
+                        'vector' as search_method
                     FROM chunks c
                     LEFT JOIN document_sources ds ON ds.id = c.doc_id
                     WHERE c.embedding IS NOT NULL
+                      AND c.content IS NOT NULL
+                      AND LENGTH(c.content) > 10
                     """
                     
-                    # ベクトルを文字列形式に変換
-                    vector_str = '[' + ','.join(map(str, query_embedding)) + ']'
-                    params = [vector_str]
+                    params_vector = [vector_str]
                     
                     # 会社IDフィルタ（オプション）
                     if company_id:
-                        sql += " AND c.company_id = %s"
-                        params.append(company_id)
+                        sql_vector += " AND c.company_id = %s"
+                        params_vector.append(company_id)
                     
-                    # ベクトル距離順でソート（Top-K取得）
-                    sql += " ORDER BY c.embedding <=> %s LIMIT %s"
-                    params.extend([vector_str, top_k])
+                    # ベクトル距離順でソート
+                    sql_vector += " ORDER BY c.embedding <=> %s LIMIT %s"
+                    params_vector.extend([vector_str, top_k])
                     
                     logger.info(f"実行SQL: ベクトル類似検索 (Top-{top_k})")
-                    cur.execute(sql, params)
-                    results = cur.fetchall()
+                    cur.execute(sql_vector, params_vector)
+                    vector_results = cur.fetchall()
+                    
+                    # 🔍 PDFファイルのベクトル検索結果を確認
+                    pdf_vector_count = len([r for r in vector_results if r['document_type'] == 'pdf'])
+                    excel_vector_count = len([r for r in vector_results if r['document_type'] == 'excel'])
+                    
+                    logger.info(f"ベクトル検索結果: PDF={pdf_vector_count}件, Excel={excel_vector_count}件, 総計={len(vector_results)}件")
                     
                     # 結果を辞書のリストに変換
                     similar_chunks = []
-                    for row in results:
+                    for row in vector_results:
                         similar_chunks.append({
                             'chunk_id': row['id'],
                             'doc_id': row['doc_id'],
@@ -216,24 +226,154 @@ class RealtimeRAGProcessor:
                             'content': row['content'],
                             'document_name': row['document_name'],
                             'document_type': row['document_type'],
-                            'similarity_score': float(row['similarity_score'])
+                            'similarity_score': float(row['similarity_score']),
+                            'search_method': row['search_method']
                         })
                     
-                    logger.info(f"✅ Step 3完了: {len(similar_chunks)}個の類似チャンクを取得")
+                    # 🔍 PDFファイルの結果が少ない場合、フォールバック検索を実行
+                    if pdf_vector_count < 3:  # PDFファイルの結果が3件未満の場合
+                        logger.info("📄 PDFファイルの結果が少ないため、フォールバック検索を実行")
+                        
+                        # 埋め込みベクトルがないチャンクに対してテキスト検索を実行
+                        sql_text = """
+                        SELECT
+                            c.id,
+                            c.doc_id,
+                            c.chunk_index,
+                            c.content,
+                            ds.name as document_name,
+                            ds.type as document_type,
+                            0.5 as similarity_score,
+                            'text_fallback' as search_method
+                        FROM chunks c
+                        LEFT JOIN document_sources ds ON ds.id = c.doc_id
+                        WHERE c.embedding IS NULL
+                          AND c.content IS NOT NULL
+                          AND LENGTH(c.content) > 10
+                          AND ds.type = 'pdf'
+                        """
+                        
+                        params_text = []
+                        
+                        # 会社IDフィルタ（オプション）
+                        if company_id:
+                            sql_text += " AND c.company_id = %s"
+                            params_text.append(company_id)
+                        
+                        # ランダムサンプリング（埋め込みベクトルがない場合）
+                        sql_text += " ORDER BY RANDOM() LIMIT %s"
+                        params_text.append(min(10, top_k))
+                        
+                        logger.info("実行SQL: PDFファイル向けテキストフォールバック検索")
+                        cur.execute(sql_text, params_text)
+                        text_fallback_results = cur.fetchall()
+                        
+                        # フォールバック結果を追加
+                        for row in text_fallback_results:
+                            similar_chunks.append({
+                                'chunk_id': row['id'],
+                                'doc_id': row['doc_id'],
+                                'chunk_index': row['chunk_index'],
+                                'content': row['content'],
+                                'document_name': row['document_name'],
+                                'document_type': row['document_type'],
+                                'similarity_score': float(row['similarity_score']),
+                                'search_method': row['search_method']
+                            })
+                        
+                        logger.info(f"フォールバック検索で{len(text_fallback_results)}件のPDFチャンクを追加")
+                    
+                    # 🔍 さらに、特定のファイルタイプが不足している場合の追加検索
+                    file_type_distribution = {}
+                    for chunk in similar_chunks:
+                        doc_type = chunk['document_type'] or 'unknown'
+                        file_type_distribution[doc_type] = file_type_distribution.get(doc_type, 0) + 1
+                    
+                    # PDFファイルの結果が依然として少ない場合
+                    if file_type_distribution.get('pdf', 0) < 2:
+                        logger.info("📄 PDFファイル結果が不足しているため、追加検索を実行")
+                        
+                        # 会社全体のPDFファイルから代表的なチャンクを取得
+                        sql_pdf_supplement = """
+                        SELECT
+                            c.id,
+                            c.doc_id,
+                            c.chunk_index,
+                            c.content,
+                            ds.name as document_name,
+                            ds.type as document_type,
+                            0.4 as similarity_score,
+                            'pdf_supplement' as search_method
+                        FROM chunks c
+                        LEFT JOIN document_sources ds ON ds.id = c.doc_id
+                        WHERE c.content IS NOT NULL
+                          AND LENGTH(c.content) > 10
+                          AND ds.type = 'pdf'
+                          AND ds.active = true
+                        """
+                        
+                        params_pdf_supplement = []
+                        
+                        # 会社IDフィルタ（オプション）
+                        if company_id:
+                            sql_pdf_supplement += " AND c.company_id = %s"
+                            params_pdf_supplement.append(company_id)
+                        
+                        # 最新のチャンクから優先的に取得
+                        sql_pdf_supplement += " ORDER BY c.id DESC LIMIT %s"
+                        params_pdf_supplement.append(5)
+                        
+                        logger.info("実行SQL: PDF補完検索")
+                        cur.execute(sql_pdf_supplement, params_pdf_supplement)
+                        pdf_supplement_results = cur.fetchall()
+                        
+                        # PDF補完結果を追加
+                        for row in pdf_supplement_results:
+                            # 重複チェック
+                            if not any(chunk['chunk_id'] == row['id'] for chunk in similar_chunks):
+                                similar_chunks.append({
+                                    'chunk_id': row['id'],
+                                    'doc_id': row['doc_id'],
+                                    'chunk_index': row['chunk_index'],
+                                    'content': row['content'],
+                                    'document_name': row['document_name'],
+                                    'document_type': row['document_type'],
+                                    'similarity_score': float(row['similarity_score']),
+                                    'search_method': row['search_method']
+                                })
+                        
+                        logger.info(f"PDF補完検索で{len(pdf_supplement_results)}件のチャンクを追加")
+                    
+                    # 結果を類似度順でソート
+                    similar_chunks.sort(key=lambda x: x['similarity_score'], reverse=True)
+                    
+                    # 最大チャンク数に制限
+                    final_chunks = similar_chunks[:top_k]
+                    
+                    logger.info(f"✅ Step 3完了: {len(final_chunks)}個の類似チャンクを取得")
                     
                     # 🔍 詳細チャンク選択ログ（リアルタイムRAG）
                     print("\n" + "="*80)
                     print(f"🔍 【Step 3: 類似チャンク検索結果】")
-                    print(f"📊 取得チャンク数: {len(similar_chunks)}件 (Top-{top_k})")
+                    print(f"📊 取得チャンク数: {len(final_chunks)}件 (Top-{top_k})")
                     print(f"🏢 会社IDフィルタ: {'適用 (' + company_id + ')' if company_id else '未適用（全データ検索）'}")
                     print(f"🧠 エンベディングモデル: {self.embedding_model} ({self.expected_dimensions}次元)")
+                    
+                    # ファイルタイプ別統計を表示
+                    final_file_type_distribution = {}
+                    for chunk in final_chunks:
+                        doc_type = chunk['document_type'] or 'unknown'
+                        final_file_type_distribution[doc_type] = final_file_type_distribution.get(doc_type, 0) + 1
+                    
+                    print(f"📁 ファイルタイプ別結果: {final_file_type_distribution}")
                     print("="*80)
                     
-                    for i, chunk in enumerate(similar_chunks):
+                    for i, chunk in enumerate(final_chunks):
                         similarity = chunk['similarity_score']
                         doc_name = chunk['document_name'] or 'Unknown'
                         chunk_idx = chunk['chunk_index']
                         content_preview = (chunk['content'] or '')[:150].replace('\n', ' ')
+                        search_method = chunk['search_method']
                         
                         # 類似度に基づく評価
                         if similarity > 0.8:
@@ -247,15 +387,16 @@ class RealtimeRAGProcessor:
                         else:
                             evaluation = "⚫ 極めて低い関連性"
                         
-                        print(f"  {i+1:2d}. 📄 {doc_name}")
+                        print(f"  {i+1:2d}. 📄 {doc_name} ({chunk['document_type']})")
                         print(f"      🧩 チャンク#{chunk_idx} | 🎯 類似度: {similarity:.4f} | {evaluation}")
+                        print(f"      🔍 検索方法: {search_method}")
                         print(f"      📝 内容: {content_preview}...")
                         print(f"      🔗 チャンクID: {chunk['chunk_id']} | 📄 ドキュメントID: {chunk['doc_id']}")
                         print()
                     
                     print("="*80 + "\n")
                     
-                    return similar_chunks
+                    return final_chunks
         
         except Exception as e:
             logger.error(f"❌ Step 3エラー: 類似検索失敗 - {e}")
@@ -310,7 +451,7 @@ class RealtimeRAGProcessor:
             
             print(f"📋 最終コンテキスト情報:")
             print(f"   ✅ 使用チャンク数: {len(used_chunks)}個")
-            print(f"   📏 総文字数: {len(context):,}文字")
+            print(f"   �� 総文字数: {len(context):,}文字")
             print("="*80 + "\n")
             
             # 🎯 特別指示を取得してプロンプトの一番前に配置

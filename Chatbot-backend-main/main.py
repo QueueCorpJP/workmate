@@ -131,6 +131,22 @@ async def log_requests(request: Request, call_next):
 # アプリケーション起動時にデータベースを初期化
 init_db()
 
+# 起動時イベント：PostgreSQL Fuzzy Search初期化
+@app.on_event("startup")
+async def startup_event():
+    """アプリケーション起動時の初期化処理"""
+    print("🔄 アプリケーション起動時初期化開始...")
+    
+    # PostgreSQL Fuzzy Search初期化
+    try:
+        from modules.postgresql_fuzzy_search import initialize_postgresql_fuzzy
+        await initialize_postgresql_fuzzy()
+        print("✅ PostgreSQL Fuzzy Search初期化成功")
+    except Exception as e:
+        print(f"⚠️ PostgreSQL Fuzzy Search初期化失敗: {e}")
+    
+    print("✅ アプリケーション起動時初期化完了")
+
 # admin.pyのルーターを登録
 app.include_router(admin.router, prefix="/chatbot/api/admin", tags=["admin"])
 

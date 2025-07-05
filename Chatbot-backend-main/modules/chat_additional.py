@@ -12,7 +12,7 @@ from .chat_utils import expand_query
 
 async def rag_search_with_fallback(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
-    フォールバック機能付きRAG検索
+    フォールバック機能付きRAG検索（PDFファイル対応強化版）
     """
     try:
         safe_print(f"Starting RAG search with fallback for: {query}")
@@ -22,6 +22,29 @@ async def rag_search_with_fallback(query: str, limit: int = 10) -> List[Dict[str
         
         if results and len(results) >= 3:
             safe_print(f"Primary search successful with {len(results)} results")
+            # ファイルタイプ別の分布を確認
+            file_types = {}
+            for result in results:
+                doc_type = result.get('metadata', {}).get('document_type', 'unknown')
+                file_types[doc_type] = file_types.get(doc_type, 0) + 1
+            safe_print(f"Primary search file type distribution: {file_types}")
+            
+            # PDFファイルの結果が少ない場合は補完検索を実行
+            if file_types.get('pdf', 0) < 2:
+                safe_print("PDF files underrepresented, adding PDF-focused search")
+                pdf_results = await pdf_focused_search(query, limit=5)
+                if pdf_results:
+                    results.extend(pdf_results)
+                    # 重複を除去
+                    seen_ids = set()
+                    unique_results = []
+                    for result in results:
+                        result_id = result.get('id') or result.get('chunk_id')
+                        if result_id not in seen_ids:
+                            seen_ids.add(result_id)
+                            unique_results.append(result)
+                    results = unique_results[:limit]
+            
             return results
         
         # フォールバック1: 基本RAG検索
@@ -41,19 +64,225 @@ async def rag_search_with_fallback(query: str, limit: int = 10) -> List[Dict[str
                 safe_print(f"Fallback 2 successful with {len(expanded_results)} results")
                 return expanded_results
         
-        # フォールバック3: 部分マッチ検索
-        safe_print("Trying fallback 3: partial match search")
-        partial_results = await partial_match_search(query, limit)
+        # フォールバック3: 部分マッチ検索（ファイルタイプ均等化）
+        safe_print("Trying fallback 3: balanced partial match search")
+        balanced_results = await balanced_partial_match_search(query, limit)
         
-        if partial_results:
-            safe_print(f"Fallback 3 successful with {len(partial_results)} results")
-            return partial_results
+        if balanced_results:
+            safe_print(f"Fallback 3 successful with {len(balanced_results)} results")
+            return balanced_results
+        
+        # フォールバック4: PDFファイル専用検索
+        safe_print("Trying fallback 4: PDF-focused search")
+        pdf_results = await pdf_focused_search(query, limit)
+        
+        if pdf_results:
+            safe_print(f"Fallback 4 successful with {len(pdf_results)} results")
+            return pdf_results
         
         safe_print("All fallback methods failed")
         return []
         
     except Exception as e:
         safe_print(f"Error in RAG search with fallback: {e}")
+        return []
+
+async def pdf_focused_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    PDFファイルに特化した検索
+    """
+    try:
+        safe_print(f"Starting PDF-focused search for: {query}")
+        
+        cursor = get_db_cursor()
+        if not cursor:
+            return []
+        
+        # PDFファイルのチャンクのみを対象とした検索
+        query_words = query.split()
+        
+        if not query_words:
+            return []
+        
+        # 各単語での部分マッチ検索（PDFファイル限定）
+        search_conditions = []
+        params = []
+        
+        for word in query_words:
+            if len(word) > 1:  # 1文字以上の単語のみ
+                search_conditions.append("c.content ILIKE %s")
+                params.append(f"%{word}%")
+        
+        if not search_conditions:
+            return []
+        
+        # SQL クエリを構築（PDFファイルのみ）
+        sql_query = f"""
+        SELECT 
+            c.id as chunk_id,
+            c.content,
+            c.chunk_index,
+            ds.name as document_name,
+            ds.type as document_type,
+            ds.id as doc_id,
+            (CASE 
+                WHEN c.content ILIKE %s THEN 5
+                WHEN {' AND '.join(search_conditions)} THEN 4
+                WHEN {' OR '.join(search_conditions)} THEN 3
+                ELSE 2
+            END) as relevance_score
+        FROM chunks c
+        LEFT JOIN document_sources ds ON ds.id = c.doc_id
+        WHERE ds.type = 'pdf'
+          AND ds.active = true
+          AND c.content IS NOT NULL
+          AND LENGTH(c.content) > 10
+          AND ({' OR '.join(search_conditions)})
+        ORDER BY relevance_score DESC, c.id DESC
+        LIMIT %s
+        """
+        
+        # パラメータを準備
+        full_params = [f"%{query}%"] + params + params + [limit]
+        
+        cursor.execute(sql_query, full_params)
+        rows = cursor.fetchall()
+        
+        results = []
+        for row in rows:
+            results.append({
+                'id': row[0],
+                'chunk_id': row[0],
+                'content': row[1],
+                'chunk_index': row[2],
+                'score': float(row[5]),
+                'metadata': {
+                    'document_name': row[3],
+                    'document_type': row[4],
+                    'source_document': row[3],
+                    'doc_id': row[5]
+                }
+            })
+        
+        safe_print(f"PDF-focused search returned {len(results)} results")
+        return results
+        
+    except Exception as e:
+        safe_print(f"Error in PDF-focused search: {e}")
+        return []
+
+async def balanced_partial_match_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    ファイルタイプを均等に含む部分マッチ検索
+    """
+    try:
+        safe_print(f"Starting balanced partial match search for: {query}")
+        
+        cursor = get_db_cursor()
+        if not cursor:
+            return []
+        
+        # クエリを単語に分割
+        query_words = query.split()
+        
+        if not query_words:
+            return []
+        
+        # 各ファイルタイプから均等に結果を取得
+        file_types = ['pdf', 'excel', 'word', 'text']
+        results_per_type = max(1, limit // len(file_types))
+        extra_slots = limit % len(file_types)
+        
+        all_results = []
+        
+        for i, file_type in enumerate(file_types):
+            current_limit = results_per_type
+            if i < extra_slots:
+                current_limit += 1
+            
+            # 各単語での部分マッチ検索
+            search_conditions = []
+            params = []
+            
+            for word in query_words:
+                if len(word) > 1:  # 1文字以上の単語のみ
+                    search_conditions.append("c.content ILIKE %s")
+                    params.append(f"%{word}%")
+            
+            if not search_conditions:
+                continue
+            
+            # SQL クエリを構築（特定ファイルタイプ）
+            sql_query = f"""
+            SELECT 
+                c.id as chunk_id,
+                c.content,
+                c.chunk_index,
+                ds.name as document_name,
+                ds.type as document_type,
+                ds.id as doc_id,
+                (CASE 
+                    WHEN c.content ILIKE %s THEN 4
+                    WHEN {' AND '.join(search_conditions)} THEN 3
+                    WHEN {' OR '.join(search_conditions)} THEN 2
+                    ELSE 1
+                END) as relevance_score
+            FROM chunks c
+            LEFT JOIN document_sources ds ON ds.id = c.doc_id
+            WHERE ds.type = %s
+              AND ds.active = true
+              AND c.content IS NOT NULL
+              AND LENGTH(c.content) > 10
+              AND ({' OR '.join(search_conditions)})
+            ORDER BY relevance_score DESC, c.id DESC
+            LIMIT %s
+            """
+            
+            # パラメータを準備
+            type_params = [f"%{query}%"] + params + params + [file_type] + [current_limit]
+            
+            try:
+                cursor.execute(sql_query, type_params)
+                rows = cursor.fetchall()
+                
+                for row in rows:
+                    all_results.append({
+                        'id': row[0],
+                        'chunk_id': row[0],
+                        'content': row[1],
+                        'chunk_index': row[2],
+                        'score': float(row[5]),
+                        'metadata': {
+                            'document_name': row[3],
+                            'document_type': row[4],
+                            'source_document': row[3],
+                            'doc_id': row[5]
+                        }
+                    })
+                
+                safe_print(f"Found {len(rows)} results for file type: {file_type}")
+                
+            except Exception as type_error:
+                safe_print(f"Error searching file type {file_type}: {type_error}")
+                continue
+        
+        # スコア順でソート
+        all_results.sort(key=lambda x: x.get('score', 0), reverse=True)
+        
+        final_results = all_results[:limit]
+        
+        # ファイルタイプ別の分布を表示
+        file_type_distribution = {}
+        for result in final_results:
+            doc_type = result.get('metadata', {}).get('document_type', 'unknown')
+            file_type_distribution[doc_type] = file_type_distribution.get(doc_type, 0) + 1
+        
+        safe_print(f"Balanced partial match search returned {len(final_results)} results")
+        safe_print(f"File type distribution: {file_type_distribution}")
+        return final_results
+        
+    except Exception as e:
+        safe_print(f"Error in balanced partial match search: {e}")
         return []
 
 async def partial_match_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:

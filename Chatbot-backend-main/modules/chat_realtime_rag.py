@@ -259,6 +259,19 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                         # Supabase にチャット履歴を保存
                         try:
                             from modules.chat_processing import save_chat_history
+                            from modules.question_categorizer import categorize_question
+                            
+                            # 質問内容を分析してカテゴリーを決定
+                            category_result = categorize_question(message_text)
+                            category = category_result.get("category", "general")
+                            
+                            # ソース文書の情報を抽出
+                            primary_source_document = None
+                            if source_documents and len(source_documents) > 0:
+                                primary_source_document = source_documents[0].get('document_name')
+                            elif source_info_list and len(source_info_list) > 0:
+                                primary_source_document = source_info_list[0].get('name')
+                            
                             await save_chat_history(
                                 user_id=user_id or "anonymous",
                                 user_message=message_text,
@@ -266,9 +279,10 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                                 company_id=company_id,
                                 employee_id=user_id,
                                 employee_name=current_user.get("name") if current_user else None,
-                                category="realtime_rag",
+                                category=category,
                                 sentiment="neutral",
-                                model_name="realtime-rag"
+                                model_name="realtime-rag",
+                                source_document=primary_source_document
                             )
                         except Exception as e:
                             safe_print(f"⚠️ Supabase へのチャット履歴保存エラー: {e}")
@@ -437,6 +451,22 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
         # Supabase にチャット履歴を保存
         try:
             from modules.chat_processing import save_chat_history
+            from modules.question_categorizer import categorize_question
+            
+            # 質問内容を分析してカテゴリーを決定
+            category_result = categorize_question(message_text)
+            category = category_result.get("category", "general")
+            
+            # フォールバック処理でのソース文書情報を抽出
+            primary_source_document = None
+            if search_results and len(search_results) > 0:
+                # search_resultsから最初のソース文書名を取得
+                primary_source_document = search_results[0].get('metadata', {}).get('source_document')
+                if not primary_source_document and resource_names and len(resource_names) > 0:
+                    primary_source_document = resource_names[0]
+            elif resource_names and len(resource_names) > 0:
+                primary_source_document = resource_names[0]
+            
             await save_chat_history(
                 user_id=user_id or "anonymous",
                 user_message=message_text,
@@ -444,9 +474,10 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                 company_id=company_id,
                 employee_id=user_id,
                 employee_name=current_user.get("name") if current_user else None,
-                category="realtime_rag_fallback",
+                category=category,
                 sentiment="neutral",
-                model_name="realtime-rag-fallback"
+                model_name="realtime-rag-fallback",
+                source_document=primary_source_document
             )
         except Exception as e:
             safe_print(f"⚠️ Supabase へのチャット履歴保存エラー: {e}")

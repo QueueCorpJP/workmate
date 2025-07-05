@@ -509,6 +509,33 @@ def get_resource_reference_analysis(db, company_id: str = None) -> Dict[str, Any
 def get_category_distribution_analysis(db, company_id: str = None) -> Dict[str, Any]:
     """質問カテゴリ分布と偏り分析（CRUD操作で実装）"""
     try:
+        # カテゴリ名のマッピング（技術的な変数名から人間が読みやすい名前に変換）
+        category_mapping = {
+            # 新しい意味のあるカテゴリー
+            "company_info": "🏢 会社情報",
+            "product_service": "🛍️ 商品・サービス",
+            "procedure": "📋 手続き・業務",
+            "equipment": "💻 設備・環境",
+            "hr_labor": "👥 人事・労務",
+            "technical": "🔧 技術サポート",
+            "finance": "💰 経理・財務",
+            "general": "💬 一般的な質問",
+            "greeting": "👋 挨拶・雑談",
+            "other": "🔗 その他",
+            
+            # 古い技術的カテゴリー（後方互換性のため）
+            "realtime_rag": "🔍 検索システム（旧）",
+            "realtime_rag_fallback": "🔄 検索システム（フォールバック・旧）",
+            "chat": "💬 チャット（旧）",
+            "question_answering": "❓ 質問応答（旧）",
+            "specific_info": "📋 特定情報（旧）",
+            "general_info": "📚 一般情報（旧）",
+            "document_search": "📄 文書検索（旧）",
+            "employee_info": "👤 従業員情報（旧）",
+            "faq": "🤔 FAQ（旧）",
+            "support": "🛠️ サポート（旧）"
+        }
+        
         # chat_historyテーブルからカテゴリ関連データを取得
         chat_filters = {}
         if company_id:
@@ -531,13 +558,17 @@ def get_category_distribution_analysis(db, company_id: str = None) -> Dict[str, 
         total_questions = 0
         
         for chat in chat_result.data:
-            category = safe_str(chat.get("category", "")).strip()
-            if not category or category == "None":
-                category = "未分類"
+            raw_category = safe_str(chat.get("category", "")).strip()
+            if not raw_category or raw_category == "None":
+                raw_category = "other"
+            
+            # カテゴリ名を人間が読みやすい名前に変換
+            category = category_mapping.get(raw_category, f"🔹 {raw_category}")
             
             if category not in category_stats:
                 category_stats[category] = {
                     "category": category,
+                    "raw_category": raw_category,  # 元のカテゴリ名も保存
                     "count": 0,
                     "unique_users": set(),
                     "unique_days": set(),
@@ -776,6 +807,33 @@ def get_active_user_trends(db, company_id: str = None, days: int = 30) -> Dict[s
 def get_unresolved_repeat_analysis(db, company_id: str = None) -> Dict[str, Any]:
     """未解決・再質問の傾向分析（CRUD操作で実装）"""
     try:
+        # カテゴリ名のマッピング
+        category_mapping = {
+            # 新しい意味のあるカテゴリー
+            "company_info": "🏢 会社情報",
+            "product_service": "🛍️ 商品・サービス",
+            "procedure": "📋 手続き・業務",
+            "equipment": "💻 設備・環境",
+            "hr_labor": "👥 人事・労務",
+            "technical": "🔧 技術サポート",
+            "finance": "💰 経理・財務",
+            "general": "💬 一般的な質問",
+            "greeting": "👋 挨拶・雑談",
+            "other": "🔗 その他",
+            
+            # 古い技術的カテゴリー（後方互換性のため）
+            "realtime_rag": "🔍 検索システム（旧）",
+            "realtime_rag_fallback": "🔄 検索システム（フォールバック・旧）",
+            "chat": "💬 チャット（旧）",
+            "question_answering": "❓ 質問応答（旧）",
+            "specific_info": "📋 特定情報（旧）",
+            "general_info": "📚 一般情報（旧）",
+            "document_search": "📄 文書検索（旧）",
+            "employee_info": "👤 従業員情報（旧）",
+            "faq": "🤔 FAQ（旧）",
+            "support": "🛠️ サポート（旧）"
+        }
+        
         # chat_historyテーブルから必要なデータを取得
         chat_filters = {}
         if company_id:
@@ -848,6 +906,9 @@ def get_unresolved_repeat_analysis(db, company_id: str = None) -> Dict[str, Any]
                         except:
                             time_diff = "不明"
                         
+                        # カテゴリ名を変換
+                        display_category = category_mapping.get(current["category"], f"🔹 {current['category']}")
+                        
                         repeat_questions.append({
                             "employee_id": employee_id,
                             "employee_name": current["employee_name"],
@@ -857,7 +918,7 @@ def get_unresolved_repeat_analysis(db, company_id: str = None) -> Dict[str, Any]
                             "similarity_score": round(similarity, 2),
                             "first_sentiment": current["sentiment"],
                             "repeat_sentiment": next_q["sentiment"],
-                            "category": current["category"]
+                            "category": display_category
                         })
                 
                 # 未解決パターンの検出（短い回答＋ネガティブ感情）
@@ -866,6 +927,9 @@ def get_unresolved_repeat_analysis(db, company_id: str = None) -> Dict[str, Any]
                     "申し訳" in current["response"] or
                     "わかりません" in current["response"]):
                     
+                    # カテゴリ名を変換
+                    display_category = category_mapping.get(current["category"], f"🔹 {current['category']}")
+                    
                     unresolved_patterns.append({
                         "employee_id": employee_id,
                         "employee_name": current["employee_name"],
@@ -873,7 +937,7 @@ def get_unresolved_repeat_analysis(db, company_id: str = None) -> Dict[str, Any]
                         "response": current["response"][:100] + "..." if len(current["response"]) > 100 else current["response"],
                         "timestamp": current["timestamp"],
                         "sentiment": current["sentiment"],
-                        "category": current["category"],
+                        "category": display_category,
                         "response_length": current["response_length"],
                         "issue_type": "short_response" if current["response_length"] < 50 else 
                                      "negative_sentiment" if current["sentiment"] == "negative" else
@@ -911,6 +975,33 @@ def get_unresolved_repeat_analysis(db, company_id: str = None) -> Dict[str, Any]
 def get_detailed_sentiment_analysis(db, company_id: str = None) -> Dict[str, Any]:
     """詳細な感情分析（CRUD操作で実装）"""
     try:
+        # カテゴリ名のマッピング
+        category_mapping = {
+            # 新しい意味のあるカテゴリー
+            "company_info": "🏢 会社情報",
+            "product_service": "🛍️ 商品・サービス",
+            "procedure": "📋 手続き・業務",
+            "equipment": "💻 設備・環境",
+            "hr_labor": "👥 人事・労務",
+            "technical": "🔧 技術サポート",
+            "finance": "💰 経理・財務",
+            "general": "💬 一般的な質問",
+            "greeting": "👋 挨拶・雑談",
+            "other": "🔗 その他",
+            
+            # 古い技術的カテゴリー（後方互換性のため）
+            "realtime_rag": "🔍 検索システム（旧）",
+            "realtime_rag_fallback": "🔄 検索システム（フォールバック・旧）",
+            "chat": "💬 チャット（旧）",
+            "question_answering": "❓ 質問応答（旧）",
+            "specific_info": "📋 特定情報（旧）",
+            "general_info": "📚 一般情報（旧）",
+            "document_search": "📄 文書検索（旧）",
+            "employee_info": "👤 従業員情報（旧）",
+            "faq": "🤔 FAQ（旧）",
+            "support": "🛠️ サポート（旧）"
+        }
+        
         # chat_historyテーブルから感情データを取得
         chat_filters = {}
         if company_id:
@@ -935,8 +1026,11 @@ def get_detailed_sentiment_analysis(db, company_id: str = None) -> Dict[str, Any
         
         for chat in chat_result.data:
             sentiment = safe_str(chat.get("sentiment", "neutral"))
-            category = safe_str(chat.get("category", "その他"))
+            raw_category = safe_str(chat.get("category", "other"))
             timestamp = safe_str(chat.get("timestamp", ""))
+            
+            # カテゴリ名を変換
+            category = category_mapping.get(raw_category, f"🔹 {raw_category}")
             
             # 日付を抽出
             if timestamp:

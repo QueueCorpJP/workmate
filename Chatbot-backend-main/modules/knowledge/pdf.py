@@ -134,29 +134,52 @@ MOJIBAKE_MAPPING = {
 }
 
 def fix_mojibake_text(text: str) -> str:
-    """文字化けテキストを修復する"""
+    """文字化けテキストを修復する（ページマーカー削除強化版）"""
     if not text:
         return text
     
     fixed_text = text
     
-    # 文字化けマッピングを適用
-    for mojibake, correct in MOJIBAKE_MAPPING.items():
-        fixed_text = fixed_text.replace(mojibake, correct)
+    # 🎯 ページマーカー削除（最優先）
+    fixed_text = re.sub(r'=== ページ \d+ ===', '', fixed_text)
+    fixed_text = re.sub(r'=== Page \d+ ===', '', fixed_text)
+    fixed_text = re.sub(r'--- Page \d+ ---', '', fixed_text)
+    fixed_text = re.sub(r'=== ファイル: .* ===', '', fixed_text)
     
-    # CIDエラーパターンを除去
-    fixed_text = re.sub(r'\(cid:\d+\)', '', fixed_text)
+    # 🎯 著作権情報とヘッダーフッターを削除
+    fixed_text = re.sub(r'Copyright \d{4}-\d{4} © .* All Rights Reserved', '', fixed_text)
+    fixed_text = re.sub(r'Company Secret', '', fixed_text)
+    fixed_text = re.sub(r'VER\d{6} -\d{2}-\d{2}', '', fixed_text)
     
-    # 連続する文字化け文字を除去
-    fixed_text = re.sub(r'[縺繝繧]{3,}', '[文字化け]', fixed_text)
+    # 🎯 全角ピリオドを半角に正規化
+    fixed_text = fixed_text.replace('。', '.')
+    fixed_text = fixed_text.replace('．', '.')
+    fixed_text = fixed_text.replace('，', ',')
     
-    # 置換文字を除去
-    fixed_text = fixed_text.replace('\ufffd', '[文字化け]')
-    fixed_text = fixed_text.replace('', '[文字化け]')
+    # 🎯 会社名の正規化
+    fixed_text = fixed_text.replace('No。1', 'No.1')
+    fixed_text = fixed_text.replace('CO。,LTD。', 'CO.,LTD.')
     
-    # 余分な空白を整理
+    # 重度の文字化けがある場合のみ修復を適用
+    if check_text_corruption(fixed_text):
+                # 文字化けマッピングを適用
+        for mojibake, correct in MOJIBAKE_MAPPING.items():
+            fixed_text = fixed_text.replace(mojibake, correct)
+        
+        # CIDエラーパターンを除去
+        fixed_text = re.sub(r'\(cid:\d+\)', '', fixed_text)
+        
+        # 連続する文字化け文字を除去（実際の文字化け文字のみ）
+        fixed_text = re.sub(r'[縺繝繧]{3,}', '[文字化け]', fixed_text)
+        
+        # 置換文字を除去
+        fixed_text = fixed_text.replace('\ufffd', '[文字化け]')
+        fixed_text = fixed_text.replace('', '[文字化け]')
+    
+    # 🎯 余分な空白を整理（強化版）
     fixed_text = re.sub(r'\s+', ' ', fixed_text)
-    fixed_text = re.sub(r'\n\s*\n\s*\n', '\n\n', fixed_text)
+    fixed_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', fixed_text)
+    fixed_text = re.sub(r'^\s+|\s+$', '', fixed_text, flags=re.MULTILINE)
     
     return fixed_text.strip()
 
@@ -556,6 +579,9 @@ async def process_pdf_file(contents, filename):
                 if page_text is not None:
                     page_text = ensure_string(page_text).replace('\x00', '') # 🧼 Remove NUL characters
                     
+                    # 🎯 ページマーカー削除とテキストクリーニング
+                    page_text = fix_mojibake_text(page_text)
+                    
                     # ページごとに文字化けをチェック
                     if check_text_corruption(page_text):
                         print(f"ページ {i+1} で文字化けを検出: {page_text[:100]}...")
@@ -565,7 +591,8 @@ async def process_pdf_file(contents, filename):
                         section_name = f"ページ {i+1}"
                         sections[section_name] = page_text
                         all_text += page_text + "\n"
-                        extracted_text += f"=== {section_name} ===\n{page_text}\n\n"
+                        # 🎯 extracted_textにはページマーカーを追加しない
+                        extracted_text += f"{page_text}\n\n"
                 else:
                     print(f"ページ {i+1} にテキストがありません")
                     corrupted_pages.append(i)  # テキストなしも文字化けとして扱う

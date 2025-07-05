@@ -10,6 +10,10 @@ from .chat_config import (
     ENHANCED_JAPANESE_SEARCH_AVAILABLE, VECTOR_SEARCH_AVAILABLE,
     direct_search, parallel_search, enhanced_japanese_search, vector_search
 )
+from .elasticsearch_search import (
+    get_elasticsearch_fuzzy_search, elasticsearch_available
+)
+from .postgresql_fuzzy_search import fuzzy_search_chunks
 
 async def direct_search_system(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
@@ -75,11 +79,102 @@ async def vector_search_system(query: str, limit: int = 10) -> List[Dict[str, An
         safe_print(f"Error in vector search: {e}")
         return []
 
+async def elasticsearch_fuzzy_search_system(query: str, 
+                                           company_id: str = None,
+                                           fuzziness: str = "AUTO",
+                                           limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Elasticsearch Fuzzy検索システム
+    """
+    if not elasticsearch_available():
+        safe_print("Elasticsearch is not available")
+        return []
+    
+    try:
+        es_search = get_elasticsearch_fuzzy_search()
+        if not es_search:
+            safe_print("Elasticsearch fuzzy search not initialized")
+            return []
+        
+        results = await es_search.fuzzy_search(
+            query=query,
+            company_id=company_id,
+            fuzziness=fuzziness,
+            limit=limit
+        )
+        safe_print(f"Elasticsearch fuzzy search returned {len(results)} results")
+        return results
+    except Exception as e:
+        safe_print(f"Error in Elasticsearch fuzzy search: {e}")
+        return []
+
+async def elasticsearch_advanced_search_system(query: str,
+                                              company_id: str = None,
+                                              search_type: str = "multi_match",
+                                              fuzziness: str = "AUTO",
+                                              limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Elasticsearch高度検索システム
+    """
+    if not elasticsearch_available():
+        safe_print("Elasticsearch is not available")
+        return []
+    
+    try:
+        es_search = get_elasticsearch_fuzzy_search()
+        if not es_search:
+            safe_print("Elasticsearch fuzzy search not initialized")
+            return []
+        
+        results = await es_search.advanced_search(
+            query=query,
+            company_id=company_id,
+            search_type=search_type,
+            fuzziness=fuzziness,
+            limit=limit
+        )
+        safe_print(f"Elasticsearch advanced search returned {len(results)} results")
+        return results
+    except Exception as e:
+        safe_print(f"Error in Elasticsearch advanced search: {e}")
+        return []
+
+async def postgresql_fuzzy_search_system(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    PostgreSQL Fuzzy検索システム（別サーバー不要！）
+    """
+    try:
+        results = await fuzzy_search_chunks(query, limit)
+        formatted_results = []
+        
+        for result in results:
+            formatted_results.append({
+                'id': result['chunk_id'],
+                'title': result['file_name'],
+                'content': result['content'],
+                'url': '',
+                'similarity': result['score'],
+                'metadata': {
+                    'source': 'postgresql_fuzzy_search',
+                    'search_types': result.get('search_types', []),
+                    'highlight': result.get('highlight', '')
+                }
+            })
+            
+        safe_print(f"PostgreSQL Fuzzy search returned {len(formatted_results)} results")
+        return formatted_results
+        
+    except Exception as e:
+        safe_print(f"Error in PostgreSQL Fuzzy search: {e}")
+        return []
+
 async def fallback_search_system(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
     フォールバック検索システム - 複数の検索システムを順次試行
     """
     search_systems = [
+        ("PostgreSQL Fuzzy Search", postgresql_fuzzy_search_system),
+        ("Elasticsearch Fuzzy Search", lambda q, l: elasticsearch_fuzzy_search_system(q, None, "AUTO", l)),
         ("Enhanced Japanese Search", enhanced_japanese_search_system),
         ("Vector Search", vector_search_system),
         ("Parallel Search", parallel_search_system),
@@ -109,6 +204,11 @@ async def multi_system_search(query: str, limit: int = 10) -> List[Dict[str, Any
     """
     search_tasks = []
     
+    # PostgreSQL Fuzzy Search（常に利用可能）
+    search_tasks.append(postgresql_fuzzy_search_system(query, limit))
+    
+    if elasticsearch_available():
+        search_tasks.append(elasticsearch_fuzzy_search_system(query, None, "AUTO", limit))
     if ENHANCED_JAPANESE_SEARCH_AVAILABLE:
         search_tasks.append(enhanced_japanese_search_system(query, limit))
     if VECTOR_SEARCH_AVAILABLE:
@@ -216,17 +316,17 @@ async def database_search_fallback(query: str, limit: int = 10) -> List[Dict[str
                 c.content,
                 '' as url,
                 -- スコアリング: 複数キーワードマッチにボーナス
-                CASE 
+               CASE 
                     {' + '.join([f"WHEN c.content ILIKE %s THEN 1.0" for _ in important_keywords])}
                     ELSE 0.0
-                END as rank
-            FROM chunks c
-            LEFT JOIN document_sources ds ON c.doc_id = ds.id
-            WHERE c.content IS NOT NULL 
-              AND LENGTH(c.content) > 10
+               END as rank
+        FROM chunks c
+        LEFT JOIN document_sources ds ON c.doc_id = ds.id
+        WHERE c.content IS NOT NULL 
+          AND LENGTH(c.content) > 10
               AND ({' OR '.join(keyword_conditions)})
-            ORDER BY rank DESC, LENGTH(c.content) DESC
-            LIMIT %s
+        ORDER BY rank DESC, LENGTH(c.content) DESC
+        LIMIT %s
         """
         
         # パラメータを構築（スコアリング用 + 条件用 + LIMIT用）
