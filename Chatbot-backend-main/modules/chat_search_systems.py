@@ -14,6 +14,7 @@ from .elasticsearch_search import (
     get_elasticsearch_fuzzy_search, elasticsearch_available
 )
 from .postgresql_fuzzy_search import fuzzy_search_chunks
+from .enhanced_postgresql_search import enhanced_search_chunks, initialize_enhanced_postgresql_search
 
 async def direct_search_system(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
@@ -168,11 +169,45 @@ async def postgresql_fuzzy_search_system(query: str, limit: int = 10) -> List[Di
         safe_print(f"Error in PostgreSQL Fuzzy search: {e}")
         return []
 
+async def enhanced_postgresql_search_system(query: str, 
+                                          company_id: int = None,
+                                          limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Enhanced PostgreSQL検索システム（日本語形態素解析対応）
+    """
+    try:
+        results = await enhanced_search_chunks(query, company_id, limit)
+        formatted_results = []
+        
+        for result in results:
+            formatted_results.append({
+                'id': result['chunk_id'],
+                'title': result['file_name'],
+                'content': result['content'],
+                'url': '',
+                'similarity': result['score'],
+                'metadata': {
+                    'source': 'enhanced_postgresql_search',
+                    'match_types': result.get('match_types', []),
+                    'search_type': result.get('search_type', ''),
+                    'highlight': result.get('highlight', ''),
+                    'company_id': result.get('company_id')
+                }
+            })
+            
+        safe_print(f"Enhanced PostgreSQL search returned {len(formatted_results)} results")
+        return formatted_results
+        
+    except Exception as e:
+        safe_print(f"Error in Enhanced PostgreSQL search: {e}")
+        return []
+
 async def fallback_search_system(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
     フォールバック検索システム - 複数の検索システムを順次試行
     """
     search_systems = [
+        ("Enhanced PostgreSQL Search", lambda q, l: enhanced_postgresql_search_system(q, None, l)),
         ("PostgreSQL Fuzzy Search", postgresql_fuzzy_search_system),
         ("Elasticsearch Fuzzy Search", lambda q, l: elasticsearch_fuzzy_search_system(q, None, "AUTO", l)),
         ("Enhanced Japanese Search", enhanced_japanese_search_system),
@@ -203,6 +238,9 @@ async def multi_system_search(query: str, limit: int = 10) -> List[Dict[str, Any
     複数システム検索 - 複数の検索システムを並列実行して結果をマージ
     """
     search_tasks = []
+    
+    # Enhanced PostgreSQL Search（最優先・常に利用可能）
+    search_tasks.append(enhanced_postgresql_search_system(query, None, limit))
     
     # PostgreSQL Fuzzy Search（常に利用可能）
     search_tasks.append(postgresql_fuzzy_search_system(query, limit))
@@ -425,9 +463,9 @@ async def smart_search_system(query: str, limit: int = 10) -> List[Dict[str, Any
     safe_print(f"Query analysis: Japanese={has_japanese}, Long={is_long_query}, Technical={has_technical_terms}")
     
     # 最適な検索システムを選択
-    if has_japanese and ENHANCED_JAPANESE_SEARCH_AVAILABLE:
-        safe_print("Using Enhanced Japanese Search for Japanese query")
-        return await enhanced_japanese_search_system(query, limit)
+    if has_japanese:
+        safe_print("Using Enhanced PostgreSQL Search for Japanese query")
+        return await enhanced_postgresql_search_system(query, None, limit)
     elif is_long_query and VECTOR_SEARCH_AVAILABLE:
         safe_print("Using Vector Search for long query")
         return await vector_search_system(query, limit)
@@ -435,5 +473,5 @@ async def smart_search_system(query: str, limit: int = 10) -> List[Dict[str, Any
         safe_print("Using Parallel Search for technical query")
         return await parallel_search_system(query, limit)
     else:
-        safe_print("Using multi-system search as default")
-        return await multi_system_search(query, limit)
+        safe_print("Using Enhanced PostgreSQL Search as default")
+        return await enhanced_postgresql_search_system(query, None, limit)

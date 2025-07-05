@@ -168,3 +168,46 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+// 通知関連のAPI関数
+export interface Notification {
+  id: string;
+  title: string;
+  content: string;
+  notification_type: string;
+  created_at: string;
+  updated_at: string;
+  created_by?: string;
+}
+
+// 全ての通知を取得（全ユーザー共通）
+export const getNotifications = async (): Promise<Notification[]> => {
+  try {
+    const response = await api.get('/notifications');
+    return response.data;
+  } catch (error) {
+    console.error("通知の取得に失敗しました:", error);
+    throw error;
+  }
+};
+
+// 通知を作成（管理者用）
+export const createNotification = async (notification: Omit<Notification, 'id' | 'created_at' | 'updated_at' | 'created_by'>): Promise<Notification> => {
+  try {
+    const response = await api.post('/notifications', notification);
+    return response.data;
+  } catch (error) {
+    console.error("通知の作成に失敗しました:", error);
+    throw error;
+  }
+};
+
+// 通知を削除（管理者用）
+export const deleteNotification = async (notificationId: string): Promise<void> => {
+  try {
+    await api.delete(`/notifications/${notificationId}`);
+  } catch (error) {
+    console.error("通知の削除に失敗しました:", error);
+    throw error;
+  }
+};

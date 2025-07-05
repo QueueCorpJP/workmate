@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from .chat_config import safe_print, HTTPException, get_db_cursor, model
 from .chat_search_systems import (
     smart_search_system, multi_system_search, fallback_search_system,
-    database_search_fallback
+    database_search_fallback, enhanced_postgresql_search_system
 )
 from .chat_utils import expand_query
 
@@ -18,12 +18,12 @@ async def rag_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     try:
         safe_print(f"Starting RAG search for query: {query}")
         
-        # 🎯 まずSQL検索を試行（エンベディングなしでも動作）
-        safe_print("Trying SQL database search first...")
-        results = await database_search_fallback(query, limit)
+        # 🎯 まずEnhanced PostgreSQL検索を試行（日本語形態素解析対応）
+        safe_print("Trying Enhanced PostgreSQL search first...")
+        results = await enhanced_postgresql_search_system(query, None, limit)
         
         if results:
-            safe_print(f"SQL search succeeded with {len(results)} results")
+            safe_print(f"Enhanced PostgreSQL search succeeded with {len(results)} results")
             return results
         
         safe_print("SQL search returned no results, trying smart search system")
@@ -48,23 +48,28 @@ async def enhanced_rag_search(query: str, limit: int = 10) -> List[Dict[str, Any
     try:
         safe_print(f"Starting enhanced RAG search for query: {query}")
         
-        # 🎯 まずSQL検索を試行（エンベディングなしでも動作）
-        safe_print("Trying SQL database search first...")
-        sql_results = await database_search_fallback(query, limit)
+        # 🎯 まずEnhanced PostgreSQL検索を試行（日本語形態素解析対応）
+        safe_print("Trying Enhanced PostgreSQL search first...")
+        enhanced_results = await enhanced_postgresql_search_system(query, None, limit)
         
-        if sql_results:
-            safe_print(f"SQL search succeeded with {len(sql_results)} results")
-            return sql_results
+        if enhanced_results:
+            safe_print(f"Enhanced PostgreSQL search succeeded with {len(enhanced_results)} results")
+            return enhanced_results
         
-        safe_print("SQL search returned no results, trying enhanced vector search")
+        safe_print("Enhanced PostgreSQL search returned no results, trying expanded search")
         
         # クエリ拡張
         expanded_query = expand_query(query)
         safe_print(f"Expanded query: {expanded_query}")
         
-        # 元のクエリと拡張クエリの両方で検索
-        original_results = await smart_search_system(query, limit)
-        expanded_results = await smart_search_system(expanded_query, limit) if expanded_query != query else []
+        # 元のクエリと拡張クエリの両方で検索（Enhanced PostgreSQL Search優先）
+        original_results = await enhanced_postgresql_search_system(query, None, limit)
+        expanded_results = await enhanced_postgresql_search_system(expanded_query, None, limit) if expanded_query != query else []
+        
+        # Enhanced PostgreSQL Searchで結果が少ない場合はsmart_searchも試行
+        if len(original_results) < limit // 2:
+            smart_results = await smart_search_system(query, limit)
+            original_results.extend(smart_results)
         
         # 結果をマージして重複除去
         merged_results = []
@@ -106,18 +111,19 @@ async def parallel_rag_search(query: str, limit: int = 10) -> List[Dict[str, Any
     try:
         safe_print(f"Starting parallel RAG search for query: {query}")
         
-        # 🎯 まずSQL検索を試行（エンベディングなしでも動作）
-        safe_print("Trying SQL database search first...")
-        sql_results = await database_search_fallback(query, limit)
+        # 🎯 まずEnhanced PostgreSQL検索を試行（日本語形態素解析対応）
+        safe_print("Trying Enhanced PostgreSQL search first...")
+        enhanced_results = await enhanced_postgresql_search_system(query, None, limit)
         
-        if sql_results:
-            safe_print(f"SQL search succeeded with {len(sql_results)} results")
-            return sql_results
+        if enhanced_results:
+            safe_print(f"Enhanced PostgreSQL search succeeded with {len(enhanced_results)} results")
+            return enhanced_results
         
-        safe_print("SQL search returned no results, trying parallel vector search")
+        safe_print("Enhanced PostgreSQL search returned no results, trying parallel search")
         
         # 複数の検索戦略を並列実行
         search_tasks = [
+            enhanced_postgresql_search_system(query, None, limit),
             smart_search_system(query, limit),
             multi_system_search(query, limit),
         ]
@@ -125,6 +131,7 @@ async def parallel_rag_search(query: str, limit: int = 10) -> List[Dict[str, Any
         # クエリ拡張版も追加
         expanded_query = expand_query(query)
         if expanded_query != query:
+            search_tasks.append(enhanced_postgresql_search_system(expanded_query, None, limit))
             search_tasks.append(smart_search_system(expanded_query, limit))
         
         # 並列実行

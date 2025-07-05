@@ -60,6 +60,8 @@ import DemoLimits from "./components/DemoLimits";
 import SourceCitation from "./components/SourceCitation";
 import ApplicationForm from "./components/ApplicationForm";
 import MarkdownRenderer from "./components/MarkdownRenderer";
+import NotificationButton from "./components/NotificationButton";
+import NotificationModal from "./components/NotificationModal";
 import { useTheme } from "@mui/material/styles";
 import { useMediaQuery } from "@mui/material";
 
@@ -115,6 +117,9 @@ function ChatInterface() {
   // フローティング参照パネルの状態
   const [showSourcePanel, setShowSourcePanel] = useState(false);
   const [sourceTooltipOpen, setSourceTooltipOpen] = useState(false);
+
+  // 通知機能の状態
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
 
   // メッセージエリアのスタイルを改善 - モバイル対応を強化
   const messageContainerStyles = {
@@ -596,6 +601,17 @@ function ChatInterface() {
     setApplicationOpen(false);
   };
 
+  // 通知関連のイベントハンドラー
+  const handleOpenNotifications = () => {
+    setShowNotificationModal(true);
+  };
+
+  const handleCloseNotifications = () => {
+    setShowNotificationModal(false);
+  };
+
+
+
   // 「もっと見る」ボタンの処理
   const handleLoadMoreMessages = () => {
     const container = chatContainerRef.current;
@@ -799,6 +815,15 @@ function ChatInterface() {
                 </Typography>
               </IconButton>
             </Tooltip>
+          )}
+
+          {/* 通知ボタン */}
+          {user && (
+            <Box sx={{ ml: { xs: 0.5, sm: 0.75 } }}>
+              <NotificationButton
+                onClick={handleOpenNotifications}
+              />
+            </Box>
           )}
           
           {messages.length > 0 && (
@@ -1674,6 +1699,16 @@ function ChatInterface() {
             </Typography>
           </Box>
         </Paper>
+      )}
+
+      {/* 通知モーダル */}
+      {user && (
+        <NotificationModal
+          isOpen={showNotificationModal}
+          onClose={handleCloseNotifications}
+          userId=""
+          onNotificationUpdate={() => {}}
+        />
       )}
     </Box>
   );

@@ -33,6 +33,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import CircularProgress from "@mui/material/CircularProgress";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import MonetizationOnIcon from "@mui/icons-material/MonetizationOn";
+import NotificationsIcon from "@mui/icons-material/Notifications";
 import api from "../../api";
 import { withCache } from "../../utils/cache";
 import { useAuth } from "../../contexts/AuthContext";
@@ -45,6 +46,7 @@ import ResourcesTab from "./ResourcesTab";
 import DemoStatsTab from "./DemoStatsTab";
 import UserManagementTab from "./UserManagementTab";
 import PlanHistoryTab from "./PlanHistoryTab";
+import NotificationManagementTab from "./NotificationManagementTab";
 import CompanyDetailsDialog from "./CompanyDetailsDialog";
 import BillingTab from "../BillingTab";
 
@@ -899,6 +901,11 @@ const AdminPanel: React.FC = () => {
           label: "デモ統計",
           ariaLabel: "デモ統計タブ",
         },
+        {
+          icon: <NotificationsIcon sx={{ color: "#3b82f6" }} />,
+          label: "通知管理",
+          ariaLabel: "通知管理タブ",
+        },
       ]
       : []),
     {
@@ -911,7 +918,7 @@ const AdminPanel: React.FC = () => {
   // タブが変更されたときの実際のインデックスを計算する関数
   const getActualTabIndex = (visibleIndex: number) => {
     if (!isQueueTechAdmin && visibleIndex >= 6) {
-      return visibleIndex + 1; // デモ統計タブがスキップされるので+1する
+      return visibleIndex + 2; // デモ統計タブと通知管理タブがスキップされるので+2する
     }
     return visibleIndex;
   };
@@ -965,7 +972,10 @@ const AdminPanel: React.FC = () => {
           fetchDemoStats();
         }
         break;
-      case 7: // ユーザー管理
+      case 7: // 通知管理 (queue@queueu-tech.jpのみ)
+        // 通知管理は内部で自動読み込みするため何もしない
+        break;
+      case 8: // ユーザー管理
         break;
       default:
         break;
@@ -1407,8 +1417,13 @@ const AdminPanel: React.FC = () => {
                 />
               )}
 
+              {/* 通知管理タブ - queue@queueu-tech.jpのみ表示 */}
+              {isQueueTechAdmin && getActualTabIndex(tabValue) === 7 && (
+                <NotificationManagementTab />
+              )}
+
               {/* ユーザー管理タブ */}
-              {tabValue === (isQueueTechAdmin ? 7 : 6) && (
+              {tabValue === (isQueueTechAdmin ? 8 : 6) && (
                 <UserManagementTab
                   isSpecialAdmin={isSpecialAdmin}
                   newUserEmail={newUserEmail}

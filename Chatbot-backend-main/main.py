@@ -145,6 +145,14 @@ async def startup_event():
     except Exception as e:
         print(f"⚠️ PostgreSQL Fuzzy Search初期化失敗: {e}")
     
+    # Enhanced PostgreSQL Search初期化（日本語形態素解析対応）
+    try:
+        from modules.enhanced_postgresql_search import initialize_enhanced_postgresql_search
+        await initialize_enhanced_postgresql_search()
+        print("✅ Enhanced PostgreSQL Search初期化成功")
+    except Exception as e:
+        print(f"⚠️ Enhanced PostgreSQL Search初期化失敗: {e}")
+    
     print("✅ アプリケーション起動時初期化完了")
 
 # admin.pyのルーターを登録
@@ -3206,6 +3214,188 @@ async def list_drive_files(
         import traceback
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"ファイル一覧取得エラー: {str(e)}")
+
+# 通知関連のAPIエンドポイント
+from pydantic import BaseModel as PydanticBaseModel
+from typing import List
+
+class NotificationCreate(PydanticBaseModel):
+    title: str
+    content: str
+    notification_type: str = "general"
+
+class NotificationResponse(PydanticBaseModel):
+    id: str
+    title: str
+    content: str
+    notification_type: str
+    created_at: str
+    updated_at: str
+    created_by: str = None
+
+@app.get("/chatbot/api/notifications", response_model=List[NotificationResponse])
+async def get_notifications(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """全ての通知を取得（全ユーザー共通）"""
+    try:
+        print(f"通知取得開始 - ユーザー: {current_user.get('email')}")
+        
+        # シンプルに全通知を取得（作成日時の降順）
+        result = select_data("notifications", order="created_at desc")
+        
+        print(f"select_data結果: {result}")
+        print(f"データ件数: {len(result.data) if result.data else 0}")
+        
+        if not result.success or not result.data:
+            print("通知データなし、空リストを返します")
+            return []
+        
+        notifications = []
+        for notification in result.data:
+            notifications.append({
+                "id": notification["id"],
+                "title": notification["title"],
+                "content": notification["content"],
+                "notification_type": notification.get("notification_type", "general"),
+                "created_at": notification["created_at"],
+                "updated_at": notification["updated_at"],
+                "created_by": notification.get("created_by")
+            })
+        
+        print(f"返す通知一覧: {len(notifications)}件")
+        print(f"通知データ: {notifications}")
+        return notifications
+        
+    except Exception as e:
+        print(f"通知取得エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"通知の取得中にエラーが発生しました: {str(e)}"
+        )
+
+
+
+@app.post("/chatbot/api/notifications", response_model=NotificationResponse)
+async def create_notification(notification_data: NotificationCreate, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
+    """新しい通知を作成（管理者用・全員向け）"""
+    try:
+        print(f"通知作成開始 - ユーザー: {current_user.get('email')}")
+        print(f"通知データ: {notification_data}")
+        
+        # 最上位管理者権限チェック
+        if current_user.get('email') != 'queue@queueu-tech.jp':
+            print(f"権限なし: {current_user.get('email')} != queue@queueu-tech.jp")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="通知を作成する権限がありません"
+            )
+        
+        # 通知データを準備（1つの通知レコードのみ作成）
+        notification_dict = {
+            "title": notification_data.title,
+            "content": notification_data.content,
+            "notification_type": notification_data.notification_type,
+            "created_by": current_user.get('email'),
+            "created_at": datetime.datetime.now().isoformat(),
+            "updated_at": datetime.datetime.now().isoformat()
+        }
+        
+        # 通知を作成
+        print(f"insert_data呼び出し: {notification_dict}")
+        result = insert_data("notifications", notification_dict)
+        
+        print(f"insert_data結果: {result}")
+        
+        if not result.success:
+            print("insert_dataが失敗しました")
+            raise HTTPException(
+                status_code=500,
+                detail="通知の作成に失敗しました"
+            )
+        
+        # 作成された通知を取得
+        print("作成された通知を取得中...")
+        created_result = select_data("notifications", 
+                                   order="created_at desc", limit=1)
+        
+        print(f"作成通知取得結果: {created_result}")
+        
+        if not created_result.success or not created_result.data:
+            print("作成された通知の取得に失敗")
+            raise HTTPException(
+                status_code=500,
+                detail="作成された通知の取得に失敗しました"
+            )
+        
+        created_notification = created_result.data[0]
+        print(f"作成された通知: {created_notification}")
+        
+        return {
+            "id": created_notification["id"],
+            "title": created_notification["title"],
+            "content": created_notification["content"],
+            "notification_type": created_notification.get("notification_type", "general"),
+            "created_at": created_notification["created_at"],
+            "updated_at": created_notification["updated_at"],
+            "created_by": created_notification.get("created_by")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"通知作成エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"通知の作成中にエラーが発生しました: {str(e)}"
+        )
+
+@app.delete("/chatbot/api/notifications/{notification_id}")
+async def delete_notification(notification_id: str, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
+    """通知を削除（管理者専用）"""
+    try:
+        # 管理者権限チェック
+        if current_user.get('email') != 'queue@queueu-tech.jp':
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="通知を削除する権限がありません"
+            )
+        
+        # 通知の存在確認
+        result = select_data("notifications", filters={"id": notification_id})
+        
+        if not result.success or not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="通知が見つかりません"
+            )
+        
+        # 関連する既読レコードも自動的に削除される（CASCADE）
+        # 通知を削除
+        delete_result = delete_data("notifications", "id", notification_id)
+        
+        if not delete_result.success:
+            raise HTTPException(
+                status_code=500,
+                detail="通知の削除に失敗しました"
+            )
+        
+        return {"message": "通知を削除しました"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"通知削除エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"通知の削除中にエラーが発生しました: {str(e)}"
+        )
+
+
 
 # フロントエンドのビルドディレクトリを指定
 frontend_build_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
