@@ -25,8 +25,8 @@ class EmailService:
         self.supabase_key = os.getenv("SUPABASE_KEY")
         self.resend_api_key = os.getenv("RESEND_API_KEY")
         
-        # Resend APIのみ使用（開発用に認証済みドメインに変更）
-        self.from_email = "onboarding@resend.dev"
+        # 認証済みドメインを使用
+        self.from_email = "queue@queue-tech.jp"
         self.frontend_url = os.getenv("FRONTEND_URL", "https://workmatechat.com")
         
     def send_account_creation_email(self, 
@@ -47,7 +47,7 @@ class EmailService:
             bool: 送信成功時True
         """
         try:
-            # Resend API一本化
+            # Resend API経由でメール送信
             if self.resend_api_key:
                 logger.info("Resend API経由でメール送信を試行")
                 return self._send_via_resend_api(user_email, user_name, password, role)
@@ -58,6 +58,8 @@ class EmailService:
         except Exception as e:
             logger.error(f"メール送信エラー: {str(e)}")
             return False
+    
+
     
     def _send_via_resend_api(self, user_email: str, user_name: str, password: str, role: str) -> bool:
         """直接Resend API経由でメール送信（フォールバック）"""
