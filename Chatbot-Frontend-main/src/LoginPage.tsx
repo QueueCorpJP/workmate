@@ -16,8 +16,6 @@ import {
   AppBar,
   Toolbar,
   FormHelperText,
-  Tabs,
-  Tab,
 } from "@mui/material";
 import { useAuth } from "./contexts/AuthContext";
 import { useCompany } from "./contexts/CompanyContext";
@@ -25,38 +23,23 @@ import ChatIcon from "@mui/icons-material/Chat";
 import HomeIcon from "@mui/icons-material/Home";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
-import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import { validateEmail, validatePassword } from "./utils/validation";
 
 function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string>("");
   const [passwordError, setPasswordError] = useState<string>("");
-  const [nameError, setNameError] = useState<string>("");
   const [showValidation, setShowValidation] = useState(false);
-  const [currentTab, setCurrentTab] = useState(0); // 0: ログイン, 1: 登録
   
-  const { login, register } = useAuth();
+  const { login } = useAuth();
   const { companyName, setCompanyName } = useCompany();
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const isTablet = useMediaQuery(theme.breakpoints.between("sm", "md"));
-
-  const isLoginMode = currentTab === 0;
-
-  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
-    setCurrentTab(newValue);
-    setError(null);
-    setEmailError("");
-    setPasswordError("");
-    setNameError("");
-    setShowValidation(false);
-  };
 
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -78,40 +61,12 @@ function LoginPage() {
     }
   };
 
-  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setName(value);
-    
-    if (showValidation) {
-      if (!value.trim()) {
-        setNameError("名前を入力してください");
-      } else if (value.trim().length < 1) {
-        setNameError("名前は1文字以上で入力してください");
-      } else {
-        setNameError("");
-      }
-    }
-  };
-
   const validateForm = () => {
     const emailValidation = validateEmail(email);
     const passwordValidation = validatePassword(password);
     
     setEmailError(emailValidation.isValid ? "" : emailValidation.message);
     setPasswordError(passwordValidation.isValid ? "" : passwordValidation.message);
-    
-    if (!isLoginMode) {
-      // 登録モードの場合は名前のバリデーションも行う
-      if (!name.trim()) {
-        setNameError("名前を入力してください");
-        return false;
-      } else if (name.trim().length < 1) {
-        setNameError("名前は1文字以上で入力してください");
-        return false;
-      } else {
-        setNameError("");
-      }
-    }
     
     return emailValidation.isValid && passwordValidation.isValid;
   };
@@ -142,34 +97,6 @@ function LoginPage() {
       setIsLoading(false);
     }
   };
-
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setShowValidation(true);
-    setIsLoading(true);
-    setError(null);
-
-    // フォームバリデーション
-    if (!validateForm()) {
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      await register(email, password, name.trim());
-      navigate("/");
-    } catch (err: any) {
-      console.error("Registration error:", err);
-      setError(
-        err.response?.data?.detail ||
-          "登録に失敗しました。入力内容を確認してください。"
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSubmit = isLoginMode ? handleLogin : handleRegister;
 
   return (
     <Box
@@ -408,51 +335,24 @@ function LoginPage() {
                 </Box>
               </Box>
 
-              {/* Login/Register Tabs */}
-              <Box sx={{ width: "100%", mb: 3 }}>
-                <Tabs
-                  value={currentTab}
-                  onChange={handleTabChange}
-                  centered
-                  sx={{
-                    "& .MuiTabs-indicator": {
-                      backgroundColor: "#2563EB",
-                      height: 3,
-                      borderRadius: "3px 3px 0 0",
-                    },
-                  }}
-                >
-                  <Tab
-                    label="ログイン"
-                    sx={{
-                      textTransform: "none",
-                      fontWeight: 600,
-                      fontSize: "1rem",
-                      color: currentTab === 0 ? "#2563EB" : "text.secondary",
-                      "&.Mui-selected": {
-                        color: "#2563EB",
-                      },
-                    }}
-                  />
-                  <Tab
-                    label="新規登録"
-                    sx={{
-                      textTransform: "none",
-                      fontWeight: 600,
-                      fontSize: "1rem",
-                      color: currentTab === 1 ? "#2563EB" : "text.secondary",
-                      "&.Mui-selected": {
-                        color: "#2563EB",
-                      },
-                    }}
-                  />
-                </Tabs>
-              </Box>
+              {/* Login Title */}
+              <Typography
+                variant="h5"
+                component="h2"
+                sx={{
+                  fontWeight: 600,
+                  color: "text.primary",
+                  mb: 3,
+                  textAlign: "center",
+                }}
+              >
+                ログイン
+              </Typography>
             </Box>
 
             <Box
               component="form"
-              onSubmit={handleSubmit}
+              onSubmit={handleLogin}
               sx={{
                 width: "100%",
                 "& .MuiTextField-root": {
@@ -460,42 +360,6 @@ function LoginPage() {
                 },
               }}
             >
-              {/* 登録モードの場合は名前フィールドを表示 */}
-              {!isLoginMode && (
-                <>
-                  <TextField
-                    required
-                    fullWidth
-                    id="name"
-                    label="お名前"
-                    name="name"
-                    autoComplete="name"
-                    autoFocus={!isMobile}
-                    value={name}
-                    onChange={handleNameChange}
-                    InputProps={{
-                      sx: {
-                        borderRadius: 2,
-                        backgroundColor: "rgba(255, 255, 255, 0.8)",
-                        transition: "all 0.3s ease",
-                        "&:hover": {
-                          boxShadow: "0 0 0 1px rgba(37, 99, 235, 0.15)",
-                        },
-                        "&.Mui-focused": {
-                          boxShadow: "0 0 0 2px rgba(37, 99, 235, 0.2)",
-                          backgroundColor: "white",
-                        },
-                      },
-                    }}
-                  />
-                  {nameError && (
-                    <FormHelperText error sx={{ mt: -2.5, mb: 2 }}>
-                      {nameError}
-                    </FormHelperText>
-                  )}
-                </>
-              )}
-              
               <TextField
                 required
                 fullWidth
@@ -503,7 +367,7 @@ function LoginPage() {
                 label="メールアドレス"
                 name="email"
                 autoComplete="email"
-                autoFocus={isLoginMode && !isMobile}
+                autoFocus={!isMobile}
                 value={email}
                 onChange={handleEmailChange}
                 InputProps={{
@@ -534,7 +398,7 @@ function LoginPage() {
                 label="パスワード"
                 type="password"
                 id="password"
-                autoComplete={isLoginMode ? "current-password" : "new-password"}
+                autoComplete="current-password"
                 value={password}
                 onChange={handlePasswordChange}
                 InputProps={{
@@ -578,14 +442,12 @@ function LoginPage() {
                   transition: "all 0.3s ease",
                 }}
                 disabled={isLoading}
-                endIcon={isLoginMode ? <ArrowForwardIcon /> : <PersonAddIcon />}
+                endIcon={<ArrowForwardIcon />}
               >
                 {isLoading ? (
                   <CircularProgress size={24} color="inherit" />
-                ) : isLoginMode ? (
-                  "ログイン"
                 ) : (
-                  "新規登録"
+                  "ログイン"
                 )}
               </Button>
             </Box>
