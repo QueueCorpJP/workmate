@@ -680,7 +680,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
         }}
       >
         <Typography variant="h5" sx={{ fontWeight: 600 }}>
-          {isAdmin ? "利用状況分析・プラン履歴" : "プラン変更履歴"}
+          {permissions.is_special_admin ? "利用状況分析・プラン履歴" : "プラン変更履歴"}
         </Typography>
         <Button
           variant="outlined"
@@ -693,10 +693,10 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
       </Box>
 
       {/* 管理者用の分析表示 */}
-      {isAdmin && analyticsData && renderAnalytics()}
+      {permissions.is_special_admin && analyticsData && renderAnalytics()}
 
       {/* 通常のプラン履歴表示（管理者の場合はタブ0の時のみ） */}
-      {(!isAdmin || currentTab === 0) && (
+      {(!permissions.is_special_admin || currentTab === 0) && (
         <Box>
           {/* プラン履歴テーブル */}
           {userPlanHistories.length === 0 ? (
@@ -864,7 +864,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
       )}
 
       {/* 基本統計情報（管理者でない場合のみ表示） */}
-      {(userPlanHistories.length > 0 && !isAdmin) && (
+      {(userPlanHistories.length > 0 && !permissions.is_special_admin) && (
         <Paper sx={{ mt: 3, p: 2 }}>
           <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
             統計情報
