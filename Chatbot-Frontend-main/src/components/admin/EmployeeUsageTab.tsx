@@ -127,6 +127,9 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
   // 削除ボタンを表示する権限（admin_userのみ）
   const canShowDeleteButton = permissions.can_delete;
   
+  // 特別管理者チェック（permissions.is_special_adminを使用）
+  const isQueueTechAdmin = permissions.is_special_admin;
+  
 
   
   const [emailError, setEmailError] = useState<string>("");
@@ -430,10 +433,10 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
   };
 
   const handleToggleDemo = async (employee: CompanyEmployee) => {
-    // admin権限チェック
-    if (!permissions.can_create) {
-      console.log("Admin権限がありません", { user, permissions });
-      alert("管理者権限がありません");
+    // 特別管理者のみの権限チェック
+    if (!permissions.is_special_admin) {
+      console.log("特別管理者権限がありません", { user, permissions });
+      alert("この操作は特別管理者のみ実行できます");
       return;
     }
     
@@ -586,8 +589,8 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
         </Typography>
       </Box>
 
-      {/* 社員作成フォーム - adminのみ表示 */}
-      {isAdmin && showEmployeeCreateForm && (
+      {/* 社員作成フォーム - 作成権限があるユーザーのみ表示 */}
+      {permissions.can_create && showEmployeeCreateForm && (
         <Card sx={{ mb: 3 }}>
           <CardContent>
             <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
@@ -745,19 +748,19 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                   >
                     役割
                   </TableCell>
-                  {isAdmin && (
-                    <>
-                      <TableCell
-                        sx={{ fontWeight: "bold", color: "primary.contrastText" }}
-                      >
-                        デモ版
-                      </TableCell>
-                      <TableCell
-                        sx={{ fontWeight: "bold", color: "primary.contrastText" }}
-                      >
-                        プラン履歴
-                      </TableCell>
-                    </>
+                  {permissions.is_special_admin && (
+                    <TableCell
+                      sx={{ fontWeight: "bold", color: "primary.contrastText" }}
+                    >
+                      デモ版
+                    </TableCell>
+                  )}
+                  {permissions.can_create && (
+                    <TableCell
+                      sx={{ fontWeight: "bold", color: "primary.contrastText" }}
+                    >
+                      プラン履歴
+                    </TableCell>
                   )}
                   <TableCell
                     sx={{ fontWeight: "bold", color: "primary.contrastText" }}
@@ -868,60 +871,60 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                         variant="outlined"
                       />
                     </TableCell>
-                    {isAdmin && (
-                      <>
-                        <TableCell>
-                          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <Tooltip title={`クリックで${!employee.usage_limits?.is_unlimited ? '本番版' : 'デモ版'}に切り替え`}>
-                              <span>
-                                <Checkbox
-                                  checked={!employee.usage_limits?.is_unlimited}
-                                  onChange={() => handleToggleDemo(employee)}
-                                  size="small"
-                                  sx={{
-                                    color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
-                                    '&.Mui-checked': {
-                                      color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
-                                    }
-                                  }}
-                                />
-                              </span>
-                            </Tooltip>
-                            <Typography 
-                              variant="caption" 
-                              sx={{ 
-                                ml: 0.5, 
-                                color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
-                                fontWeight: 500
-                              }}
-                            >
-                              {!employee.usage_limits?.is_unlimited ? "デモ版" : "本番版"}
-                            </Typography>
-                          </Box>
-                        </TableCell>
-                        <TableCell>
-                          <Tooltip title="プラン変更履歴を表示">
+                    {permissions.is_special_admin && (
+                      <TableCell>
+                        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <Tooltip title={`クリックで${!employee.usage_limits?.is_unlimited ? '本番版' : 'デモ版'}に切り替え`}>
                             <span>
-                              <IconButton
+                              <Checkbox
+                                checked={!employee.usage_limits?.is_unlimited}
+                                onChange={() => handleToggleDemo(employee)}
                                 size="small"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenPlanHistory(employee);
-                                }}
                                 sx={{
-                                  color: "primary.main",
-                                  "&:hover": {
-                                    bgcolor: "primary.light",
-                                    color: "primary.dark",
-                                  },
+                                  color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
+                                  '&.Mui-checked': {
+                                    color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
+                                  }
                                 }}
-                              >
-                                <TimelineIcon fontSize="small" />
-                              </IconButton>
+                              />
                             </span>
                           </Tooltip>
-                        </TableCell>
-                      </>
+                          <Typography 
+                            variant="caption" 
+                            sx={{ 
+                              ml: 0.5, 
+                              color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
+                              fontWeight: 500
+                            }}
+                          >
+                            {!employee.usage_limits?.is_unlimited ? "デモ版" : "本番版"}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                    )}
+                    {permissions.can_create && (
+                      <TableCell>
+                        <Tooltip title="プラン変更履歴を表示">
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenPlanHistory(employee);
+                              }}
+                              sx={{
+                                color: "primary.main",
+                                "&:hover": {
+                                  bgcolor: "primary.light",
+                                  color: "primary.dark",
+                                },
+                              }}
+                            >
+                              <TimelineIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </TableCell>
                     )}
                     <TableCell>{formatDate(employee.created_at)}</TableCell>
                     <TableCell>{employee.message_count}</TableCell>

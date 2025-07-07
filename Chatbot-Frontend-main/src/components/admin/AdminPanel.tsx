@@ -190,7 +190,7 @@ const AdminPanel: React.FC = () => {
       const data = await SharedDataService.getChatHistory({
         limit,
         offset,
-        user_id: !isSpecialAdmin ? JSON.parse(localStorage.getItem("user") || "{}").id : undefined
+        user_id: (!isSpecialAdmin && !permissions.can_create) ? JSON.parse(localStorage.getItem("user") || "{}").id : undefined
       });
       
       console.log("チャット履歴取得結果:", data);
