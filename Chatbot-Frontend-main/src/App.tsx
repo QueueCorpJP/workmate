@@ -17,6 +17,7 @@ import CompanySettings from "./CompanySettings";
 import CompanyNameModal from "./CompanyNameModal";
 import LoginPage from "./LoginPage";
 import PasswordResetPage from "./PasswordResetPage";
+import ProfilePage from "./ProfilePage";
 import UserGuide from "./UserGuide";
 import GuideBook from "./GuideBook";
 import { CompanyProvider, useCompany } from "./contexts/CompanyContext";
@@ -240,7 +241,7 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (!isAdmin && !(user && user.role === "user")) {
+          if (!isAdmin && !(user && (user.role === "user" || user.role === "admin_user"))) {
     return <Navigate to="/" replace />;
   }
 
@@ -302,6 +303,14 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <UserGuide />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
               </ProtectedRoute>
             }
           />

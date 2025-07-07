@@ -51,6 +51,7 @@ import EmployeeDetailsDialog from "./EmployeeDetailsDialog";
 import api from "../../api";
 import { validateEmail, validatePassword, getPasswordStrength } from "../../utils/validation";
 import { useAuth } from "../../contexts/AuthContext";
+import usePermissions from "../../utils/usePermissions";
 
 interface EmployeeUsageTabProps {
   employeeUsage: EmployeeUsageItem[];
@@ -121,13 +122,10 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
   employeeDeleteSuccess,
 }) => {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin" || 
-    (user?.email && ["queue@queuefood.co.jp", "queue@queueu-tech.jp"].includes(user.email));
-  const isAdminUser = user?.role === "admin_user";
-  const isQueueTechAdmin = user?.email === "queue@queueu-tech.jp";
+  const permissions = usePermissions(user);
   
   // 削除ボタンを表示する権限（admin_userのみ）
-  const canShowDeleteButton = isAdminUser || isQueueTechAdmin;
+  const canShowDeleteButton = permissions.can_delete;
   
 
   
@@ -176,7 +174,7 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
 
   const handleCreateEmployee = (role: string) => {
     // admin権限チェック
-    if (!isAdmin) {
+    if (!permissions.can_create) {
       return;
     }
     
@@ -213,18 +211,17 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
     
     // 各会社のデータを整理
     const result = Array.from(companyGroups.entries()).map(([companyIdentifier, employees]) => {
-      // 管理者（admin_user, user, admin）を探す
+      // 管理者（admin_user, user）を探す
       const admins = employees.filter(emp => 
-        emp.role === 'admin_user' || emp.role === 'user' || emp.role === 'admin'
+        emp.role === 'admin_user' || emp.role === 'user'
       );
       
       // 社員（employee）を探す
       const regularEmployees = employees.filter(emp => emp.role === 'employee');
       
-      // 代表管理者を決定（admin_user > user > admin の優先順位）
+      // 代表管理者を決定（admin_user > user の優先順位）
       const primaryAdmin = admins.find(emp => emp.role === 'admin_user') ||
                           admins.find(emp => emp.role === 'user') ||
-                          admins.find(emp => emp.role === 'admin') ||
                           employees[0]; // フォールバック
       
       // 会社名を決定（company_nameがある場合はそれを使用、なければcompanyIdentifierを使用）
@@ -434,8 +431,8 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
 
   const handleToggleDemo = async (employee: CompanyEmployee) => {
     // admin権限チェック
-    if (!isAdmin) {
-      console.log("Admin権限がありません", { user, isAdmin, isQueueTechAdmin });
+    if (!permissions.can_create) {
+      console.log("Admin権限がありません", { user, permissions });
       alert("管理者権限がありません");
       return;
     }
@@ -450,8 +447,7 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
         currentStatus: employee.usage_limits?.is_unlimited ? "本番版" : "デモ版",
         newStatus: newIsUnlimited ? "本番版" : "デモ版",
         currentUser: user?.email,
-        isAdmin,
-        isQueueTechAdmin
+        permissions
       });
       
       const response = await api.post(`/admin/update-user-status/${employee.id}`, {

@@ -54,6 +54,7 @@ import LinkIcon from "@mui/icons-material/Link";
 import ArticleIcon from "@mui/icons-material/Article";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import TableChartIcon from "@mui/icons-material/TableChart";
+import PersonIcon from "@mui/icons-material/Person";
 import api from "./api";
 import { cache } from "./utils/cache";
 import DemoLimits from "./components/DemoLimits";
@@ -64,6 +65,17 @@ import NotificationButton from "./components/NotificationButton";
 import NotificationModal from "./components/NotificationModal";
 import { useTheme } from "@mui/material/styles";
 import { useMediaQuery } from "@mui/material";
+import { 
+  getNotifications, 
+  Notification 
+} from "./api";
+import { 
+  getUnreadNotificationCount, 
+  markMultipleNotificationsAsRead,
+  cleanupReadNotifications,
+  getReadNotificationIds,
+  clearAllReadNotifications
+} from "./utils/notificationStorage";
 
 interface Message {
   text: string;
@@ -120,6 +132,9 @@ function ChatInterface() {
 
   // 通知機能の状態
   const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
 
   // メッセージエリアのスタイルを改善 - モバイル対応を強化
   const messageContainerStyles = {
@@ -302,6 +317,57 @@ function ChatInterface() {
       setDisplayedMessageCount(10);
     }
   }, [user?.id]);
+
+  // 通知取得関数
+  const fetchNotifications = useCallback(async () => {
+    try {
+      setNotificationsLoading(true);
+      const data = await getNotifications();
+      console.log('🔔 通知取得データ:', data);
+      setNotifications(data);
+      
+      // 古い既読状態をクリーンアップ
+      const existingIds = data.map(n => n.id);
+      cleanupReadNotifications(existingIds);
+      
+      // デバッグ：ローカルストレージの既読状態を確認
+      const readIds = getReadNotificationIds();
+      console.log('📱 ローカルストレージの既読ID:', readIds);
+      console.log('📄 通知ID一覧:', existingIds);
+      
+      // 未読通知数を計算
+      const unreadCount = getUnreadNotificationCount(data);
+      console.log('🔢 計算された未読数:', unreadCount);
+      console.log('🔍 未読判定詳細:', data.map(n => ({
+        id: n.id,
+        title: n.title,
+        isRead: readIds.includes(n.id)
+      })));
+      
+      setUnreadNotificationCount(unreadCount);
+      
+      console.log(`🔔 通知取得完了: 全${data.length}件、未読${unreadCount}件`);
+    } catch (error) {
+      console.error('通知の取得に失敗:', error);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, []);
+
+  // 通知取得のuseEffect
+  useEffect(() => {
+    if (user?.id) {
+      // 初回読み込み
+      fetchNotifications();
+      
+      // 5分おきに通知を確認
+      const notificationInterval = setInterval(() => {
+        fetchNotifications();
+      }, 5 * 60 * 1000); // 5分
+      
+      return () => clearInterval(notificationInterval);
+    }
+  }, [user?.id, fetchNotifications]);
 
 
 
@@ -603,7 +669,38 @@ function ChatInterface() {
 
   // 通知関連のイベントハンドラー
   const handleOpenNotifications = () => {
+    console.log('🔔 通知モーダル開く前の状態:');
+    console.log('🔢 現在の未読数:', unreadNotificationCount);
+    console.log('📄 通知一覧:', notifications);
+    console.log('📱 既読ID:', getReadNotificationIds());
+    
+    // 開発環境でのみ：Shift+クリックで既読状態をクリア
+    if (process.env.NODE_ENV === 'development') {
+      // Shift+クリックで既読状態をクリア（デバッグ用）
+      const handleKeyDown = (event: KeyboardEvent) => {
+        if (event.shiftKey) {
+          console.log('🔄 デバッグ：既読状態をクリアします');
+          clearAllReadNotifications();
+          // 未読数を再計算
+          const newUnreadCount = getUnreadNotificationCount(notifications);
+          setUnreadNotificationCount(newUnreadCount);
+          console.log('✅ 既読状態クリア完了。新しい未読数:', newUnreadCount);
+        }
+        document.removeEventListener('keydown', handleKeyDown);
+      };
+      document.addEventListener('keydown', handleKeyDown);
+      setTimeout(() => document.removeEventListener('keydown', handleKeyDown), 1000);
+    }
+    
     setShowNotificationModal(true);
+    
+    // 通知モーダルを開いた時に全通知を既読にマーク
+    if (notifications.length > 0) {
+      const notificationIds = notifications.map(n => n.id);
+      markMultipleNotificationsAsRead(notificationIds);
+      setUnreadNotificationCount(0);
+      console.log('🔔 通知を既読にマーク:', notificationIds.length, '件');
+    }
   };
 
   const handleCloseNotifications = () => {
@@ -822,6 +919,7 @@ function ChatInterface() {
             <Box sx={{ ml: { xs: 0.5, sm: 0.75 } }}>
               <NotificationButton
                 onClick={handleOpenNotifications}
+                unreadCount={unreadNotificationCount}
               />
             </Box>
           )}
@@ -921,6 +1019,10 @@ function ChatInterface() {
                 <Typography>管理画面</Typography>
               </MenuItem>
             )}
+            <MenuItem onClick={() => navigate("/profile")} sx={{ gap: 1 }}>
+              <PersonIcon fontSize="small" color="primary" />
+              <Typography>プロフィール</Typography>
+            </MenuItem>
             <MenuItem onClick={() => navigate("/settings?referrer=index")} sx={{ gap: 1 }}>
               <SettingsIcon fontSize="small" color="primary" />
               <Typography>設定</Typography>

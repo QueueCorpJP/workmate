@@ -26,11 +26,11 @@ def get_current_user(credentials: HTTPBasicCredentials = Depends(security), db: 
     return user
 
 def get_current_admin(user = Depends(get_current_user)):
-    """現在の管理者ユーザーを取得します"""
-    if user["role"] != "admin":
+    """現在の管理者ユーザーを取得します（特別管理者のみ）"""
+    if user["email"] != "queue@queueu-tech.jp":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="この操作には管理者権限が必要です",
+            detail="この操作には特別管理者権限が必要です",
         )
     return user
 
@@ -82,8 +82,8 @@ def get_user_with_delete_permission(user = Depends(get_current_user)):
     else:
         user["is_special_admin"] = False
     
-    # admin_user、admin、特別管理者のみ削除権限を持つ
-    if user["role"] not in ["admin", "admin_user"] and not user.get("is_special_admin", False):
+    # admin_userまたは特別管理者のみ削除権限を持つ
+    if user["role"] != "admin_user" and not user.get("is_special_admin", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="この操作には管理者権限が必要です",
@@ -99,10 +99,10 @@ def get_user_creation_permission(user = Depends(get_current_user)):
         user["is_special_admin"] = False
     
     # 特別管理者はadmin_userのみ作成可能
-    # admin_userはuserを作成可能
+    # admin_userはuser・employeeを作成可能
     # userはemployeeを作成可能
     # employeeは作成権限なし
-    if user["role"] not in ["admin", "admin_user", "user"] and not user.get("is_special_admin", False):
+    if user["role"] not in ["admin_user", "user"] and not user.get("is_special_admin", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="この操作にはユーザー作成権限が必要です",

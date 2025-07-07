@@ -554,3 +554,48 @@ def transcribe_youtube_video_with_ytdlp(youtube_url: str) -> str:
         print(f"yt-dlpエラー: {str(e)}")
         return f"yt-dlp字幕取得エラー: {str(e)}"
 
+def create_default_usage_limits(user_id: str, user_email: str, user_role: str = None) -> dict:
+    """
+    ユーザーのデフォルト利用制限を生成する共通関数
+    
+    Args:
+        user_id: ユーザーID
+        user_email: ユーザーのメールアドレス
+        user_role: ユーザーのロール（オプション）
+    
+    Returns:
+        デフォルトの利用制限設定
+    """
+    # 特別管理者の判定
+    is_unlimited = user_email == "queue@queueu-tech.jp"
+    
+    return {
+        "user_id": user_id,
+        "document_uploads_used": 0,
+        "document_uploads_limit": 999999 if is_unlimited else 2,
+        "questions_used": 0,
+        "questions_limit": 999999 if is_unlimited else 10,
+        "is_unlimited": is_unlimited
+    }
+
+def get_permission_flags(current_user: dict) -> dict:
+    """
+    ユーザーの権限フラグを生成する共通関数
+    
+    Args:
+        current_user: 現在のユーザー情報
+    
+    Returns:
+        権限フラグの辞書
+    """
+    # 特別管理者メールアドレスの統一定義
+    special_admin_emails = ["queue@queuefood.co.jp", "queue@queueu-tech.jp"]
+    
+    return {
+        "is_special_admin": current_user["email"] in special_admin_emails and current_user.get("is_special_admin", False),
+        "is_admin_user": current_user["role"] == "admin_user",
+        "is_user": current_user["role"] == "user",
+        "user_email": current_user["email"],
+        "user_role": current_user["role"]
+    }
+

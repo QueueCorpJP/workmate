@@ -6,17 +6,42 @@ Fuzzy searchとadvanced query機能を提供
 import os
 import logging
 from typing import List, Dict, Any, Optional
-from elasticsearch import Elasticsearch
-from elasticsearch_dsl import Search, Q, Document, Text, Keyword, Integer, Float, Date, Index
-from elasticsearch_dsl.connections import connections
-from dotenv import load_dotenv
 import json
 from datetime import datetime
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-import psycopg2
-from psycopg2.extras import RealDictCursor
 
+# Elasticsearchの条件付きインポート
+try:
+    from elasticsearch import Elasticsearch
+    from elasticsearch_dsl import Search, Q, Document, Text, Keyword, Integer, Float, Date, Index
+    from elasticsearch_dsl.connections import connections
+    ELASTICSEARCH_AVAILABLE = True
+except ImportError as e:
+    ELASTICSEARCH_AVAILABLE = False
+    # ダミークラス定義
+    class Elasticsearch:
+        def __init__(self, *args, **kwargs):
+            pass
+        def ping(self):
+            return False
+        def indices(self):
+            return self
+        def exists(self, *args, **kwargs):
+            return False
+        def create(self, *args, **kwargs):
+            pass
+        def search(self, *args, **kwargs):
+            return {'hits': {'hits': []}}
+
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    PSYCOPG2_AVAILABLE = True
+except ImportError:
+    PSYCOPG2_AVAILABLE = False
+
+from dotenv import load_dotenv
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -59,6 +84,11 @@ class ElasticsearchManager:
     
     def _init_elasticsearch(self):
         """Elasticsearchクライアントの初期化"""
+        if not ELASTICSEARCH_AVAILABLE:
+            logger.warning("⚠️ Elasticsearchモジュールが利用できません")
+            self.es = None
+            return
+            
         try:
             # 認証情報の設定
             if self.es_user and self.es_password:
@@ -83,7 +113,8 @@ class ElasticsearchManager:
             # 接続テスト
             if self.es.ping():
                 logger.info(f"✅ Elasticsearch接続成功: {self.es_host}:{self.es_port}")
-                connections.add_connection('default', self.es)
+                if ELASTICSEARCH_AVAILABLE:
+                    connections.add_connection('default', self.es)
                 
                 # インデックスの作成
                 self._create_index()
@@ -185,6 +216,10 @@ class ElasticsearchManager:
                 logger.error("❌ Elasticsearch利用不可")
                 return False
             
+            if not PSYCOPG2_AVAILABLE:
+                logger.error("❌ psycopg2利用不可")
+                return False
+            
             logger.info("🔄 データベースからElasticsearchへの同期開始")
             
             # データベースからチャンクデータを取得
@@ -235,6 +270,10 @@ class ElasticsearchManager:
     async def _index_batch(self, batch: List[Dict]):
         """バッチでのインデックス処理"""
         try:
+            if not ELASTICSEARCH_AVAILABLE:
+                logger.warning("⚠️ Elasticsearchが利用できないため、バッチインデックスをスキップします")
+                return
+                
             actions = []
             
             for row in batch:
@@ -258,8 +297,11 @@ class ElasticsearchManager:
                 actions.append(doc)
             
             # バルクインデックス
-            from elasticsearch.helpers import bulk
-            bulk(self.es, actions)
+            try:
+                from elasticsearch.helpers import bulk
+                bulk(self.es, actions)
+            except ImportError:
+                logger.warning("⚠️ elasticsearch.helpersが利用できません")
             
         except Exception as e:
             logger.error(f"❌ バッチインデックスエラー: {e}")
@@ -542,6 +584,9 @@ def get_elasticsearch_fuzzy_search() -> Optional[ElasticsearchFuzzySearch]:
 def elasticsearch_available() -> bool:
     """Elasticsearchが利用可能かチェック"""
     try:
+        if not ELASTICSEARCH_AVAILABLE:
+            return False
+            
         es_manager = get_elasticsearch_manager()
         return es_manager is not None and es_manager.is_available()
     except Exception:

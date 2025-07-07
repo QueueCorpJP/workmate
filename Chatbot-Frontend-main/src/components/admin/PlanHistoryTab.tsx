@@ -44,6 +44,7 @@ import { formatDate } from "./utils";
 import LoadingIndicator from "./LoadingIndicator";
 import EmptyState from "./EmptyState";
 import { useAuth } from "../../contexts/AuthContext";
+import usePermissions from "../../utils/usePermissions";
 
 interface PlanHistoryItem {
   id: string;
@@ -140,7 +141,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
   const [currentTab, setCurrentTab] = useState(0);
   
   // 管理者用の特別表示判定
-  const isAdmin = user?.role === "admin" || user?.email === "queue@queueu-tech.jp" || user?.email === "queue@queuefood.co.jp";
+  const permissions = usePermissions(user);
 
   const fetchPlanHistory = async () => {
     setIsLoading(true);
@@ -148,7 +149,7 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
     try {
       console.log("プラン履歴を取得中...");
       console.log("現在のユーザー情報:", user);
-      console.log("管理者フラグ:", isAdmin);
+      console.log("管理者フラグ:", permissions.is_special_admin);
       
       const response = await api.get("/plan-history");
       console.log("プラン履歴取得結果 - 全体:", response);
@@ -168,11 +169,11 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
         }
         
         // 管理者用の分析データを設定
-        if (isAdmin && response.data.data.analytics) {
+        if (permissions.is_special_admin && response.data.data.analytics) {
           console.log("管理者用分析データを設定:", response.data.data.analytics);
           setAnalyticsData(response.data.data.analytics);
         } else {
-          console.log("管理者用分析データなし - isAdmin:", isAdmin, "analytics:", response.data.data.analytics);
+          console.log("管理者用分析データなし - is_special_admin:", permissions.is_special_admin, "analytics:", response.data.data.analytics);
         }
       } else {
         console.log("レスポンス構造が期待と異なります");

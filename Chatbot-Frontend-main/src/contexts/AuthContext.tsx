@@ -33,6 +33,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   register: (email: string, password: string, name: string) => Promise<void>;
+  updateProfile: (name: string, email: string) => Promise<void>;
   remainingQuestions: number | null;
   remainingUploads: number | null;
   isUnlimited: boolean;
@@ -71,7 +72,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const parsedUser = JSON.parse(storedUser);
       setUser(parsedUser);
       setIsAuthenticated(true);
-      setIsAdmin(parsedUser.role === "admin" || parsedUser.role === "admin_user" || 
+            setIsAdmin(parsedUser.role === "admin_user" ||
         (parsedUser.email && ["queue@queuefood.co.jp", "queue@queueu-tech.jp"].includes(parsedUser.email)));
       setIsEmployee(parsedUser.role === "employee");
 
@@ -105,7 +106,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const userData = response.data;
       setUser(userData);
       setIsAuthenticated(true);
-      setIsAdmin(userData.role === "admin" || userData.role === "admin_user" || 
+      setIsAdmin(userData.role === "admin_user" || 
         (userData.email && ["queue@queuefood.co.jp", "queue@queueu-tech.jp"].includes(userData.email)));
       setIsEmployee(userData.role === "employee");
 
@@ -222,7 +223,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const userData = response.data;
       setUser(userData);
       setIsAuthenticated(true);
-      setIsAdmin(userData.role === "admin" || userData.role === "admin_user" || 
+      setIsAdmin(userData.role === "admin_user" || 
         (userData.email && ["queue@queuefood.co.jp", "queue@queueu-tech.jp"].includes(userData.email)));
       setIsEmployee(userData.role === "employee");
 
@@ -252,6 +253,47 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // プロフィール更新処理
+  const updateProfile = async (name: string, email: string) => {
+    try {
+      const response = await api.put(`/auth/profile`, {
+        name,
+        email,
+      });
+
+      const userData = response.data;
+      setUser(userData);
+      setIsAuthenticated(true);
+      setIsAdmin(userData.role === "admin_user" || 
+        (userData.email && ["queue@queuefood.co.jp", "queue@queueu-tech.jp"].includes(userData.email)));
+      setIsEmployee(userData.role === "employee");
+
+      // 利用制限情報を設定
+      if (userData.usage_limits) {
+        const {
+          document_uploads_used,
+          document_uploads_limit,
+          questions_used,
+          questions_limit,
+          is_unlimited,
+        } = userData.usage_limits;
+        setRemainingQuestions(
+          is_unlimited ? null : questions_limit - questions_used
+        );
+        setRemainingUploads(
+          is_unlimited ? null : document_uploads_limit - document_uploads_used
+        );
+        setIsUnlimited(is_unlimited);
+      }
+
+      // ローカルストレージに保存
+      localStorage.setItem("user", JSON.stringify(userData));
+    } catch (error) {
+      console.error("Profile update failed:", error);
+      throw error;
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -262,6 +304,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         login,
         logout,
         register,
+        updateProfile,
         remainingQuestions,
         remainingUploads,
         isUnlimited,

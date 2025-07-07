@@ -6,7 +6,7 @@ import os
 import os.path
 import datetime
 import traceback
-from typing import List
+from typing import List, Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Request, Form, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -153,6 +153,14 @@ async def startup_event():
     except Exception as e:
         print(f"⚠️ Enhanced PostgreSQL Search初期化失敗: {e}")
     
+    # 包括的検索システム初期化（PDF後半情報取得対応）
+    try:
+        from modules.comprehensive_search_system import initialize_comprehensive_search
+        await initialize_comprehensive_search()
+        print("✅ 包括的検索システム初期化成功")
+    except Exception as e:
+        print(f"⚠️ 包括的検索システム初期化失敗: {e}")
+    
     print("✅ アプリケーション起動時初期化完了")
 
 # admin.pyのルーターを登録
@@ -203,17 +211,10 @@ async def login(credentials: UserLogin, db: SupabaseConnection = Depends(get_db)
     # もし usage_limits が存在しなければデフォルトを生成
     if limits is None:
         from modules.database import insert_data
+        from modules.utils import create_default_usage_limits
 
-        # ロールに応じてデフォルト値を決定
-        is_unlimited = user["role"] in ["admin", "admin_user"] or user["email"] == "queue@queueu-tech.jp"
-        default_limits = {
-            "user_id": user["id"],
-            "document_uploads_used": 0,
-            "document_uploads_limit": 999999 if is_unlimited else 10,
-            "questions_used": 0,
-            "questions_limit": 999999 if is_unlimited else 10,
-            "is_unlimited": is_unlimited
-        }
+        # 共通関数を使用してデフォルト値を生成
+        default_limits = create_default_usage_limits(user["id"], user["email"], user["role"])
 
         try:
             insert_data("usage_limits", default_limits)
@@ -250,12 +251,28 @@ async def get_current_user_info(current_user = Depends(get_current_user), db: Su
         from modules.database import get_usage_limits
         limits = get_usage_limits(current_user["id"], db)
         
+        # limitsが存在しない場合はデフォルト値を設定
+        if limits is None:
+            from modules.database import insert_data
+            from modules.utils import create_default_usage_limits
+            # 共通関数を使用してデフォルト値を生成
+            default_limits = create_default_usage_limits(current_user["id"], current_user["email"], current_user["role"])
+            
+            try:
+                insert_data("usage_limits", default_limits)
+                limits = default_limits
+            except Exception as e:
+                logger.error(f"usage_limits 自動作成に失敗しました: {str(e)}")
+                # それでも作成できなければデフォルト値を使用
+                limits = default_limits
+        
+        # 更新されたユーザー情報を返す
         return {
-            "id": current_user["id"],
-            "email": current_user["email"],
-            "name": current_user["name"],
-            "role": current_user["role"],
-            "created_at": current_user["created_at"],
+            "id": updated_user["id"],
+            "email": updated_user["email"],
+            "name": updated_user["name"],
+            "role": updated_user["role"],
+            "created_at": updated_user["created_at"],
             "company_name": current_user.get("company_name", ""),
             "usage_limits": {
                 "document_uploads_used": limits["document_uploads_used"],
@@ -301,6 +318,10 @@ class PasswordResetRequest(PydanticBaseModel):
     email: str
     current_password: str
     new_password: str
+
+class ProfileUpdateRequest(PydanticBaseModel):
+    name: str
+    email: str
 
 @app.post("/chatbot/api/auth/reset-password")
 async def reset_password(request: PasswordResetRequest, db: SupabaseConnection = Depends(get_db)):
@@ -357,6 +378,125 @@ async def reset_password(request: PasswordResetRequest, db: SupabaseConnection =
             detail="パスワードリセット中にエラーが発生しました。"
         )
 
+@app.put("/chatbot/api/auth/profile", response_model=UserWithLimits)
+async def update_profile(request: ProfileUpdateRequest, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """プロフィール更新（名前とメールアドレス）"""
+    from modules.database import get_usage_limits
+    from modules.validation import validate_email_input
+    
+    try:
+        # 入力値バリデーション
+        if not request.name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="名前を入力してください。"
+            )
+        
+        if len(request.name.strip()) < 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="名前は1文字以上で入力してください。"
+            )
+        
+        # メールアドレスの検証
+        is_email_valid, email_errors = validate_email_input(request.email)
+        if not is_email_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="; ".join(email_errors)
+            )
+        
+        # 現在のユーザーと異なるメールアドレスの場合、既存チェック
+        if request.email != current_user["email"]:
+            existing_user_result = select_data("users", filters={"email": request.email})
+            if existing_user_result.data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="このメールアドレスは既に使用されています。"
+                )
+        
+        # プロフィール情報を更新
+        logger.info(f"プロフィール更新開始: ユーザーID={current_user['id']}, 新しい名前={request.name.strip()}, 新しいメール={request.email}")
+        update_result = update_data(
+            "users",
+            "id",
+            current_user["id"],
+            {
+                "name": request.name.strip(),
+                "email": request.email
+            }
+        )
+        
+        logger.info(f"update_data結果: success={update_result.success}, data={update_result.data}, error={update_result.error}")
+        
+        if not update_result.success:
+            logger.error(f"プロフィール更新エラー: {update_result.error}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"プロフィールの更新に失敗しました: {update_result.error}"
+            )
+        
+        if not update_result.data:
+            logger.error("プロフィール更新: データが返されませんでした")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="プロフィールの更新に失敗しました。データが返されませんでした。"
+            )
+        
+        # 更新されたユーザー情報を取得
+        updated_user_result = select_data("users", filters={"id": current_user["id"]})
+        if not updated_user_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="ユーザーが見つかりません。"
+            )
+        
+        updated_user = updated_user_result.data[0]
+        
+        # 利用制限情報を取得
+        limits = get_usage_limits(current_user["id"], db)
+        
+        # limitsが存在しない場合はデフォルト値を設定
+        if limits is None:
+            from modules.database import insert_data
+            from modules.utils import create_default_usage_limits
+            # 共通関数を使用してデフォルト値を生成
+            default_limits = create_default_usage_limits(current_user["id"], current_user["email"], current_user["role"])
+            
+            try:
+                insert_data("usage_limits", default_limits)
+                limits = default_limits
+            except Exception as e:
+                logger.error(f"usage_limits 自動作成に失敗しました: {str(e)}")
+                # それでも作成できなければデフォルト値を使用
+                limits = default_limits
+        
+        # 更新されたユーザー情報を返す
+        return {
+            "id": updated_user["id"],
+            "email": updated_user["email"],
+            "name": updated_user["name"],
+            "role": updated_user["role"],
+            "created_at": updated_user["created_at"],
+            "company_name": current_user.get("company_name", ""),
+            "usage_limits": {
+                "document_uploads_used": limits["document_uploads_used"],
+                "document_uploads_limit": limits["document_uploads_limit"],
+                "questions_used": limits["questions_used"],
+                "questions_limit": limits["questions_limit"],
+                "is_unlimited": bool(limits["is_unlimited"])
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"プロフィール更新エラー: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"プロフィール更新中にエラーが発生しました: {str(e)}"
+        )
+
 @app.post("/chatbot/api/admin/register-user", response_model=UserResponse)
 async def admin_register_user(user_data: AdminUserCreate, current_user = Depends(get_user_creation_permission), db: SupabaseConnection = Depends(get_db)):
     """管理者による新規ユーザー登録"""
@@ -401,31 +541,54 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
         # new_company_created変数を初期化
         new_company_created = False
         
-        # 権限チェックと作成可能なロールの決定
-        is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
-        is_admin = current_user["role"] == "admin"
-        is_admin_user = current_user["role"] == "admin_user"
-        is_user = current_user["role"] == "user"
+        # 共通関数を使用して権限チェック（user と admin_user を同等に扱う）
+        from modules.utils import get_permission_flags
+        permissions = get_permission_flags(current_user)
+        is_special_admin = permissions["is_special_admin"]
+        is_admin_user = permissions["is_admin_user"]
+        is_user = permissions["is_user"]
         
+        # 指定されたロールを取得
+        requested_role = user_data.role if hasattr(user_data, 'role') else None
+        
+        # 権限チェックと作成可能なロールの判定
         if is_special_admin:
             # 特別管理者はadmin_userのみ作成可能
-            print("特別管理者の権限でadmin_userアカウント作成")
-            role = "admin_user"
-        elif is_admin or is_admin_user:
-            # admin、admin_userはuserロールのみ作成可能
-            print(f"管理者の権限でユーザー作成: admin={is_admin}, admin_user={is_admin_user}")
-            role = "user"
+            if requested_role and requested_role == "admin_user":
+                role = "admin_user"
+                print("特別管理者の権限でadmin_userアカウント作成")
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="特別管理者はadmin_userロールのみ作成できます"
+                )
+        elif is_admin_user:
+            # admin_userはuserとemployeeを作成可能
+            if requested_role in ["user", "employee"]:
+                role = requested_role
+                print(f"admin_userの権限で{role}アカウント作成")
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="admin_userは'user'または'employee'ロールのみ作成できます"
+                )
         elif is_user:
             # userはemployeeのみ作成可能
-            print("userの権限でemployeeアカウント作成")
-            role = "employee"
+            if requested_role and requested_role == "employee":
+                role = "employee"
+                print("userの権限でemployeeアカウント作成")
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="userは'employee'ロールのみ作成できます"
+                )
         else:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="ユーザー作成権限がありません"
             )
         
-        if is_special_admin or is_admin or is_admin_user:
+        if is_special_admin or is_admin_user:
             
             # 会社IDの指定
             company_id = None
@@ -534,11 +697,11 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
             }
     except HTTPException as e:
         # HTTPExceptionはそのまま再送
-        account_type = "ユーザーアカウント" if (current_user["email"] == "queue@queueu-tech.jp" or current_user["role"] == "admin") else "社員アカウント"
+        account_type = "ユーザーアカウント" if (current_user["email"] == "queue@queueu-tech.jp" or current_user["role"] == "admin_user") else "社員アカウント"
         print(f"{account_type}作成エラー: {e.status_code}: {e.detail}")
         raise
     except Exception as e:
-        account_type = "ユーザーアカウント" if (current_user["email"] == "queue@queueu-tech.jp" or current_user["role"] == "admin") else "社員アカウント"
+        account_type = "ユーザーアカウント" if (current_user["email"] == "queue@queueu-tech.jp" or current_user["role"] == "admin_user") else "社員アカウント"
         print(f"{account_type}作成エラー: {str(e)}")
         import traceback
         print(traceback.format_exc())
@@ -550,11 +713,12 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
 @app.delete("/chatbot/api/admin/delete-user/{user_id}", response_model=dict)
 async def admin_delete_user(user_id: str, current_user = Depends(get_user_with_delete_permission), db: SupabaseConnection = Depends(get_db)):
     """管理者によるユーザー削除"""
-    # 権限チェック
-    is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
-    is_admin = current_user["role"] == "admin"
-    is_admin_user = current_user["role"] == "admin_user"
-    is_user = current_user["role"] == "user"
+    # 共通関数を使用して権限チェック（user と admin_user を同等に扱う）
+    from modules.utils import get_permission_flags
+    permissions = get_permission_flags(current_user)
+    is_special_admin = permissions["is_special_admin"]
+    is_admin_user = permissions["is_admin_user"]
+    is_user = permissions["is_user"]
     
     # 自分の身は削除できない   
     if user_id == current_user["id"]:
@@ -577,9 +741,6 @@ async def admin_delete_user(user_id: str, current_user = Depends(get_user_with_d
     # 削除権限のチェック
     if is_special_admin:
         # 特別管理者は全員削除可能
-        pass
-    elif is_admin:
-        # adminロールは全員削除可能
         pass
     elif is_admin_user:
         # admin_userロールは同じ会社のuserとemployeeを削除可能
@@ -637,53 +798,55 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
     try:
         print(f"CSVダウンロード開始 - ユーザー: {current_user['email']}")
         
-        # 権限チェック（user、employeeロールも許可）
-        is_admin = current_user["role"] == "admin"
-        is_admin_user = current_user["role"] == "admin_user"
-        is_user = current_user["role"] == "user"
-        is_employee = current_user["role"] == "employee"
-        is_special_admin = current_user["email"] == "queue@queueu-tech.jp"
+        # 共通関数を使用して権限チェック（user と admin_user を同等に扱う）
+        from modules.utils import get_permission_flags
+        permissions = get_permission_flags(current_user)
+        is_special_admin = permissions["is_special_admin"]
+        is_admin_user = permissions["is_admin_user"]
+        is_user = permissions["is_user"]
+        
+        print(f"🔍 [CSV_DOWNLOAD] 権限チェック: special_admin={is_special_admin}, admin_user={is_admin_user}, user={is_user}")
         
         # チャット履歴を複数の方法で取得を試行
         chat_history = []
         try:
             if is_special_admin:
-                print("特別管理者として全ユーザーのチャット履歴を取得")
-                # 特別な管理者の場合は全ユーザーのチャットを取得
+                print(f"🔍 [CSV_DOWNLOAD] 全データアクセス権限で実行: special_admin={is_special_admin}")
+                # 特別管理者のみが全ユーザーのチャットを取得可能
                 try:
                     chat_history = get_chat_history(None, db)
-                    print(f"get_chat_history結果: {len(chat_history) if chat_history else 0}件")
+                    print(f"🔍 [CSV_DOWNLOAD] get_chat_history結果: {len(chat_history) if chat_history else 0}件")
                 except Exception as e1:
-                    print(f"get_chat_history失敗: {e1}")
+                    print(f"🔍 [CSV_DOWNLOAD] get_chat_history失敗: {e1}")
                     # フォールバック：直接Supabaseから取得
                     from supabase_adapter import select_data
                     result = select_data("chat_history")
                     chat_history = result.data if result and result.data else []
-                    print(f"直接取得結果: {len(chat_history)}件")
+                    print(f"🔍 [CSV_DOWNLOAD] 直接取得結果: {len(chat_history)}件")
                     
-            elif is_admin or is_user:
-                print(f"{current_user['role']}ロールとして会社のチャット履歴を取得")
-                # 管理者/ユーザーの場合は自分の会社のチャットを取得
+            elif is_admin_user or is_user:
+                print(f"🔍 [CSV_DOWNLOAD] 会社制限アクセス権限で実行: {current_user['role']}")
+                # 会社管理者の場合は自分の会社のチャットを取得
                 company_id = current_user.get("company_id")
-                print(f"company_id: {company_id}")
+                print(f"🔍 [CSV_DOWNLOAD] company_id: {company_id}")
                 if company_id:
                     try:
                         chat_history = get_chat_history_by_company(company_id, db)
-                        print(f"get_chat_history_by_company結果: {len(chat_history) if chat_history else 0}件")
+                        print(f"🔍 [CSV_DOWNLOAD] get_chat_history_by_company結果: {len(chat_history) if chat_history else 0}件")
                     except Exception as e2:
-                        print(f"get_chat_history_by_company失敗: {e2}")
+                        print(f"🔍 [CSV_DOWNLOAD] get_chat_history_by_company失敗: {e2}")
                         # フォールバック：ページネーション版を試行
                         try:
                             chat_history, total_count = get_chat_history_by_company_paginated(company_id, db, limit=10000, offset=0)
-                            print(f"get_chat_history_by_company_paginated結果: {len(chat_history) if chat_history else 0}件")
+                            print(f"🔍 [CSV_DOWNLOAD] get_chat_history_by_company_paginated結果: {len(chat_history) if chat_history else 0}件")
                         except Exception as e3:
-                            print(f"get_chat_history_by_company_paginated失敗: {e3}")
+                            print(f"🔍 [CSV_DOWNLOAD] get_chat_history_by_company_paginated失敗: {e3}")
                             # さらなるフォールバック：直接取得
                             from supabase_adapter import select_data
                             company_users_result = select_data("users", filters={"company_id": company_id})
                             if company_users_result and company_users_result.data:
                                 user_ids = [user["id"] for user in company_users_result.data]
-                                print(f"会社のユーザーID: {user_ids}")
+                                print(f"🔍 [CSV_DOWNLOAD] 会社のユーザーID: {user_ids}")
                                 # 各ユーザーのチャット履歴を個別に取得
                                 all_chats = []
                                 for user_id in user_ids:
@@ -691,16 +854,18 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
                                     if user_chat_result and user_chat_result.data:
                                         all_chats.extend(user_chat_result.data)
                                 chat_history = all_chats
-                                print(f"個別取得結果: {len(chat_history)}件")
+                                print(f"🔍 [CSV_DOWNLOAD] 個別取得結果: {len(chat_history)}件")
                 else:
-                    print("company_idがないため自分のチャットのみ取得")
+                    print("🔍 [CSV_DOWNLOAD] company_idがないため権限降格：自分のチャットのみ取得")
                     chat_history = get_chat_history(current_user["id"], db)
-                    print(f"個人チャット結果: {len(chat_history) if chat_history else 0}件")
+                    print(f"🔍 [CSV_DOWNLOAD] 個人チャット結果: {len(chat_history) if chat_history else 0}件")
             else:
-                print(f"通常ユーザーとして個人のチャット履歴を取得: {current_user['id']}")
-                # その他の場合は自分のチャットのみを取得
-                chat_history = get_chat_history(current_user["id"], db)
-                print(f"個人チャット結果: {len(chat_history) if chat_history else 0}件")
+                # ここに到達することは権限制御により理論上ありえない
+                print(f"⚠️ [CSV_DOWNLOAD] 予期しない権限状態: {current_user['role']}")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="CSVダウンロードの権限がありません"
+                )
                 
         except Exception as e:
             print(f"チャット履歴取得エラー: {e}")
@@ -1313,11 +1478,12 @@ async def admin_get_chat_history(
     print(f"🔍 [CHAT HISTORY DEBUG] current_user: {current_user}")
     print(f"🔍 [CHAT HISTORY DEBUG] limit: {limit}, offset: {offset}")
     
-    # 権限チェック
-    is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
-    is_admin = current_user["role"] == "admin"
-    is_admin_user = current_user["role"] == "admin_user"
-    is_user = current_user["role"] == "user"
+    # 共通関数を使用して権限チェック（user と admin_user を同等に扱う）
+    from modules.utils import get_permission_flags
+    permissions = get_permission_flags(current_user)
+    is_special_admin = permissions["is_special_admin"]
+    is_admin_user = permissions["is_admin_user"]
+    is_user = permissions["is_user"]
     is_employee = current_user["role"] == "employee"
     
     # 会社管理者の判定（user=管理者, admin_user=社長）
@@ -1325,7 +1491,6 @@ async def admin_get_chat_history(
     
     print(f"🔍 [CHAT HISTORY DEBUG] 権限チェック:")
     print(f"  - is_special_admin: {is_special_admin}")
-    print(f"  - is_admin: {is_admin}")
     print(f"  - is_admin_user: {is_admin_user}")
     print(f"  - is_company_manager: {is_company_manager}")
     print(f"  - is_user: {is_user}")
@@ -1336,13 +1501,9 @@ async def admin_get_chat_history(
             print(f"🔍 [CHAT HISTORY DEBUG] 特別管理者として全ユーザーのチャットを取得")
             # 特別な管理者の場合は全ユーザーのチャットを取得
             chat_history, total_count = get_chat_history_paginated(None, db, limit, offset)
-        elif is_admin:
-            print(f"🔍 [CHAT HISTORY DEBUG] システム管理者として全チャットを取得")
-            # adminロールは全ユーザーのチャットを取得
-            chat_history, total_count = get_chat_history_paginated(None, db, limit, offset)
-        elif is_company_manager:
+        elif is_admin_user or is_user:
             print(f"🔍 [CHAT HISTORY DEBUG] 会社管理者として会社のチャットを取得")
-            # user（管理者）・admin_user（社長）の場合は自分の会社のチャットを取得
+            # admin_user、userは自分の会社のチャットを取得
             company_id = current_user.get("company_id")
             print(f"🔍 [CHAT HISTORY DEBUG] company_id: {company_id}")
             if company_id:
@@ -1366,10 +1527,7 @@ async def admin_get_chat_history(
         if is_special_admin:
             print(f"🔍 [CHAT HISTORY DEBUG] フォールバック: 特別管理者として全チャット取得")
             chat_history = get_chat_history(None, db)
-        elif is_admin:
-            print(f"🔍 [CHAT HISTORY DEBUG] フォールバック: システム管理者として全チャット取得")
-            chat_history = get_chat_history(None, db)
-        elif is_company_manager:
+        elif is_admin_user or is_user:
             print(f"🔍 [CHAT HISTORY DEBUG] フォールバック: 会社チャット取得")
             company_id = current_user.get("company_id")
             if company_id:
@@ -1412,34 +1570,36 @@ async def admin_analyze_chats(current_user = Depends(get_admin_or_user), db: Sup
     print(f"🔍 [ANALYZE CHAT DEBUG] admin_analyze_chats 開始")
     print(f"🔍 [ANALYZE CHAT DEBUG] current_user: {current_user}")
     
-    # 権限チェック
-    is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
-    is_admin = current_user["role"] == "admin"
-    is_user = current_user["role"] == "user"
+    # 共通関数を使用して権限チェック（user と admin_user を同等に扱う）
+    from modules.utils import get_permission_flags
+    permissions = get_permission_flags(current_user)
+    is_special_admin = permissions["is_special_admin"]
+    is_admin_user = permissions["is_admin_user"]
+    is_user = permissions["is_user"]
     
     print(f"🔍 [ANALYZE CHAT DEBUG] 権限チェック:")
     print(f"  - is_special_admin: {is_special_admin}")
-    print(f"  - is_admin: {is_admin}")
+    print(f"  - is_admin_user: {is_admin_user}")
     print(f"  - is_user: {is_user}")
     
     try:
         if is_special_admin:
-            print(f"🔍 [ANALYZE CHAT DEBUG] 特別管理者として全ユーザーのチャットを分析")
-            # 特別な管理者の場合は全ユーザーのチャットを分析
+            print(f"🔍 [ANALYZE CHAT DEBUG] 全データアクセス権限でチャット分析実行")
+            # 特別管理者の場合は全ユーザーのチャットを分析
             result = await analyze_chats(None, db)
-        elif is_admin or is_user:
-            print(f"🔍 [ANALYZE CHAT DEBUG] 管理者/ユーザーとして会社のチャットを分析")
-            # 管理者/ユーザーの場合は自分の会社のチャットのみを分析
+        elif is_admin_user or is_user:
+            print(f"🔍 [ANALYZE CHAT DEBUG] 会社制限アクセス権限でチャット分析実行")
+            # admin_user、userは自分の会社のチャットのみを分析
             company_id = current_user.get("company_id")
             print(f"🔍 [ANALYZE CHAT DEBUG] company_id: {company_id}")
             if company_id:
                 result = await analyze_chats(None, db, company_id=company_id)
             else:
-                print(f"🔍 [ANALYZE CHAT DEBUG] company_idがないため自分のチャットのみ分析")
+                print(f"🔍 [ANALYZE CHAT DEBUG] company_idがないため権限降格：自分のチャットのみ分析")
                 result = await analyze_chats(current_user["id"], db)
         else:
-            print(f"🔍 [ANALYZE CHAT DEBUG] 通常ユーザーとして自分のチャットのみ分析")
-            # その他の場合は自分のチャットのみを分析
+            # ここには到達しないはず（権限制御により）
+            print(f"⚠️ [ANALYZE CHAT DEBUG] 予期しない権限状態")
             result = await analyze_chats(current_user["id"], db)
         
         print(f"🔍 [ANALYZE CHAT DEBUG] 分析結果: {result}")
@@ -1466,14 +1626,16 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
     print(f"🔍 [DETAILED ANALYSIS DEBUG] current_user: {current_user}")
     
     try:
-        # ユーザー情報の取得
-        is_admin = current_user["role"] == "admin"
-        is_user = current_user["role"] == "user"
-        is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
+        # ユーザー情報の取得（user と admin_user を同等に扱う）
+        from modules.utils import get_permission_flags
+        permissions = get_permission_flags(current_user)
+        is_special_admin = permissions["is_special_admin"]
+        is_admin_user = permissions["is_admin_user"]
+        is_user = permissions["is_user"]
         
         print(f"🔍 [DETAILED ANALYSIS DEBUG] 権限チェック:")
         print(f"  - is_special_admin: {is_special_admin}")
-        print(f"  - is_admin: {is_admin}")
+        print(f"  - is_admin_user: {is_admin_user}")
         print(f"  - is_user: {is_user}")
         
         # プロンプトを取得
@@ -1482,32 +1644,36 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
         
         # 通常の分析結果を取得
         if is_special_admin:
-            print(f"🔍 [DETAILED ANALYSIS DEBUG] 特別管理者として全チャットで分析")
-            # 特別管理者の全チャットのタイプで分析
+            print(f"🔍 [DETAILED ANALYSIS DEBUG] 全データアクセス権限で詳細分析実行")
+            # 特別管理者の場合は全チャットで分析
             analysis_result = await analyze_chats(None, db)
-        else:
-            # 一般ユーザーは自分の会社のチャットのみで分析
+        elif is_admin_user or is_user:
+            # admin_user、userは自分の会社のチャットのみで分析
             user_company_id = current_user.get("company_id")
-            print(f"🔍 [DETAILED ANALYSIS DEBUG] user_company_id: {user_company_id}")
+            print(f"🔍 [DETAILED ANALYSIS DEBUG] 会社制限アクセス権限で詳細分析実行: company_id={user_company_id}")
             if user_company_id:
                 print(f"🔍 [DETAILED ANALYSIS DEBUG] 会社のチャットで分析")
                 analysis_result = await analyze_chats(None, db, company_id=user_company_id)
             else:
-                print(f"🔍 [DETAILED ANALYSIS DEBUG] 個人のチャットで分析")
+                print(f"🔍 [DETAILED ANALYSIS DEBUG] company_idがないため権限降格：個人のチャットで分析")
                 # 会社IDがない場合は自分のチャットのみ
                 analysis_result = await analyze_chats(current_user["id"], db)
+        else:
+            # ここには到達しないはず（権限制御により）
+            print(f"⚠️ [DETAILED ANALYSIS DEBUG] 予期しない権限状態")
+            analysis_result = await analyze_chats(current_user["id"], db)
         
         # より詳細なチャットデータを取得
         try:
             if is_special_admin:
-                print(f"🔍 [DETAILED ANALYSIS DEBUG] 特別管理者として全チャットデータ取得")
-                # 特別管理者の全チャットを取得
+                print(f"🔍 [DETAILED ANALYSIS DEBUG] 全データアクセス権限で全チャットデータ取得")
+                # 特別管理者の場合は全チャットを取得
                 chat_result = select_data("chat_history", limit=1000, order="created_at desc")
-            else:
-                # 一般ユーザーは自分の会社のチャットのみ取得
+            elif is_admin_user or is_user:
+                # admin_user、userは自分の会社のチャットのみ取得
                 user_company_id = current_user.get("company_id")
                 if user_company_id:
-                    print(f"🔍 [DETAILED ANALYSIS DEBUG] 会社のチャットデータ取得 (company_id: {user_company_id})")
+                    print(f"🔍 [DETAILED ANALYSIS DEBUG] 会社制限アクセス権限でチャットデータ取得 (company_id: {user_company_id})")
                     # 会社のユーザーIDを取得
                     users_result = select_data("users", columns="id", filters={"company_id": user_company_id})
                     if users_result and users_result.data:
@@ -1518,9 +1684,13 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
                         print(f"🔍 [DETAILED ANALYSIS DEBUG] 会社のユーザーが見つからないため空のデータで処理")
                         chat_result = None
                 else:
-                    print(f"🔍 [DETAILED ANALYSIS DEBUG] 個人のチャットデータ取得")
+                    print(f"🔍 [DETAILED ANALYSIS DEBUG] company_idがないため権限降格：個人のチャットデータ取得")
                     # 会社IDがない場合は自分のチャットのみ
                     chat_result = select_data("chat_history", filters={"employee_id": current_user["id"]}, limit=1000, order="created_at desc")
+            else:
+                # ここには到達しないはず（権限制御により）
+                print(f"⚠️ [DETAILED ANALYSIS DEBUG] 予期しない権限状態：個人データのみ取得")
+                chat_result = select_data("chat_history", filters={"employee_id": current_user["id"]}, limit=1000, order="created_at desc")
             
             chat_data = chat_result.data if chat_result and chat_result.data else []
             print(f"🔍 [DETAILED ANALYSIS DEBUG] 取得したチャットデータ数: {len(chat_data)}")
@@ -1555,7 +1725,8 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
                         except:
                             continue
                 
-                # ピク時間帯を特定                if hour_counts:
+                # ピク時間帯を特定
+                if hour_counts:
                     sorted_hours = sorted(hour_counts.items(), key=lambda x: x[1], reverse=True)
                     detailed_metrics["peak_usage_hours"] = sorted_hours[:3]
                 
@@ -1565,7 +1736,8 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
                 if message_texts:
                     detailed_metrics["repeat_question_rate"] = (len(message_texts) - len(unique_messages)) / len(message_texts) * 100
                 
-                # よくある失敗パターンの特定                failure_keywords = ["エラー", "わからなぁE, "できなぁE, "失敁E, "問顁E, "困っぁE, "ぁーくいかなぁE, "動かなぁE]
+                # よくある失敗パターンの特定
+                failure_keywords = ["エラー", "わからない", "できない", "失敗", "問題", "困った", "うまくいかない", "動かない"]
                 failure_count = 0
                 for msg in message_texts:
                     if any(keyword in msg for keyword in failure_keywords):
@@ -1745,13 +1917,23 @@ async def admin_enhanced_analysis(
     try:
         print(f"🔍 [ENHANCED ANALYSIS] 強化分析開始 (AI分析: {include_ai_insights})")
         
-        # 特別管理者のみがデータにアクセス可能
-        is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
+        # 権限チェック（user と admin_user を同等に扱う）
+        from modules.utils import get_permission_flags
+        permissions = get_permission_flags(current_user)
+        is_special_admin = permissions["is_special_admin"]
+        is_admin_user = permissions["is_admin_user"]
+        is_user = permissions["is_user"]
         
         company_id = None
-        if not is_special_admin:
+        if is_special_admin:
+            # 特別管理者は全データアクセス
+            company_id = None
+        elif is_admin_user or is_user:
+            # admin_user、userは会社制限
             company_id = current_user.get("company_id")
             print(f"🔍 [ENHANCED ANALYSIS] company_id: {company_id}")
+        else:
+            raise HTTPException(status_code=403, detail="アクセス権限がありません")
         
         # データベース分析データを取得（高速）
         from modules.analytics import get_enhanced_analytics
@@ -1825,7 +2007,9 @@ async def admin_get_ai_insights(current_user = Depends(get_admin_or_user), db: S
         print(f"🤖 [AI INSIGHTS] AI洞察生成開始")
         
         # 特別管理者のみがデータにアクセス可能
-        is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
+        from modules.utils import get_permission_flags
+        permissions = get_permission_flags(current_user)
+        is_special_admin = permissions["is_special_admin"]
         
         company_id = None
         if not is_special_admin:
@@ -1859,7 +2043,9 @@ async def admin_get_ai_insights(current_user = Depends(get_admin_or_user), db: S
 async def admin_get_employee_details(employee_id: str, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """特定の社員の詳細なチャット履歴を取得する"""
     # 特別な管理者のueue@queuefood.co.jpの場合は全ユーザーのチャットを取得できるようにする
-    is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
+    from modules.utils import get_permission_flags
+    permissions = get_permission_flags(current_user)
+    is_special_admin = permissions["is_special_admin"]
     
     # ユーザーIDを渡して権限チェックを行う
     return await get_employee_details(employee_id, db, current_user["id"])
@@ -1868,59 +2054,83 @@ async def admin_get_employee_details(employee_id: str, current_user = Depends(ge
 @app.get("/chatbot/api/admin/company-employees", response_model=List[dict])
 async def admin_get_company_employees(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """会社の全社員情報を取得する"""
-    # 特別管理者のみがデータにアクセス可能
-    is_special_admin = current_user["email"] == "queue@queueu-tech.jp"
+    # 共通関数を使用して権限チェック（user と admin_user を同等に扱う）
+    from modules.utils import get_permission_flags
+    permissions = get_permission_flags(current_user)
+    is_special_admin = permissions["is_special_admin"]
+    is_admin_user = permissions["is_admin_user"]
+    is_user = permissions["is_user"]
+    
+    print(f"🔍 [EMPLOYEE_MANAGEMENT] 社員管理権限チェック: special_admin={is_special_admin}, admin_user={is_admin_user}, user={is_user}, email={current_user['email']}, role={current_user['role']}")
     
     if is_special_admin:
-        # 特別管理者の場合は全ユーザーのチャットを取得
+        # 特別管理者のみが全ユーザーを取得可能
+        print(f"🔍 [EMPLOYEE_MANAGEMENT] 全社員取得権限でアクセス（特別管理者）")
         result = await get_company_employees(current_user["id"], db, None)
         return result
-    else:
-        # 通常のユーザーの場合は自分の会社の社員のチャットのみを取得
+    elif is_admin_user or is_user:
+        # admin_user、userは自分の会社の社員のみを取得
+        print(f"🔍 [EMPLOYEE_MANAGEMENT] 会社制限でアクセス（会社管理者）")
         # ユーザーの会社IDを取得
         user_result = select_data("users", filters={"id": current_user["id"]})
         user_row = user_result.data[0] if user_result.data else None
         company_id = user_row.get("company_id") if user_row else None
+        
+        print(f"🔍 [EMPLOYEE_MANAGEMENT] 取得した会社ID: {company_id}")
         
         if not company_id:
             raise HTTPException(status_code=400, detail="会社IDが見つかりません")
         
         result = await get_company_employees(current_user["id"], db, company_id)
         return result
+    else:
+        raise HTTPException(status_code=403, detail="アクセス権限がありません")
 
 # 社員利用状況を取得するエンドポイント
 @app.get("/chatbot/api/admin/employee-usage", response_model=EmployeeUsageResult)
 async def admin_get_employee_usage(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """社員ごとの利用状況を取得する"""
-    # 特別管理者のみがチのタにアクセス可能
-    is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
+    # 権限チェック（user と admin_user を同等に扱う）
+    from modules.utils import get_permission_flags
+    permissions = get_permission_flags(current_user)
+    is_special_admin = permissions["is_special_admin"]
+    is_admin_user = permissions["is_admin_user"]
+    is_user = permissions["is_user"]
     
     if is_special_admin:
         # 特別管理者の場合は全ユーザーのチャットを取得
         return await get_employee_usage(None, db, is_special_admin=True)
-    else:
-        # 通常のユーザーの場合は自分の会社の社員のチャットのみを取得
+    elif is_admin_user or is_user:
+        # admin_user、userは自分の会社の社員のチャットのみを取得
         user_id = current_user["id"]
         return await get_employee_usage(user_id, db, is_special_admin=False)
+    else:
+        raise HTTPException(status_code=403, detail="アクセス権限がありません")
 
 # アップロードされたリソースを取得するエンドポイント
 @app.get("/chatbot/api/admin/resources", response_model=ResourcesResult)
 async def admin_get_resources(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """アップロードされたリソース（URL、PDF、Excel、TXT等）を取得する"""
-    # 特別管理者のみがデータにアクセス可能
-    is_special_admin = current_user["email"] == "queue@queueu-tech.jp" and current_user.get("is_special_admin", False)
+    # 権限チェック（user と admin_user を同等に扱う）
+    from modules.utils import get_permission_flags
+    permissions = get_permission_flags(current_user)
+    is_special_admin = permissions["is_special_admin"]
+    is_admin_user = permissions["is_admin_user"]
+    is_user = permissions["is_user"]
     
     if is_special_admin:
         # 特別管理者は全てのリソースを表示
         return await get_uploaded_resources_by_company_id(None, db, uploaded_by=None)
-    else:
-        # 通常のユーザーは自分の会社のリソースのみ表示
+    elif is_admin_user or is_user:
+        # admin_user、userは自分の会社のリソースのみ表示
         company_id = current_user.get("company_id")
         if not company_id:
             raise HTTPException(status_code=400, detail="会社IDが見つかりません")
         
         print(f"会社ID {company_id} のリソースを取得します")
         return await get_uploaded_resources_by_company_id(company_id, db)
+    else:
+        raise HTTPException(status_code=403, detail="アクセス権限がありません")
 
 # リソースのアクティブ状態を切り替えるエンドポイント
 @app.post("/chatbot/api/admin/resources/{resource_id:path}/toggle", response_model=ResourceToggleResponse)
@@ -2002,15 +2212,17 @@ async def admin_update_resource_special(resource_id: str, request: dict, current
 async def admin_update_user_status(user_id: str, request: dict, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """管理者の操作によるユーザーステータス変更。Adminのみ実行可能"""
     # adminロール、admin_userロール、または特別な管理者のみが実行可能
-    is_admin = current_user["role"] == "admin"
-    is_admin_user = current_user["role"] == "admin_user"
-    is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"]
+    from modules.utils import get_permission_flags
+    permissions = get_permission_flags(current_user)
+    is_admin_user = permissions["is_admin_user"]
+    is_user = permissions["is_user"]
+    is_special_admin = permissions["is_special_admin"]
     
     print(f"=== ユーザーステータス変更権限チェック ===")
-    print(f"操作者 {current_user['email']} (管理者: {is_admin}, admin_user: {is_admin_user}, 特別管理者: {is_special_admin})")
+    print(f"操作者 {current_user['email']} (admin_user: {is_admin_user}, user: {is_user}, 特別管理者: {is_special_admin})")
     
-    # 権限チェック - admin、admin_user、または特別管理者のみ
-    if not (is_admin or is_admin_user or is_special_admin):
+    # 権限チェック（user と admin_user を同等に扱う）
+    if not (is_admin_user or is_user or is_special_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="この操作には管理者の権限が必要です。一般ユーザーは自分のプラン変更を行うことはできません"
@@ -2035,7 +2247,7 @@ async def admin_update_user_status(user_id: str, request: dict, current_user = D
         print(f"対象ユーザー: {user['email']} ({user['name']}) - ロール: {user['role']}")
         
         # 管理者のロールの場合は警告
-        if user['role'] == 'admin':
+        if user['role'] == 'admin_user':
             print(f"警告: 管理者のロール ({user['email']}) のステータス変更")
         
         # 現在の利用制限を取得
@@ -2187,12 +2399,14 @@ async def admin_get_companies(current_user = Depends(get_admin_or_user), db: Sup
 @app.post("/chatbot/api/admin/fix-company-status/{company_id}", response_model=dict)
 async def admin_fix_company_status(company_id: str, current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """会社内のユーザーステータス不整合を修正する"""
-    # adminロール、admin_userロール、または特別な管理者のみが実行可能
-    is_admin = current_user["role"] == "admin"
-    is_admin_user = current_user["role"] == "admin_user"
-    is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
+    # admin_userロール、userロール、または特別な管理者のみが実行可能（user と admin_user を同等に扱う）
+    from modules.utils import get_permission_flags
+    permissions = get_permission_flags(current_user)
+    is_admin_user = permissions["is_admin_user"]
+    is_user = permissions["is_user"]
+    is_special_admin = permissions["is_special_admin"]
     
-    if not (is_admin or is_admin_user or is_special_admin):
+    if not (is_admin_user or is_user or is_special_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="この操作には管理者の権限が必要です"
@@ -2218,12 +2432,14 @@ async def admin_fix_company_status(company_id: str, current_user = Depends(get_a
 @app.post("/chatbot/api/admin/ensure-database-integrity", response_model=dict)
 async def admin_ensure_database_integrity(current_user = Depends(get_admin_or_user), db: SupabaseConnection = Depends(get_db)):
     """データベース整合性をチェックして修正する"""
-    # adminロール、admin_userロール、または特別な管理者のみが実行可能
-    is_admin = current_user["role"] == "admin"
-    is_admin_user = current_user["role"] == "admin_user"
-    is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
+    # admin_userロール、userロール、または特別な管理者のみが実行可能（user と admin_user を同等に扱う）
+    from modules.utils import get_permission_flags
+    permissions = get_permission_flags(current_user)
+    is_admin_user = permissions["is_admin_user"]
+    is_user = permissions["is_user"]
+    is_special_admin = permissions["is_special_admin"]
     
-    if not (is_admin or is_admin_user or is_special_admin):
+    if not (is_admin_user or is_user or is_special_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="この操作には管理者の権限が必要です"
@@ -2256,12 +2472,14 @@ async def admin_get_applications(status: str = None, current_user = Depends(get_
     try:
         print(f"申請一覧取得要請- ユーザー: {current_user['email']} (ロール: {current_user['role']})")
         
-        # 管理者の権限チェック
-        is_admin = current_user["role"] == "admin"
-        is_admin_user = current_user["role"] == "admin_user"
-        is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
+        # 管理者の権限チェック（user と admin_user を同等に扱う）
+        from modules.utils import get_permission_flags
+        permissions = get_permission_flags(current_user)
+        is_admin_user = permissions["is_admin_user"]
+        is_user = permissions["is_user"]
+        is_special_admin = permissions["is_special_admin"]
         
-        if not (is_admin or is_admin_user or is_special_admin):
+        if not (is_admin_user or is_user or is_special_admin):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="この操作には管理者の権限が必要です"
@@ -2298,12 +2516,14 @@ async def admin_update_application_status(
         print(f"申請ID: {application_id}")
         print(f"リクエスト {request}")
         
-        # 管理者の権限チェック
-        is_admin = current_user["role"] == "admin"
-        is_admin_user = current_user["role"] == "admin_user"
-        is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"] and current_user.get("is_special_admin", False)
+        # 管理者の権限チェック（user と admin_user を同等に扱う）
+        from modules.utils import get_permission_flags
+        permissions = get_permission_flags(current_user)
+        is_admin_user = permissions["is_admin_user"]
+        is_user = permissions["is_user"]
+        is_special_admin = permissions["is_special_admin"]
         
-        if not (is_admin or is_admin_user or is_special_admin):
+        if not (is_admin_user or is_user or is_special_admin):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="この操作には管理者の権限が必要です"
@@ -2386,7 +2606,8 @@ async def get_company_token_usage(current_user = Depends(get_current_user), db: 
         
         try:
             if company_id:
-                # TokenUsageTrackerを使用して実際の使用量を取得                from modules.token_counter import TokenUsageTracker
+                # TokenUsageTrackerを使用して実際の使用量を取得
+                from modules.token_counter import TokenUsageTracker
                 import datetime
                 
                 tracker = TokenUsageTracker(db)
@@ -2784,15 +3005,17 @@ async def admin_get_plan_history(current_user = Depends(get_admin_or_user), db: 
     try:
         print(f"プラン履歴取得開始 - ユーザー: {current_user['email']} (ロール: {current_user['role']})")
         
-        # 権限チェック
-        is_admin = current_user["role"] == "admin"
-        is_admin_user = current_user["role"] == "admin_user"
-        is_special_admin = current_user["email"] in ["queue@queuefood.co.jp", "queue@queueu-tech.jp"]
+        # 権限チェック（user と admin_user を同等に扱う）
+        from modules.utils import get_permission_flags
+        permissions = get_permission_flags(current_user)
+        is_special_admin = permissions["is_special_admin"]
+        is_admin_user = permissions["is_admin_user"]
+        is_user = permissions["is_user"]
         
-        # 特定のcompany_idのユーザーも料金タブアクセスを許可
-        is_special_company_user = current_user.get("company_id") == "77acc2e2-ce67-458d-bd38-7af0476b297a"
+        print(f"🔍 [PLAN_HISTORY] 権限チェック: special_admin={is_special_admin}, admin_user={is_admin_user}, user={is_user}")
         
-        if not (is_admin or is_admin_user or is_special_admin or is_special_company_user):
+        # プラン履歴は管理者権限が必要
+        if not (is_special_admin or is_admin_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="この操作には管理者の権限が必要です"
@@ -2800,39 +3023,49 @@ async def admin_get_plan_history(current_user = Depends(get_admin_or_user), db: 
         
         from supabase_adapter import select_data
         
-        # プラン履歴を取得（会社によってフィルタリング）
-        if is_special_company_user and not (is_admin or is_admin_user or is_special_admin):
-            # 特定の会社のユーザーは自分の会社の履歴のみを取得
-            company_id = current_user.get("company_id")
-            print(f"特定会社のユーザー向け履歴取得: company_id={company_id}")
-            
-            # 同じ会社のユーザーIDを取得
-            company_users_result = select_data(
-                "users",
-                columns="id",
-                filters={"company_id": company_id}
-            )
-            
-            if company_users_result and company_users_result.data:
-                user_ids = [user["id"] for user in company_users_result.data]
-                print(f"対象ユーザーID: {user_ids}")
-                
-                # 会社のユーザーのプラン履歴のみを取得
-                user_ids_str = ','.join(f"'{uid}'" for uid in user_ids)
-                plan_history_result = select_data(
-                    "plan_history",
-                    columns="id, user_id, from_plan, to_plan, changed_at, duration_days",
-                    filters={"user_id": f"in.({user_ids_str})"}
-                )
-            else:
-                # 会社のユーザーが見つからない場合は空の結果
-                plan_history_result = None
-        else:
-            # 管理者は全ての履歴を取得
+        # プラン履歴を取得（権限に応じてフィルタリング）
+        if is_special_admin:
+            # 特別管理者は全ての履歴を取得
+            print(f"🔍 [PLAN_HISTORY] 全データアクセス権限で実行")
             plan_history_result = select_data(
                 "plan_history",
                 columns="id, user_id, from_plan, to_plan, changed_at, duration_days"
             )
+        elif is_admin_user:
+            # admin_userは自分の会社の履歴のみを取得
+            company_id = current_user.get("company_id")
+            print(f"🔍 [PLAN_HISTORY] 会社制限アクセス権限で実行: company_id={company_id}")
+            
+            if company_id:
+                # 同じ会社のユーザーIDを取得
+                company_users_result = select_data(
+                    "users",
+                    columns="id",
+                    filters={"company_id": company_id}
+                )
+                
+                if company_users_result and company_users_result.data:
+                    user_ids = [user["id"] for user in company_users_result.data]
+                    print(f"🔍 [PLAN_HISTORY] 対象ユーザーID: {user_ids}")
+                    
+                    # 会社のユーザーのプラン履歴のみを取得
+                    user_ids_str = ','.join(f"'{uid}'" for uid in user_ids)
+                    plan_history_result = select_data(
+                        "plan_history",
+                        columns="id, user_id, from_plan, to_plan, changed_at, duration_days",
+                        filters={"user_id": f"in.({user_ids_str})"}
+                    )
+                else:
+                    # 会社のユーザーが見つからない場合は空の結果
+                    print(f"🔍 [PLAN_HISTORY] 会社のユーザーが見つからないため空の結果")
+                    plan_history_result = None
+            else:
+                print(f"🔍 [PLAN_HISTORY] company_idがないため空の結果")
+                plan_history_result = None
+        else:
+            # ここには到達しないはず（権限チェックで弾かれる）
+            print(f"⚠️ [PLAN_HISTORY] 予期しない権限状態")
+            plan_history_result = None
         
         # プラン履歴をユーザー別に整理
         user_plan_histories = {}
@@ -2884,7 +3117,7 @@ async def admin_get_plan_history(current_user = Depends(get_admin_or_user), db: 
         
         # 管理者用の分析データを生成
         analytics_data = None
-        if is_admin or is_admin_user or is_special_admin:
+        if is_admin_user or is_special_admin:
             print("管理者用分析データを生成中...")
             
             # 会社別利用期間を取得
@@ -3217,7 +3450,7 @@ async def list_drive_files(
 
 # 通知関連のAPIエンドポイント
 from pydantic import BaseModel as PydanticBaseModel
-from typing import List
+from typing import Optional
 
 class NotificationCreate(PydanticBaseModel):
     title: str
@@ -3231,7 +3464,7 @@ class NotificationResponse(PydanticBaseModel):
     notification_type: str
     created_at: str
     updated_at: str
-    created_by: str = None
+    created_by: Optional[str] = None
 
 @app.get("/chatbot/api/notifications", response_model=List[NotificationResponse])
 async def get_notifications(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):

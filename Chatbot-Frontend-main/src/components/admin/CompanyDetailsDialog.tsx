@@ -99,7 +99,7 @@ const CompanyDetailsDialog: React.FC<CompanyDetailsDialogProps> = ({
         groups[companyName] = { admins: [], employees: [] };
       }
       
-      if (user.role === "admin" || user.role === "user") {
+                if (user.role === "user") {
         groups[companyName].admins.push(user);
       } else if (user.role === "employee") {
         groups[companyName].employees.push(user);

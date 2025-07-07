@@ -90,8 +90,6 @@ const CompanyCard: React.FC<CompanyCardProps> = ({
                   ? "社長"
                   : companyData.primaryAdmin.role === "user"
                   ? "管理者"
-                  : companyData.primaryAdmin.role === "admin"
-                  ? "管理者"
                   : "社員"
               }
               size="small"
@@ -99,8 +97,6 @@ const CompanyCard: React.FC<CompanyCardProps> = ({
                 companyData.primaryAdmin.role === "admin_user"
                   ? "warning"
                   : companyData.primaryAdmin.role === "user"
-                  ? "primary"
-                  : companyData.primaryAdmin.role === "admin"
                   ? "primary"
                   : "secondary"
               }

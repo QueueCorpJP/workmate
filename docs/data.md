@@ -6,12 +6,13 @@
 **プロジェクトID**: lqlswsymlyscfmnihtze  
 **リージョン**: ap-northeast-1  
 
-**データベース統計** (過去30日間):
-- 総チャット数: 244件
+**データベース統計** (現在):
+- 総チャット数: 286件
 - ユニークユーザー: 12名
-- 活動中企業: 5社
-- 平均トークン数/チャット: 123.7
-- 総トークン使用量: 30,192トークン
+- 活動中企業: 9社
+- アップロード済みドキュメント: 8件
+- 処理済みチャンク: 14,164件
+- ベクトル埋め込み: 768次元（Gemini）
 
 ---
 
@@ -19,15 +20,20 @@
 
 | テーブル名 | サイズ | 役割 | レコード数 |
 |-----------|-------|------|-----------|
-| `companies` | 32 kB | 企業情報管理 | 11件 |
-| `users` | 48 kB | ユーザー管理 | 19件 |
-| `usage_limits` | 64 kB | 使用量制限管理 | 19件 |
-| `document_sources` | 1136 kB | ドキュメント管理 | 3件 |
-| `chat_history` | 432 kB | チャット履歴 | 244件 |
-| `plan_history` | 32 kB | プラン変更履歴 | 21件 |
+| `companies` | 32 kB | 企業情報管理 | 9件 |
+| `users` | 80 kB | ユーザー管理 | 12件 |
+| `usage_limits` | 64 kB | 使用量制限管理 | 12件 |
+| `document_sources` | 104 kB | ドキュメント管理 | 8件 |
+| `chunks` | 89 MB | チャンク管理（ベクトルRAG） | 14,164件 |
+| `chat_history` | 744 kB | チャット履歴 | 286件 |
+| `plan_history` | 32 kB | プラン変更履歴 | 2件 |
 | `applications` | 48 kB | 申請管理 | 0件 |
-| `monthly_token_usage` | 80 kB | 月次トークン使用量 | 6件 |
-| `company_settings` | 24 kB | 企業設定 | 3件 |
+| `monthly_token_usage` | 88 kB | 月次トークン使用量 | 0件 |
+| `company_settings` | 24 kB | 企業設定 | 1件 |
+| `notifications` | 48 kB | システム通知 | 1件 |
+| `search_cache` | 40 kB | 検索キャッシュ | 0件 |
+| `search_score_stats` | 32 kB | 検索統計 | 0件 |
+| `search_performance_log` | 40 kB | 検索パフォーマンス | 0件 |
 
 ---
 
@@ -108,15 +114,24 @@
 | `name` | text | NOT NULL | - | ファイル名 |
 | `type` | text | NOT NULL | - | ファイル形式（PDF/EXCEL/CSV等） |
 | `page_count` | integer | NULLABLE | - | ページ数（PDFの場合） |
-| `content` | text | NOT NULL | - | 抽出されたテキスト内容 |
 | `uploaded_by` | text | NOT NULL | - | アップロードユーザーID |
 | `company_id` | text | NOT NULL | - | 所属企業ID |
-| `uploaded_at` | timestamp | NOT NULL | - | アップロード日時 |
+| `uploaded_at` | timestamptz | NOT NULL | - | アップロード日時 |
 | `active` | boolean | NOT NULL | true | アクティブ状態（検索対象かどうか） |
+| `special` | text | NULLABLE | - | 特殊属性（メタデータ） |
+| `parent_id` | text | NULLABLE | - | 親ドキュメントID（階層構造サポート） |
+| `doc_id` | text | UNIQUE, NULLABLE | - | ドキュメント識別子 |
 
 **関連テーブル**:
 - `users.id` ← `document_sources.uploaded_by` (多対1)
 - `companies.id` ← `document_sources.company_id` (多対1)
+- `document_sources.id` ← `document_sources.parent_id` (自己参照、多対1)
+
+**重要な変更**:
+- ✅ `content`カラムは削除済み（`chunks`テーブルで管理）
+- ✅ `embedding`カラムは削除済み（`chunks`テーブルで管理）
+- 🆕 `parent_id`カラム追加（階層構造サポート）
+- 🆕 `doc_id`カラム追加（ユニーク識別子）
 
 **サポートファイル形式**:
 - PDF, Excel (.xlsx/.xls)
@@ -127,7 +142,37 @@
 
 ---
 
-## 5. chat_history テーブル
+## 5. chunks テーブル（🆕ベクトルRAG対応）
+**ドキュメントコンテンツのチャンク管理**
+
+| カラム名 | 型 | 制約 | デフォルト | 説明 |
+|----------|----|----|----------|-----|
+| `id` | uuid | PRIMARY KEY, NOT NULL | gen_random_uuid() | チャンク一意ID |
+| `content` | text | NOT NULL | - | チャンク本文（300-500トークン） |
+| `chunk_index` | integer | NOT NULL | - | チャンクの順序（0, 1, 2, ...） |
+| `doc_id` | text | NOT NULL | - | 紐づく document_sources.id |
+| `company_id` | text | NULLABLE | - | 所属企業ID（企業分離用） |
+| `embedding` | vector(768) | NULLABLE | - | Gemini Embedding（768次元ベクトル） |
+| `created_at` | timestamptz | NULLABLE | now() | 登録日時 |
+| `updated_at` | timestamptz | NULLABLE | now() | 更新日時 |
+
+**関連テーブル**:
+- `document_sources.id` ← `chunks.doc_id` (多対1、CASCADE DELETE)
+
+**機能**:
+- ドキュメントを300-500トークン単位でチャンク分割
+- 各チャンクに768次元のベクトル埋め込み生成
+- ベクトル類似度検索によるRAG検索
+- 企業別データ分離
+
+**インデックス**:
+- PRIMARY KEY: `id`
+- INDEX: `doc_id`, `company_id`
+- VECTOR INDEX: `embedding` (pgvector)
+
+---
+
+## 6. chat_history テーブル
 **全チャット履歴とトークン使用量の記録**
 
 | カラム名 | 型 | 制約 | デフォルト | 説明 |
@@ -142,13 +187,16 @@
 | `employee_name` | text | NULLABLE | - | 従業員名（管理用） |
 | `source_document` | text | NULLABLE | - | 参照したドキュメント名 |
 | `source_page` | text | NULLABLE | - | 参照したページ番号 |
+| `user_id` | varchar | NULLABLE | - | ユーザーID |
+| `company_id` | varchar | NULLABLE | - | 企業ID |
 | `input_tokens` | integer | NULLABLE | 0 | 入力トークン数 |
 | `output_tokens` | integer | NULLABLE | 0 | 出力トークン数 |
 | `total_tokens` | integer | NULLABLE | 0 | 合計トークン数 |
 | `model_name` | varchar | NULLABLE | 'gpt-4o-mini' | 使用AIモデル |
 | `cost_usd` | numeric | NULLABLE | 0.000000 | USD換算コスト |
-| `user_id` | varchar | NULLABLE | - | ユーザーID |
-| `company_id` | varchar | NULLABLE | - | 企業ID |
+| `prompt_references` | integer | NULLABLE | 0 | プロンプト参照数（🆕新料金体系） |
+| `base_cost_usd` | numeric | NULLABLE | 0.000000 | 基本コスト（トークンベース）（🆕） |
+| `prompt_cost_usd` | numeric | NULLABLE | 0.000000 | プロンプト参照コスト（🆕） |
 
 **トークン追跡機能**:
 - 入力・出力・合計トークンを分離記録
@@ -157,7 +205,7 @@
 
 ---
 
-## 6. plan_history テーブル
+## 7. plan_history テーブル
 **プラン変更履歴の追跡**
 
 | カラム名 | 型 | 制約 | デフォルト | 説明 |
@@ -178,7 +226,7 @@
 
 ---
 
-## 7. applications テーブル
+## 8. applications テーブル
 **本番版申請の管理**
 
 | カラム名 | 型 | 制約 | デフォルト | 説明 |
@@ -205,7 +253,7 @@
 
 ---
 
-## 8. monthly_token_usage テーブル
+## 9. monthly_token_usage テーブル
 **月次トークン使用量の集計**
 
 | カラム名 | 型 | 制約 | デフォルト | 説明 |
@@ -229,7 +277,7 @@
 
 ---
 
-## 9. company_settings テーブル
+## 10. company_settings テーブル
 **企業別の設定管理**
 
 | カラム名 | 型 | 制約 | デフォルト | 説明 |
@@ -246,6 +294,90 @@
 - `basic`: 基本プラン（¥150,000/月、25Mトークン）
 - `pro`: プロプラン（従量制あり）
 - `enterprise`: エンタープライズプラン
+
+---
+
+## 11. notifications テーブル（🆕通知機能）
+**システム通知の管理**
+
+| カラム名 | 型 | 制約 | デフォルト | 説明 |
+|----------|----|----|----------|-----|
+| `id` | uuid | PRIMARY KEY, NOT NULL | gen_random_uuid() | 通知ID |
+| `title` | text | NOT NULL | - | 通知タイトル |
+| `content` | text | NOT NULL | - | 通知内容 |
+| `notification_type` | text | NULLABLE | 'general' | 通知種別 |
+| `created_at` | timestamptz | NULLABLE | now() | 作成日時 |
+| `updated_at` | timestamptz | NULLABLE | now() | 更新日時 |
+| `created_by` | text | NULLABLE | - | 作成者ID |
+
+**通知種別**:
+- `general`: 一般通知
+- `system`: システム通知
+- `maintenance`: メンテナンス通知
+
+---
+
+## 12. search_cache テーブル（🆕検索キャッシュ）
+**検索結果のキャッシュ管理（パフォーマンス最適化）**
+
+| カラム名 | 型 | 制約 | デフォルト | 説明 |
+|----------|----|----|----------|-----|
+| `id` | uuid | PRIMARY KEY, NOT NULL | gen_random_uuid() | キャッシュID |
+| `query_hash` | text | NOT NULL | - | クエリハッシュ値 |
+| `query_text` | text | NOT NULL | - | 検索クエリテキスト |
+| `company_id` | text | NULLABLE | - | 企業ID（企業別キャッシュ） |
+| `search_type` | text | NOT NULL | - | 検索タイプ |
+| `results` | jsonb | NOT NULL | - | 検索結果（JSON形式） |
+| `created_at` | timestamptz | NULLABLE | now() | キャッシュ作成日時 |
+| `expires_at` | timestamptz | NULLABLE | now() + 1時間 | キャッシュ有効期限 |
+
+**検索タイプ**:
+- `vector`: ベクトル検索
+- `fuzzy`: ファジー検索
+- `hybrid`: ハイブリッド検索
+
+---
+
+## 13. search_score_stats テーブル（🆕検索統計）
+**検索スコア統計の管理（品質改善用）**
+
+| カラム名 | 型 | 制約 | デフォルト | 説明 |
+|----------|----|----|----------|-----|
+| `id` | uuid | PRIMARY KEY, NOT NULL | gen_random_uuid() | 統計ID |
+| `search_type` | text | NOT NULL | - | 検索タイプ |
+| `company_id` | text | NULLABLE | - | 企業ID |
+| `score_min` | float8 | NULLABLE | 0.0 | 最小スコア |
+| `score_max` | float8 | NULLABLE | 1.0 | 最大スコア |
+| `score_avg` | float8 | NULLABLE | 0.5 | 平均スコア |
+| `score_std` | float8 | NULLABLE | 0.2 | 標準偏差 |
+| `sample_count` | integer | NULLABLE | 0 | サンプル数 |
+| `updated_at` | timestamptz | NULLABLE | now() | 更新日時 |
+
+**用途**:
+- 検索品質の監視
+- 閾値の動的調整
+- A/Bテスト結果の分析
+
+---
+
+## 14. search_performance_log テーブル（🆕検索パフォーマンス）
+**検索パフォーマンスログ（最適化用）**
+
+| カラム名 | 型 | 制約 | デフォルト | 説明 |
+|----------|----|----|----------|-----|
+| `id` | uuid | PRIMARY KEY, NOT NULL | gen_random_uuid() | ログID |
+| `query_text` | text | NOT NULL | - | 検索クエリテキスト |
+| `search_types` | text[] | NOT NULL | - | 実行された検索タイプ配列 |
+| `company_id` | text | NULLABLE | - | 企業ID |
+| `execution_time_ms` | integer | NOT NULL | - | 実行時間（ミリ秒） |
+| `result_count` | integer | NOT NULL | - | 結果件数 |
+| `user_id` | text | NULLABLE | - | ユーザーID |
+| `created_at` | timestamptz | NULLABLE | now() | ログ作成日時 |
+
+**パフォーマンス分析**:
+- 検索速度の監視
+- ボトルネック特定
+- 使用パターン分析
 
 ---
 

@@ -257,24 +257,21 @@ def get_chat_history_paginated(user_id: str = None, db = None, limit: int = 30, 
         raise HTTPException(status_code=500, detail=f"チャット履歴取得中にエラーが発生しました: {str(e)}")
 
 async def get_company_employees(user_id: str = None, db: Connection = Depends(get_db), company_id: str = None):
-    """会社の社員情報を取得する"""
+    """会社の社員情報を取得する
+    
+    Args:
+        user_id: 呼び出したユーザーのID
+        db: データベース接続
+        company_id: 取得対象の会社ID（Noneの場合は全社員取得）
+    """
     try:
         from supabase_adapter import select_data, execute_query
         
-        # ユーザーロールとアクセス権限の確認
-        user_result = select_data("users", columns="email, role", filters={"id": user_id})
-        user_role = None
-        user_email = None
-        if user_result and user_result.data:
-            user_data = user_result.data[0]
-            user_role = user_data.get("role")
-            user_email = user_data.get("email")
+        print(f"🔍 [ADMIN_EMPLOYEES] get_company_employees実行開始: user_id={user_id}, company_id={company_id}")
         
-        is_special_admin = user_email == "queue@queueu-tech.jp"
-        is_admin = user_role == "admin"
-        is_user = user_role == "user"
-        
-        # print(f"社員情報取得: user_id={user_id}, role={user_role}, is_special_admin={is_special_admin}")
+        # company_idによる処理の分岐
+        # None = 全社員取得（特別管理者・admin用）
+        # 有効なID = 指定会社の社員のみ取得（会社管理者用）
         
         def get_employee_stats(employee_id):
             """社員の使用状況を取得する"""
@@ -348,14 +345,13 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
         
         employees = []
         
-        # 特別な管理者またはadminロールの場合は全社員を取得
-        if is_special_admin:
-            # print("特別な管理者として全社員情報を取得します")
-            # まず全ユーザーを取得
+        if company_id is None:
+            # company_id = None：全社員を取得（特別管理者・admin用）
+            print(f"🔍 [ADMIN_EMPLOYEES] 全社員情報を取得します")
             users_result = select_data("users", columns="id, name, email, role, created_at, company_id")
             
             if users_result and users_result.data:
-                # print(f"全ユーザー取得結果: {len(users_result.data)}件")
+                print(f"🔍 [ADMIN_EMPLOYEES] 全ユーザー取得結果: {len(users_result.data)}件")
                 
                 # 全会社情報を取得
                 companies_result = select_data("companies", columns="id, name")
@@ -366,8 +362,8 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
                 
                 for user in users_result.data:
                     # 会社名を取得
-                    company_id = user.get("company_id")
-                    company_name = companies_dict.get(company_id, f"会社ID: {company_id}" if company_id else "不明な会社")
+                    user_company_id = user.get("company_id")
+                    company_name = companies_dict.get(user_company_id, f"会社ID: {user_company_id}" if user_company_id else "不明な会社")
                     
                     # 使用状況を取得
                     stats = get_employee_stats(user.get("id"))
@@ -377,17 +373,18 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
                         **stats
                     }
                     employees.append(employee_with_stats)
+                    
+                print(f"🔍 [ADMIN_EMPLOYEES] 全社員情報処理完了: {len(employees)}件")
             else:
-                print("全社員情報が取得できませんでした")
+                print("🔍 [ADMIN_EMPLOYEES] 全社員情報が取得できませんでした")
                 
-        elif company_id:
-            # 会社の全社員を取得
-            print(f"会社ID {company_id} の社員情報を取得します")
-            # Supabaseから特定の会社の社員を取得
+        else:
+            # company_id指定：特定会社の社員のみ取得（会社管理者用）
+            print(f"🔍 [ADMIN_EMPLOYEES] 会社ID {company_id} の社員情報を取得します")
             result = select_data("users", columns="id, name, email, role, created_at, company_id", filters={"company_id": company_id})
             
             if result and result.data:
-                # print(f"会社の社員情報取得結果: {len(result.data)}件")
+                print(f"🔍 [ADMIN_EMPLOYEES] 会社の社員情報取得結果: {len(result.data)}件")
                 for employee in result.data:
                     # 使用状況を取得
                     stats = get_employee_stats(employee.get("id"))
@@ -396,13 +393,10 @@ async def get_company_employees(user_id: str = None, db: Connection = Depends(ge
                         **stats
                     }
                     employees.append(employee_with_stats)
+                    
+                print(f"🔍 [ADMIN_EMPLOYEES] 会社社員情報処理完了: {len(employees)}件")
             else:
-                # print(f"会社ID {company_id} の社員情報が取得できませんでした")
-                pass
-        else:
-            # 他の処理（基本的にはここに来ないはず）
-            # print("適切な条件が見つかりません")
-            pass
+                print(f"🔍 [ADMIN_EMPLOYEES] 会社ID {company_id} の社員情報が取得できませんでした")
         
         return employees
     except Exception as e:
@@ -632,63 +626,10 @@ async def get_employee_details(employee_id: str, db = None, current_user_id: str
     try:
         from supabase_adapter import select_data
         
-        # 特別な管理者またはadminロールかどうかを確認
-        is_special_admin = False
-        is_admin = False
-        is_admin_user = False
-        is_user = False
-        current_user_company_id = None
-        target_user_company_id = None
-        
-        if current_user_id:
-            user_result = select_data("users", columns="email, role, company_id", filters={"id": current_user_id})
-            if user_result and user_result.data and len(user_result.data) > 0:
-                user_data = user_result.data[0]
-                user_email = user_data.get("email")
-                user_role = user_data.get("role")
-                current_user_company_id = user_data.get("company_id")
-                
-                print(f"🔍 [権限チェック] ユーザー: {user_email}, ロール: {user_role}")
-                
-                if user_email == "queue@queueu-tech.jp":
-                    is_special_admin = True
-                    print("特別な管理者として社員詳細情報を取得します")
-                elif user_role == "admin":
-                    is_admin = True
-                    print("adminロールとして社員詳細情報を取得します")
-                elif user_role == "admin_user":
-                    is_admin_user = True
-                    print("admin_userロールとして社員詳細情報を取得します")
-                elif user_role == "user":
-                    is_user = True
-                    print("userロールとして社員詳細情報を取得します")
-        
-        # 対象ユーザーの会社IDを取得（同じ会社かチェックするため）
-        if not is_special_admin and not is_admin and not is_admin_user and employee_id != current_user_id:
-            target_result = select_data("users", columns="company_id", filters={"id": employee_id})
-            if target_result and target_result.data and len(target_result.data) > 0:
-                target_user_company_id = target_result.data[0].get("company_id")
-        
-        # 権限チェック
-        # 1. 特別な管理者、adminロール、admin_userロールは全てアクセス可能
-        # 2. userロールは同じ会社のユーザーのみアクセス可能
-        # 3. その他は自分のデータのみアクセス可能
-        if not is_special_admin and not is_admin and not is_admin_user:
-            if is_user:
-                # userロールの場合、同じ会社のユーザーならアクセス可能
-                if current_user_company_id and target_user_company_id and current_user_company_id == target_user_company_id:
-                    print(f"userロールとして同じ会社（{current_user_company_id}）の社員詳細情報にアクセスします")
-                elif employee_id == current_user_id:
-                    print("userロールとして自分の詳細情報にアクセスします")
-                else:
-                    raise HTTPException(status_code=403, detail="他の会社の社員の詳細情報を取得する権限がありません")
-            else:
-                # employeeロールなどは自分のデータのみ
-                if employee_id != current_user_id:
-                    raise HTTPException(status_code=403, detail="他の社員の詳細情報を取得する権限がありません")
-        else:
-            # admin、admin_user、special_adminの場合
-            print(f"管理者権限でアクセス: special_admin={is_special_admin}, admin={is_admin}, admin_user={is_admin_user}")
+        # ⚠️ 注意: main.pyで既に権限チェックが実行されているため、ここでの詳細な権限チェックは削除
+        # main.pyの権限チェックを信頼して、直接データ取得を行う
+        print(f"🔍 [EMPLOYEE_DETAILS] 社員詳細情報取得: employee_id={employee_id}, current_user_id={current_user_id}")
+        print("ℹ️ main.pyで権限チェック済み - 直接データアクセスを実行")
         
         # 社員のチャット履歴を取得
         chat_history_result = select_data("chat_history", columns="*", filters={"employee_id": employee_id})

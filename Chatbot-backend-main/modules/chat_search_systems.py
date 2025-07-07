@@ -5,16 +5,49 @@
 import asyncio
 from typing import List, Dict, Any, Optional, Tuple
 from .chat_config import (
-    safe_print, HTTPException, get_db_cursor,
+    safe_print, HTTPException, get_db_cursor, model,
     DIRECT_SEARCH_AVAILABLE, PARALLEL_SEARCH_AVAILABLE, 
     ENHANCED_JAPANESE_SEARCH_AVAILABLE, VECTOR_SEARCH_AVAILABLE,
-    direct_search, parallel_search, enhanced_japanese_search, vector_search
+    DIRECT_VECTOR_SEARCH_AVAILABLE, PARALLEL_VECTOR_SEARCH_AVAILABLE
 )
-from .elasticsearch_search import (
-    get_elasticsearch_fuzzy_search, elasticsearch_available
-)
+try:
+    from .elasticsearch_search import (
+        get_elasticsearch_fuzzy_search, elasticsearch_available
+    )
+    ELASTICSEARCH_IMPORT_AVAILABLE = True
+except ImportError as e:
+    ELASTICSEARCH_IMPORT_AVAILABLE = False
+    def get_elasticsearch_fuzzy_search():
+        return None
+    def elasticsearch_available():
+        return False
 from .postgresql_fuzzy_search import fuzzy_search_chunks
 from .enhanced_postgresql_search import enhanced_search_chunks, initialize_enhanced_postgresql_search
+
+# 検索関数の条件付きインポート
+if DIRECT_SEARCH_AVAILABLE:
+    from .chat_config import direct_search
+else:
+    async def direct_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        return []
+
+if PARALLEL_SEARCH_AVAILABLE:
+    from .chat_config import parallel_search  
+else:
+    async def parallel_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        return []
+
+if ENHANCED_JAPANESE_SEARCH_AVAILABLE:
+    from .chat_config import enhanced_japanese_search
+else:
+    async def enhanced_japanese_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        return []
+
+if VECTOR_SEARCH_AVAILABLE:
+    from .chat_config import vector_search
+else:
+    async def vector_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        return []
 
 async def direct_search_system(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """

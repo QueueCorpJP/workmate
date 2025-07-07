@@ -116,16 +116,9 @@ def _check_upload_limits(user_id: str, db: Connection) -> Dict[str, Any]:
                     
                     logger.info(f"実際のユーザーID: {actual_user_id}, email: {user_email}, role: {user_role}")
                     
-                    # デフォルトの利用制限を設定
-                    is_admin = user_role == "admin" or user_email == "queue@queueu-tech.jp"
-                    limit_data = {
-                        "user_id": actual_user_id,
-                        "document_uploads_used": 0,
-                        "document_uploads_limit": 999999 if is_admin else 2,
-                        "questions_used": 0,
-                        "questions_limit": 999999 if is_admin else 10,
-                        "is_unlimited": is_admin
-                    }
+                    # 共通関数を使用してデフォルトの利用制限を設定
+                    from modules.utils import create_default_usage_limits
+                    limit_data = create_default_usage_limits(actual_user_id, user_email, user_role)
                 else:
                     logger.error(f"ユーザーID {user_id} に対応するユーザーが見つかりません")
                     raise Exception(f"ユーザーID {user_id} が存在しません")

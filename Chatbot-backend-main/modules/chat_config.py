@@ -41,31 +41,19 @@ def get_db_cursor():
         safe_print(f"データベースカーソル取得エラー: {e}")
         return None
 
-# 🔍 直接検索システムのインポート
-try:
-    from .direct_search import direct_search_function
-    DIRECT_SEARCH_AVAILABLE = True
-    direct_search = direct_search_function
-    safe_print("🔍 直接検索システムが利用可能です")
-except ImportError as e:
-    DIRECT_SEARCH_AVAILABLE = False
-    async def direct_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        safe_print("直接検索システムが利用できません")
-        return []
-    safe_print(f"⚠️ 直接検索システムが利用できません: {e}")
+# 🔍 直接検索システム（存在しないため無効化）
+DIRECT_SEARCH_AVAILABLE = False
+async def direct_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    safe_print("直接検索システムが利用できません")
+    return []
+safe_print("⚠️ 直接検索システムが利用できません: No module named 'modules.direct_search'")
 
-# ⚡ 並列検索システムのインポート
-try:
-    from .parallel_search import parallel_search_function
-    PARALLEL_SEARCH_AVAILABLE = True
-    parallel_search = parallel_search_function
-    safe_print("⚡ 並列検索システムが利用可能です")
-except ImportError as e:
-    PARALLEL_SEARCH_AVAILABLE = False
-    async def parallel_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        safe_print("並列検索システムが利用できません")
-        return []
-    safe_print(f"⚠️ 並列検索システムが利用できません: {e}")
+# ⚡ 並列検索システム（存在しないため無効化）
+PARALLEL_SEARCH_AVAILABLE = False
+async def parallel_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    safe_print("並列検索システムが利用できません")
+    return []
+safe_print("⚠️ 並列検索システムが利用できません: No module named 'modules.parallel_search'")
 
 # 🎯 完璧な検索システムのインポートを追加（最優先）
 try:
@@ -89,6 +77,9 @@ try:
         safe_print("⚠️ 日本語特化型検索システムの設定が不完全です")
 except ImportError as e:
     ENHANCED_JAPANESE_SEARCH_AVAILABLE = False
+    async def enhanced_japanese_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        safe_print("日本語特化型検索システムが利用できません")
+        return []
     safe_print(f"⚠️ 日本語特化型検索システムが利用できません: {e}")
 
 # 🎯 超高精度検索システムのインポートを追加（フォールバック用）

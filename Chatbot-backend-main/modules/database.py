@@ -347,7 +347,7 @@ class SupabaseCursor:
             
             # Supabase APIを呼び出す
             from supabase_adapter import update_data
-            result = update_data(self.table_name, data, match_column, match_value)
+            result = update_data(self.table_name, match_column, match_value, data)
             self.last_result = result.data
             
         # DELETEクエリの処理
@@ -693,12 +693,14 @@ def create_user(email: str, password: str, name: str, role: str = "user", compan
     questions_limit = 10
     uploads_limit = 2
     
-    if role == "admin" or email == "queue@queueu-tech.jp":
-        # adminロールまたは特別管理者は常に無制限
+    from .utils import create_default_usage_limits
+    
+    if email == "queue@queueu-tech.jp":
+        # 特別管理者は常に無制限
         is_unlimited = True
         questions_limit = 999999
         uploads_limit = 999999
-        print(f"管理者ロールのため本番版（無制限）を適用")
+        print(f"特別管理者のため本番版（無制限）を適用")
     elif creator_user_id:
         # 作成者がいる場合、作成者の利用制限を確認
         try:
@@ -839,8 +841,8 @@ def create_user(email: str, password: str, name: str, role: str = "user", compan
                         other_user_id = other_user.get("id")
                         other_role = other_user.get("role")
                         
-                        # adminロールは無視
-                        if other_role == "admin":
+                        # 特別管理者ロールは無視（存在しないadminロールの参照を削除）
+                        if other_user.get("email") == "queue@queueu-tech.jp":
                             continue
                         
                         # 他のユーザーの利用制限を確認
@@ -958,7 +960,7 @@ def update_usage_count(user_id: str, field: str, db: SupabaseConnection) -> dict
     new_value = old_value + 1
     print(f"{field}を{old_value}から{new_value}に更新")
     
-    update_data("usage_limits", {field: new_value}, "user_id", user_id)
+    update_data("usage_limits", "user_id", user_id, {field: new_value})
     
     # 更新後の値を取得
     updated_limits = get_usage_limits(user_id, db)
@@ -968,9 +970,9 @@ def update_usage_count(user_id: str, field: str, db: SupabaseConnection) -> dict
 
 def get_all_users(db: SupabaseConnection) -> list:
     """すべてのユーザーを取得します"""
-    # 管理者以外のユーザーを取得
+    # 全ユーザーを取得（存在しないadminロールの除外を削除）
     users_result = select_data("users")
-    users = [user for user in users_result.data if user.get("role") != "admin"]
+    users = users_result.data
     
     # 会社情報を取得して結合
     companies_result = select_data("companies")
@@ -1058,8 +1060,8 @@ def get_demo_usage_stats(db: SupabaseConnection, company_id: str = None) -> dict
                 if limit.get("questions_used", 0) > 0 and not limit.get("is_unlimited", False)
             ]
     
-    # 総ユーザー数（管理者以外）
-    total_users = len([user for user in filtered_users if user.get("role") != "admin"])
+    # 総ユーザー数（全ユーザー）
+    total_users = len(filtered_users)
     
     # アクティブユーザー数（一週間以内にチャットを使用したユーザー）
     # 管理者ユーザーも含める（実際に使用していればアクティブとみなす）
@@ -1103,7 +1105,7 @@ def update_company_id_by_email(company_id: str, user_email: str, db: SupabaseCon
         return False
     
     # 会社IDを更新
-    update_result = update_data("users", {"company_id": company_id}, "email", user_email)
+    update_result = update_data("users", "email", user_email, {"company_id": company_id})
     
     return len(update_result.data) > 0
 
@@ -1148,9 +1150,9 @@ def update_created_accounts_status(creator_user_id: str, new_is_unlimited: bool,
                 continue
                 
             try:
-                # 管理者ロールは常に本番版のため、スキップ
-                if child_role == "admin":
-                    print(f"管理者アカウントはスキップ: {child_email}")
+                # 特別管理者は常に本番版のため、スキップ
+                if child_email == "queue@queueu-tech.jp":
+                    print(f"特別管理者アカウントはスキップ: {child_email}")
                     continue
                 
                 # 子アカウントの現在の利用制限を取得
@@ -1189,7 +1191,7 @@ def update_created_accounts_status(creator_user_id: str, new_is_unlimited: bool,
                     "document_uploads_used": current_uploads_used
                 }
                 
-                update_result = update_data("usage_limits", update_data_payload, "user_id", child_user_id)
+                update_result = update_data("usage_limits", "user_id", child_user_id, update_data_payload)
                 
                 if update_result:
                     updated_count += 1
@@ -1353,13 +1355,13 @@ def update_company_users_status(user_id: str, new_is_unlimited: bool, db: Supaba
                         print(f"アップロード使用数を {current_uploads_used} → {adjusted_uploads_used} に調整")
                 
                 # 利用制限を更新
-                update_result = update_data("usage_limits", {
+                update_result = update_data("usage_limits", "user_id", company_user_id, {
                     "is_unlimited": new_is_unlimited,
                     "questions_limit": new_questions_limit,
                     "questions_used": adjusted_questions_used,
                     "document_uploads_limit": new_uploads_limit,
                     "document_uploads_used": adjusted_uploads_used
-                }, "user_id", company_user_id)
+                })
                 
                 if update_result:
                     updated_count += 1
@@ -1400,8 +1402,8 @@ def fix_company_status_inconsistency(company_id: str, db: SupabaseConnection = N
             print("会社のユーザーが見つかりません")
             return 0
         
-        # adminロール以外のユーザーを取得
-        non_admin_users = [user for user in company_users_result.data if user.get("role") != "admin"]
+        # 全ユーザーを取得（特別管理者は除外）
+        non_admin_users = [user for user in company_users_result.data if user.get("email") != "queue@queueu-tech.jp"]
         
         if not non_admin_users:
             print("修正対象のユーザーがいません")
@@ -1467,13 +1469,13 @@ def fix_company_status_inconsistency(company_id: str, db: SupabaseConnection = N
                         current_uploads_used = new_uploads_limit
                 
                 # ステータスを更新
-                update_result = update_data("usage_limits", {
+                update_result = update_data("usage_limits", "user_id", user_id, {
                     "is_unlimited": target_status,
                     "questions_limit": new_questions_limit,
                     "questions_used": current_questions_used,
                     "document_uploads_limit": new_uploads_limit,
                     "document_uploads_used": current_uploads_used
-                }, "user_id", user_id)
+                })
                 
                 if update_result:
                     fixed_count += 1
@@ -1539,26 +1541,8 @@ def ensure_usage_limits_integrity(db: SupabaseConnection = None) -> int:
             try:
                 print(f"--- {user_email} ({user_name}) のusage_limitsレコード作成 ---")
                 
-                # デフォルトの利用制限を設定
-                if user_role == "admin" or user_email == "queue@queueu-tech.jp":
-                    # 管理者は無制限
-                    is_unlimited = True
-                    questions_limit = 999999
-                    uploads_limit = 999999
-                else:
-                    # 一般ユーザーはデモ版
-                    is_unlimited = False
-                    questions_limit = 10
-                    uploads_limit = 2
-                
-                limit_data = {
-                    "user_id": user_id,
-                    "document_uploads_used": 0,
-                    "document_uploads_limit": uploads_limit,
-                    "questions_used": 0,
-                    "questions_limit": questions_limit,
-                    "is_unlimited": is_unlimited
-                }
+                # 共通関数を使用してデフォルトの利用制限を設定
+                limit_data = create_default_usage_limits(user_id, user_email, user_role)
                 
                 insert_result = insert_data("usage_limits", limit_data)
                 if insert_result:
@@ -1812,7 +1796,7 @@ def update_application_status(application_id: str, status: str, processed_by: st
         if notes:
             update_dict["notes"] = notes
         
-        result = update_data("applications", update_dict, {"id": application_id})
+        result = update_data("applications", "id", application_id, update_dict)
         
         if result and result.data:
             print(f"申請 {application_id} のステータスを {status} に更新しました")

@@ -37,6 +37,7 @@ import NotificationsIcon from "@mui/icons-material/Notifications";
 import api from "../../api";
 import { withCache } from "../../utils/cache";
 import { useAuth } from "../../contexts/AuthContext";
+import usePermissions from "../../utils/usePermissions";
 
 // Import tab components
 import ChatHistoryTab from "./ChatHistoryTab";
@@ -63,8 +64,8 @@ import {
 const AdminPanel: React.FC = () => {
   // 認証コンテキストを使用
   const { user } = useAuth();
+  const permissions = usePermissions(user);
   const isUserRole = user?.role === "user";
-  const isQueueTechAdmin = user?.email === "queue@queueu-tech.jp";
 
   // Tab state
   const [tabValue, setTabValue] = useState(0);
@@ -160,13 +161,9 @@ const AdminPanel: React.FC = () => {
   useEffect(() => {
     console.log("Admin Panel mounted");
 
-    // 特別な管理者またはadminロールかどうかを確認
-    const storedUser = localStorage.getItem("user");
-    if (storedUser) {
-      const user = JSON.parse(storedUser);
-      if (user && (user.email === "queue@queuefood.co.jp" || user.email === "queue@queueu-tech.jp" || user.role === "admin")) {
-        setIsSpecialAdmin(true);
-      }
+    // 特別な管理者かどうかを確認（admin ロールは存在しないため削除）
+    if (permissions.is_special_admin) {
+      setIsSpecialAdmin(true);
     }
 
     // 初期データは最初のタブ（チャット履歴）のみ読み込み
@@ -894,7 +891,7 @@ const AdminPanel: React.FC = () => {
       label: "料金管理",
       ariaLabel: "料金管理タブ",
     },
-    ...(isQueueTechAdmin
+    ...(permissions.is_special_admin
       ? [
         {
           icon: <QueryStatsIcon sx={{ color: "#3b82f6" }} />,
@@ -917,7 +914,7 @@ const AdminPanel: React.FC = () => {
 
   // タブが変更されたときの実際のインデックスを計算する関数
   const getActualTabIndex = (visibleIndex: number) => {
-    if (!isQueueTechAdmin && visibleIndex >= 6) {
+    if (!permissions.is_special_admin && visibleIndex >= 6) {
       return visibleIndex + 2; // デモ統計タブと通知管理タブがスキップされるので+2する
     }
     return visibleIndex;
@@ -968,7 +965,7 @@ const AdminPanel: React.FC = () => {
         // 料金管理は内部で自動読み込みするため何もしない
         break;
       case 6: // デモ統計 (queue@queueu-tech.jpのみ)
-        if (isQueueTechAdmin && (!demoStats || Object.keys(demoStats).length === 0)) {
+        if (permissions.is_special_admin && (!demoStats || Object.keys(demoStats).length === 0)) {
           fetchDemoStats();
         }
         break;
@@ -1407,7 +1404,7 @@ const AdminPanel: React.FC = () => {
               )}
 
               {/* デモ統計タブ - queue@queueu-tech.jpのみ表示 */}
-              {isQueueTechAdmin && getActualTabIndex(tabValue) === 6 && (
+              {permissions.is_special_admin && getActualTabIndex(tabValue) === 6 && (
                 <DemoStatsTab
                   demoStats={demoStats}
                   isLoading={isDemoStatsLoading}
@@ -1418,12 +1415,12 @@ const AdminPanel: React.FC = () => {
               )}
 
               {/* 通知管理タブ - queue@queueu-tech.jpのみ表示 */}
-              {isQueueTechAdmin && getActualTabIndex(tabValue) === 7 && (
+              {permissions.is_special_admin && getActualTabIndex(tabValue) === 7 && (
                 <NotificationManagementTab />
               )}
 
               {/* ユーザー管理タブ */}
-              {tabValue === (isQueueTechAdmin ? 8 : 6) && (
+              {tabValue === (permissions.is_special_admin ? 8 : 6) && (
                 <UserManagementTab
                   isSpecialAdmin={isSpecialAdmin}
                   newUserEmail={newUserEmail}

@@ -186,4 +186,17 @@ def validate_password_input(password: str) -> Tuple[bool, List[str]]:
     """
     is_valid, error_msg = validate_password(password)
     # validate_password は単一メッセージを返すため、リストに変換して統一
+    return is_valid, ([] if is_valid else [error_msg])
+
+def validate_email_input(email: str) -> Tuple[bool, List[str]]:
+    """
+    メールアドレス入力専用のバリデーション関数
+    validate_email の戻り値を (bool, List[str]) 形式に変換して返します。
+    Args:
+        email (str): 検証対象のメールアドレス
+    Returns:
+        Tuple[bool, List[str]]: (有効かどうか, エラーメッセージのリスト)
+    """
+    is_valid, error_msg = validate_email(email)
+    # validate_email は単一メッセージを返すため、リストに変換して統一
     return is_valid, ([] if is_valid else [error_msg]) 

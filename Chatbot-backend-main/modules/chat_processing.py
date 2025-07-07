@@ -16,6 +16,8 @@ from .chat_conversation import (
     should_use_rag_search, extract_search_query
 )
 from .chat_rag import adaptive_rag_search, contextual_rag_search, format_search_results
+from .comprehensive_search_system import comprehensive_search, initialize_comprehensive_search
+from .chat_rag_enhanced import enhanced_rag_search, enhanced_format_search_results
 from .chat_utils import safe_safe_print
 
 # 使用量追跡用のグローバル変数
@@ -211,14 +213,50 @@ async def process_chat_message(
                         context_parts.append(f"アシスタント: {entry['assistant']}")
                 context = "\n".join(context_parts)
             
-            # RAG検索を実行
-            if context:
-                search_results = await contextual_rag_search(search_query, context, limit=10)
-            else:
-                search_results = await adaptive_rag_search(search_query, limit=10)
+            # RAG検索を実行（拡張RAGシステムを使用）
+            try:
+                # 拡張RAGシステムを最優先で実行（PDF後半情報、動的LIMIT、文書多様性）
+                search_results = await enhanced_rag_search(
+                    query=search_query,
+                    context=context,
+                    company_id=None,  # 後で会社IDフィルタを追加可能
+                    adaptive_limits=True  # クエリ複雑さに応じた動的LIMIT調整
+                )
+                
+                if search_results:
+                    safe_print(f"拡張RAG検索成功: {len(search_results)}件の高品質結果を取得")
+                else:
+                    # フォールバック1: 包括的検索システム
+                    safe_print("拡張RAG検索で結果なし、包括的検索を試行")
+                    search_results = await comprehensive_search(
+                        search_query, 
+                        company_id=None,
+                        initial_limit=40,
+                        final_limit=12
+                    )
+                    
+                    if not search_results:
+                        # フォールバック2: 従来の検索システム
+                        safe_print("包括的検索でも結果なし、従来検索を実行")
+                        if context:
+                            search_results = await contextual_rag_search(search_query, context, limit=12)
+                        else:
+                            search_results = await adaptive_rag_search(search_query, limit=12)
+                        
+            except Exception as e:
+                safe_print(f"拡張RAG検索エラー: {e}、フォールバック検索を実行")
+                # フォールバック: 従来の検索システム
+                if context:
+                    search_results = await contextual_rag_search(search_query, context, limit=12)
+                else:
+                    search_results = await adaptive_rag_search(search_query, limit=12)
             
-            # 検索結果をフォーマット
-            formatted_results = format_search_results(search_results, max_length=2000)
+            # 検索結果をフォーマット（拡張版を使用）
+            try:
+                formatted_results = enhanced_format_search_results(search_results, max_length=3000)
+            except Exception as e:
+                safe_print(f"拡張フォーマットエラー: {e}、標準フォーマットを使用")
+                formatted_results = format_search_results(search_results, max_length=2000)
             
             # Geminiで応答を生成
             response = await generate_response_with_context(

@@ -67,8 +67,6 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                 ? "社長"
                 : employee.role === "user"
                 ? "管理者"
-                : employee.role === "admin"
-                ? "管理者"
                 : "社員"
             }
             size="small"
@@ -76,8 +74,6 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
               employee.role === "admin_user"
                 ? "warning"
                 : employee.role === "user"
-                ? "primary"
-                : employee.role === "admin"
                 ? "primary"
                 : "secondary"
             }

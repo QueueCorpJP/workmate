@@ -195,8 +195,11 @@ async def get_documents(
         if not company_id:
             raise HTTPException(status_code=400, detail="会社情報が見つかりません")
         
-        # 管理者は全ドキュメント、一般ユーザーは自分のドキュメントのみ
-        uploaded_by_filter = None if user_role == "admin" else user_id
+        # 特別管理者は全ドキュメント、一般ユーザーは自分のドキュメントのみ
+        from .utils import get_permission_flags
+        permissions = get_permission_flags(current_user)
+        is_special_admin = permissions["is_special_admin"]
+        uploaded_by_filter = None if is_special_admin else user_id
         
         # ドキュメント一覧取得
         resources_result = await get_uploaded_resources_by_company_id(
@@ -250,9 +253,12 @@ async def delete_document(
     """
     try:
         user_role = current_user.get("role", "user")
+        from .utils import get_permission_flags
+        permissions = get_permission_flags(current_user)
+        is_special_admin = permissions["is_special_admin"]
         
-        # 管理者のみ削除可能
-        if user_role != "admin":
+        # 特別管理者またはadmin_userのみ削除可能
+        if not (is_special_admin or user_role == "admin_user"):
             raise HTTPException(status_code=403, detail="ドキュメントの削除は管理者のみ可能です")
         
         # ドキュメント削除実行
@@ -299,9 +305,12 @@ async def toggle_document_active(
     """
     try:
         user_role = current_user.get("role", "user")
+        from .utils import get_permission_flags
+        permissions = get_permission_flags(current_user)
+        is_special_admin = permissions["is_special_admin"]
         
-        # 管理者のみ切り替え可能
-        if user_role != "admin":
+        # 特別管理者またはadmin_userのみ切り替え可能
+        if not (is_special_admin or user_role == "admin_user"):
             raise HTTPException(status_code=403, detail="ドキュメントの状態変更は管理者のみ可能です")
         
         # document_sourcesテーブルの状態切り替え
