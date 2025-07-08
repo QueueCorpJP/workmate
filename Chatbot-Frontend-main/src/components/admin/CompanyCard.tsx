@@ -134,7 +134,7 @@ const CompanyCard: React.FC<CompanyCardProps> = ({
             作成日
           </Typography>
           <Typography variant="body2" sx={{ fontWeight: 500 }}>
-            {new Date(companyData.primaryAdmin.created_at).toLocaleDateString('ja-JP')}
+            {new Date(companyData.primaryAdmin.created_at).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' })}
           </Typography>
         </Box>
         

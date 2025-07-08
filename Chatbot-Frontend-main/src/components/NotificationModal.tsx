@@ -83,7 +83,7 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
     if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}時間前`;
     if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 86400)}日前`;
     
-    return date.toLocaleDateString('ja-JP');
+    return date.toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' });
   };
 
   if (!isOpen) return null;

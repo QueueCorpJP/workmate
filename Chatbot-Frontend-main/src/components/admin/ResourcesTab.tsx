@@ -579,6 +579,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
                   <TableCell>
                     {resource.timestamp
                       ? new Date(resource.timestamp).toLocaleString("ja-JP", {
+                              timeZone: "Asia/Tokyo",
                         year: "numeric",
                         month: "2-digit",
                         day: "2-digit",

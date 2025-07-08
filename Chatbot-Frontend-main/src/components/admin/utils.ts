@@ -19,6 +19,42 @@ export const formatDate = (dateString: string): string => {
 };
 
 /**
+ * Format a date string to Japanese date format (YYYY/MM/DD) in JST
+ * @param dateString - The date string to format (assumed to be UTC)
+ * @returns Formatted date string in Japan time (date only)
+ */
+export const formatDateOnly = (dateString: string): string => {
+  if (!dateString) return '情報なし';
+
+  const date = new Date(dateString);
+  return new Intl.DateTimeFormat('ja-JP', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Asia/Tokyo'
+  }).format(date);
+};
+
+/**
+ * Format a date string to Japanese datetime format with custom options in JST
+ * @param dateString - The date string to format (assumed to be UTC)
+ * @param options - Additional formatting options
+ * @returns Formatted date string in Japan time
+ */
+export const formatDateCustom = (
+  dateString: string, 
+  options: Intl.DateTimeFormatOptions = {}
+): string => {
+  if (!dateString) return '情報なし';
+
+  const date = new Date(dateString);
+  return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    ...options
+  }).format(date);
+};
+
+/**
  * Generate chart data for category distribution with enhanced styling
  * @param categories - Object with category names as keys and counts as values
  * @param colors - Array of color strings

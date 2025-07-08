@@ -357,7 +357,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
     console.log("📈 [CHART] last30Days:", last30Days);
     
     const chartData = {
-      labels: last30Days.map(d => new Date(d.date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })),
+      labels: last30Days.map(d => new Date(d.date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric', timeZone: 'Asia/Tokyo' })),
       datasets: [
         {
           label: 'アクティブユーザー数',

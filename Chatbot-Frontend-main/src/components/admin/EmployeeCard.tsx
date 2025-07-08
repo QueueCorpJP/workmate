@@ -86,7 +86,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
             作成日
           </Typography>
           <Typography variant="body2" sx={{ fontWeight: 500 }}>
-            {new Date(employee.created_at).toLocaleDateString('ja-JP')}
+            {new Date(employee.created_at).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' })}
           </Typography>
         </Box>
 

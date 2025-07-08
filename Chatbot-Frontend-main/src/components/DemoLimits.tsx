@@ -252,7 +252,7 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
                            }
                            secondary={
                              <Typography variant="caption" color="text.secondary">
-                               {new Date(item.changed_at).toLocaleString("ja-JP")}
+                               {new Date(item.changed_at).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}
                              </Typography>
                            }
                          />
@@ -842,7 +842,7 @@ const DemoLimits: React.FC<DemoLimitsProps> = ({
                     }
                     secondary={
                       <Typography variant="caption" color="text.secondary">
-                        {new Date(item.changed_at).toLocaleString("ja-JP")}
+                        {new Date(item.changed_at).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}
                       </Typography>
                     }
                   />

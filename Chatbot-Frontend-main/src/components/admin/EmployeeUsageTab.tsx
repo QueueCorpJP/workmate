@@ -46,7 +46,7 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import { EmployeeUsageItem, CompanyEmployee, categoryColors } from "./types";
 import LoadingIndicator from "./LoadingIndicator";
 import EmptyState from "./EmptyState";
-import { formatDate } from "./utils";
+import { formatDate, formatDateOnly } from "./utils";
 import EmployeeDetailsDialog from "./EmployeeDetailsDialog";
 import api from "../../api";
 import { validateEmail, validatePassword, getPasswordStrength } from "../../utils/validation";
@@ -387,7 +387,7 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                       作成日
                     </Typography>
                     <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      {new Date(companyData.primaryAdmin.created_at).toLocaleDateString('ja-JP')}
+                      {formatDateOnly(companyData.primaryAdmin.created_at)}
                     </Typography>
                   </Box>
                   
@@ -1462,14 +1462,14 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                   <Typography variant="caption" color="pink.main">作成日:</Typography>
                                   <Typography variant="caption" sx={{ fontWeight: 500 }}>
-                                    {new Date(admin.created_at).toLocaleDateString('ja-JP')}
+                                    {formatDateOnly(admin.created_at)}
                                   </Typography>
                                 </Box>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                   <Typography variant="caption" color="pink.main">最終利用:</Typography>
                                   <Typography variant="caption" sx={{ fontWeight: 500 }}>
                                     {admin.last_activity 
-                                      ? new Date(admin.last_activity).toLocaleDateString('ja-JP')
+                                      ? formatDateOnly(admin.last_activity)
                                       : '活動なし'}
                                   </Typography>
                                 </Box>
@@ -1569,14 +1569,14 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                               <Typography variant="caption" color="pink.main">作成日:</Typography>
                               <Typography variant="caption" sx={{ fontWeight: 500 }}>
-                                {new Date(employee.created_at).toLocaleDateString('ja-JP')}
+                                {formatDateOnly(employee.created_at)}
                               </Typography>
                             </Box>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                               <Typography variant="caption" color="pink.main">最終利用:</Typography>
                               <Typography variant="caption" sx={{ fontWeight: 500 }}>
                                 {employee.last_activity 
-                                  ? new Date(employee.last_activity).toLocaleDateString('ja-JP')
+                                  ? formatDateOnly(employee.last_activity)
                                   : '活動なし'}
                               </Typography>
                             </Box>

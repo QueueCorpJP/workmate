@@ -325,7 +325,7 @@ const NotificationManagementTab: React.FC<NotificationManagementTabProps> = ({
                             {notification.content}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            {new Date(notification.created_at).toLocaleString('ja-JP')}
+                            {new Date(notification.created_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}
                           </Typography>
                         </Box>
                         <IconButton
