@@ -130,6 +130,14 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
   // 特別管理者チェック（permissions.is_special_adminを使用）
   const isQueueTechAdmin = permissions.is_special_admin;
   
+  // 運営者アカウントのリスト
+  const SPECIAL_ADMIN_EMAILS = ["queue@queuefood.co.jp", "queue@queueu-tech.jp"];
+  
+  // 運営者アカウントかどうかをチェックする関数
+  const isSpecialAdminAccount = (email: string) => {
+    return SPECIAL_ADMIN_EMAILS.includes(email);
+  };
+  
 
   
   const [emailError, setEmailError] = useState<string>("");
@@ -199,8 +207,8 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
     const companyGroups = new Map<string, CompanyEmployee[]>();
     
     companyEmployees.forEach(employee => {
-      // queue@queueu-tech.jpは除外
-      if (employee.email === "queue@queueu-tech.jp") return;
+      // 全ての運営者アカウントを除外
+      if (isSpecialAdminAccount(employee.email)) return;
       
       // コンパニーIDを使用（company_idがない場合はメールアドレスのドメインをフォールバック）
       const companyIdentifier = employee.company_id || employee.email.split('@')[1];
@@ -792,7 +800,7 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                 </TableRow>
               </TableHead>
               <TableBody>
-                {companyEmployees.map((employee) => (
+                {companyEmployees.filter(employee => isQueueTechAdmin || !isSpecialAdminAccount(employee.email)).map((employee) => (
                   <TableRow
                     key={employee.id}
                     hover
@@ -842,7 +850,7 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                     <TableCell>
                       <Chip
                         label={
-                          employee.email === "queue@queueu-tech.jp"
+                          isSpecialAdminAccount(employee.email)
                             ? "運営者"
                             : employee.role === "admin_user"
                             ? "社長"
@@ -856,7 +864,7 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                         }
                         size="small"
                         color={
-                          employee.email === "queue@queueu-tech.jp"
+                          isSpecialAdminAccount(employee.email)
                             ? "error"
                             : employee.role === "admin_user"
                             ? "warning"
