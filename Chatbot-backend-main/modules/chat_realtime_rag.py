@@ -133,6 +133,25 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
             from .chat_conversation import detect_conversation_intent
             intent_info = detect_conversation_intent(message_text)
             casual_response = await generate_casual_response(message_text, intent_info)
+
+            # チャット履歴を保存
+            try:
+                from modules.chat_processing import save_chat_history
+                category = intent_info.get('intent_type', 'casual_chat')
+                await save_chat_history(
+                    user_id=user_id or "anonymous",
+                    user_message=message_text,
+                    bot_response=casual_response,
+                    company_id=company_id,
+                    employee_id=user_id,
+                    employee_name=current_user.get("name") if current_user else None,
+                    category=category,
+                    sentiment="neutral",
+                    model_name="casual"
+                )
+            except Exception as e:
+                safe_print(f"⚠️ Casual chat history save error: {e}")
+
             return ChatResponse(
                 response=casual_response,
                 sources=[]
