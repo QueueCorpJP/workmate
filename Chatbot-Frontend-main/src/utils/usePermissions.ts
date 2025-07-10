@@ -34,9 +34,8 @@ export const usePermissions = (user: User | null): PermissionFlags => {
 
     // 特別管理者の判定
     const is_special_admin = Boolean(
-      user.email && 
-      ["queue@queuefood.co.jp", "queue@queueu-tech.jp"].includes(user.email) &&
-      user.is_special_admin
+      user.email &&
+      ["queue@queuefood.co.jp", "queue@queueu-tech.jp"].includes(user.email)
     );
 
     // admin_userロールの判定

@@ -96,6 +96,7 @@ export const categoryColors = [
 export const sentimentColors: Record<string, string> = {
   ポジティブ: "rgba(75, 192, 192, 0.6)",
   ネガティブ: "rgba(255, 99, 132, 0.6)",
+  通常: "rgba(255, 206, 86, 0.6)",
   ニュートラル: "rgba(255, 206, 86, 0.6)",
   neutral: "rgba(255, 206, 86, 0.6)",
 };

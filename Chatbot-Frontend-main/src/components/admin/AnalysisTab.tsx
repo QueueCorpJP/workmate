@@ -312,7 +312,12 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({
       return null;
     }
 
-    const top10Resources = resources.slice(0, 10);
+    const filteredResources = resources.filter(r => {
+      const name = (r.name || '').toString().toLowerCase();
+      return name !== 'unknown';
+    });
+
+    const top10Resources = filteredResources.slice(0, 10);
     console.log("📊 [CHART] top10Resources:", top10Resources);
     
     // 参照回数の合計をチェック

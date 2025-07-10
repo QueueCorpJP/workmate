@@ -64,7 +64,7 @@ const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({
         return {
           icon: <SentimentNeutralIcon fontSize="small" />,
           color: theme.palette.warning.main,
-          label: "中立",
+          label: "通常",
           bgColor: theme.palette.warning.light + "30", // Using alpha on hex
         };
     }
@@ -201,7 +201,7 @@ const ChatHistoryTab: React.FC<ChatHistoryTabProps> = ({
                   >
                     <MarkdownRenderer content={chat.bot_response} />
                   </TableCell>
-                  <TableCell>{chat.sentiment || "neutral"}</TableCell>
+                  <TableCell>{getSentimentInfo(chat.sentiment).label}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

@@ -268,16 +268,27 @@ const EmployeeDetailsDialog: React.FC<EmployeeDetailsDialogProps> = ({
                           fontSize: '0.75rem'
                         }}
                       />
-                      <Chip
-                        label={chat.sentiment || 'neutral'}
-                        size="small"
-                        sx={{
-                          bgcolor: sentimentColors[chat.sentiment as keyof typeof sentimentColors] || sentimentColors.neutral,
-                          color: 'white',
-                          fontWeight: 500,
-                          fontSize: '0.75rem'
-                        }}
-                      />
+                      {(() => {
+                        const sentiment = chat.sentiment?.toLowerCase() || 'neutral';
+                        const labelMap: Record<string, string> = {
+                          positive: 'ポジティブ',
+                          negative: 'ネガティブ',
+                          neutral: '通常'
+                        };
+                        const jpLabel = labelMap[sentiment] || sentiment;
+                        return (
+                          <Chip
+                            label={jpLabel}
+                            size="small"
+                            sx={{
+                              bgcolor: sentimentColors[jpLabel as keyof typeof sentimentColors] || sentimentColors.neutral,
+                              color: 'white',
+                              fontWeight: 500,
+                              fontSize: '0.75rem'
+                            }}
+                          />
+                        );
+                      })()}
                       <Typography variant="caption" color="pink.main" sx={{ fontWeight: 500 }}>
                         {formatDate(chat.timestamp)}
                       </Typography>
