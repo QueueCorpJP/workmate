@@ -6,6 +6,17 @@
       "env": {
         "PLAYWRIGHT_BROWSERS_PATH": "./node_modules/.bin/playwright"
       }
+    },
+    "supabase": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--access-token",
+        "sbp_acffe46818d78a5691b3c64a805cd8b4b1ec2b44"
+      ]
     }
   }
 }

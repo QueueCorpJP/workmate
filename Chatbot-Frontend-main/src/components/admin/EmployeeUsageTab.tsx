@@ -757,18 +757,18 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                     役割
                   </TableCell>
                   {permissions.is_special_admin && (
-                    <TableCell
-                      sx={{ fontWeight: "bold", color: "primary.contrastText" }}
-                    >
-                      デモ版
-                    </TableCell>
+                      <TableCell
+                        sx={{ fontWeight: "bold", color: "primary.contrastText" }}
+                      >
+                        デモ版
+                      </TableCell>
                   )}
                   {permissions.can_create && (
-                    <TableCell
-                      sx={{ fontWeight: "bold", color: "primary.contrastText" }}
-                    >
-                      プラン履歴
-                    </TableCell>
+                      <TableCell
+                        sx={{ fontWeight: "bold", color: "primary.contrastText" }}
+                      >
+                        プラン履歴
+                      </TableCell>
                   )}
                   <TableCell
                     sx={{ fontWeight: "bold", color: "primary.contrastText" }}
@@ -880,59 +880,59 @@ const EmployeeUsageTab: React.FC<EmployeeUsageTabProps> = ({
                       />
                     </TableCell>
                     {permissions.is_special_admin && (
-                      <TableCell>
-                        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <Tooltip title={`クリックで${!employee.usage_limits?.is_unlimited ? '本番版' : 'デモ版'}に切り替え`}>
-                            <span>
-                              <Checkbox
-                                checked={!employee.usage_limits?.is_unlimited}
-                                onChange={() => handleToggleDemo(employee)}
-                                size="small"
-                                sx={{
-                                  color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
-                                  '&.Mui-checked': {
+                        <TableCell>
+                          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <Tooltip title={`クリックで${!employee.usage_limits?.is_unlimited ? '本番版' : 'デモ版'}に切り替え`}>
+                              <span>
+                                <Checkbox
+                                  checked={!employee.usage_limits?.is_unlimited}
+                                  onChange={() => handleToggleDemo(employee)}
+                                  size="small"
+                                  sx={{
                                     color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
-                                  }
-                                }}
-                              />
-                            </span>
-                          </Tooltip>
-                          <Typography 
-                            variant="caption" 
-                            sx={{ 
-                              ml: 0.5, 
-                              color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
-                              fontWeight: 500
-                            }}
-                          >
-                            {!employee.usage_limits?.is_unlimited ? "デモ版" : "本番版"}
-                          </Typography>
-                        </Box>
-                      </TableCell>
-                    )}
-                    {permissions.can_create && (
-                      <TableCell>
-                        <Tooltip title="プラン変更履歴を表示">
-                          <span>
-                            <IconButton
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenPlanHistory(employee);
-                              }}
-                              sx={{
-                                color: "primary.main",
-                                "&:hover": {
-                                  bgcolor: "primary.light",
-                                  color: "primary.dark",
-                                },
+                                    '&.Mui-checked': {
+                                      color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
+                                    }
+                                  }}
+                                />
+                              </span>
+                            </Tooltip>
+                            <Typography 
+                              variant="caption" 
+                              sx={{ 
+                                ml: 0.5, 
+                                color: !employee.usage_limits?.is_unlimited ? "warning.main" : "success.main",
+                                fontWeight: 500
                               }}
                             >
-                              <TimelineIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                      </TableCell>
+                              {!employee.usage_limits?.is_unlimited ? "デモ版" : "本番版"}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                    )}
+                    {permissions.can_create && (
+                        <TableCell>
+                          <Tooltip title="プラン変更履歴を表示">
+                            <span>
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenPlanHistory(employee);
+                                }}
+                                sx={{
+                                  color: "primary.main",
+                                  "&:hover": {
+                                    bgcolor: "primary.light",
+                                    color: "primary.dark",
+                                  },
+                                }}
+                              >
+                                <TimelineIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </TableCell>
                     )}
                     <TableCell>{formatDate(employee.created_at)}</TableCell>
                     <TableCell>{employee.message_count}</TableCell>

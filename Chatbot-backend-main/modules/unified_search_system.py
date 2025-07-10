@@ -261,10 +261,8 @@ class UnifiedSearchSystem:
                     safe_print(f"キャッシュから結果を取得: {len(cached_results)}件")
                     return cached_results[:limit]
             
-            # 複数の検索手法を並列実行
+            # エンベディング検索のみを使用
             search_tasks = [
-                self._exact_match_search(query, company_id, limit),
-                self._fuzzy_search(query, company_id, limit),
                 self._vector_search(query, company_id, limit)
             ]
             
@@ -283,7 +281,7 @@ class UnifiedSearchSystem:
             # 重複を除去
             unique_results = self._deduplicate_results(all_results)
             
-            # スコアを正規化
+            # スコアを正規化（エンベディング検索のみ）
             normalized_results = await self._normalize_all_scores(unique_results, company_id)
             
             # LLM rerankを実行
@@ -303,7 +301,7 @@ class UnifiedSearchSystem:
             
             # パフォーマンスログを記録
             execution_time = int((time.time() - start_time) * 1000)
-            await self._log_performance(query, ["exact_match", "fuzzy_search", "vector_search", "llm_rerank"], 
+            await self._log_performance(query, ["vector_search", "llm_rerank"], 
                                       company_id, execution_time, len(final_results))
             
             safe_print(f"統合検索完了: {len(final_results)}件の結果を{execution_time}msで取得")

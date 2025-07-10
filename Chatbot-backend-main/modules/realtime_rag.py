@@ -32,9 +32,9 @@ class RealtimeRAGProcessor:
     
     def __init__(self):
         """初期化"""
-        self.use_vertex_ai = os.getenv("USE_VERTEX_AI", "true").lower() == "true"
-        self.embedding_model = os.getenv("EMBEDDING_MODEL", "text-multilingual-embedding-002")  # Vertex AI text-multilingual-embedding-002を使用（768次元）
-        self.expected_dimensions = 768 if "text-multilingual-embedding-002" in self.embedding_model else 3072
+        self.use_vertex_ai = False  # Vertex AIを無効化
+        self.embedding_model = "gemini-embedding-exp-03-07"  # Geminiエンベディングモデルを使用
+        self.expected_dimensions = 3072  # 実際のデータに合わせて3072次元に変更
         
         # API キーの設定
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
@@ -49,29 +49,22 @@ class RealtimeRAGProcessor:
         genai.configure(api_key=self.api_key)
         self.chat_client = genai.GenerativeModel(self.chat_model)
         
-        # Vertex AI Embeddingクライアントの初期化（埋め込み用）
-        if self.use_vertex_ai:
-            from .vertex_ai_embedding import get_vertex_ai_embedding_client, vertex_ai_embedding_available
-            if vertex_ai_embedding_available():
-                self.vertex_client = get_vertex_ai_embedding_client()
-                logger.info(f"✅ Vertex AI Embedding初期化: {self.embedding_model} ({self.expected_dimensions}次元)")
-            else:
-                logger.error("❌ Vertex AI Embeddingが利用できません")
-                raise ValueError("Vertex AI Embeddingの初期化に失敗しました")
-        else:
-            self.vertex_client = None
-        
-        # 🧠 Gemini質問分析システムの初期化
-        self.gemini_analyzer = None
+        # Gemini Embeddingクライアントの初期化（埋め込み用）
         try:
-            from .gemini_question_analyzer import get_gemini_question_analyzer
-            self.gemini_analyzer = get_gemini_question_analyzer()
-            if self.gemini_analyzer:
-                logger.info("✅ Gemini質問分析システム統合完了")
+            from .multi_api_embedding import get_multi_api_embedding_client, multi_api_embedding_available
+            if multi_api_embedding_available():
+                self.embedding_client = get_multi_api_embedding_client()
+                logger.info(f"✅ Embedding Client初期化: {self.embedding_model} ({self.expected_dimensions}次元)")
             else:
-                logger.warning("⚠️ Gemini質問分析システムが利用できません（従来方式にフォールバック）")
-        except ImportError as e:
-            logger.warning(f"⚠️ Gemini質問分析システムのインポートに失敗: {e}")
+                logger.error("❌ Embedding Clientが利用できません")
+                raise ValueError("Embedding Clientの初期化に失敗しました")
+        except ImportError:
+            logger.error("❌ multi_api_embedding モジュールが見つかりません")
+            raise ValueError("Embedding Clientの初期化に失敗しました")
+        
+        # 🧠 Gemini質問分析システムを無効化（エンベディング検索のみ使用）
+        self.gemini_analyzer = None
+        logger.info("✅ エンベディング検索のみを使用（Gemini質問分析システムは無効化）")
         
         logger.info(f"✅ リアルタイムRAGプロセッサ初期化完了: エンベディング={self.embedding_model} ({self.expected_dimensions}次元)")
     
@@ -118,47 +111,25 @@ class RealtimeRAGProcessor:
     async def step2_generate_embedding(self, question: str) -> List[float]:
         """
         🧠 Step 2. embedding 生成
-        Vertex AI text-multilingual-embedding-002 を使って、質問文をベクトルに変換（768次元）
+        Gemini embedding-exp-03-07 を使って、質問文をベクトルに変換（768次元）
         """
         logger.info(f"🧠 Step 2: エンベディング生成中...")
         
         try:
-            if self.use_vertex_ai and self.vertex_client:
-                # Vertex AI使用
-                embedding_vector = self.vertex_client.generate_embedding(question)
+            # gemini-embedding-exp-03-07モデルで3072次元を生成
+            embedding_vector = await self.embedding_client.generate_embedding(
+                question
+            )
+            
+            if embedding_vector and len(embedding_vector) > 0:
+                # 次元数チェック
+                if len(embedding_vector) != self.expected_dimensions:
+                    logger.warning(f"予期しない次元数: {len(embedding_vector)}次元（期待値: {self.expected_dimensions}次元）")
                 
-                if embedding_vector and len(embedding_vector) > 0:
-                    # 次元数チェック
-                    if len(embedding_vector) != self.expected_dimensions:
-                        logger.warning(f"予期しない次元数: {len(embedding_vector)}次元（期待値: {self.expected_dimensions}次元）")
-                    
-                    logger.info(f"✅ Step 2完了: {len(embedding_vector)}次元のエンベディング生成成功")
-                    return embedding_vector
-                else:
-                    raise ValueError("Vertex AI エンベディング生成に失敗しました")
-            else:
-                # フォールバック: Gemini API使用（非推奨）
-                logger.warning("⚠️ Vertex AIが利用できないため、Gemini APIを使用")
-                response = genai.embed_content(
-                    model="models/text-embedding-004",  # 利用可能なモデルに変更
-                    content=question
-                )
-                
-                # レスポンスからエンベディングベクトルを取得
-                embedding_vector = None
-                if isinstance(response, dict) and 'embedding' in response:
-                    embedding_vector = response['embedding']
-                elif hasattr(response, 'embedding') and response.embedding:
-                    embedding_vector = response.embedding
-                else:
-                    logger.error(f"予期しないレスポンス形式: {type(response)}")
-                    raise ValueError("エンベディング生成に失敗しました")
-                
-                if not embedding_vector:
-                    raise ValueError("エンベディングベクトルが空です")
-                
-                logger.info(f"✅ Step 2完了: {len(embedding_vector)}次元のエンベディング生成成功（フォールバック）")
+                logger.info(f"✅ Step 2完了: {len(embedding_vector)}次元のエンベディング生成成功")
                 return embedding_vector
+            else:
+                raise ValueError("エンベディング生成に失敗しました")
             
         except Exception as e:
             logger.error(f"❌ Step 2エラー: エンベディング生成失敗 - {e}")
@@ -691,72 +662,24 @@ class RealtimeRAGProcessor:
             step1_result = await self.step1_receive_question(question, company_id)
             processed_question = step1_result["processed_question"]
             
-            # 🧠 新しい3段階検索システムを使用
-            if self.gemini_analyzer:
-                logger.info("🧠 Gemini質問分析システムを使用した3段階検索を実行")
-                
-                # Gemini質問分析 → SQL検索 → Embedding検索（フォールバック）
-                search_results, analysis_result = await self.gemini_analyzer.intelligent_search(
-                    question=processed_question,
-                    company_id=company_id,
-                    limit=top_k
-                )
-                
-                # SearchResultオブジェクトを辞書形式に変換
-                similar_chunks = []
-                for result in search_results:
-                    similar_chunks.append({
-                        'chunk_id': result.chunk_id,
-                        'doc_id': result.document_id,
-                        'chunk_index': 0,  # SearchResultにはchunk_indexがないため0を設定
-                        'content': result.content,
-                        'document_name': result.document_name,
-                        'document_type': 'unknown',  # SearchResultにはdocument_typeがないため'unknown'を設定
-                        'similarity_score': result.score
-                    })
-                
-                search_method = search_results[0].search_method if search_results else "no_results"
-                
-                logger.info(f"✅ 3段階検索完了: {search_method}で{len(similar_chunks)}個のチャンクを取得")
-                
-                # メタデータに検索方法を追加
-                metadata = {
-                    "original_question": question,
-                    "processed_question": processed_question,
-                    "chunks_used": len(similar_chunks),
-                    "top_similarity": similar_chunks[0]["similarity_score"] if similar_chunks else 0.0,
-                    "company_id": company_id,
-                    "company_name": company_name,
-                    "search_method": search_method,
-                    "gemini_analysis": {
-                        "intent": analysis_result.intent.value if analysis_result else "unknown",
-                        "confidence": analysis_result.confidence if analysis_result else 0.0,
-                        "target_entity": analysis_result.target_entity if analysis_result else "",
-                        "keywords": analysis_result.keywords if analysis_result else [],
-                        "reasoning": analysis_result.reasoning if analysis_result else ""
-                    },
-                    "keywords": analysis_result.keywords if analysis_result else []
-                }
-                
-            else:
-                # フォールバック: 従来のEmbedding検索のみ
-                logger.warning("⚠️ Gemini質問分析システムが利用できないため、従来のEmbedding検索を使用")
-                
-                # Step 2: エンベディング生成
-                query_embedding = await self.step2_generate_embedding(processed_question)
-                
-                # Step 3: 類似チャンク検索
-                similar_chunks = await self.step3_similarity_search(query_embedding, company_id, top_k)
-                
-                metadata = {
-                    "original_question": question,
-                    "processed_question": processed_question,
-                    "chunks_used": len(similar_chunks),
-                    "top_similarity": similar_chunks[0]["similarity_score"] if similar_chunks else 0.0,
-                    "company_id": company_id,
-                    "company_name": company_name,
-                    "search_method": "embedding_fallback"
-                }
+            # エンベディング検索のみを使用（シンプル化）
+            logger.info("🔍 エンベディング検索を実行")
+            
+            # Step 2: エンベディング生成
+            query_embedding = await self.step2_generate_embedding(processed_question)
+            
+            # Step 3: 類似チャンク検索
+            similar_chunks = await self.step3_similarity_search(query_embedding, company_id, top_k)
+            
+            metadata = {
+                "original_question": question,
+                "processed_question": processed_question,
+                "chunks_used": len(similar_chunks),
+                "top_similarity": similar_chunks[0]["similarity_score"] if similar_chunks else 0.0,
+                "company_id": company_id,
+                "company_name": company_name,
+                "search_method": "embedding_search"
+            }
             
             # Step 4: LLM回答生成
             answer = await self.step4_generate_answer(processed_question, similar_chunks, company_name, company_id)

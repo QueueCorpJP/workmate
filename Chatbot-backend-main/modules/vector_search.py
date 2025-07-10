@@ -12,7 +12,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import numpy as np
 import google.generativeai as genai
-from .vertex_ai_embedding import get_vertex_ai_embedding_client, vertex_ai_embedding_available
+from .multi_api_embedding import get_multi_api_embedding_client, multi_api_embedding_available
 
 # 環境変数の読み込み
 load_dotenv()
@@ -24,8 +24,7 @@ class VectorSearchSystem:
     
     def __init__(self):
         """初期化"""
-        self.use_vertex_ai = os.getenv("USE_VERTEX_AI", "true").lower() == "true"
-        self.embedding_model = os.getenv("EMBEDDING_MODEL", "text-multilingual-embedding-002")
+        self.embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-exp-03-07")
         
         self.db_url = self._get_db_url()
         self.pgvector_available = False
@@ -33,16 +32,16 @@ class VectorSearchSystem:
         # pgvector拡張機能の確認
         self._check_pgvector_availability()
         
-        if self.use_vertex_ai and vertex_ai_embedding_available():
-            self.vertex_client = get_vertex_ai_embedding_client()
-            # 次元数を動的に取得
-            expected_dimensions = 768 if "text-multilingual-embedding-002" in self.embedding_model else 3072
-            logger.info(f"✅ ベクトル検索システム初期化: Vertex AI {self.embedding_model} ({expected_dimensions}次元)")
+        if multi_api_embedding_available():
+            self.multi_api_client = get_multi_api_embedding_client()
+            # 次元数は3072次元固定
+            expected_dimensions = 3072
+            logger.info(f"✅ ベクトル検索システム初期化: Multi-API {self.embedding_model} ({expected_dimensions}次元)")
             logger.info(f"🔧 pgvector拡張機能: {'有効' if self.pgvector_available else '無効'}")
             self.expected_dimensions = expected_dimensions
         else:
-            logger.error("❌ Vertex AI Embeddingが利用できません")
-            raise ValueError("Vertex AI Embeddingの初期化に失敗しました")
+            logger.error("❌ Multi-API Embeddingが利用できません")
+            raise ValueError("Multi-API Embeddingの初期化に失敗しました")
     
     def _get_db_url(self) -> str:
         """データベースURLを構築"""
@@ -120,9 +119,9 @@ class VectorSearchSystem:
         try:
             logger.info(f"クエリの埋め込み生成中: {query[:50]}...")
             
-            # Vertex AI使用
-            if self.vertex_client:
-                embedding_vector = self.vertex_client.generate_embedding(query)
+            # Multi-API使用
+            if self.multi_api_client:
+                embedding_vector = self.multi_api_client.generate_embedding(query)
                 
                 if embedding_vector and len(embedding_vector) > 0:
                     # 期待される次元数であることを確認
@@ -134,7 +133,7 @@ class VectorSearchSystem:
                     logger.error("埋め込み生成に失敗しました")
                     return []
             else:
-                logger.error("Vertex AI クライアントが利用できません")
+                logger.error("Multi-API クライアントが利用できません")
                 return []
         
         except Exception as e:

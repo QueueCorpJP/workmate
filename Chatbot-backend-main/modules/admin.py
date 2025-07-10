@@ -1089,49 +1089,62 @@ def get_chat_history_by_company(company_id: str, db = None):
         
         user_ids = [user["id"] for user in users_result.data]
         print(f"[ADMIN_HISTORY] 会社のユーザーID一覧: {user_ids}")
-        
-        user_ids_str = ','.join([f"'{uid}'" for uid in user_ids])
-        
-        result = select_data(
-            "chat_history", 
-            columns="*", 
-            filters={"employee_id": f"in.({user_ids_str})"},
-            order="timestamp desc"
-        )
-        
-        if not result or not result.data:
+
+        all_chat_rows = []
+        # 各ユーザーごとに employee_id / user_id でチャットを収集
+        for uid in user_ids:
+            try:
+                # employee_id
+                emp_res = select_data("chat_history", columns="*", filters={"employee_id": uid})
+                if emp_res and emp_res.data:
+                    all_chat_rows.extend(emp_res.data)
+                # user_id
+                usr_res = select_data("chat_history", columns="*", filters={"user_id": uid})
+                if usr_res and usr_res.data:
+                    all_chat_rows.extend(usr_res.data)
+            except Exception as inner_e:
+                print(f"[ADMIN_HISTORY] ユーザー {uid} の履歴取得エラー: {inner_e}")
+
+        if not all_chat_rows:
             print("[ADMIN_HISTORY] 会社のチャット履歴が見つかりません。")
             return []
-        
-        chat_history = result.data
-        print(f"[ADMIN_HISTORY] Supabaseから会社のチャット履歴を取得完了。件数: {len(chat_history)}")
-        
+
+        print(f"[ADMIN_HISTORY] 取得したチャット行数(重複前): {len(all_chat_rows)}")
+
+        # 重複除去
+        unique_chats = {}
+        for row in all_chat_rows:
+            cid = row.get("id")
+            if cid and cid not in unique_chats:
+                unique_chats[cid] = row
+
+        chat_history = list(unique_chats.values())
+
+        # 従業員名マッピングを取得
         users_detail_result = select_data("users", columns="id, name", filters={"company_id": company_id})
-        user_name_map = {}
-        if users_detail_result and users_detail_result.data:
-            for user in users_detail_result.data:
-                user_name_map[user["id"]] = user.get("name", "不明なユーザー")
-        
+        user_name_map = {u["id"]: u.get("name", "不明なユーザー") for u in (users_detail_result.data or [])}
+
+        # 整形
         formatted_history = []
         for chat in chat_history:
-            employee_id = chat.get("employee_id", "")
-            employee_name = user_name_map.get(employee_id, "不明なユーザー")
-            
-            item = {
+            emp_id = chat.get("employee_id", "")
+            formatted_history.append({
                 "id": chat.get("id", ""),
                 "user_message": chat.get("user_message", ""),
                 "bot_response": chat.get("bot_response", ""),
                 "timestamp": chat.get("timestamp", ""),
                 "category": chat.get("category", ""),
                 "sentiment": chat.get("sentiment", ""),
-                "employee_id": employee_id,
-                "employee_name": employee_name,
+                "employee_id": emp_id,
+                "employee_name": user_name_map.get(emp_id, "不明なユーザー"),
                 "source_document": chat.get("source_document", ""),
                 "source_page": chat.get("source_page", "")
-            }
-            formatted_history.append(item)
-        
-        print(f"[ADMIN_HISTORY] 最終的にフォーマットされた会社のチャット履歴件数: {len(formatted_history)}")
+            })
+
+        print(f"[ADMIN_HISTORY] フォーマット後行数: {len(formatted_history)}")
+        # 時系列降順
+        formatted_history.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+
         return formatted_history
         
     except Exception as e:

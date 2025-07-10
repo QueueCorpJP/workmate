@@ -890,9 +890,9 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
             else:
                 print("データベースに全くデータが存在しません")
         
-        # CSV形式に変換
+        # CSV形式に変換（Excelでのセル欠けを防ぐため、全フィールドを引用）
         csv_data = io.StringIO()
-        csv_writer = csv.writer(csv_data)
+        csv_writer = csv.writer(csv_data, quoting=csv.QUOTE_ALL, lineterminator='\n')
         
         # ヘッダー行を書き込み
         csv_writer.writerow([
@@ -916,17 +916,26 @@ async def download_chat_history_csv(current_user = Depends(get_admin_or_user), d
                 if i < 3:
                     print(f"処理中のデータ {i+1}: {chat}")
                 
+                # フィールドの改行・タブをスペースに置換して文字列化
+                def _clean(value):
+                    if value is None:
+                        return ""
+                    if not isinstance(value, str):
+                        value = str(value)
+                    # Excel読み込み時のセル欠け防止: 改行, タブ, CR をスペースに
+                    return value.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+
                 csv_writer.writerow([
-                    chat.get("id", ""),
-                    chat.get("timestamp", ""),
-                    chat.get("user_message", ""),
-                    chat.get("bot_response", ""),
-                    chat.get("category", ""),
-                    chat.get("sentiment", ""),
-                    chat.get("employee_id", ""),
-                    chat.get("employee_name", ""),
-                    chat.get("source_document", ""),
-                    chat.get("source_page", "")
+                    _clean(chat.get("id")),
+                    _clean(chat.get("timestamp")),
+                    _clean(chat.get("user_message")),
+                    _clean(chat.get("bot_response")),
+                    _clean(chat.get("category")),
+                    _clean(chat.get("sentiment")),
+                    _clean(chat.get("employee_id")),
+                    _clean(chat.get("employee_name")),
+                    _clean(chat.get("source_document")),
+                    _clean(chat.get("source_page"))
                 ])
                 rows_written += 1
             except Exception as row_error:

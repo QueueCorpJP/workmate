@@ -1,6 +1,6 @@
 """
 ✅ Vertex AI Embedding モジュール
-text-multilingual-embedding-002を使用した768次元ベクトル生成
+text-multilingual-embedding-002を使用した3072次元ベクトル生成
 """
 
 import os
@@ -34,7 +34,7 @@ class VertexAIEmbeddingClient:
             return
             
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "workmate-462302")
-        self.model_name = os.getenv("EMBEDDING_MODEL", "text-multilingual-embedding-002")
+        self.model_name = os.getenv("EMBEDDING_MODEL", "gemini-embedding-exp-03-07")
         self.location = "us-central1"
         
         # 認証設定（3つの方法をサポート）
@@ -49,7 +49,7 @@ class VertexAIEmbeddingClient:
             
             self.use_vertex_ai = True
             # 次元数を動的に取得
-            dimensions = 768 if "text-multilingual-embedding-002" in self.model_name else 3072
+            dimensions = 3072 if "gemini-embedding-exp-03-07" in self.model_name else 3072
             logger.info(f"✅ Vertex AI Embedding初期化完了: {self.model_name} ({dimensions}次元)")
         except Exception as e:
             logger.error(f"❌ Vertex AI初期化エラー: {e}")
@@ -139,9 +139,9 @@ class VertexAIEmbeddingClient:
             logger.warning("❌ Vertex AI Embeddingが利用できません")
             return [None] * len(texts)
         
-        # text-multilingual-embedding-002 はバッチサイズ1のみサポート
-        if "text-multilingual-embedding-002" in self.model_name:
-            logger.info(f"📦 text-multilingual-embedding-002: 個別処理モード ({len(texts)}件)")
+        # gemini-embedding-exp-03-07 はバッチサイズ1のみサポート
+        if "gemini-embedding-exp-03-07" in self.model_name:
+            logger.info(f"📦 gemini-embedding-exp-03-07: 個別処理モード ({len(texts)}件)")
             results = []
             for i, text in enumerate(texts):
                 embedding = self.generate_embedding(text)

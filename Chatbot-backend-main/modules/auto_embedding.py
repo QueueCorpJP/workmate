@@ -10,7 +10,7 @@ from typing import List, Optional
 from dotenv import load_dotenv
 import google.generativeai as genai
 from supabase_adapter import get_supabase_client, select_data, update_data
-from .vertex_ai_embedding import get_vertex_ai_embedding_client, vertex_ai_embedding_available
+from .multi_api_embedding import get_multi_api_embedding_client, multi_api_embedding_available
 
 # ロギング設定
 logger = logging.getLogger(__name__)
@@ -25,14 +25,13 @@ class AutoEmbeddingGenerator:
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         self.embedding_model = os.getenv("EMBEDDING_MODEL", "models/gemini-embedding-001")
         self.auto_generate = os.getenv("AUTO_GENERATE_EMBEDDINGS", "false").lower() == "true"
-        self.use_vertex_ai = os.getenv("USE_VERTEX_AI", "true").lower() == "true"
         self.supabase = None
-        self.vertex_ai_client = None
+        self.multi_api_client = None
         
-        # Vertex AI使用時はクライアントを初期化
-        if self.use_vertex_ai and vertex_ai_embedding_available():
-            self.vertex_ai_client = get_vertex_ai_embedding_client()
-            logger.info(f"🧠 Vertex AI Embedding使用: {self.embedding_model}")
+        # Multi-API使用時はクライアントを初期化
+        if multi_api_embedding_available():
+            self.multi_api_client = get_multi_api_embedding_client()
+            logger.info(f"🧠 Multi-API Embedding使用: {self.embedding_model}")
         else:
             # 標準Gemini API使用時のモデル名正規化
             if not self.embedding_model.startswith("models/"):
@@ -108,9 +107,9 @@ class AutoEmbeddingGenerator:
                     
                     embedding_vector = None
                     
-                    if self.use_vertex_ai and self.vertex_ai_client:
-                        # Vertex AI使用
-                        embedding_vector = self.vertex_ai_client.generate_embedding(content)
+                    if self.multi_api_client:
+                        # Multi-API使用
+                        embedding_vector = self.multi_api_client.generate_embedding(content)
                     else:
                         # 標準Gemini API使用
                         response = genai.embed_content(
@@ -251,9 +250,9 @@ class AutoEmbeddingGenerator:
                     
                     embedding_vector = None
                     
-                    if self.use_vertex_ai and self.vertex_ai_client:
-                        # Vertex AI使用
-                        embedding_vector = self.vertex_ai_client.generate_embedding(content)
+                    if self.multi_api_client:
+                        # Multi-API使用
+                        embedding_vector = self.multi_api_client.generate_embedding(content)
                     else:
                         # 標準Gemini API使用
                         response = genai.embed_content(

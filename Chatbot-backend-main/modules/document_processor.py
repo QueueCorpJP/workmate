@@ -17,9 +17,13 @@ from datetime import datetime
 import re
 import tiktoken
 from fastapi import HTTPException, UploadFile
-from google import genai
+try:
+    from google import genai
+except ImportError:
+    import google.generativeai as genai
 import psycopg2
 from psycopg2.extras import execute_values
+from .multi_api_embedding import get_multi_api_embedding_client, multi_api_embedding_available
 
 # ロギング設定
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -30,12 +34,11 @@ class DocumentProcessor:
     
     def __init__(self):
         self.gemini_client = None
-        self.vertex_ai_client = None
-        self.use_vertex_ai = os.getenv("USE_VERTEX_AI", "true").lower() == "true"
-        self.embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
+        self.multi_api_client = None
+        self.embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-exp-03-07")
         
-        # Vertex AI使用時はモデル名をそのまま使用、Gemini API使用時はmodels/プレフィックスを追加
-        if not self.use_vertex_ai and not self.embedding_model.startswith("models/"):
+        # Gemini API使用時はmodels/プレフィックスを追加
+        if not self.embedding_model.startswith("models/"):
             self.embedding_model = f"models/{self.embedding_model}"
             
         self.chunk_size_tokens = 400  # 300-500トークンの中間値
@@ -49,35 +52,13 @@ class DocumentProcessor:
             logger.warning(f"tiktoken初期化失敗: {e}")
             self.tokenizer = None
         
-        # Vertex AIが利用できない場合はGemini APIにフォールバック
-        if self.use_vertex_ai:
-            try:
-                self._init_vertex_ai_client()
-            except Exception as e:
-                logger.warning(f"⚠️ Vertex AI初期化失敗、Gemini APIにフォールバック: {e}")
-                self.use_vertex_ai = False
-                self._init_gemini_client()
+        # 複数API対応を最優先、次にGemini API
+        if multi_api_embedding_available():
+            self.multi_api_client = get_multi_api_embedding_client()
+            logger.info("✅ 複数API対応エンベディングクライアント使用")
         else:
             self._init_gemini_client()
     
-    def _init_vertex_ai_client(self):
-        """Vertex AI クライアントを初期化"""
-        try:
-            from modules.vertex_ai_embedding import get_vertex_ai_embedding_client, vertex_ai_embedding_available
-            
-            if not vertex_ai_embedding_available():
-                logger.error("❌ Vertex AI Embeddingが利用できません")
-                raise ValueError("Vertex AI Embeddingが利用できません")
-            
-            self.vertex_ai_client = get_vertex_ai_embedding_client()
-            if not self.vertex_ai_client:
-                raise ValueError("Vertex AI クライアントの取得に失敗しました")
-            
-            logger.info(f"🧠 Vertex AI クライアント初期化完了: {self.embedding_model} (3072次元)")
-            
-        except Exception as e:
-            logger.error(f"❌ Vertex AI クライアント初期化エラー: {e}")
-            raise
     
     def _init_gemini_client(self):
         """Gemini APIクライアントを初期化（新しいSDK）"""
@@ -222,15 +203,77 @@ class DocumentProcessor:
         
         return chunks
     
-    async def _generate_embeddings_batch(self, texts: List[str], failed_indices: List[int] = None) -> List[Optional[List[float]]]:
-        """Vertex AI または Gemini APIでテキストのembeddingを個別生成（バッチ処理風）"""
+    async def _generate_embeddings_multi_api(self, texts: List[str], failed_indices: List[int] = None) -> List[Optional[List[float]]]:
+        """複数API対応クライアントでテキストのembeddingを生成"""
+        if not self.multi_api_client:
+            raise ValueError("複数API対応クライアントが初期化されていません")
+        
+        all_embeddings = []
+        failed_embeddings = []
+        
+        # 処理対象のインデックスを決定
         if failed_indices is None:
-            logger.info(f"🧠 embedding生成開始: {len(texts)}件, モデル={self.embedding_model}, Vertex AI={self.use_vertex_ai}")
+            process_indices = list(range(len(texts)))
+            all_embeddings = [None] * len(texts)
         else:
-            logger.info(f"🔄 embedding再生成開始: {len(failed_indices)}件の失敗分, モデル={self.embedding_model}, Vertex AI={self.use_vertex_ai}")
+            process_indices = failed_indices
+            all_embeddings = [None] * len(texts)
+        
+        # 複数API対応クライアントで個別処理
+        for idx, i in enumerate(process_indices):
+            try:
+                text = texts[i]
+                if not text or not text.strip():
+                    logger.warning(f"⚠️ 空のテキストをスキップ: インデックス {i}")
+                    all_embeddings[i] = None
+                    failed_embeddings.append(i)
+                    continue
+                
+                # 複数API対応クライアントでembedding生成
+                embedding_vector = await self.multi_api_client.generate_embedding(text.strip())
+                
+                expected_dims = (
+                    self.multi_api_client.expected_dimensions if self.multi_api_client else 768
+                )
+
+                if embedding_vector and len(embedding_vector) == expected_dims:
+                    all_embeddings[i] = embedding_vector
+                    logger.debug(f"✅ 複数API embedding生成成功: インデックス {i} ({len(embedding_vector)}次元)")
+                else:
+                    all_embeddings[i] = None
+                    failed_embeddings.append(i)
+                    logger.warning(f"⚠️ 複数API embedding生成失敗: インデックス {i}")
+                
+                # API制限対策：少し待機
+                if idx < len(process_indices) - 1:
+                    await asyncio.sleep(0.1)
+                    
+            except Exception as e:
+                logger.error(f"❌ 複数API embedding生成エラー: インデックス {i} - {e}")
+                all_embeddings[i] = None
+                failed_embeddings.append(i)
+        
+        # 結果の統計を出力
+        success_count = len(process_indices) - len(failed_embeddings)
+        logger.info(f"📊 複数API embedding生成完了: {success_count}/{len(process_indices)} 成功")
+        
+        if failed_embeddings:
+            logger.warning(f"⚠️ 複数API embedding生成失敗: {len(failed_embeddings)}件")
+        
+        return all_embeddings
+    
+    async def _generate_embeddings_batch(self, texts: List[str], failed_indices: List[int] = None) -> List[Optional[List[float]]]:
+        """複数API対応、Vertex AI または Gemini APIでテキストのembeddingを個別生成（バッチ処理風）"""
+        if failed_indices is None:
+            logger.info(f"🧠 embedding生成開始: {len(texts)}件, モデル={self.embedding_model}")
+        else:
+            logger.info(f"🔄 embedding再生成開始: {len(failed_indices)}件の失敗分, モデル={self.embedding_model}")
         
         try:
-            if self.use_vertex_ai:
+            # 複数API対応を最優先で使用
+            if self.multi_api_client:
+                return await self._generate_embeddings_multi_api(texts, failed_indices)
+            elif self.use_vertex_ai:
                 return await self._generate_embeddings_vertex_ai(texts, failed_indices)
             else:
                 return await self._generate_embeddings_gemini_api(texts, failed_indices)
@@ -465,7 +508,8 @@ class DocumentProcessor:
                 "saved_chunks": 0,
                 "successful_embeddings": 0,
                 "failed_embeddings": 0,
-                "retry_attempts": 0
+                "retry_attempts": 0,
+                "failed_chunks": []  # 失敗したチャンクを記録
             }
 
             if not chunks:
@@ -521,7 +565,7 @@ class DocumentProcessor:
                 if retry_count > 0:
                     stats["retry_attempts"] = max(stats["retry_attempts"], retry_count)
                 
-                # 成功したembeddingのみでレコード準備
+                # 成功したembeddingのみでレコード準備、失敗したものは記録
                 records_to_insert = []
                 for i, chunk_data in enumerate(batch_chunks):
                     embedding_vector = batch_embeddings[i]
@@ -535,6 +579,19 @@ class DocumentProcessor:
                             "created_at": datetime.now().isoformat(),
                             "updated_at": datetime.now().isoformat()
                         })
+                    else:
+                        # 失敗したチャンクをembeddingなしで保存（後で再処理用）
+                        failed_record = {
+                            "doc_id": doc_id,
+                            "chunk_index": chunk_data["chunk_index"],
+                            "content": chunk_data["content"],
+                            "embedding": None,
+                            "company_id": company_id,
+                            "created_at": datetime.now().isoformat(),
+                            "updated_at": datetime.now().isoformat()
+                        }
+                        records_to_insert.append(failed_record)
+                        stats["failed_chunks"].append(failed_record)
                 
                 # 即座にSupabaseに挿入
                 if records_to_insert:
@@ -566,6 +623,7 @@ class DocumentProcessor:
             
             if stats["failed_embeddings"] > 0:
                 logger.warning(f"⚠️ 最終結果: {stats['successful_embeddings']}/{stats['total_chunks']} embedding成功, {stats['retry_attempts']}回再試行")
+                logger.info(f"📋 失敗したチャンク数: {len(stats['failed_chunks'])}件 - 後で再処理予定")
             else:
                 logger.info(f"🎉 全embedding生成成功: {stats['successful_embeddings']}/{stats['total_chunks']}")
 
@@ -624,6 +682,20 @@ class DocumentProcessor:
             save_stats = await self._save_chunks_to_database(
                 document_id, chunks, company_id, file.filename
             )
+            
+            # 失敗したembeddingがある場合は全処理完了後に再処理
+            if save_stats["failed_embeddings"] > 0:
+                logger.info(f"🔄 {file.filename}: 失敗したembedding {save_stats['failed_embeddings']}件の再処理を開始")
+                retry_stats = await self._retry_failed_embeddings_post_processing(
+                    document_id, company_id, file.filename
+                )
+                
+                # 統計を更新
+                save_stats["successful_embeddings"] += retry_stats["successful"]
+                save_stats["failed_embeddings"] = retry_stats["still_failed"]
+                save_stats["retry_attempts"] = max(save_stats["retry_attempts"], retry_stats["retry_attempts"])
+                
+                logger.info(f"🔄 {file.filename}: 再処理完了 - 追加成功 {retry_stats['successful']}件, 最終失敗 {retry_stats['still_failed']}件")
             
             # 処理結果を返す
             result = {
@@ -1104,6 +1176,131 @@ class DocumentProcessor:
             
         except Exception as e:
             logger.error(f"❌ embedding修復処理エラー: {e}", exc_info=True)
+            raise
+    
+    async def _retry_failed_embeddings_post_processing(self, doc_id: str, company_id: str, 
+                                                     doc_name: str, max_retries: int = 5) -> Dict[str, Any]:
+        """
+        全処理完了後に失敗したembeddingを再処理する
+        レートリミット回避のため、より慎重な再試行を行う
+        """
+        try:
+            from supabase_adapter import get_supabase_client
+            supabase = get_supabase_client()
+            
+            logger.info(f"🔄 {doc_name}: 失敗したembeddingの再処理開始")
+            
+            # 失敗したチャンクを検索（embeddingがNullのもの）
+            query = supabase.table("chunks").select("*").eq("doc_id", doc_id).is_("embedding", "null")
+            result = query.execute()
+            
+            if not result.data:
+                logger.info(f"✅ {doc_name}: 再処理が必要なチャンクはありません")
+                return {
+                    "total_failed": 0,
+                    "processed": 0,
+                    "successful": 0,
+                    "still_failed": 0,
+                    "retry_attempts": 0
+                }
+            
+            failed_chunks = result.data
+            logger.info(f"🔍 {doc_name}: 再処理対象チャンク {len(failed_chunks)}件")
+            
+            stats = {
+                "total_failed": len(failed_chunks),
+                "processed": 0,
+                "successful": 0,
+                "still_failed": 0,
+                "retry_attempts": 0
+            }
+            
+            # レートリミット回避のため、より小さなバッチで処理
+            batch_size = 10  # 通常の50から10に減らす
+            
+            for batch_start in range(0, len(failed_chunks), batch_size):
+                batch_end = min(batch_start + batch_size, len(failed_chunks))
+                batch_chunks = failed_chunks[batch_start:batch_end]
+                
+                logger.info(f"🔄 {doc_name}: 再処理バッチ {batch_start + 1}-{batch_end}/{len(failed_chunks)}")
+                
+                # レートリミット回避のため、バッチ間に長めの待機
+                if batch_start > 0:
+                    await asyncio.sleep(2.0)
+                
+                # バッチのテキストを抽出
+                batch_contents = [chunk["content"] for chunk in batch_chunks]
+                
+                # embedding生成（より慎重なリトライ）
+                embeddings = await self._generate_embeddings_batch(batch_contents)
+                
+                # 失敗したものを段階的に再試行
+                failed_indices = [i for i, emb in enumerate(embeddings) if emb is None]
+                retry_count = 0
+                
+                while failed_indices and retry_count < max_retries:
+                    retry_count += 1
+                    stats["retry_attempts"] = max(stats["retry_attempts"], retry_count)
+                    
+                    # レートリミット回避のため、再試行間隔を段階的に増加
+                    sleep_time = min(retry_count * 2.0, 10.0)
+                    logger.info(f"🔄 {doc_name}: 再試行 {retry_count}/{max_retries} - {len(failed_indices)}件 ({sleep_time}秒待機)")
+                    await asyncio.sleep(sleep_time)
+                    
+                    retry_embeddings = await self._generate_embeddings_batch(batch_contents, failed_indices)
+                    
+                    # 結果をマージ
+                    for i in failed_indices:
+                        if retry_embeddings[i] is not None:
+                            embeddings[i] = retry_embeddings[i]
+                    
+                    failed_indices = [i for i in failed_indices if embeddings[i] is None]
+                    
+                    if not failed_indices:
+                        logger.info(f"✅ {doc_name}: 再試行バッチ完全成功")
+                        break
+                
+                # データベースを更新
+                for i, chunk in enumerate(batch_chunks):
+                    embedding_vector = embeddings[i]
+                    chunk_id = chunk["id"]
+                    
+                    try:
+                        if embedding_vector:
+                            # embeddingを更新
+                            update_result = supabase.table("chunks").update({
+                                "embedding": embedding_vector,
+                                "updated_at": datetime.now().isoformat()
+                            }).eq("id", chunk_id).execute()
+                            
+                            if update_result.data:
+                                stats["successful"] += 1
+                                logger.debug(f"✅ {doc_name}: embedding更新成功 chunk_id={chunk_id}")
+                            else:
+                                stats["still_failed"] += 1
+                                logger.error(f"❌ {doc_name}: embedding更新失敗 chunk_id={chunk_id}")
+                        else:
+                            stats["still_failed"] += 1
+                            logger.warning(f"⚠️ {doc_name}: embedding生成最終失敗 chunk_id={chunk_id}")
+                        
+                        stats["processed"] += 1
+                        
+                    except Exception as update_error:
+                        logger.error(f"❌ {doc_name}: チャンク更新エラー chunk_id={chunk_id}: {update_error}")
+                        stats["still_failed"] += 1
+                        stats["processed"] += 1
+            
+            # 最終結果
+            logger.info(f"🏁 {doc_name}: embedding再処理完了")
+            logger.info(f"   - 処理対象: {stats['total_failed']}件")
+            logger.info(f"   - 成功: {stats['successful']}件")
+            logger.info(f"   - 失敗: {stats['still_failed']}件")
+            logger.info(f"   - 最大再試行: {stats['retry_attempts']}回")
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"❌ {doc_name}: 失敗embedding再処理エラー: {e}", exc_info=True)
             raise
 
 document_processor = DocumentProcessor()

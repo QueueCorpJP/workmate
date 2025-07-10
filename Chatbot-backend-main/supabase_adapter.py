@@ -39,11 +39,29 @@ def get_supabase_client() -> Client:
             raise ValueError("SUPABASE_URL と SUPABASE_KEY 環境変数が設定されていません")
         
         try:
-            _supabase_client = create_client(url, key)
+            # HTTPクライアントの設定を明示的に指定
+            from supabase import create_client, Client
+            from supabase.client import ClientOptions
+            
+            # デフォルトの設定でクライアントを作成
+            _supabase_client = create_client(
+                url, 
+                key,
+                options=ClientOptions(
+                    postgrest_client_timeout=10,
+                    storage_client_timeout=10,
+                )
+            )
             logger.info("✅ Supabaseクライアント初期化完了")
         except Exception as e:
             logger.error(f"❌ Supabaseクライアント初期化エラー: {e}")
-            raise
+            # シンプルな初期化に戻す
+            try:
+                _supabase_client = create_client(url, key)
+                logger.info("✅ Supabaseクライアント初期化完了（シンプル方法）")
+            except Exception as e2:
+                logger.error(f"❌ Supabaseクライアント初期化エラー（シンプル方法も失敗）: {e2}")
+                raise
     
     return _supabase_client
 

@@ -633,6 +633,20 @@ const AdminPanel: React.FC = () => {
       setNewUserPassword("");
       setSelectedCompanyId("");
       setNewCompanyName("");
+
+      // ユーザー作成成功後、関連データのキャッシュをクリアして再読み込み
+      console.log("ユーザー作成成功 - キャッシュクリアと再読み込み開始");
+      const { SharedDataService } = await import('../../services/sharedDataService');
+      
+      // 社員関連のキャッシュをクリア
+      SharedDataService.clearCache('company-employees-shared');
+      SharedDataService.clearCache('employee-usage-shared');
+      
+      // 社員データを強制再読み込み
+      await fetchCompanyEmployees(true);
+      await fetchEmployeeUsage(true);
+      
+      console.log("ユーザー作成後のデータ更新完了");
     } catch (error: any) {
       console.error("アカウント作成エラー:", error);
       if (error.response?.data?.detail) {

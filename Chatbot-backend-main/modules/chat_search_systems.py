@@ -237,17 +237,10 @@ async def enhanced_postgresql_search_system(query: str,
 
 async def fallback_search_system(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
-    フォールバック検索システム - 複数の検索システムを順次試行
+    フォールバック検索システム - エンベディング検索のみを使用
     """
     search_systems = [
-        ("Enhanced PostgreSQL Search", lambda q, l: enhanced_postgresql_search_system(q, None, l)),
-        ("PostgreSQL Fuzzy Search", postgresql_fuzzy_search_system),
-        ("Elasticsearch Fuzzy Search", lambda q, l: elasticsearch_fuzzy_search_system(q, None, "AUTO", l)),
-        ("Enhanced Japanese Search", enhanced_japanese_search_system),
-        ("Vector Search", vector_search_system),
-        ("Parallel Search", parallel_search_system),
-        ("Direct Search", direct_search_system),
-        ("Database Fallback Search", database_search_fallback),
+        ("Vector Search", vector_search_system),  # エンベディング検索のみ
     ]
     
     for system_name, search_func in search_systems:
@@ -268,26 +261,16 @@ async def fallback_search_system(query: str, limit: int = 10) -> List[Dict[str, 
 
 async def multi_system_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
-    複数システム検索 - 複数の検索システムを並列実行して結果をマージ
+    複数システム検索 - エンベディング検索のみを使用
     """
     search_tasks = []
     
-    # Enhanced PostgreSQL Search（最優先・常に利用可能）
-    search_tasks.append(enhanced_postgresql_search_system(query, None, limit))
-    
-    # PostgreSQL Fuzzy Search（常に利用可能）
-    search_tasks.append(postgresql_fuzzy_search_system(query, limit))
-    
-    if elasticsearch_available():
-        search_tasks.append(elasticsearch_fuzzy_search_system(query, None, "AUTO", limit))
-    if ENHANCED_JAPANESE_SEARCH_AVAILABLE:
-        search_tasks.append(enhanced_japanese_search_system(query, limit))
+    # Vector Search（エンベディング検索のみ）
     if VECTOR_SEARCH_AVAILABLE:
         search_tasks.append(vector_search_system(query, limit))
-    if PARALLEL_SEARCH_AVAILABLE:
-        search_tasks.append(parallel_search_system(query, limit))
-    if DIRECT_SEARCH_AVAILABLE:
-        search_tasks.append(direct_search_system(query, limit))
+    else:
+        safe_print("Vector search is not available")
+        return []
     
     if not search_tasks:
         safe_print("No search systems available")
@@ -313,7 +296,7 @@ async def multi_system_search(query: str, limit: int = 10) -> List[Dict[str, Any
                             seen_ids.add(result['id'])
                             merged_results.append(result)
         
-        # スコア順でソート（スコアがある場合）
+        # スコア順でソート（エンベディング検索のみ）
         merged_results.sort(key=lambda x: x.get('score', 0), reverse=True)
         
         # 制限数まで切り詰め
@@ -479,32 +462,14 @@ def extract_important_keywords(text: str) -> List[str]:
 
 async def smart_search_system(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
-    スマート検索システム - クエリの特性に応じて最適な検索システムを選択
+    スマート検索システム - エンベディング検索のみを使用
     """
     safe_print(f"Starting smart search for query: {query}")
-
-    # 日本語が含まれているかチェック
-    has_japanese = any('\u3040' <= char <= '\u309F' or '\u30A0' <= char <= '\u30FF' or '\u4E00' <= char <= '\u9FAF' for char in query)
     
-    # クエリの長さをチェック
-    is_long_query = len(query) > 50
-    
-    # 技術的なキーワードが含まれているかチェック
-    technical_keywords = ['API', 'SQL', 'Python', 'JavaScript', 'HTML', 'CSS', 'JSON', 'XML', 'HTTP', 'HTTPS']
-    has_technical_terms = any(keyword.lower() in query.lower() for keyword in technical_keywords)
-    
-    safe_print(f"Query analysis: Japanese={has_japanese}, Long={is_long_query}, Technical={has_technical_terms}")
-    
-    # 最適な検索システムを選択
-    if has_japanese:
-        safe_print("Using Enhanced PostgreSQL Search for Japanese query")
-        return await enhanced_postgresql_search_system(query, None, limit)
-    elif is_long_query and VECTOR_SEARCH_AVAILABLE:
-        safe_print("Using Vector Search for long query")
+    # エンベディング検索のみを使用
+    if VECTOR_SEARCH_AVAILABLE:
+        safe_print("Using Vector Search (embedding-based) as primary search")
         return await vector_search_system(query, limit)
-    elif has_technical_terms and PARALLEL_SEARCH_AVAILABLE:
-        safe_print("Using Parallel Search for technical query")
-        return await parallel_search_system(query, limit)
     else:
-        safe_print("Using Enhanced PostgreSQL Search as default")
-        return await enhanced_postgresql_search_system(query, None, limit)
+        safe_print("Vector search is not available")
+        return []

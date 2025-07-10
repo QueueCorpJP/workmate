@@ -1,7 +1,7 @@
 """
 🧠 バッチエンベディング生成モジュール
 チャンクを10件ずつまとめてバッチで送信し、エラー回復機能付きでembeddingを生成
-gemini-embedding-001使用（3072次元）
+gemini-embedding-exp-03-07使用（3072次元）
 """
 
 import os
@@ -13,6 +13,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import google.generativeai as genai
 from supabase_adapter import get_supabase_client, select_data, update_data
+from .multi_api_embedding import get_multi_api_embedding_client, multi_api_embedding_available
 
 # ロギング設定
 logger = logging.getLogger(__name__)
@@ -24,10 +25,10 @@ class BatchEmbeddingGenerator:
     """バッチエンベディング生成クラス"""
     
     def __init__(self):
-        self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.embedding_model = "models/gemini-embedding-001"  # Vertex AI gemini-embedding-001を使用（3072次元）
+        self.embedding_model = "models/gemini-embedding-exp-03-07"  # gemini-embedding-exp-03-07を使用（3072次元）
         self.auto_generate = os.getenv("AUTO_GENERATE_EMBEDDINGS", "false").lower() == "true"
         self.supabase = None
+        self.multi_api_client = None
         
         # バッチ処理設定
         self.batch_size = 10  # 10件ずつ処理
@@ -48,13 +49,14 @@ class BatchEmbeddingGenerator:
     
     def _init_clients(self):
         """APIクライアントを初期化"""
-        if not self.api_key:
-            logger.error("❌ GOOGLE_API_KEY または GEMINI_API_KEY 環境変数が設定されていません")
-            return False
-        
         try:
-            # Gemini API初期化
-            genai.configure(api_key=self.api_key)
+            # 複数API対応エンベディングクライアント初期化
+            if multi_api_embedding_available():
+                self.multi_api_client = get_multi_api_embedding_client()
+                logger.info("✅ 複数API対応エンベディングクライアント使用")
+            else:
+                logger.error("❌ 複数API対応エンベディングクライアントが利用できません")
+                return False
             
             # Supabaseクライアント初期化
             self.supabase = get_supabase_client()
@@ -89,55 +91,36 @@ class BatchEmbeddingGenerator:
             return []
     
     async def _generate_embedding_with_retry(self, content: str, chunk_id: str) -> Optional[List[float]]:
-        """リトライ機能付きembedding生成"""
-        for attempt in range(self.max_retries):
-            try:
-                if not content or not content.strip():
-                    logger.warning(f"⚠️ 空のコンテンツをスキップ: {chunk_id}")
-                    return None
-                
-                response = genai.embed_content(
-                    model=self.embedding_model,
-                    content=content.strip()
-                )
-                
-                embedding_vector = None
-                
-                # レスポンス形式の処理
-                if isinstance(response, dict) and 'embedding' in response:
-                    embedding_vector = response['embedding']
-                elif hasattr(response, 'embedding') and response.embedding:
-                    embedding_vector = response.embedding
-                else:
-                    logger.error(f"🔍 予期しないレスポンス形式: {type(response)}")
-                    return None
-                
-                if embedding_vector and len(embedding_vector) > 0:
-                    # 768次元であることを確認
-                    if len(embedding_vector) != 768:
-                        logger.warning(f"⚠️ 予期しない次元数: {len(embedding_vector)}次元（期待値: 768次元）")
-                    logger.debug(f"✅ embedding生成成功: {chunk_id} (次元: {len(embedding_vector)})")
-                    return embedding_vector
-                else:
-                    logger.warning(f"⚠️ 無効なembedding: {chunk_id}")
-                    return None
-                    
-            except Exception as e:
-                self.stats["retry_count"] += 1
-                logger.warning(f"⚠️ embedding生成エラー (試行 {attempt + 1}/{self.max_retries}): {chunk_id} - {e}")
-                
-                # 429エラー（レート制限）の場合は長めに待機
-                if "429" in str(e) or "rate limit" in str(e).lower():
-                    wait_time = self.retry_delay * (2 ** attempt)  # 指数バックオフ
-                    logger.info(f"⏳ レート制限検出、{wait_time}秒待機...")
-                    await asyncio.sleep(wait_time)
-                elif attempt < self.max_retries - 1:
-                    await asyncio.sleep(self.retry_delay)
-                else:
-                    logger.error(f"❌ embedding生成最終失敗: {chunk_id}")
-                    return None
+        """複数API対応のリトライ機能付きembedding生成"""
+        if not content or not content.strip():
+            logger.warning(f"⚠️ 空のコンテンツをスキップ: {chunk_id}")
+            return None
         
-        return None
+        if not self.multi_api_client:
+            logger.error("❌ 複数API対応エンベディングクライアントが初期化されていません")
+            return None
+        
+        try:
+            # 複数API対応クライアントでembedding生成
+            embedding_vector = await self.multi_api_client.generate_embedding(
+                content.strip(), 
+                max_retries=self.max_retries
+            )
+            
+            expected_dims = (
+                self.multi_api_client.expected_dimensions if self.multi_api_client else 768
+            )
+
+            if embedding_vector and len(embedding_vector) == expected_dims:
+                logger.debug(f"✅ embedding生成成功: {chunk_id} (次元: {len(embedding_vector)})")
+                return embedding_vector
+            else:
+                logger.warning(f"⚠️ 無効なembedding: {chunk_id} (次元: {len(embedding_vector) if embedding_vector else 0})")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ embedding生成エラー: {chunk_id} - {e}")
+            return None
     
     async def _process_chunk_batch(self, chunks: List[Dict]) -> Tuple[List[str], List[str]]:
         """チャンクバッチを処理し、成功・失敗したチャンクIDを返す"""
