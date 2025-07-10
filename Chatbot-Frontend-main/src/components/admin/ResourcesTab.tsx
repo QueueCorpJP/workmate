@@ -40,6 +40,7 @@ import { GoogleDriveFilePicker } from '../GoogleDriveFilePicker';
 import { GoogleAuthStorage } from '../../utils/googleAuthStorage';
 import { useAuth } from '../../contexts/AuthContext';
 import MultiFileUpload from '../MultiFileUpload';
+import { formatDate } from './utils';
 
 interface ResourcesTabProps {
   resources: Resource[];
@@ -577,18 +578,7 @@ const ResourcesTab: React.FC<ResourcesTabProps> = ({
                   </TableCell>
                   <TableCell>{resource.page_count || "-"}</TableCell>
                   <TableCell>
-                    {resource.timestamp
-                      ? new Date(resource.timestamp).toLocaleString("ja-JP", {
-                              timeZone: "Asia/Tokyo",
-                        year: "numeric",
-                        month: "2-digit",
-                        day: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                        timeZone: "Asia/Tokyo",
-                      })
-                      : "情報なし"}
+                    {resource.timestamp ? formatDate(resource.timestamp) : "情報なし"}
                   </TableCell>
                   <TableCell>
                     <Chip

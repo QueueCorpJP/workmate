@@ -130,13 +130,9 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
         
         # 挨拶や一般的な会話の判定（フォールバック機能使用）
         if FALLBACK_AVAILABLE and is_casual_conversation(message_text):
-            company_name = DEFAULT_COMPANY_NAME
-            if company_id:
-                company_info = get_company_by_id(company_id, db)
-                if company_info:
-                    company_name = company_info.get('name', DEFAULT_COMPANY_NAME)
-            
-            casual_response = await generate_casual_response(message_text, company_name)
+            from .chat_conversation import detect_conversation_intent
+            intent_info = detect_conversation_intent(message_text)
+            casual_response = await generate_casual_response(message_text, intent_info)
             return ChatResponse(
                 response=casual_response,
                 sources=[]
@@ -442,7 +438,28 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
 
         try:
             response = model.generate_content(prompt)
-            ai_response = response.text if response and response.text else "申し訳ございませんが、回答を生成できませんでした。"
+
+            ai_response = ""
+            try:
+                # まず parts を優先的に結合
+                if hasattr(response, "parts") and response.parts:
+                    ai_response = "".join(getattr(p, "text", "") for p in response.parts)
+                # parts が空なら text アクセサを試す
+                if not ai_response and hasattr(response, "text"):
+                    ai_response = response.text or ""
+                # candidates 経由の fallback
+                if not ai_response and hasattr(response, "candidates"):
+                    for cand in response.candidates:
+                        if hasattr(cand, "content") and getattr(cand.content, "parts", None):
+                            ai_response = "".join(getattr(p, "text", "") for p in cand.content.parts)
+                            if ai_response:
+                                break
+            except Exception as e:
+                safe_print(f"❌ partsからテキスト抽出失敗: {e}")
+                ai_response = ""
+
+            if not ai_response:
+                ai_response = "申し訳ございませんが、回答を生成できませんでした。"
             safe_print(f"✅ フォールバック応答生成完了: {len(ai_response)}文字")
         except Exception as e:
             safe_print(f"❌ 応答生成エラー: {e}")

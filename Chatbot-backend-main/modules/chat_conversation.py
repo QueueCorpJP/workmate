@@ -183,8 +183,22 @@ async def generate_casual_response(message: str, intent_info: Dict[str, Any]) ->
 応答:"""
             
             response = model.generate_content(prompt)
-            if response and response.text:
-                generated_response = response.text.strip()
+            generated_response = ""
+            try:
+                if hasattr(response, "parts") and response.parts:
+                    generated_response = "".join(getattr(p, "text", "") for p in response.parts).strip()
+                if not generated_response and hasattr(response, "text"):
+                    generated_response = response.text.strip() if response.text else ""
+                if not generated_response and hasattr(response, "candidates"):
+                    for cand in response.candidates:
+                        if hasattr(cand, "content") and getattr(cand.content, "parts", None):
+                            generated_response = "".join(getattr(p, "text", "") for p in cand.content.parts).strip()
+                            if generated_response:
+                                break
+            except Exception as e:
+                safe_print(f"❌ parts抽出失敗: {e}")
+
+            if generated_response:
                 safe_print(f"Generated casual response: {generated_response}")
                 return generated_response
     
