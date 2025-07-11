@@ -170,7 +170,7 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
                         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
                           {notification.title}
                         </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
                           {notification.content}
                         </Typography>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

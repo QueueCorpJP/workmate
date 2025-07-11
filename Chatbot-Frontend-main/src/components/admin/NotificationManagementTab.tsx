@@ -321,7 +321,7 @@ const NotificationManagementTab: React.FC<NotificationManagementTabProps> = ({
                               sx={{ ml: 1 }}
                             />
                           </Box>
-                          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 1, whiteSpace: 'pre-wrap' }}>
                             {notification.content}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
