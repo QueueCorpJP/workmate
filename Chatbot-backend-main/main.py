@@ -554,14 +554,8 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
         # 権限チェックと作成可能なロールの判定
         if is_special_admin:
             # 特別管理者はadmin_userのみ作成可能
-            if requested_role and requested_role == "admin_user":
-                role = "admin_user"
-                print("特別管理者の権限でadmin_userアカウント作成")
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="特別管理者はadmin_userロールのみ作成できます"
-                )
+            role = "admin_user"  # 固定
+            print("特別管理者の権限でadmin_userアカウント作成 (roleは強制固定)")
         elif is_admin_user:
             # admin_userはuserとemployeeを作成可能
             if requested_role in ["user", "employee"]:

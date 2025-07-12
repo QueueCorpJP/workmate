@@ -35,6 +35,52 @@ from fastapi.responses import JSONResponse
 # ロガーの設定
 logger = logging.getLogger(__name__)
 
+def _is_date_like_pandas(value: str) -> bool:
+    """pandas処理用の日付判定関数"""
+    import re
+    from datetime import datetime
+    
+    if not value or not isinstance(value, str):
+        return False
+    
+    value = value.strip()
+    
+    # 日付パターンのリスト
+    date_patterns = [
+        r'^\d{4}[-/]\d{1,2}[-/]\d{1,2}$',  # 2024-01-01, 2024/1/1
+        r'^\d{1,2}[-/]\d{1,2}[-/]\d{4}$',  # 01-01-2024, 1/1/2024
+        r'^\d{4}年\d{1,2}月\d{1,2}日$',    # 2024年1月1日
+        r'^\d{1,2}月\d{1,2}日$',           # 1月1日
+        r'^\d{4}\d{2}\d{2}$',              # 20240101
+    ]
+    
+    # パターンマッチング
+    for pattern in date_patterns:
+        if re.match(pattern, value):
+            return True
+    
+    # Excel日付シリアル値（30000-50000程度）
+    try:
+        num_value = float(value)
+        if 30000 <= num_value <= 50000:
+            return True
+    except (ValueError, TypeError):
+        pass
+    
+    # 実際に日付として解析できるか試行
+    try:
+        # 一般的な日付フォーマットで解析を試行
+        for fmt in ['%Y-%m-%d', '%Y/%m/%d', '%m/%d/%Y', '%d/%m/%Y', '%Y%m%d']:
+            try:
+                datetime.strptime(value, fmt)
+                return True
+            except ValueError:
+                continue
+    except:
+        pass
+    
+    return False
+
 # 共通のエラーメッセージ
 EMPLOYEE_UPLOAD_ERROR = "社員アカウントはドキュメントをアップロードできません。管理者にお問い合わせください。"
 LIMIT_REACHED_ERROR = "申し訳ございません。デモ版のドキュメントアップロード制限（{limit}回）に達しました。"
@@ -160,7 +206,8 @@ async def _record_document_source(
     content: str, 
     user_id: str, 
     company_id: str, 
-    db: Connection
+    db: Connection,
+    metadata_json: str | None = None,
 ) -> None:
     """ドキュメントソースをデータベースに記録する（chunksテーブル対応）"""
     import time
@@ -185,7 +232,8 @@ async def _record_document_source(
             "uploaded_by": user_id,
             "company_id": company_id,
             "uploaded_at": datetime.now().isoformat(),
-            "special": "knowledge API経由でアップロード"
+            "special": "knowledge API経由でアップロード",
+            "metadata": metadata_json,
         }
         
         try:
@@ -425,7 +473,7 @@ async def process_url(url: str, user_id: str = None, company_id: str = None, db:
         # ユーザーIDがある場合はドキュメントアップロードカウントを更新
         if user_id:
             updated_limits = update_usage_count(user_id, "document_uploads_used", db)
-            await _record_document_source(url, "URL", 1, processed_text, user_id, company_id, db)
+            await _record_document_source(url, "URL", 1, processed_text, user_id, company_id, db, None)
             db.commit()
         
         # レスポンスを準備して返す
@@ -933,8 +981,64 @@ async def process_file(file: UploadFile = File(...), request: Request = None, us
                 remaining_uploads = None
                 limit_reached = False
             
-            # ドキュメントソースを記録
-            await _record_document_source(file.filename, file_extension.upper(), page_count, extracted_text, user_id, company_id, db)
+            # Excelの場合、date_typesを集約してmetadataに保存
+            metadata_json = None
+            if detected_type == 'excel' and 'data_list' in locals() and data_list:
+                try:
+                    import json as _json
+                    # 列名集合
+                    col_set = set()
+                    date_types_union: dict[str, str] = {}
+                    for rec in data_list:
+                        md = rec.get('metadata', {}) if rec else {}
+                        cols = md.get('columns', [])
+                        col_set.update(cols)
+                        dt_map = md.get('date_types', {})
+                        date_types_union.update(dt_map)
+                    metadata_json = _json.dumps({
+                        "columns": list(col_set),
+                        "date_types": date_types_union
+                    }, ensure_ascii=False)
+                except Exception as _merr:
+                    logger.warning(f"metadata_json 生成失敗: {_merr}")
+            
+            # pandas処理の場合もmetadataを生成
+            elif detected_type == 'excel' and df is not None and not df.empty:
+                try:
+                    import json as _json
+                    # DataFrameから列名を取得
+                    columns = df.columns.tolist()
+                    # 実際のデータ値から日付列を自動検出
+                    date_types = {}
+                    
+                    for col in columns:
+                        # この列の値をサンプリング
+                        sample_values = []
+                        for idx in range(min(10, len(df))):  # 最初の10行をサンプル
+                            value = df.iloc[idx][col]
+                            if pd.notna(value) and str(value).strip():
+                                sample_values.append(str(value).strip())
+                        
+                        if sample_values:
+                            # 日付パターンを検出
+                            date_like_count = 0
+                            for value in sample_values:
+                                if _is_date_like_pandas(value):
+                                    date_like_count += 1
+                            
+                            # 70%以上が日付っぽい場合は日付列として判定
+                            if date_like_count >= len(sample_values) * 0.7:
+                                date_types[col] = "date"
+                    
+                    metadata_json = _json.dumps({
+                        "columns": columns,
+                        "date_types": date_types
+                    }, ensure_ascii=False)
+                    logger.info(f"pandas処理でmetadata生成: columns={len(columns)}, date_types={len(date_types)}")
+                except Exception as _merr:
+                    logger.warning(f"pandas処理metadata_json 生成失敗: {_merr}")
+            
+            await _record_document_source(file.filename, file_extension.upper(), page_count, extracted_text, user_id, company_id, db, metadata_json)
             # データベースコミット（dbがNoneの場合は安全にスキップ）
             if db is not None:
                 try:

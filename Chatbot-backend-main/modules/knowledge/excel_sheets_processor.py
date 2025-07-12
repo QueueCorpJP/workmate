@@ -54,6 +54,86 @@ class ExcelSheetsProcessor:
                 logger.warning(f"一時ファイル削除エラー: {temp_file} - {str(e)}")
         self.temp_files.clear()
     
+    def _detect_date_types(self, headers: List[str], data_rows: List[List[str]] = None) -> Dict[str, str]:
+        """
+        実際のデータ値から日付列を自動検出
+        """
+        date_types = {}
+        
+        if not data_rows or not headers:
+            return date_types
+        
+        for col_idx, col_name in enumerate(headers):
+            if not col_name:
+                continue
+            
+            # この列の値をサンプリング
+            sample_values = []
+            for row in data_rows[:10]:  # 最初の10行をサンプル
+                if col_idx < len(row) and row[col_idx]:
+                    value = str(row[col_idx]).strip()
+                    if value:
+                        sample_values.append(value)
+            
+            if sample_values:
+                # 日付パターンを検出
+                date_like_count = 0
+                for value in sample_values:
+                    if self._is_date_like(value):
+                        date_like_count += 1
+                
+                # 70%以上が日付っぽい場合は日付列として判定
+                if date_like_count >= len(sample_values) * 0.7:
+                    date_types[col_name] = "date"
+        
+        return date_types
+    
+    def _is_date_like(self, value: str) -> bool:
+        """値が日付っぽいかどうかを判定"""
+        import re
+        from datetime import datetime
+        
+        if not value or not isinstance(value, str):
+            return False
+        
+        value = value.strip()
+        
+        # 日付パターンのリスト
+        date_patterns = [
+            r'^\d{4}[-/]\d{1,2}[-/]\d{1,2}$',  # 2024-01-01, 2024/1/1
+            r'^\d{1,2}[-/]\d{1,2}[-/]\d{4}$',  # 01-01-2024, 1/1/2024
+            r'^\d{4}年\d{1,2}月\d{1,2}日$',    # 2024年1月1日
+            r'^\d{1,2}月\d{1,2}日$',           # 1月1日
+            r'^\d{4}\d{2}\d{2}$',              # 20240101
+        ]
+        
+        # パターンマッチング
+        for pattern in date_patterns:
+            if re.match(pattern, value):
+                return True
+        
+        # Excel日付シリアル値（30000-50000程度）
+        try:
+            num_value = float(value)
+            if 30000 <= num_value <= 50000:
+                return True
+        except (ValueError, TypeError):
+            pass
+        
+        # 実際に日付として解析できるか試行
+        try:
+            # 一般的な日付フォーマットで解析を試行
+            for fmt in ['%Y-%m-%d', '%Y/%m/%d', '%m/%d/%Y', '%d/%m/%Y', '%Y%m%d']:
+                try:
+                    datetime.strptime(value, fmt)
+                    return True
+                except ValueError:
+                    continue
+        except:
+            pass
+        
+        return False
+    
     async def get_google_services(self, access_token: str = None, service_account_file: str = None):
         """Google Drive & Sheets APIサービスを取得"""
         if not GOOGLE_APIS_AVAILABLE:
@@ -322,7 +402,8 @@ class ExcelSheetsProcessor:
                                     'metadata': {
                                         'sheet_name': ensure_string(sheet_title),
                                         'row_index': row_index + 1,
-                                        'columns': list(row_dict.keys())
+                                        'columns': list(row_dict.keys()),
+                                        'date_types': self._detect_date_types(headers, data_rows)
                                     }
                                 }
                                 

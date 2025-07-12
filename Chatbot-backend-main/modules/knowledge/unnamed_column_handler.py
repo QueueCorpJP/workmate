@@ -18,36 +18,37 @@ class UnnamedColumnHandler:
         self.header_keywords = [
             # 基本情報
             '顧客', 'お客様', '会社', '企業', '組織', '部門', '部署',
-            '名前', '氏名', 'name', '名称', 'title', 'タイトル',
+            '名前', '氏名', 'name', '名称', 'title', 'タイトル', '項目', 'フィールド',
             '住所', 'address', '連絡先', '電話', 'phone', 'tel',
-            'メール', 'email', 'mail', 'fax',
+            'メール', 'email', 'mail', 'fax', 'URL', 'ウェブサイト',
             
             # 識別子
             'id', 'ID', '番号', 'no', 'number', 'code', 'コード',
-            '識別', 'identifier', 'ident', '管理', '管理番号',
+            '識別', 'identifier', 'ident', '管理', '管理番号', 'キー',
             
             # 日付・時刻
             '日付', 'date', '時刻', 'time', '年', 'year', '月', 'month', '日', 'day',
             '開始', 'start', '終了', 'end', '期間', 'period',
-            '作成', 'created', '更新', 'updated', '最終', 'last',
+            '作成', 'created', '更新', 'updated', '最終', 'last', '登録日', '完了日',
             
             # 金額・数値
             '金額', 'amount', '価格', 'price', '料金', 'fee', '費用', 'cost',
             '数量', 'quantity', '個数', 'count', '件数', 'total', '合計',
-            '単価', 'unit', '税', 'tax', '消費税',
+            '単価', 'unit', '税', 'tax', '消費税', '割引', '利益',
             
             # ステータス・状態
              'status', 'ステータス', '状態', 'state', '段階', 'phase',
             '完了', 'complete', '進行', 'progress', '開始', 'active',
-            '停止', 'stop', '終了', 'finish', '承認', 'approval',
+            '停止', 'stop', '終了', 'finish', '承認', 'approval', '状況',
             
             # 分類・カテゴリ
             'カテゴリ', 'category', '分類', 'type', '種類', 'kind',
-            'レベル', 'level', 'グレード', 'grade', 'ランク', 'rank',
+            'レベル', 'level', 'グレード', 'grade', 'ランク', 'rank', 'グループ', '区分',
             
             # その他
             '備考', 'note', 'memo', 'メモ', '説明', 'description',
-            '内容', 'content', '詳細', 'detail', '要約', 'summary'
+            '内容', 'content', '詳細', 'detail', '要約', 'summary',
+            '適用', '対象', 'ソース', '情報源', 'データ', '値'
         ]
         
         # Unnamedパターン
@@ -306,15 +307,71 @@ class UnnamedColumnHandler:
             
             # Step 1: 真のヘッダー行を検出
             header_row = self.detect_header_row(df)
-            if header_row > 0:
-                # ヘッダー行を設定し、それより上の行をスキップ
-                new_columns = [ensure_string(val) if pd.notna(val) else f'列{i+1}' 
-                              for i, val in enumerate(df.iloc[header_row])]
-                df_fixed = df.iloc[header_row + 1:].copy()
-                df_fixed.columns = new_columns
-                modifications.append(f"行 {header_row} をヘッダーとして設定し、{header_row} 行をスキップしました")
+
+            # --- 多段ヘッダー対応開始 ---
+            base_header_idx = header_row
+            second_header_idx = base_header_idx + 1 if base_header_idx + 1 < len(df) else None
+            use_second_header = False
+
+            if second_header_idx is not None:
+                row2 = df.iloc[second_header_idx]
+                non_empty = sum(1 for v in row2 if pd.notna(v) and str(v).strip())
+                if non_empty >= len(row2) * 0.4:
+                    use_second_header = True
+
+            # 1段目ヘッダー行
+            top_values = [ensure_string(v) for v in df.iloc[base_header_idx]]
+            # 2段目ヘッダー行（存在しない場合は空文字）
+            if use_second_header:
+                sub_values_raw = [ensure_string(v) for v in df.iloc[second_header_idx]]
             else:
-                df_fixed = df.copy()
+                sub_values_raw = [''] * len(top_values)
+
+            # 結合セル対策: 直前の値を横展開
+            propagated_top = []
+            last_top = ''
+            for v in top_values:
+                v_clean = v.strip()
+                if v_clean:
+                    last_top = v_clean
+                    propagated_top.append(v_clean)
+                else:
+                    propagated_top.append(last_top)
+
+            # 最終カラム名生成
+            combined_columns = []
+            for i, (top, sub) in enumerate(zip(propagated_top, sub_values_raw)):
+                top = top.strip()
+                sub = sub.strip()
+                if top and sub and top != sub:
+                    col_name = f"{top}_{sub}"
+                elif sub:
+                    col_name = sub
+                elif top:
+                    col_name = top
+                else:
+                    col_name = f'列_{i+1}'
+                combined_columns.append(col_name)
+
+            # 重複カラム名解消
+            seen = {}
+            final_columns = []
+            for col in combined_columns:
+                base_name = col
+                counter = seen.get(base_name, 0)
+                if counter > 0:
+                    col = f"{base_name}_{counter}"
+                seen[base_name] = counter + 1
+                final_columns.append(col)
+
+            # データ部を抽出
+            skip_rows = base_header_idx + (2 if use_second_header else 1)
+            df_fixed = df.iloc[skip_rows:].copy()
+            df_fixed.columns = final_columns
+
+            modifications.append(
+                f"行 {base_header_idx}{(' と ' + str(second_header_idx)) if use_second_header else ''} をヘッダーとして設定し、{skip_rows} 行をスキップしました")
+            # --- 多段ヘッダー対応終了 ---
             
             # Step 2: Unnamedカラムを検出
             unnamed_cols = self.detect_unnamed_columns(df_fixed)

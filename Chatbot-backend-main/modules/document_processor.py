@@ -422,8 +422,27 @@ class DocumentProcessor:
                 "uploaded_at": datetime.now().isoformat(),  # uploaded_atフィールドを使用
                 "active": True,  # activeフィールドを追加
                 "parent_id": doc_data.get("parent_id"),  # 親ドキュメント（階層構造）
-                "doc_id": document_id  # ドキュメント識別子として自身のIDを設定
+                "doc_id": document_id,  # ドキュメント識別子として自身のIDを設定
+                "metadata": doc_data.get("metadata")  # metadataフィールドを追加
             }
+            
+            logger.info(f"保存するmetadata: {metadata.get('metadata')}")
+            
+            # metadataが文字列かどうかを確認
+            if metadata.get('metadata'):
+                logger.info(f"metadataの型: {type(metadata.get('metadata'))}")
+                if isinstance(metadata.get('metadata'), str):
+                    # JSON文字列として有効かどうかを確認
+                    try:
+                        import json
+                        parsed = json.loads(metadata.get('metadata'))
+                        logger.info(f"metadata JSON解析成功: {parsed}")
+                    except Exception as json_error:
+                        logger.error(f"metadata JSON解析失敗: {json_error}")
+                        # 無効なJSONの場合は基本的なmetadataに置き換え
+                        metadata['metadata'] = '{"error": "invalid json"}'
+            else:
+                logger.warning("metadataが空またはNone")
             
             # specialコラムは絶対に設定しない（ユーザーの要求通り）
             
@@ -432,6 +451,17 @@ class DocumentProcessor:
             
             if result and result.data:
                 logger.info(f"✅ document_sourcesテーブル保存完了: {document_id} - {doc_data['name']}")
+                # 保存後に実際のデータを確認
+                try:
+                    from supabase_adapter import select_data
+                    check_result = select_data("document_sources", filters={"id": document_id})
+                    if check_result.success and check_result.data:
+                        saved_metadata = check_result.data[0].get('metadata')
+                        logger.info(f"✅ 保存確認 - 実際のmetadata: {saved_metadata}")
+                    else:
+                        logger.warning(f"⚠️ 保存確認失敗: {check_result.error}")
+                except Exception as check_error:
+                    logger.warning(f"⚠️ 保存確認エラー: {check_error}")
                 return document_id
             else:
                 logger.error(f"❌ document_sourcesテーブル保存失敗: result={result}")

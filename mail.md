@@ -132,3 +132,4 @@ CREATE TABLE public.users (
   CONSTRAINT users_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id),
   CONSTRAINT users_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id)
 );
+

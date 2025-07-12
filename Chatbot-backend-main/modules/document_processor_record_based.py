@@ -85,6 +85,77 @@ class DocumentProcessorRecordBased:
                 "special": f"レコード数: {len(records)}"
             }
             
+            # Excel用のmetadataを生成
+            metadata_json = None
+            try:
+                import json
+                import re
+                from datetime import datetime
+                
+                # 全レコードから列名を集約
+                all_columns = set()
+                for record in records:
+                    if 'columns' in record:
+                        all_columns.update(record['columns'])
+                
+                logger.info(f"集約された列名: {list(all_columns)}")
+                
+                # 値のパターンから日付列を自動検出
+                date_types = {}
+                
+                for col in all_columns:
+                    # この列の値を複数レコードから取得してサンプリング
+                    sample_values = []
+                    for record in records[:10]:  # 最初の10レコードをサンプル
+                        if 'record_data' in record and col in record['record_data']:
+                            value = record['record_data'][col]
+                            if value and str(value).strip():
+                                sample_values.append(str(value).strip())
+                    
+                    logger.info(f"列 '{col}' のサンプル値: {sample_values[:3]}...")  # 最初の3つだけ表示
+                    
+                    if sample_values:
+                        # 日付パターンを検出
+                        date_like_count = 0
+                        for value in sample_values:
+                            if self._is_date_like(value):
+                                date_like_count += 1
+                        
+                        # 70%以上が日付っぽい場合は日付列として判定
+                        if date_like_count >= len(sample_values) * 0.7:
+                            date_types[col] = "date"
+                            logger.info(f"列 '{col}' を日付列として判定 ({date_like_count}/{len(sample_values)})")
+                
+                # 基本的なmetadataを必ず生成（列が無い場合でも）
+                metadata_json = json.dumps({
+                    "columns": list(all_columns),
+                    "date_types": date_types,
+                    "file_type": "excel",
+                    "record_count": len(records)
+                }, ensure_ascii=False)
+                
+                logger.info(f"レコードベース処理でmetadata生成: columns={len(all_columns)}, date_types={len(date_types)}")
+                logger.info(f"生成されたmetadata_json: {metadata_json}")
+            except Exception as meta_error:
+                logger.warning(f"レコードベース処理metadata生成失敗: {meta_error}")
+                # エラーが発生した場合でも基本的なmetadataを生成
+                try:
+                    metadata_json = json.dumps({
+                        "columns": [],
+                        "date_types": {},
+                        "file_type": "excel",
+                        "record_count": len(records),
+                        "error": str(meta_error)
+                    }, ensure_ascii=False)
+                    logger.info(f"フォールバックmetadata生成: {metadata_json}")
+                except Exception as fallback_error:
+                    logger.error(f"フォールバックmetadata生成も失敗: {fallback_error}")
+                    metadata_json = '{"error": "metadata generation failed"}'
+            
+            # メタデータにmetadata_jsonを追加
+            doc_data["metadata"] = metadata_json
+            logger.info(f"doc_dataにmetadata設定: {doc_data.get('metadata')}")
+            
             document_id = await self.base_processor._save_document_metadata(doc_data)
             
             # レコードをデータベースに保存
@@ -134,16 +205,84 @@ class DocumentProcessorRecordBased:
                     logger.info(f"📋 シート処理開始: {sheet_name}")
                     
                     # シートをDataFrameとして読み込み
-                    df = pd.read_excel(excel_file, sheet_name=sheet_name, header=0)
+                    logger.info(f"📋 シート読み込み開始: {sheet_name}")
+                    
+                    # 最初にヘッダーなしで読み込んで構造を確認
+                    df_raw = pd.read_excel(excel_file, sheet_name=sheet_name, header=None)
+                    logger.info(f"📊 生のシート情報（ヘッダーなし）:")
+                    logger.info(f"  - 形状: {df_raw.shape}")
+                    if not df_raw.empty:
+                        logger.info(f"  - 最初の5行:")
+                        for i in range(min(5, len(df_raw))):
+                            logger.info(f"    行{i}: {list(df_raw.iloc[i])}")
+                    
+                    # ヘッダー行を検出
+                    header_row = 0
+                    potential_headers = []
+                    
+                    for i in range(min(5, len(df_raw))):
+                        row_values = df_raw.iloc[i].dropna().astype(str).tolist()
+                        if row_values and len(row_values) > 2:
+                            # 有効な値が3つ以上ある行をヘッダーとして使用
+                            non_empty_count = sum(1 for val in row_values if val and str(val).strip())
+                            if non_empty_count > 2:
+                                potential_headers.append((i, non_empty_count, row_values))
+                                logger.info(f"📍 ヘッダー候補: 行{i} (有効な値: {non_empty_count}個)")
+                    
+                    # 最も多くの有効な値を持つ行をヘッダーとして選択
+                    if potential_headers:
+                        header_row = max(potential_headers, key=lambda x: x[1])[0]
+                        logger.info(f"📍 最終ヘッダー行: 行{header_row}")
+                    else:
+                        logger.warning("⚠️ 適切なヘッダー行が見つかりません。行0を使用します。")
+                    
+                    # 検出されたヘッダー行で再読み込み
+                    df = pd.read_excel(excel_file, sheet_name=sheet_name, header=header_row)
+                    
+                    # 複数行ヘッダーの場合、上の行の情報も結合
+                    if header_row > 0:
+                        logger.info("�� 複数行ヘッダーを検出。上の行の情報も結合します。")
+                        combined_columns = []
+                        for col_idx, col_name in enumerate(df.columns):
+                            combined_name = str(col_name).strip()
+                            
+                            # 上の行の情報を取得
+                            for prev_row in range(header_row):
+                                if col_idx < len(df_raw.columns):
+                                    prev_value = df_raw.iloc[prev_row, col_idx]
+                                    if pd.notna(prev_value) and str(prev_value).strip():
+                                        prev_str = str(prev_value).strip()
+                                        if prev_str not in combined_name:
+                                            combined_name = f"{prev_str}_{combined_name}" if combined_name else prev_str
+                            
+                            combined_columns.append(combined_name)
+                        
+                        df.columns = combined_columns
+                        logger.info(f"📍 結合後の列名: {list(df.columns)}")
+                    
+                    # 生のデータを確認
+                    logger.info(f"📊 ヘッダー行{header_row}でのDataFrame情報:")
+                    logger.info(f"  - 形状: {df.shape}")
+                    logger.info(f"  - 列名（生）: {list(df.columns)}")
+                    logger.info(f"  - 列名の型: {[type(col) for col in df.columns]}")
+                    
+                    # 最初の数行を確認
+                    if not df.empty:
+                        logger.info(f"  - 最初の3行:")
+                        for i, row in df.head(3).iterrows():
+                            logger.info(f"    行{i}: {dict(row)}")
                     
                     if df.empty:
                         logger.warning(f"⚠️ シート {sheet_name} は空です")
                         continue
                     
                     # 空の行・列を削除
+                    logger.info(f"📊 空行・列削除前: {df.shape}")
                     df = df.dropna(how='all').dropna(axis=1, how='all')
+                    logger.info(f"📊 空行・列削除後: {df.shape}")
                     
                     if df.empty:
+                        logger.warning(f"⚠️ シート {sheet_name} は空行・列削除後に空になりました")
                         continue
                     
                     # シートのレコードを抽出
@@ -173,7 +312,9 @@ class DocumentProcessorRecordBased:
         
         try:
             # 列名を正規化
+            logger.info(f"DataFrame列名（正規化前）: {list(df.columns)}")
             df.columns = [self._normalize_column_name(str(col)) for col in df.columns]
+            logger.info(f"DataFrame列名（正規化後）: {list(df.columns)}")
             
             # 各行をレコードとして処理
             for index, row in df.iterrows():
@@ -214,7 +355,8 @@ class DocumentProcessorRecordBased:
                         "sheet_name": sheet_name,
                         "row_index": index,
                         "record_data": record_data,
-                        "column_count": meaningful_columns
+                        "column_count": meaningful_columns,
+                        "columns": list(record_data.keys())  # 列名リストを追加
                     }
                     
                     records.append(record)
@@ -231,16 +373,26 @@ class DocumentProcessorRecordBased:
     
     def _normalize_column_name(self, column_name: str) -> str:
         """列名を正規化"""
-        # 無意味な列名を意味のあるものに置換
-        if not column_name or column_name.startswith('Unnamed'):
-            return f"列_{uuid.uuid4().hex[:8]}"
+        original_name = column_name
+        logger.debug(f"列名正規化: 元の名前='{original_name}' (型: {type(original_name)})")
+        
+        # 本当に無意味な列名のみを置換
+        if not column_name or str(column_name).strip() == '' or str(column_name).startswith('Unnamed'):
+            generated_name = f"列_{uuid.uuid4().hex[:8]}"
+            logger.debug(f"列名を自動生成: '{original_name}' → '{generated_name}'")
+            return generated_name
         
         # 文字列を清潔に
         normalized = str(column_name).strip()
         
-        # 空白を置換
+        # 空白や改行を置換
         normalized = normalized.replace('\n', ' ').replace('\r', ' ')
         
+        # 連続する空白を1つにまとめる
+        import re
+        normalized = re.sub(r'\s+', ' ', normalized)
+        
+        logger.debug(f"列名正規化完了: '{original_name}' → '{normalized}'")
         return normalized
     
     async def _save_records_to_database(self, doc_id: str, records: List[Dict[str, Any]],
@@ -375,6 +527,66 @@ class DocumentProcessorRecordBased:
     def _calculate_page_count(self, records: List[Dict[str, Any]]) -> int:
         """レコード数からページ数を推定（1ページ=50レコード）"""
         return max(1, (len(records) + 49) // 50)
+
+    def _is_date_like(self, value: str) -> bool:
+        """値が日付っぽいかどうかを判定"""
+        import re
+        from datetime import datetime
+        
+        if not value or not isinstance(value, str):
+            return False
+        
+        value = value.strip()
+        
+        # 日付パターンのリスト
+        date_patterns = [
+            r'^\d{4}[-/]\d{1,2}[-/]\d{1,2}$',  # 2024-01-01, 2024/1/1
+            r'^\d{1,2}[-/]\d{1,2}[-/]\d{4}$',  # 01-01-2024, 1/1/2024
+            r'^\d{4}年\d{1,2}月\d{1,2}日$',    # 2024年1月1日
+            r'^\d{1,2}月\d{1,2}日$',           # 1月1日
+            r'^\d{4}\d{2}\d{2}$',              # 20240101
+            r'^\d{4}[-/]\d{1,2}$',             # 2024-01, 2024/1
+            r'^\d{1,2}[-/]\d{4}$',             # 01-2024, 1/2024
+            r'^\d{4}年\d{1,2}月$',             # 2024年1月
+            r'^\d{1,2}月$',                    # 1月
+            r'^\d{4}年$',                      # 2024年
+            r'^\d{2,4}[-/]\d{1,2}[-/]\d{1,2}\s+\d{1,2}:\d{2}$',  # 2024-01-01 12:30
+            r'^\d{1,2}:\d{2}$',                # 12:30
+            r'^\d{4}[-/]\d{1,2}[-/]\d{1,2}\s+\d{1,2}:\d{2}:\d{2}$',  # 2024-01-01 12:30:45
+        ]
+        
+        # パターンマッチング
+        for pattern in date_patterns:
+            if re.match(pattern, value):
+                return True
+        
+        # Excel日付シリアル値（30000-50000程度）
+        try:
+            num_value = float(value)
+            if 25000 <= num_value <= 60000:  # 範囲を拡大
+                return True
+        except (ValueError, TypeError):
+            pass
+        
+        # 実際に日付として解析できるか試行
+        try:
+            # 一般的な日付フォーマットで解析を試行
+            date_formats = [
+                '%Y-%m-%d', '%Y/%m/%d', '%m/%d/%Y', '%d/%m/%Y', '%Y%m%d',
+                '%Y-%m-%d %H:%M', '%Y/%m/%d %H:%M', '%Y-%m-%d %H:%M:%S',
+                '%Y年%m月%d日', '%m月%d日', '%Y年%m月', '%m月', '%Y年',
+                '%Y-%m', '%Y/%m', '%m-%Y', '%m/%Y'
+            ]
+            for fmt in date_formats:
+                try:
+                    datetime.strptime(value, fmt)
+                    return True
+                except ValueError:
+                    continue
+        except:
+            pass
+        
+        return False
 
 # グローバルインスタンス
 document_processor_record_based = DocumentProcessorRecordBased()
