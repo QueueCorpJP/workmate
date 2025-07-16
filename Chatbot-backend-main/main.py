@@ -1329,11 +1329,11 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
         
     except Exception as e:
         print(f"⚠️ Gemini質問分析RAGエラー: {e}")
-        print("🔄 フォールバック: 従来のprocess_chat関数を使用")
+        print("🔄 フォールバック: 従来のprocess_chat_message関数を使用")
         
-        # フォールバック: 従来のprocess_chat関数を使用
-        from modules.chat import process_chat
-        result = await process_chat(message, db, current_user)
+        # フォールバック: 従来のprocess_chat_message関数を使用
+        from modules.chat import process_chat_message
+        result = await process_chat_message(message, db, current_user)
         
         # 応答を返す
         return ChatResponse(

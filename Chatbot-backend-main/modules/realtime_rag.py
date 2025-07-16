@@ -21,6 +21,7 @@ from psycopg2.extras import RealDictCursor
 import json
 from datetime import datetime
 import urllib.parse  # 追加
+import re # 追加
 
 # 環境変数の読み込み
 load_dotenv()
@@ -67,7 +68,50 @@ class RealtimeRAGProcessor:
         logger.info("✅ エンベディング検索のみを使用（Gemini質問分析システムは無効化）")
         
         logger.info(f"✅ リアルタイムRAGプロセッサ初期化完了: エンベディング={self.embedding_model} ({self.expected_dimensions}次元)")
-    
+
+    async def _keyword_search(self, query: str, company_id: Optional[str], limit: int = 10) -> List[Dict]:
+        """
+        キーワードベースの検索（ILIKEを使用）
+        """
+        logger.info(f"🔑 Step 3-Keyword: キーワード検索開始 (Top-{limit})")
+        # クエリからキーワードを抽出（例：WPD4100389）
+        keywords = re.findall(r'[A-Z]+\d+', query)
+        if not keywords:
+            logger.info("キーワードが見つからないため、キーワード検索をスキップします。")
+            return []
+        
+        search_term = keywords[0] # 簡単のため最初のキーワードを使用
+        
+        try:
+            with psycopg2.connect(self.db_url, cursor_factory=RealDictCursor) as conn:
+                with conn.cursor() as cur:
+                    sql_keyword = """
+                    SELECT
+                        c.id, c.doc_id, c.chunk_index, c.content,
+                        ds.name as document_name, ds.type as document_type,
+                        0.9 as similarity_score, -- キーワード検索は高スコア
+                        'keyword' as search_method
+                    FROM chunks c
+                    LEFT JOIN document_sources ds ON ds.id = c.doc_id
+                    WHERE c.content ILIKE %s
+                    """
+                    params_keyword = [f"%{search_term}%"]
+
+                    if company_id:
+                        sql_keyword += " AND c.company_id = %s"
+                        params_keyword.append(company_id)
+                    
+                    sql_keyword += " LIMIT %s"
+                    params_keyword.append(limit)
+                    
+                    cur.execute(sql_keyword, params_keyword)
+                    results = cur.fetchall()
+                    logger.info(f"キーワード '{search_term}' で {len(results)} 件ヒットしました。")
+                    return [dict(row) for row in results]
+        except Exception as e:
+            logger.error(f"❌ キーワード検索エラー: {e}")
+            return []
+
     def _get_db_url(self) -> str:
         """データベースURLを構築"""
         supabase_url = os.getenv("SUPABASE_URL")
@@ -662,14 +706,39 @@ class RealtimeRAGProcessor:
             step1_result = await self.step1_receive_question(question, company_id)
             processed_question = step1_result["processed_question"]
             
-            # エンベディング検索のみを使用（シンプル化）
-            logger.info("🔍 エンベディング検索を実行")
-            
             # Step 2: エンベディング生成
             query_embedding = await self.step2_generate_embedding(processed_question)
+
+            # Step 3: ベクトル検索とキーワード検索を並列実行
+            search_tasks = [
+                self.step3_similarity_search(query_embedding, company_id, top_k),
+                self._keyword_search(processed_question, company_id, 5) # キーワード検索は5件まで
+            ]
+            results_list = await asyncio.gather(*search_tasks, return_exceptions=True)
+
+            vector_results = results_list[0] if not isinstance(results_list[0], Exception) else []
+            keyword_results = results_list[1] if not isinstance(results_list[1], Exception) else []
+
+            # 結果の統合と重複除去
+            all_chunks = {r['chunk_id']: r for r in vector_results}
+            for r in keyword_results:
+                # キーワード検索結果を優先的に上書き
+                all_chunks[r['id']] = {
+                    'chunk_id': r['id'],
+                    'doc_id': r['doc_id'],
+                    'chunk_index': r['chunk_index'],
+                    'content': r['content'],
+                    'document_name': r['document_name'],
+                    'document_type': r['document_type'],
+                    'similarity_score': float(r['similarity_score']),
+                    'search_method': r['search_method']
+                }
+
+            # スコアでソート
+            sorted_chunks = sorted(all_chunks.values(), key=lambda x: x['similarity_score'], reverse=True)
             
-            # Step 3: 類似チャンク検索
-            similar_chunks = await self.step3_similarity_search(query_embedding, company_id, top_k)
+            # 最終的なチャンクリスト
+            similar_chunks = sorted_chunks[:top_k]
             
             metadata = {
                 "original_question": question,
@@ -678,7 +747,7 @@ class RealtimeRAGProcessor:
                 "top_similarity": similar_chunks[0]["similarity_score"] if similar_chunks else 0.0,
                 "company_id": company_id,
                 "company_name": company_name,
-                "search_method": "embedding_search"
+                "search_method": "hybrid_search" # ハイブリッド検索に変更
             }
             
             # Step 4: LLM回答生成

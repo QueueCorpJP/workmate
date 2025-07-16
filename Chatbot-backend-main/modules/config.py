@@ -179,3 +179,44 @@ def get_cors_origins():
                 ])
         
         return origins
+
+# 🔄 ハイブリッド処理設定
+HYBRID_PROCESSING_ENABLED = os.getenv("HYBRID_PROCESSING_ENABLED", "true").lower() == "true"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+PREFER_OPENAI_FOR_COMPLEX_DATA = os.getenv("PREFER_OPENAI_FOR_COMPLEX_DATA", "false").lower() == "true"
+
+# 処理方法選択の優先順位
+EXCEL_PROCESSING_PRIORITY = os.getenv("EXCEL_PROCESSING_PRIORITY", "hybrid").lower()
+# 選択肢: "hybrid", "google_sheets", "openai", "auto"
+
+def get_excel_processing_method() -> str:
+    """Excel処理方法を動的に決定"""
+    if EXCEL_PROCESSING_PRIORITY == "hybrid" and OPENAI_API_KEY and HYBRID_PROCESSING_ENABLED:
+        return "hybrid"
+    elif EXCEL_PROCESSING_PRIORITY == "openai" and OPENAI_API_KEY:
+        return "openai"
+    elif EXCEL_PROCESSING_PRIORITY == "google_sheets":
+        return "google_sheets"
+    elif EXCEL_PROCESSING_PRIORITY == "auto":
+        # ファイルサイズや複雑さに基づいて自動選択
+        return "hybrid" if OPENAI_API_KEY else "google_sheets"
+    else:
+        return "google_sheets"  # デフォルト
+
+def setup_openai_client():
+    """OpenAI APIクライアントの設定"""
+    if not OPENAI_API_KEY:
+        logger.warning("⚠️ OPENAI_API_KEY環境変数が設定されていません")
+        return None
+    
+    try:
+        import openai
+        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        logger.info("✅ OpenAI APIクライアント初期化完了")
+        return client
+    except ImportError:
+        logger.error("❌ OpenAI ライブラリが見つかりません。pip install openai を実行してください。")
+        return None
+    except Exception as e:
+        logger.error(f"❌ OpenAI APIクライアント初期化エラー: {str(e)}")
+        return None

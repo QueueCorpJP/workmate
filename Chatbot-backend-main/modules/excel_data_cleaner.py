@@ -136,6 +136,13 @@ class ExcelDataCleaner:
         if len(text) > self.max_cell_length:
             text = text[:self.max_cell_length] + "..."
         
+        # メールアドレス検知のために@記号を保護する前に検証
+        is_email_like = self._is_email_like(text)
+        
+        # メールアドレス以外の場合のみ@記号を一時的に保護
+        if not is_email_like:
+            text = text.replace('@', '[AT_SYMBOL]')
+        
         # Unicode正規化
         text = unicodedata.normalize('NFKC', text)
         
@@ -147,7 +154,42 @@ class ExcelDataCleaner:
         text = text.replace('\x00', '')  # NULL文字削除
         text = text.replace('\ufeff', '')  # BOM削除
         
+        # メールアドレス以外の場合のみ@記号を復元
+        if not is_email_like:
+            text = text.replace('[AT_SYMBOL]', '@')
+        
         return text.strip()
+    
+    def _is_email_like(self, text: str) -> bool:
+        """
+        メールアドレスっぽい文字列かどうかを簡単にチェック
+        """
+        import re
+        
+        # 基本的なメールアドレスパターン
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        
+        # 文字列をクリーンアップ
+        text = text.strip()
+        
+        # 基本パターンチェック
+        if re.match(email_pattern, text):
+            return True
+        
+        # 簡単なメールアドレスパターンチェック
+        if '@' in text and '.' in text:
+            parts = text.split('@')
+            if len(parts) == 2:
+                local_part = parts[0]
+                domain_part = parts[1]
+                
+                # ローカル部分とドメイン部分に適切な文字がある場合
+                if len(local_part) > 0 and len(domain_part) > 0:
+                    # ドメイン部分に少なくとも1つのドットが含まれている
+                    if '.' in domain_part:
+                        return True
+        
+        return False
     
     def _is_meaningful_row(self, row: pd.Series) -> bool:
         """

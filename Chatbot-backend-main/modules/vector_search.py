@@ -114,14 +114,14 @@ class VectorSearchSystem:
             logger.error(f"❌ pgvector有効化エラー: {e}")
             return False
     
-    def generate_query_embedding(self, query: str) -> List[float]:
+    async def generate_query_embedding(self, query: str) -> List[float]:
         """クエリの埋め込みベクトルを生成"""
         try:
             logger.info(f"クエリの埋め込み生成中: {query[:50]}...")
             
             # Multi-API使用
             if self.multi_api_client:
-                embedding_vector = self.multi_api_client.generate_embedding(query)
+                embedding_vector = await self.multi_api_client.generate_embedding(query)
                 
                 if embedding_vector and len(embedding_vector) > 0:
                     # 期待される次元数であることを確認
@@ -167,11 +167,11 @@ class VectorSearchSystem:
             )
             """
     
-    def vector_similarity_search(self, query: str, company_id: str = None, limit: int = 20) -> List[Dict]:
+    async def vector_similarity_search(self, query: str, company_id: str = None, limit: int = 20) -> List[Dict]:
         """ベクトル類似検索を実行（pgvector対応版）"""
         try:
             # クエリの埋め込み生成
-            query_vector = self.generate_query_embedding(query)
+            query_vector = await self.generate_query_embedding(query)
             if not query_vector:
                 logger.error("クエリの埋め込み生成に失敗")
                 return []
@@ -225,12 +225,17 @@ class VectorSearchSystem:
                     else:
                         params.append(limit)
                     
+                    logger.info(f"実行SQL: {sql}")
+                    logger.info(f"パラメータ: {params}")
+
                     logger.info(f"ベクトル検索実行中... (limit: {limit})")
                     logger.info(f"使用テーブル: chunks, pgvector: {'有効' if self.pgvector_available else '無効'}")
                     
                     cur.execute(sql, params)
                     results = cur.fetchall()
                     
+                    logger.info(f"DBからの生の結果: {results}")
+
                     # 結果を辞書のリストに変換
                     search_results = []
                     for row in results:

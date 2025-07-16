@@ -166,7 +166,7 @@ class UnnamedColumnHandler:
             data_type = self._analyze_data_type(col_data)
             
             # 名前を提案
-            suggested_name = self._suggest_column_name(col_data, col_index, df)
+            suggested_name = self._suggest_column_name(col_data, col_index)
             
             return {
                 'type': data_type,
@@ -256,17 +256,24 @@ class UnnamedColumnHandler:
             logger.error(f"データ型分析エラー: {str(e)}")
             return 'unknown'
     
-    def _suggest_column_name(self, col_data: pd.Series, col_index: int, df: pd.DataFrame) -> Optional[str]:
-        """カラム名を提案"""
+    def _suggest_column_name(self, col_data: pd.Series, col_index: int) -> str:
+        """
+        カラムの内容に基づいて適切な名前を提案する
+        """
         try:
-            # 隣接するカラムの名前から推測
+            # NaNまたは空の値を除外
+            col_data = col_data.dropna()
+            if len(col_data) == 0:
+                return f'データ{col_index + 1}'
+            
+            # 前の列の情報を使って推測
             if col_index > 0:
-                prev_col = df.columns[col_index - 1]
+                prev_col = col_data.iloc[0] if len(col_data) > 0 else ""
                 prev_str = ensure_string(prev_col).lower()
                 
-                # パターンマッチング
-                if 'id' in prev_str or '番号' in prev_str:
-                    return '関連情報'
+                # よくあるパターン
+                if 'total' in prev_str or '合計' in prev_str:
+                    return '合計額'
                 elif 'name' in prev_str or '名前' in prev_str or '氏名' in prev_str:
                     return '詳細'
                 elif 'date' in prev_str or '日付' in prev_str:
@@ -274,19 +281,37 @@ class UnnamedColumnHandler:
                 elif 'price' in prev_str or '価格' in prev_str or '金額' in prev_str:
                     return '税額'
             
-            # データの内容から推測
+            # データの内容から推測（拡張版）
             non_null_data = col_data.dropna()
             if len(non_null_data) > 0:
-                sample_values = [ensure_string(val).lower() for val in non_null_data.head(5)]
+                # サンプルサイズを増やし、より多くのデータをチェック
+                sample_size = min(20, len(non_null_data))  # 最大20行をチェック
+                sample_values = [ensure_string(val).lower() for val in non_null_data.head(sample_size)]
                 
-                # よくあるパターン
+                # デバッグ情報を追加
+                logger.info(f"📧 メールアドレス検知開始 - 列{col_index + 1}: {sample_size}件のサンプルをチェック")
+                logger.info(f"📧 サンプルデータ（最初の3件）: {sample_values[:3]}")
+                
+                # メールアドレスの詳細パターンチェック
+                email_count = 0
+                for sample in sample_values:
+                    if self._is_email_pattern(sample):
+                        email_count += 1
+                        logger.info(f"📧 メールアドレス検知成功: {sample}")
+                
+                # 70%以上がメールアドレスパターンの場合はメールアドレス列として判定
+                if email_count >= len(sample_values) * 0.7:
+                    logger.info(f"📧 メールアドレス列として判定: {email_count}/{len(sample_values)}件が一致")
+                    return 'メールアドレス'
+                else:
+                    logger.info(f"📧 メールアドレス列として判定されず: {email_count}/{len(sample_values)}件が一致（閾値：70%）")
+                
+                # その他のパターン
                 for sample in sample_values:
                     if re.search(r'\d{4}[-/]\d{2}[-/]\d{2}', sample):
                         return '日付'
                     elif re.search(r'\d+[円￥]', sample):
                         return '金額'
-                    elif '@' in sample:
-                        return 'メールアドレス'
                     elif re.search(r'\d{3}-\d{4}-\d{4}', sample):
                         return '電話番号'
             
@@ -296,6 +321,44 @@ class UnnamedColumnHandler:
         except Exception as e:
             logger.error(f"カラム名提案エラー: {str(e)}")
             return f'カラム{col_index + 1}'
+    
+    def _is_email_pattern(self, text: str) -> bool:
+        """
+        より厳密なメールアドレスパターンを検証
+        """
+        import re
+        
+        # 基本的なメールアドレスパターン
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        
+        # 文字列をクリーンアップ
+        text = text.strip()
+        
+        # デバッグ情報
+        logger.debug(f"📧 メールアドレスパターンチェック: '{text}'")
+        
+        # 基本パターンチェック
+        if re.match(email_pattern, text):
+            logger.debug(f"📧 基本パターン一致: '{text}'")
+            return True
+        
+        # 日本語ドメインや特殊文字を含むパターンもチェック
+        if '@' in text and '.' in text:
+            # @の前後に適切な文字がある場合
+            parts = text.split('@')
+            if len(parts) == 2:
+                local_part = parts[0]
+                domain_part = parts[1]
+                
+                # ローカル部分の検証
+                if len(local_part) > 0 and len(domain_part) > 0:
+                    # ドメイン部分に少なくとも1つのドットが含まれている
+                    if '.' in domain_part:
+                        logger.debug(f"📧 拡張パターン一致: '{text}'")
+                        return True
+        
+        logger.debug(f"📧 パターン不一致: '{text}'")
+        return False
     
     def fix_dataframe(self, df: pd.DataFrame, filename: str = "") -> Tuple[pd.DataFrame, List[str]]:
         """DataFrameのUnnamedカラム問題を修正"""

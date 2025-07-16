@@ -57,15 +57,18 @@ class DocumentProcessorRecordBased:
             
             logger.info(f"📁 ファイルサイズ: {file_size_mb:.2f} MB")
             
-            # Excel形式のみサポート
-            if not self._is_excel_file(file.filename):
+            # Excel・CSV形式をサポート
+            if not self._is_structured_file(file.filename):
                 raise HTTPException(
                     status_code=400, 
-                    detail="レコードベース処理はExcelファイル（.xlsx, .xls）のみサポートしています"
+                    detail="レコードベース処理はExcel・CSVファイル（.xlsx, .xls, .csv）のみサポートしています"
                 )
             
-            # Excelファイルをレコード単位で処理
-            records = await self._extract_records_from_excel(file_content, file.filename)
+            # Excel・CSVファイルをレコード単位で処理
+            if self._is_csv_file(file.filename):
+                records = await self._extract_records_from_csv(file_content, file.filename)
+            else:
+                records = await self._extract_records_from_excel(file_content, file.filename)
             
             if not records:
                 raise HTTPException(
@@ -76,9 +79,10 @@ class DocumentProcessorRecordBased:
             logger.info(f"📊 抽出レコード数: {len(records)}")
             
             # ドキュメントメタデータを保存
+            file_type = "CSV (レコードベース)" if self._is_csv_file(file.filename) else "Excel (レコードベース)"
             doc_data = {
                 "name": file.filename,
-                "type": "Excel (レコードベース)",
+                "type": file_type,
                 "page_count": self._calculate_page_count(records),
                 "uploaded_by": user_id,
                 "company_id": company_id,
@@ -241,7 +245,7 @@ class DocumentProcessorRecordBased:
                     
                     # 複数行ヘッダーの場合、上の行の情報も結合
                     if header_row > 0:
-                        logger.info("�� 複数行ヘッダーを検出。上の行の情報も結合します。")
+                        logger.info("複数行ヘッダーを検出。上の行の情報も結合します。")
                         combined_columns = []
                         for col_idx, col_name in enumerate(df.columns):
                             combined_name = str(col_name).strip()
@@ -520,9 +524,153 @@ class DocumentProcessorRecordBased:
             logger.error(f"❌ レコードベース保存中に例外発生: {e}", exc_info=True)
             raise
     
-    def _is_excel_file(self, filename: str) -> bool:
-        """ファイルがExcel形式かどうかを判定"""
-        return filename.lower().endswith(('.xlsx', '.xls'))
+    def _is_structured_file(self, filename: str) -> bool:
+        """ファイルが構造化ファイル（Excel・CSV）かどうかを判定"""
+        return filename.lower().endswith(('.xlsx', '.xls', '.csv'))
+    
+    def _is_csv_file(self, filename: str) -> bool:
+        """ファイルがCSV形式かどうかを判定"""
+        return filename.lower().endswith('.csv')
+    
+    async def _extract_records_from_csv(self, file_content: bytes, filename: str) -> List[Dict[str, Any]]:
+        """CSVファイルからレコードを抽出"""
+        try:
+            logger.info(f"🔍 CSV レコード抽出開始: {filename}")
+            
+            # CSV用の文字エンコーディング検出
+            from .knowledge.csv_processor import detect_csv_encoding, detect_mojibake_in_content
+            encoding = detect_csv_encoding(file_content)
+            logger.info(f"📝 検出されたエンコーディング: {encoding}")
+            
+            # 文字化けチェック
+            has_mojibake = detect_mojibake_in_content(file_content, encoding)
+            if has_mojibake:
+                logger.warning(f"⚠️ 文字化けを検出: {filename}")
+                # 代替エンコーディングを試行
+                for alt_encoding in ['utf-8', 'shift_jis', 'cp932']:
+                    try:
+                        test_text = file_content.decode(alt_encoding)
+                        if not detect_mojibake_in_content(file_content, alt_encoding):
+                            encoding = alt_encoding
+                            logger.info(f"✅ 代替エンコーディング使用: {encoding}")
+                            break
+                    except UnicodeDecodeError:
+                        continue
+            
+            # CSVファイルをDataFrameに読み込み
+            import io
+            text_content = file_content.decode(encoding, errors='ignore')
+            csv_buffer = io.StringIO(text_content)
+            
+            # CSVを読み込み（自動的にヘッダーを検出）
+            df = pd.read_csv(csv_buffer, encoding=None)
+            logger.info(f"📊 CSV読み込み完了: {df.shape[0]} 行 × {df.shape[1]} 列")
+            
+            if df.empty:
+                logger.warning("⚠️ CSVファイルが空です")
+                return []
+            
+            # 列名情報をログ出力
+            logger.info(f"📋 CSV列名: {list(df.columns)}")
+            
+            # DataFrameからレコードを抽出
+            records = self._extract_records_from_dataframe(df, "CSV")
+            
+            logger.info(f"🎉 CSV レコード抽出完了: {len(records)} レコード")
+            return records
+            
+        except Exception as e:
+            logger.error(f"❌ CSV レコード抽出エラー: {e}")
+            # フォールバック: 行単位での手動処理
+            try:
+                logger.info("🔄 フォールバック処理: 行単位での手動CSVレコード抽出")
+                return await self._extract_csv_records_manual(file_content, filename)
+            except Exception as fallback_error:
+                logger.error(f"❌ フォールバック処理も失敗: {fallback_error}")
+                return []
+    
+    async def _extract_csv_records_manual(self, file_content: bytes, filename: str) -> List[Dict[str, Any]]:
+        """手動でCSVレコードを抽出（フォールバック処理）"""
+        try:
+            import csv
+            import io
+            
+            # エンコーディング検出
+            from .knowledge.csv_processor import detect_csv_encoding
+            encoding = detect_csv_encoding(file_content)
+            text_content = file_content.decode(encoding, errors='ignore')
+            
+            csv_reader = csv.reader(io.StringIO(text_content))
+            rows = list(csv_reader)
+            
+            if len(rows) < 2:  # ヘッダー + 最低1データ行
+                logger.warning("⚠️ CSVファイルのデータが不足しています")
+                return []
+            
+            # ヘッダー行を取得
+            headers = [str(col).strip() for col in rows[0]]
+            headers = [self._normalize_column_name(col) for col in headers]
+            
+            logger.info(f"📋 手動抽出ヘッダー: {headers}")
+            
+            records = []
+            for row_index, row in enumerate(rows[1:], 1):  # ヘッダーをスキップ
+                try:
+                    # 空の行をスキップ
+                    if not any(str(cell).strip() for cell in row):
+                        continue
+                    
+                    record_data = {}
+                    record_parts = []
+                    meaningful_columns = 0
+                    
+                    for col_index, cell_value in enumerate(row):
+                        if col_index < len(headers):
+                            header = headers[col_index]
+                            value = str(cell_value).strip()
+                            
+                            if value:
+                                record_data[header] = value
+                                record_parts.append(f"{header}: {value}")
+                                meaningful_columns += 1
+                    
+                    # 意味のある列が少ない場合はスキップ
+                    if meaningful_columns < self.min_meaningful_columns:
+                        continue
+                    
+                    # レコードの内容を作成
+                    record_content = " | ".join(record_parts)
+                    
+                    # レコードの長さ制限
+                    if len(record_content) > self.max_record_length:
+                        record_content = record_content[:self.max_record_length] + "..."
+                    
+                    record = {
+                        "content": record_content,
+                        "token_count": len(record_content) // 4,  # 概算
+                        "record_index": row_index - 1,
+                        "columns": list(record_data.keys()),
+                        "source_sheet": "CSV",
+                        "metadata": {
+                            "filename": filename,
+                            "row_number": row_index,
+                            "column_count": len(record_data),
+                            "record_data": record_data
+                        }
+                    }
+                    
+                    records.append(record)
+                    
+                except Exception as row_error:
+                    logger.warning(f"⚠️ 行 {row_index} 処理エラー: {row_error}")
+                    continue
+            
+            logger.info(f"🎉 手動CSVレコード抽出完了: {len(records)} レコード")
+            return records
+            
+        except Exception as e:
+            logger.error(f"❌ 手動CSVレコード抽出エラー: {e}")
+            return []
     
     def _calculate_page_count(self, records: List[Dict[str, Any]]) -> int:
         """レコード数からページ数を推定（1ページ=50レコード）"""

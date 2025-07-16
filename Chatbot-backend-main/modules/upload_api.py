@@ -115,9 +115,10 @@ async def upload_document(
         # ドキュメント処理実行
         logger.info(f"🔄 ドキュメント処理開始: {file.filename}")
         
-        # Excelファイルの場合はレコードベース処理を使用
-        if file_extension in ['.xlsx', '.xls']:
-            logger.info(f"📊 Excelファイル検出、レコードベース処理を使用: {file.filename}")
+        # Excel・CSVファイルの場合はレコードベース処理を使用
+        if file_extension in ['.xlsx', '.xls', '.csv']:
+            file_type_name = "CSV" if file_extension == '.csv' else "Excel"
+            logger.info(f"📊 {file_type_name}ファイル検出、レコードベース処理を使用: {file.filename}")
             from .document_processor_record_based import document_processor_record_based
             processing_result = await document_processor_record_based.process_uploaded_file(
                 file=file,

@@ -276,7 +276,10 @@ class ExcelSheetsProcessor:
                 
                 # スプレッドシートのメタデータを取得
                 logger.info(f"スプレッドシートメタデータ取得開始: {spreadsheet_id}")
-                spreadsheet = self.sheets_service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+                spreadsheet = self.sheets_service.spreadsheets().get(
+                    spreadsheetId=spreadsheet_id,
+                    fields="sheets(properties/title,merges)"
+                ).execute()
                 sheets = spreadsheet.get('sheets', [])
                 
                 logger.info(f"検出されたシート数: {len(sheets)}")
@@ -310,6 +313,12 @@ class ExcelSheetsProcessor:
                         if not values:
                             logger.warning(f"シート '{sheet_title}' にデータがありません")
                             continue
+                        
+                        # マージセルを展開
+                        merges = sheet.get('merges', [])
+                        if merges:
+                            logger.info(f"シート '{sheet_title}' に {len(merges)} 個のマージセルを検出 - 値を展開します")
+                            values = self._expand_merged_cells(values, merges)
                         
                         logger.info(f"シート '{sheet_title}' データ取得完了: {len(values)} 行")
                         
@@ -439,6 +448,48 @@ class ExcelSheetsProcessor:
                 logger.info(f"Google Driveファイル削除: {file_id}")
         except Exception as e:
             logger.warning(f"Google Driveファイル削除エラー: {file_id} - {str(e)}")
+
+def _expand_merged_cells(self, values: List[List[str]], merges: List[Dict]) -> List[List[str]]:
+    """マージセルを展開して値を埋める"""
+    if not values or not merges:
+        return values
+    
+    # 最大行と列を計算
+    max_row = max(len(values), max(m['endRowIndex'] for m in merges))
+    max_col = max(max(len(row) for row in values), max(m['endColumnIndex'] for m in merges))
+    
+    # 値を埋めた新しいグリッドを作成
+    grid = [['' for _ in range(max_col)] for _ in range(max_row)]
+    
+    # 元の値をコピー
+    for r, row in enumerate(values):
+        for c, val in enumerate(row):
+            grid[r][c] = val
+    
+    # 各マージ範囲を処理
+    for merge in merges:
+        start_row = merge['startRowIndex']
+        end_row = merge['endRowIndex']
+        start_col = merge['startColumnIndex']
+        end_col = merge['endColumnIndex']
+        
+        # トップ左の値を取得
+        if start_row < len(grid) and start_col < len(grid[start_row]):
+            value = grid[start_row][start_col]
+            
+            # 範囲全体に値を設定
+            for r in range(start_row, end_row):
+                for c in range(start_col, end_col):
+                    if r < len(grid) and c < len(grid[r]):
+                        grid[r][c] = value
+    
+    # リストに戻す（空の行や列を保持）
+    expanded_values = []
+    for row in grid:
+        expanded_row = [cell for cell in row if cell]  # 末尾の空セルをトリムしない
+        expanded_values.append(expanded_row)
+    
+    return expanded_values
 
 async def process_excel_file_with_sheets_api(
     contents: bytes, 

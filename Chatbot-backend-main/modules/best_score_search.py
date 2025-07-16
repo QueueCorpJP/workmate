@@ -186,13 +186,16 @@ class BestScoreSearchSystem:
             search_results = []
             for item in processed_results[:limit]:
                 search_result = SearchResult(
+                    id=item["id"],
                     content=item["content"],
-                    chunk_id=item["id"],
-                    doc_id=item.get("doc_id", ""),
+                    title=item.get("file_name", "Unknown"),
                     score=item["score"],
                     search_type="exact_match",
-                    chunk_index=item.get("chunk_index", 0),
-                    file_name=item.get("file_name", "Unknown")
+                    metadata={
+                        "doc_id": item.get("doc_id", ""),
+                        "chunk_index": item.get("chunk_index", 0),
+                        "query": query
+                    }
                 )
                 search_results.append(search_result)
             
@@ -230,10 +233,28 @@ class BestScoreSearchSystem:
             if base_keyword in query_lower:
                 keywords.extend(expansions)
         
-        # 直接的なキーワード抽出も追加
+        # 直接的なキーワード抽出も追加（物件番号対応）
         import re
-        direct_keywords = re.findall(r'[ァ-ヶー]+|[a-zA-Z]+', query_lower)
-        keywords.extend(direct_keywords)
+        # 物件番号やコード（WPD4100399など）を優先的に抽出
+        property_numbers = re.findall(r'[A-Z]+\d+', query)  # 大文字+数字のパターン（物件番号）
+        receipt_numbers = re.findall(r'J\d+', query)       # 受注番号パターン
+        
+        # 柔軟性を保持した多段階キーワード抽出
+        # 1. 基本的なキーワード抽出（単語レベル）
+        basic_keywords = re.findall(r'[ぁ-んァ-ヶー一-龯]{2,}|[a-zA-Z0-9]{2,}', query_lower)
+        
+        # 2. 重要な単語の個別抽出（1文字でも重要な場合）
+        important_single = re.findall(r'[機装会社製品技術]', query_lower)
+        
+        # 3. 助詞・接続詞を除いた意味のある単語のみ抽出
+        stop_words_extended = {'の', 'に', 'を', 'は', 'が', 'で', 'と', 'から', 'まで', 'より', 'こと', 'もの', 'これ', 'それ', 'あれ', 'どの', 'どんな', '何', 'です', 'ですか', 'ます', 'した'}
+        meaningful_keywords = [kw for kw in basic_keywords if kw not in stop_words_extended and len(kw) >= 1]
+        
+        # 物件番号を最優先で追加（完全一致の優位性保持）
+        keywords.extend(property_numbers)      # 最優先：完全一致が必要
+        keywords.extend(receipt_numbers)       # 次に優先：完全一致が必要
+        keywords.extend(meaningful_keywords)   # 一般キーワード：柔軟性を保持
+        keywords.extend(important_single)      # 重要な1文字：補完的に追加
         
         # 重複除去
         keywords = list(set(keywords))
@@ -252,7 +273,12 @@ class BestScoreSearchSystem:
                 if keyword in content:
                     matched_keywords.append(keyword)
                     # キーワードの重要度に応じてスコア付け
-                    if keyword in ["マウス", "mouse"]:
+                    # 物件番号・受注番号は最優先
+                    if re.match(r'[A-Z]+\d+', keyword):  # 物件番号パターン（WPD4100399など）
+                        score += 0.85  # 圧倒的最優先（ベクトル検索に確実に勝つ）
+                    elif re.match(r'J\d+', keyword):  # 受注番号パターン
+                        score += 0.85  # 圧倒的最優先（ベクトル検索に確実に勝つ）
+                    elif keyword in ["マウス", "mouse"]:
                         score += 2.0  # 最重要キーワード
                     elif keyword in ["pc", "パソコン", "computer", "デスクトップ", "ノートパソコン"]:
                         score += 1.5  # 重要キーワード
@@ -260,6 +286,8 @@ class BestScoreSearchSystem:
                         score += 1.0  # 関連キーワード
                     elif keyword in ["ワイヤレスマウス", "光学マウス", "レーザーマウス", "ゲーミングマウス"]:
                         score += 1.8  # 特定マウス関連キーワード
+                    elif keyword in ["機械", "装置", "設備", "会社", "株式会社"]:  # 日本語キーワード
+                        score += 2.0  # 日本語重要キーワード
                     else:
                         score += 0.5  # 一般キーワード
             
@@ -331,9 +359,33 @@ class BestScoreSearchSystem:
         
         # 直接的なキーワード抽出（ストップワード除外）
         import re
-        direct_keywords = re.findall(r'[ァ-ヶー]+|[a-zA-Z]+', query_lower)
-        meaningful_keywords = [kw for kw in direct_keywords if kw not in stop_words and len(kw) > 1]
-        keywords.extend(meaningful_keywords)
+        # 物件番号やコード（WPD4100399など）を優先的に抽出
+        property_numbers = re.findall(r'[A-Z]+\d+', query)  # 大文字+数字のパターン（物件番号）
+        receipt_numbers = re.findall(r'J\d+', query)       # 受注番号パターン
+        
+        # 柔軟性を保持した多段階キーワード抽出（Fuzzy検索用）
+        # 1. 基本的なキーワード抽出（単語レベル）
+        basic_keywords = re.findall(r'[ぁ-んァ-ヶー一-龯]{2,}|[a-zA-Z0-9]{2,}', query_lower)
+        
+        # 2. 重要な単語の個別抽出
+        important_single = re.findall(r'[機装会社製品技術]', query_lower)
+        
+        # 3. Fuzzy検索用のより柔軟なキーワード（1文字以上も含む）
+        all_extracted = basic_keywords + important_single
+        meaningful_keywords = [kw for kw in all_extracted if kw not in stop_words and len(kw) >= 1]
+        
+        # 物件番号を最優先で追加（重複を避けるため先にクリア）
+        keywords = []
+        keywords.extend(property_numbers)  # 最優先
+        keywords.extend(receipt_numbers)   # 次に優先
+        keywords.extend(meaningful_keywords)  # 最後に一般キーワード
+        
+        # 物件番号が見つかった場合は他のキーワードの重要度を下げる
+        if property_numbers or receipt_numbers:
+            print(f"❗ 優先キーワード検出: 物件番号={property_numbers}, 受注番号={receipt_numbers}")
+            # 物件番号が見つかった場合は、一般キーワードは最低限に絞る
+            meaningful_keywords = [kw for kw in meaningful_keywords if len(kw) >= 3]
+            keywords = property_numbers + receipt_numbers + meaningful_keywords[:3]  # 一般キーワードは3つまで
         
         # 重複除去
         keywords = list(set(keywords))
@@ -373,6 +425,8 @@ class BestScoreSearchSystem:
                         score += 1.8  # プロセス関連
                     elif keyword in ["規則", "rule", "ガイドライン", "マニュアル"]:
                         score += 1.5  # 規則関連
+                    elif keyword in ["機械", "装置", "設備", "会社", "株式会社"]:  # 日本語キーワード
+                        score += 2.5  # 日本語重要キーワード
                     else:
                         score += 0.8  # 一般キーワード
             
@@ -537,6 +591,8 @@ class BestScoreSearchSystem:
     
     async def _vector_search(self, query: str, company_id: str, limit: int) -> List[SearchResult]:
         """ベクトル検索"""
+        print(f"--- start _vector_search in best_score_search ---")
+        print(f"query: {query}, company_id: {company_id}, limit: {limit}")
         print(f"\n❗❗❗ ベクトル検索開始 ❗❗❗")
         print(f"❗ クエリ: '{query}'")
         print(f"❗ 会社ID: '{company_id}'")
@@ -568,7 +624,7 @@ class BestScoreSearchSystem:
             print(f"\n❗ 3. ベクトル検索実行")
             print(f"❗ 実行前: self.vector_search.vector_similarity_search('{query}', '{company_id}', {limit})")
             
-            results = self.vector_search.vector_similarity_search(query, company_id, limit)
+            results = await self.vector_search.vector_similarity_search(query, company_id, limit)
             
             print(f"❗ ベクトル検索実行結果タイプ: {type(results)}")
             print(f"❗ ベクトル検索実行結果件数: {len(results) if results else 0}")
@@ -626,6 +682,10 @@ class BestScoreSearchSystem:
             print(f"❗ 詳細トレースバック:")
             traceback.print_exc()
             return []
+
+        print(f"--- end _vector_search in best_score_search ---")
+        print(f"search_results: {search_results}")
+        return search_results
     
     async def _select_best_scores(self, 
                                  search_results: Dict[str, List[SearchResult]], 
