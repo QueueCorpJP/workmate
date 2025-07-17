@@ -55,13 +55,8 @@ def setup_gemini_with_cache():
     genai.configure(api_key=api_key)
     
     # コンテキストキャッシュ機能を有効化したGemini 2.5 Flashモデル
-    model = genai.GenerativeModel(
-        'gemini-2.5-flash',
-        generation_config=genai.GenerationConfig(
-            temperature=0.3,  # 一貫性のある回答のために温度を下げる
-        ),
-        # キャッシュ設定は実際のコンテンツ生成時に適用
-    )
+    model = genai.GenerativeModel('gemini-2.5-flash')
+    # generation_configは generate_content 呼び出し時に指定
     return model
 
 def get_db_params():
@@ -220,3 +215,6 @@ def setup_openai_client():
     except Exception as e:
         logger.error(f"❌ OpenAI APIクライアント初期化エラー: {str(e)}")
         return None
+
+??????????????????????????????????
+

@@ -25,7 +25,10 @@ async def ocr_with_gemini(images, instruction, chunk_size=8):
         def sync_call():
             try:
                 prompt = f"{prompt_base}\n\nPage {idx + 1}:"
-                response = model.generate_content([prompt, image])
+                response = model.generate_content(
+                    [prompt, image],
+                    generation_config={'temperature': 0.3}
+                )
                 result_text = ""
                 for part in response.parts:
                     # 必ず文字列に変換

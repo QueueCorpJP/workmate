@@ -851,6 +851,7 @@ async def process_file(file: UploadFile = File(...), request: Request = None, us
                     
                     # PDFファイルを処理
                     df, sections, extracted_text = await process_pdf_file(contents, file.filename)
+                    logger.info(f"PDF処理後のデータ検証: df is {'not None' if df is not None and not df.empty else 'None or empty'}, sections count: {len(sections) if sections else 0}")
                 except PyPDF2.errors.PdfReadError as pdf_err:
                     raise HTTPException(status_code=400, detail=f"無効なPDFファイルです: {str(pdf_err)}")
                 except Exception as pdf_ex:
@@ -942,7 +943,7 @@ async def process_file(file: UploadFile = File(...), request: Request = None, us
             knowledge_base_updated = True
         elif df is not None and not df.empty:
             # 従来のpandas処理の場合：DataFrameを使用
-            logger.info(f"DataFrameを使用して知識ベースを更新: {len(df)} 行")
+            logger.info(f"DataFrameを使用して知識ベースを更新: {len(df)} 行, ファイル名: {file.filename}")
             # ファイル列が存在することを確認
             if 'file' not in df.columns:
                 df['file'] = file.filename
