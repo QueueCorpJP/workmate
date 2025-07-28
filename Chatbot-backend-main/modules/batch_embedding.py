@@ -1,7 +1,7 @@
 """
 🧠 バッチエンベディング生成モジュール
 チャンクを10件ずつまとめてバッチで送信し、エラー回復機能付きでembeddingを生成
-gemini-embedding-exp-03-07使用（3072次元）
+gemini-embedding-001使用（3072次元）
 """
 
 import os
@@ -25,7 +25,7 @@ class BatchEmbeddingGenerator:
     """バッチエンベディング生成クラス"""
     
     def __init__(self):
-        self.embedding_model = "models/gemini-embedding-exp-03-07"  # gemini-embedding-exp-03-07を使用（3072次元）
+        self.embedding_model = "models/gemini-embedding-001"  # gemini-embedding-001を使用（3072次元）
         self.auto_generate = os.getenv("AUTO_GENERATE_EMBEDDINGS", "false").lower() == "true"
         self.supabase = None
         self.multi_api_client = None
@@ -61,7 +61,7 @@ class BatchEmbeddingGenerator:
             # Supabaseクライアント初期化
             self.supabase = get_supabase_client()
             
-            logger.info(f"🧠 バッチエンベディング生成初期化完了: {self.embedding_model} (768次元)")
+            logger.info(f"🧠 バッチエンベディング生成初期化完了: {self.embedding_model} (3072次元)")
             return True
         except Exception as e:
             logger.error(f"❌ APIクライアント初期化エラー: {e}")
@@ -108,7 +108,7 @@ class BatchEmbeddingGenerator:
             )
             
             expected_dims = (
-                self.multi_api_client.expected_dimensions if self.multi_api_client else 768
+                self.multi_api_client.expected_dimensions if self.multi_api_client else 3072
             )
 
             if embedding_vector and len(embedding_vector) == expected_dims:

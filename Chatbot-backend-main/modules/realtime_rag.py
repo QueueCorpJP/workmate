@@ -34,8 +34,8 @@ class RealtimeRAGProcessor:
     def __init__(self):
         """初期化"""
         self.use_vertex_ai = False  # Vertex AIを無効化
-        self.embedding_model = "gemini-embedding-exp-03-07"  # Geminiエンベディングモデルを使用
-        self.expected_dimensions = 3072  # 実際のデータに合わせて3072次元に変更
+        self.embedding_model = "gemini-embedding-001"  # Geminiエンベディングモデルを使用
+        self.expected_dimensions = 3072  # gemini-embedding-001は3072次元
         
         # API キーの設定
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
@@ -155,12 +155,12 @@ class RealtimeRAGProcessor:
     async def step2_generate_embedding(self, question: str) -> List[float]:
         """
         🧠 Step 2. embedding 生成
-        Gemini embedding-exp-03-07 を使って、質問文をベクトルに変換（768次元）
+        Gemini embedding-001 を使って、質問文をベクトルに変換（3072次元）
         """
         logger.info(f"🧠 Step 2: エンベディング生成中...")
         
         try:
-            # gemini-embedding-exp-03-07モデルで3072次元を生成
+            # gemini-embedding-001モデルで3072次元を生成
             embedding_vector = await self.embedding_client.generate_embedding(
                 question
             )

@@ -1,7 +1,7 @@
 """
 🔄 複数API対応エンベディング生成モジュール
 4つのAPIキーを使用してレート制限に対応
-gemini-embedding-exp-03-07モデルのみ使用（3072次元）
+gemini-embedding-001モデルのみ使用（3072次元）
 """
 
 import os
@@ -30,7 +30,7 @@ class MultiAPIEmbeddingClient:
     
     def __init__(self):
         # モデル・次元数を絶対固定（ユーザー要望）
-        self.embedding_model = "models/gemini-embedding-exp-03-07"
+        self.embedding_model = "models/gemini-embedding-001"
         self.expected_dimensions = 3072
         
         # 10個のAPIキーを設定

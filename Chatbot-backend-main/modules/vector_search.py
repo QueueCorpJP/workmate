@@ -24,7 +24,7 @@ class VectorSearchSystem:
     
     def __init__(self):
         """初期化"""
-        self.embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-exp-03-07")
+        self.embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
         
         self.db_url = self._get_db_url()
         self.pgvector_available = False

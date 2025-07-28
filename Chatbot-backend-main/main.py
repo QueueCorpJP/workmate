@@ -105,11 +105,24 @@ print(f"🌍 実行環境: {environment}")
 origins = get_cors_origins()
 print(f"🔗 CORS許可オリジン: {origins}")
 
+# 緊急CORS修正: 開発環境からのアクセスを強制的に許可
+emergency_origins = [
+    "https://workmatechat.com",
+    "http://localhost:3000",
+    "http://localhost:3025",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3025",
+    "http://127.0.0.1:5173"
+]
+
+print(f"🚨 緊急CORS設定適用: {emergency_origins}")
+
 # CORSミドルウェアを最初に追加して優先度を上げる
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins if environment == "production" else ["*"],  # 本番環境では限定、開発環境では全許可
-    allow_credentials=environment == "production",  # 本番環境でのみクレデンシャル許可
+    allow_origins=emergency_origins,  # 緊急設定: 開発環境を強制許可
+    allow_credentials=True,  # クレデンシャル許可
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
     expose_headers=["*"],

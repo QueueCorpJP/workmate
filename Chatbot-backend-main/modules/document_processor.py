@@ -1,7 +1,7 @@
 """
 📤 ファイルアップロード・ドキュメント処理システム
 🧩 チャンク分割（300〜500 token）
-🧠 embedding生成を統合（Gemini Flash - 768次元）
+🧠 embedding生成を統合（Gemini Flash - 3072次元）
 🗃 Supabase保存（document_sources + chunks）
 
 完全なRAG対応ドキュメント処理パイプライン
@@ -35,7 +35,7 @@ class DocumentProcessor:
     def __init__(self):
         self.gemini_client = None
         self.multi_api_client = None
-        self.embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-exp-03-07")
+        self.embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
         
         # Gemini API使用時はmodels/プレフィックスを追加
         if not self.embedding_model.startswith("models/"):
@@ -233,7 +233,7 @@ class DocumentProcessor:
                 embedding_vector = await self.multi_api_client.generate_embedding(text.strip())
                 
                 expected_dims = (
-                    self.multi_api_client.expected_dimensions if self.multi_api_client else 768
+                    self.multi_api_client.expected_dimensions if self.multi_api_client else 3072
                 )
 
                 if embedding_vector and len(embedding_vector) == expected_dims:
@@ -670,7 +670,7 @@ class DocumentProcessor:
         1️⃣ ファイルアップロード
         2️⃣ テキスト抽出
         3️⃣ チャンク分割（300〜500 token）
-        4️⃣ embedding生成（Gemini Flash - 768次元）
+        4️⃣ embedding生成（Gemini Flash - 3072次元）
         5️⃣ Supabase保存
         """
         try:
