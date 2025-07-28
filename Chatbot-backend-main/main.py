@@ -1275,10 +1275,11 @@ async def get_knowledge_base(current_user = Depends(get_current_user)):
 # チャットエンドポイント
 @app.post("/chatbot/api/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
-    """チャットメッセージを処理してGeminiからの応答を返す（Gemini質問分析統合版）"""
+    """チャットメッセージを処理してGeminiからの応答を返す（Enhanced RAG統合版）"""
     # デバッグ用：現在のユーザー情報と利用制限を出力
-    print(f"=== 🧠 Gemini質問分析チャット処理開始 ===")
-    print(f"ユーザー情報: {current_user}")
+    print(f"=== 🚀 Enhanced RAG チャット処理開始 ===")
+    print(f"質問内容: {message.text}")
+    print(f"ユーザー情報: {current_user.get('email', 'unknown')} ({current_user.get('name', 'unknown')})")
     
     # 現在の利用制限を取得して表示
     from modules.database import get_usage_limits
@@ -1289,11 +1290,23 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
     message.user_id = current_user["id"]
     message.employee_name = current_user["name"]
     
-    # 🧠 新しいGemini質問分析統合RAGシステムを優先使用
+    # 🚀 新しいEnhanced RAGシステムを優先使用
     try:
-        from modules.chat_realtime_rag import process_chat_with_realtime_rag
-        print("🧠 Gemini質問分析統合RAGシステムを使用")
-        result = await process_chat_with_realtime_rag(message, db, current_user)
+        from modules.enhanced_chat_integration import EnhancedChatIntegration
+        print("🚀 Enhanced RAG統合システムを使用開始")
+        
+        # Enhanced Chat Integrationを初期化
+        enhanced_chat = EnhancedChatIntegration()
+        print("✅ EnhancedChatIntegration初期化完了")
+        
+        # システム状態をチェック
+        system_status = enhanced_chat.get_system_status()
+        print(f"📊 システム状態: {system_status}")
+        
+        # Enhanced RAGでチャット処理
+        print("🔄 Enhanced RAG処理開始...")
+        result = await enhanced_chat.process_chat_with_enhanced_rag(message, db, current_user)
+        print("✅ Enhanced RAG処理完了")
         
         # ChatResponseオブジェクトが返された場合
         if hasattr(result, 'response'):
@@ -1341,20 +1354,66 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
             )
         
     except Exception as e:
-        print(f"⚠️ Gemini質問分析RAGエラー: {e}")
-        print("🔄 フォールバック: 従来のprocess_chat_message関数を使用")
+        print(f"⚠️ Enhanced RAGエラー: {e}")
+        print("🔄 フォールバック: 従来のGemini質問分析RAGシステムを使用")
         
-        # フォールバック: 従来のprocess_chat_message関数を使用
-        from modules.chat import process_chat_message
-        result = await process_chat_message(message, db, current_user)
+        # フォールバック: 従来のGemini質問分析RAGシステムを使用
+        try:
+            from modules.chat_realtime_rag import process_chat_with_realtime_rag
+            print("🧠 Gemini質問分析統合RAGシステムを使用（フォールバック）")
+            result = await process_chat_with_realtime_rag(message, db, current_user)
+            
+            # ChatResponseオブジェクトが返された場合
+            if hasattr(result, 'response'):
+                source_text = ""
+                if hasattr(result, 'sources') and result.sources:
+                    source_names = []
+                    for source in result.sources[:3]:
+                        source_name = source.get('name', '') if isinstance(source, dict) else str(source)
+                        if source_name and source_name not in ['システム回答', 'unknown']:
+                            source_names.append(source_name)
+                    source_text = ', '.join(source_names) if source_names else ""
+                
+                return ChatResponse(
+                    response=result.response,
+                    source=source_text,
+                    remaining_questions=getattr(result, 'remaining_questions', None),
+                    limit_reached=getattr(result, 'limit_reached', None)
+                )
+            
+            # 辞書形式の場合
+            if isinstance(result, dict):
+                sources = result.get("sources", [])
+                source_names = []
+                if sources:
+                    for source in sources[:3]:
+                        source_name = source.get('name', '') if isinstance(source, dict) else str(source)
+                        if source_name and source_name not in ['システム回答', 'unknown']:
+                            source_names.append(source_name)
+                source_text = ', '.join(source_names) if source_names else ""
+                
+                return ChatResponse(
+                    response=result.get("response", "システムエラーが発生しました"),
+                    source=source_text,
+                    remaining_questions=result.get("remaining_questions", 0),
+                    limit_reached=result.get("limit_reached", False)
+                )
         
-        # 応答を返す
-        return ChatResponse(
-            response=result["response"],
-            source=result.get("source", ""),
-            remaining_questions=result.get("remaining_questions", 0),
-            limit_reached=result.get("limit_reached", False)
-        )
+        except Exception as fallback_error:
+            print(f"⚠️ フォールバックも失敗: {fallback_error}")
+            print("🔄 最終フォールバック: 従来のprocess_chat_message関数を使用")
+            
+            # 最終フォールバック: 従来のprocess_chat_message関数を使用
+            from modules.chat import process_chat_message
+            result = await process_chat_message(message, db, current_user)
+            
+            # 応答を返す
+            return ChatResponse(
+                response=result["response"],
+                source=result.get("source", ""),
+                remaining_questions=result.get("remaining_questions", 0),
+                limit_reached=result.get("limit_reached", False)
+            )
 
 @app.post("/chatbot/api/chat-chunked-info", response_model=dict)
 async def chat_chunked_info(message: ChatMessage, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
