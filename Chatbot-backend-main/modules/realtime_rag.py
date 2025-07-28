@@ -675,18 +675,21 @@ class RealtimeRAGProcessor:
         if metadata:
             result.update(metadata)
         
-        # 使用されたチャンクの詳細情報を追加
+        # 使用されたチャンクの詳細情報を追加 - document_sources.nameのみを使用
         if used_chunks:
             source_documents = []
+            seen_names = set()
             for chunk in used_chunks[:5]:  # 最大5個のソース文書
-                doc_info = {
-                    "document_name": chunk.get('document_name', 'Unknown Document'),
-                    "document_type": chunk.get('document_type', 'unknown'),
-                    "chunk_id": chunk.get('chunk_id', ''),
-                    "similarity_score": chunk.get('similarity_score', 0.0),
-                    "content_preview": (chunk.get('content', '') or '')[:100] + "..." if chunk.get('content') else ""
-                }
-                source_documents.append(doc_info)
+                doc_name = chunk.get('document_name', 'Unknown Document')
+                # 重複する名前は除外
+                if doc_name not in seen_names:
+                    doc_info = {
+                        "document_name": doc_name,  # document_sources.nameのみ使用
+                        "document_type": chunk.get('document_type', 'unknown'),
+                        "similarity_score": chunk.get('similarity_score', 0.0)
+                    }
+                    source_documents.append(doc_info)
+                    seen_names.add(doc_name)
             
             result["source_documents"] = source_documents
             result["total_sources"] = len(used_chunks)

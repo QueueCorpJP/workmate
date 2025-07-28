@@ -55,6 +55,7 @@ import ArticleIcon from "@mui/icons-material/Article";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import TableChartIcon from "@mui/icons-material/TableChart";
 import PersonIcon from "@mui/icons-material/Person";
+import PostAddIcon from "@mui/icons-material/PostAdd";
 import api from "./api";
 import { cache } from "./utils/cache";
 import DemoLimits from "./components/DemoLimits";
@@ -63,6 +64,7 @@ import ApplicationForm from "./components/ApplicationForm";
 import MarkdownRenderer from "./components/MarkdownRenderer";
 import NotificationButton from "./components/NotificationButton";
 import NotificationModal from "./components/NotificationModal";
+import TemplateSelectionModal from "./components/TemplateSelectionModal";
 import { useTheme } from "@mui/material/styles";
 import { useMediaQuery } from "@mui/material";
 import { 
@@ -135,6 +137,9 @@ function ChatInterface() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
+
+  // テンプレート機能の状態
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
 
   // メッセージエリアのスタイルを改善 - モバイル対応を強化
   const messageContainerStyles = {
@@ -707,6 +712,20 @@ function ChatInterface() {
     setShowNotificationModal(false);
   };
 
+  // テンプレート関連のイベントハンドラー
+  const handleOpenTemplateModal = () => {
+    setShowTemplateModal(true);
+  };
+
+  const handleCloseTemplateModal = () => {
+    setShowTemplateModal(false);
+  };
+
+  const handleTemplateSelect = (processedTemplate: string) => {
+    setInput(processedTemplate);
+    setShowTemplateModal(false);
+  };
+
 
 
   // 「もっと見る」ボタンの処理
@@ -923,6 +942,33 @@ function ChatInterface() {
               />
             </Box>
           )}
+
+          {/* テンプレートボタン */}
+          <Tooltip title="プロンプトテンプレート" placement="bottom">
+            <IconButton
+              color="inherit"
+              onClick={handleOpenTemplateModal}
+              sx={{
+                ml: { xs: 0.5, sm: 0.75 },
+                bgcolor: "rgba(255, 255, 255, 0.15)",
+                backdropFilter: "blur(4px)",
+                p: { xs: 1.2, sm: 1.5 },
+                width: { xs: 40, sm: 46 },
+                height: { xs: 40, sm: 46 },
+                "&:hover": {
+                  bgcolor: "rgba(255, 255, 255, 0.25)",
+                  transform: "translateY(-2px)",
+                  boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                },
+                transition: "all 0.2s ease",
+                boxShadow: "0 2px 6px rgba(0, 0, 0, 0.12)",
+                borderRadius: "14px",
+                border: "1px solid rgba(255, 255, 255, 0.3)",
+              }}
+            >
+              <PostAddIcon sx={{ fontSize: { xs: "1.3rem", sm: "1.5rem" } }} />
+            </IconButton>
+          </Tooltip>
           
           {messages.length > 0 && (
             <Tooltip title="チャット履歴をクリア" placement="bottom">
@@ -1812,6 +1858,13 @@ function ChatInterface() {
           onNotificationUpdate={() => {}}
         />
       )}
+
+      {/* テンプレート選択モーダル */}
+      <TemplateSelectionModal
+        open={showTemplateModal}
+        onClose={handleCloseTemplateModal}
+        onTemplateSelect={handleTemplateSelect}
+      />
     </Box>
   );
 }

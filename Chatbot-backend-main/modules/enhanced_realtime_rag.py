@@ -616,6 +616,26 @@ JSON形式で回答してください：
         start_time = datetime.now()
         
         try:
+            # Step 1: 質問分析・分割
+            analysis = await self.step1_parse_and_divide_question(question)
+            
+            # 複雑でない質問は基本RAGプロセッサで処理
+            if not analysis.is_complex or len(analysis.subtasks) == 0:
+                logger.info("🔄 シンプルな質問のため基本RAGプロセッサで処理")
+                return await self.base_processor.process_realtime_rag(question, company_id, company_name, top_k)
+            
+            # Step 2: 個別検索
+            subtask_results = await self.step2_individual_embedding_retrieval(analysis.subtasks, company_id, top_k)
+            
+            # Step 3: サブ回答生成
+            sub_results = await self.step3_generate_sub_answers(subtask_results, company_name, company_id)
+            
+            # Step 4: 最終統合
+            final_answer = await self.step4_final_integration(analysis, sub_results)
+            
+            # 処理時間計算
+            total_processing_time = (datetime.now() - start_time).total_seconds()
+            
             # 使用されたチャンクを収集
             all_chunks = []
             for result in sub_results:
@@ -662,7 +682,7 @@ JSON形式で回答してください：
             return result
             
         except Exception as e:
-            logger.error(f"❌ 拡張リアルタイムRAG処理エラー: {e}")
+            logger.error(f"❌拡張リアルタイムRAG処理エラー: {e}")
             import traceback
             logger.error(f"詳細エラー: {traceback.format_exc()}")
             
@@ -676,22 +696,21 @@ JSON形式で回答してください：
             return error_result
     
     def _extract_source_documents(self, chunks: List[Dict]) -> List[Dict]:
-        """ソース文書情報を抽出"""
+        """ソース文書情報を抽出 - document_sources.nameのみを使用"""
         source_documents = []
         seen_docs = set()
         
         for chunk in chunks:
-            doc_key = f"{chunk.get('document_name', 'Unknown')}_{chunk.get('doc_id', '')}"
-            if doc_key not in seen_docs:
+            # document_sources.nameのみを使用
+            doc_name = chunk.get('document_name', 'Unknown Document')
+            if doc_name and doc_name not in seen_docs:
                 doc_info = {
-                    "document_name": chunk.get('document_name', 'Unknown Document'),
+                    "document_name": doc_name,  # document_sources.nameのみ
                     "document_type": chunk.get('document_type', 'unknown'),
-                    "chunk_id": chunk.get('chunk_id', ''),
-                    "similarity_score": chunk.get('similarity_score', 0.0),
-                    "content_preview": (chunk.get('content', '') or '')[:100] + "..." if chunk.get('content') else ""
+                    "similarity_score": chunk.get('similarity_score', 0.0)
                 }
                 source_documents.append(doc_info)
-                seen_docs.add(doc_key)
+                seen_docs.add(doc_name)
         
         return source_documents
 

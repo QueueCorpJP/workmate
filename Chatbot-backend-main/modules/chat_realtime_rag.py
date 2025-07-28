@@ -252,17 +252,24 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                                 
                                 # ソース情報は document_sources.name のみを使用
                                 # 検索方法やキーワードは含めない
-                                source_name = "関連資料"
                                 
-                                source_info_list.append({
-                                    "name": source_name,
-                                    "type": "knowledge_base",
-                                    "relevance": top_similarity,
-                                    "search_method": search_method,
-                                    "chunks_count": chunks_used,
-                                    "keywords": keywords[:5],
-                                    "similarity_score": f"{top_similarity:.3f}"
-                                })
+                                # 実際に使用されたドキュメントの名前を取得
+                                if rag_result.get('used_chunks'):
+                                    for chunk in rag_result['used_chunks'][:3]:  # 最大3個
+                                        doc_name = chunk.get('document_name', '関連資料')
+                                        if doc_name and doc_name != 'Unknown':
+                                            source_info_list.append({
+                                                "name": doc_name,  # document_sources.nameのみ使用
+                                                "type": "knowledge_base",
+                                                "relevance": top_similarity
+                                            })
+                                else:
+                                    # フォールバック: 一般的な名前
+                                    source_info_list.append({
+                                        "name": "関連資料",  # document_sources.nameのみ使用
+                                        "type": "knowledge_base",
+                                        "relevance": top_similarity
+                                    })
                             else:
                                 # チャンクが使用されていない場合
                                 source_info_list.append({

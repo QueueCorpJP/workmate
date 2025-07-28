@@ -34,6 +34,7 @@ import CircularProgress from "@mui/material/CircularProgress";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import MonetizationOnIcon from "@mui/icons-material/MonetizationOn";
 import NotificationsIcon from "@mui/icons-material/Notifications";
+import DescriptionIcon from "@mui/icons-material/Description";
 import api from "../../api";
 import { withCache } from "../../utils/cache";
 import { useAuth } from "../../contexts/AuthContext";
@@ -48,6 +49,7 @@ import DemoStatsTab from "./DemoStatsTab";
 import UserManagementTab from "./UserManagementTab";
 import PlanHistoryTab from "./PlanHistoryTab";
 import NotificationManagementTab from "./NotificationManagementTab";
+import TemplateManagementTab from "./TemplateManagementTab";
 import CompanyDetailsDialog from "./CompanyDetailsDialog";
 import BillingTab from "../BillingTab";
 
@@ -905,6 +907,11 @@ const AdminPanel: React.FC = () => {
       label: "料金管理",
       ariaLabel: "料金管理タブ",
     },
+    {
+      icon: <DescriptionIcon sx={{ color: "#3b82f6" }} />,
+      label: "テンプレート",
+      ariaLabel: "テンプレート管理タブ",
+    },
     ...(permissions.is_special_admin
       ? [
         {
@@ -912,6 +919,10 @@ const AdminPanel: React.FC = () => {
           label: "デモ統計",
           ariaLabel: "デモ統計タブ",
         },
+      ]
+      : []),
+    ...(permissions.is_admin_user || permissions.is_special_admin
+      ? [
         {
           icon: <NotificationsIcon sx={{ color: "#3b82f6" }} />,
           label: "通知管理",
@@ -928,10 +939,16 @@ const AdminPanel: React.FC = () => {
 
   // タブが変更されたときの実際のインデックスを計算する関数
   const getActualTabIndex = (visibleIndex: number) => {
-    if (!permissions.is_special_admin && visibleIndex >= 6) {
-      return visibleIndex + 2; // デモ統計タブと通知管理タブがスキップされるので+2する
+    let adjustment = 0;
+    
+    // デモ統計タブがスキップされる場合
+    if (!permissions.is_special_admin && visibleIndex >= 7) {
+      adjustment += 1;
     }
-    return visibleIndex;
+    
+    // 通知管理タブは管理者なら表示されるので調整不要
+    
+    return visibleIndex + adjustment;
   };
 
   // タブが変更されたときのハンドラ（キャッシュ活用で高速化）
@@ -978,15 +995,18 @@ const AdminPanel: React.FC = () => {
       case 5: // 料金管理
         // 料金管理は内部で自動読み込みするため何もしない
         break;
-      case 6: // デモ統計 (queue@queueu-tech.jpのみ)
+      case 6: // テンプレート管理
+        // テンプレート管理は内部で自動読み込みするため何もしない
+        break;
+      case 7: // デモ統計 (queue@queueu-tech.jpのみ)
         if (permissions.is_special_admin && (!demoStats || Object.keys(demoStats).length === 0)) {
           fetchDemoStats();
         }
         break;
-      case 7: // 通知管理 (queue@queueu-tech.jpのみ)
+      case 8: // 通知管理 (管理者のみ)
         // 通知管理は内部で自動読み込みするため何もしない
         break;
-      case 8: // ユーザー管理
+      case 9: // ユーザー管理
         break;
       default:
         break;
@@ -1417,8 +1437,13 @@ const AdminPanel: React.FC = () => {
                 <BillingTab />
               )}
 
+              {/* テンプレート管理タブ */}
+              {tabValue === 6 && (
+                <TemplateManagementTab user={user} />
+              )}
+
               {/* デモ統計タブ - queue@queueu-tech.jpのみ表示 */}
-              {permissions.is_special_admin && getActualTabIndex(tabValue) === 6 && (
+              {permissions.is_special_admin && getActualTabIndex(tabValue) === 7 && (
                 <DemoStatsTab
                   demoStats={demoStats}
                   isLoading={isDemoStatsLoading}
@@ -1428,13 +1453,13 @@ const AdminPanel: React.FC = () => {
                 />
               )}
 
-              {/* 通知管理タブ - queue@queueu-tech.jpのみ表示 */}
-              {permissions.is_special_admin && getActualTabIndex(tabValue) === 7 && (
+              {/* 通知管理タブ - 管理者のみ表示 */}
+              {(permissions.is_admin_user || permissions.is_special_admin) && getActualTabIndex(tabValue) === 8 && (
                 <NotificationManagementTab />
               )}
 
               {/* ユーザー管理タブ */}
-              {tabValue === (permissions.is_special_admin ? 8 : 6) && (
+              {tabValue === (permissions.is_special_admin ? 9 : 7) && (
                 <UserManagementTab
                   isSpecialAdmin={isSpecialAdmin}
                   newUserEmail={newUserEmail}

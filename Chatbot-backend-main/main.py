@@ -40,6 +40,11 @@ from modules.auth import get_current_user, get_current_admin, register_new_user,
 from modules.resource import get_uploaded_resources_by_company_id, toggle_resource_active_by_id, remove_resource_by_id
 from modules import admin
 from modules import upload_api  # upload_apiをインポート
+from modules.template_management import (
+    TemplateManager, CompanyTemplateSettingsManager,
+    TemplateCreate, TemplateUpdate, TemplateCategoryCreate,
+    TemplateUsageCreate, TemplateVariable
+)
 import json
 from modules.validation import validate_login_input, validate_user_input
 import csv
@@ -279,13 +284,13 @@ async def get_current_user_info(current_user = Depends(get_current_user), db: Su
                 # それでも作成できなければデフォルト値を使用
                 limits = default_limits
         
-        # 更新されたユーザー情報を返す
+        # 現在のユーザー情報を返す
         return {
-            "id": updated_user["id"],
-            "email": updated_user["email"],
-            "name": updated_user["name"],
-            "role": updated_user["role"],
-            "created_at": updated_user["created_at"],
+            "id": current_user["id"],
+            "email": current_user["email"],
+            "name": current_user["name"],
+            "role": current_user["role"],
+            "created_at": current_user["created_at"],
             "company_name": current_user.get("company_name", ""),
             "usage_limits": {
                 "document_uploads_used": limits["document_uploads_used"],
@@ -1316,9 +1321,10 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
                 # sourcesからファイル名を抽出してカンマ区切りで結合
                 source_names = []
                 for source in result.sources[:3]:  # 最大3つのソースを表示
+                    # document_sources.nameのみを使用
                     source_name = source.get('name', '') if isinstance(source, dict) else str(source)
-                    if source_name and source_name not in ['システム回答', 'unknown']:
-                        source_names.append(source_name)
+                    if source_name and source_name not in ['システム回答', 'unknown', 'Unknown']:
+                        source_names.append(source_name.strip())
                 source_text = ', '.join(source_names) if source_names else ""
             
             print(f"📄 抽出されたソース情報: '{source_text}'")
@@ -1339,9 +1345,10 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
             if sources:
                 source_names = []
                 for source in sources[:3]:  # 最大3つのソースを表示
+                    # document_sources.nameのみを使用
                     source_name = source.get('name', '') if isinstance(source, dict) else str(source)
-                    if source_name and source_name not in ['システム回答', 'unknown']:
-                        source_names.append(source_name)
+                    if source_name and source_name not in ['システム回答', 'unknown', 'Unknown']:
+                        source_names.append(source_name.strip())
                 source_text = ', '.join(source_names) if source_names else ""
             
             print(f"📄 辞書から抽出されたソース情報: '{source_text}'")
@@ -1369,9 +1376,10 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
                 if hasattr(result, 'sources') and result.sources:
                     source_names = []
                     for source in result.sources[:3]:
+                        # document_sources.nameのみを使用
                         source_name = source.get('name', '') if isinstance(source, dict) else str(source)
-                        if source_name and source_name not in ['システム回答', 'unknown']:
-                            source_names.append(source_name)
+                        if source_name and source_name not in ['システム回答', 'unknown', 'Unknown']:
+                            source_names.append(source_name.strip())
                     source_text = ', '.join(source_names) if source_names else ""
                 
                 return ChatResponse(
@@ -1387,10 +1395,11 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
                 source_names = []
                 if sources:
                     for source in sources[:3]:
+                        # document_sources.nameのみを使用
                         source_name = source.get('name', '') if isinstance(source, dict) else str(source)
-                        if source_name and source_name not in ['システム回答', 'unknown']:
-                            source_names.append(source_name)
-                source_text = ', '.join(source_names) if source_names else ""
+                        if source_name and source_name not in ['システム回答', 'unknown', 'Unknown']:
+                            source_names.append(source_name.strip())
+                    source_text = ', '.join(source_names) if source_names else ""
                 
                 return ChatResponse(
                     response=result.get("response", "システムエラーが発生しました"),
@@ -3704,6 +3713,449 @@ async def delete_notification(notification_id: str, current_user = Depends(get_a
         )
 
 
+
+# Template Management API Endpoints
+# Note: These will be instantiated per request with proper database connections
+# template_manager = TemplateManager()
+# company_template_settings_manager = CompanyTemplateSettingsManager()
+
+# Template Categories Endpoints
+@app.get("/chatbot/api/templates/categories")
+async def get_template_categories(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """Get all template categories for the user's company"""
+    try:
+        template_manager = TemplateManager(db)
+        company_id = current_user.get("company_id")
+        
+        # If no company_id, get all public categories
+        categories = await template_manager.get_categories(company_id)
+        return {"categories": categories}
+    except Exception as e:
+        logger.error(f"Error getting template categories: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get template categories: {str(e)}")
+
+@app.post("/chatbot/api/templates/categories")
+async def create_template_category(category_data: TemplateCategoryCreate, current_user = Depends(get_company_admin), db: SupabaseConnection = Depends(get_db)):
+    """Create a new template category (company admin only)"""
+    try:
+        template_manager = TemplateManager(db)
+        created_by = current_user.get("id")
+        
+        category = await template_manager.create_category(category_data, created_by)
+        return {"message": "Template category created successfully", "category": category}
+    except Exception as e:
+        logger.error(f"Error creating template category: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create template category: {str(e)}")
+
+# Template Management Endpoints
+@app.get("/chatbot/api/templates")
+async def get_templates(category_id: str = None, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """Get templates for the user's company, optionally filtered by category"""
+    try:
+        template_manager = TemplateManager(db)
+        company_id = current_user.get("company_id")
+        
+        # If no company_id, return empty templates or public templates
+        if not company_id:
+            logger.warning(f"User {current_user.get('email')} has no company_id, returning empty templates")
+            return {"templates": []}
+        
+        templates = await template_manager.get_templates(company_id, category_id)
+        return {"templates": templates}
+    except Exception as e:
+        logger.error(f"Error getting templates: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get templates: {str(e)}")
+
+@app.get("/chatbot/api/templates/category/{category_id}")
+async def get_templates_by_category(category_id: str, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """Get templates for a specific category"""
+    try:
+        template_manager = TemplateManager(db)
+        company_id = current_user.get("company_id")
+        
+        # If no company_id, return empty templates or public templates
+        if not company_id:
+            logger.warning(f"User {current_user.get('email')} has no company_id, returning empty templates for category {category_id}")
+            return {"templates": []}
+        
+        templates = await template_manager.get_templates(company_id, category_id)
+        return {"templates": templates}
+    except Exception as e:
+        logger.error(f"Error getting templates by category: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get templates by category: {str(e)}")
+
+@app.get("/chatbot/api/templates/{template_id}")
+async def get_template(template_id: str, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """Get a specific template by ID"""
+    try:
+        template_manager = TemplateManager(db)
+        company_id = current_user.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Company ID not found")
+        
+        template = await template_manager.get_template_by_id(template_id, company_id)
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        return {"template": template}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting template: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get template: {str(e)}")
+
+@app.post("/chatbot/api/templates")
+async def create_template(template_data: TemplateCreate, current_user = Depends(get_company_admin), db: SupabaseConnection = Depends(get_db)):
+    """Create a new template (company admin only)"""
+    try:
+        template_manager = TemplateManager(db)
+        company_id = current_user.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Company ID not found")
+        
+        template = await template_manager.create_template(template_data, company_id, current_user["id"])
+        return {"message": "Template created successfully", "template": template}
+    except Exception as e:
+        logger.error(f"Error creating template: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create template: {str(e)}")
+
+@app.put("/chatbot/api/templates/{template_id}")
+async def update_template(template_id: str, template_data: TemplateUpdate, current_user = Depends(get_company_admin), db: SupabaseConnection = Depends(get_db)):
+    """Update an existing template (company admin only)"""
+    try:
+        template_manager = TemplateManager(db)
+        company_id = current_user.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Company ID not found")
+        
+        template = await template_manager.update_template(template_id, template_data, company_id, current_user["id"])
+        
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found or access denied")
+        
+        return {"message": "Template updated successfully", "template": template}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating template: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update template: {str(e)}")
+
+@app.delete("/chatbot/api/templates/{template_id}")
+async def delete_template(template_id: str, current_user = Depends(get_company_admin), db: SupabaseConnection = Depends(get_db)):
+    """Delete a template (company admin only)"""
+    try:
+        template_manager = TemplateManager(db)
+        company_id = current_user.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Company ID not found")
+        
+        success = await template_manager.delete_template(template_id, company_id, current_user["id"])
+        if not success:
+            raise HTTPException(status_code=404, detail="Template not found or access denied")
+        
+        return {"message": "Template deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting template: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete template: {str(e)}")
+
+# Template Usage and Favorites Endpoints
+@app.post("/chatbot/api/templates/{template_id}/use")
+async def use_template(template_id: str, usage_data: TemplateUsageCreate, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """Record template usage"""
+    try:
+        company_id = current_user.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Company ID not found")
+        
+        # Verify template exists and user has access
+        template = await template_manager.get_template_by_id(template_id, company_id, db)
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        # Create TemplateUsageCreate object
+        usage_create = TemplateUsageCreate(
+            template_id=template_id,
+            variable_values=usage_data.variable_values,
+            chat_history_id=None
+        )
+        
+        usage_id = await template_manager.record_template_usage(
+            usage_create,
+            current_user["id"],
+            company_id
+        )
+        
+        return {"message": "Template usage recorded", "usage_id": usage_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error recording template usage: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to record template usage: {str(e)}")
+
+@app.post("/chatbot/api/templates/{template_id}/favorite")
+async def toggle_template_favorite(template_id: str, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """Toggle template favorite status"""
+    try:
+        company_id = current_user.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Company ID not found")
+        
+        # Verify template exists and user has access
+        template = await template_manager.get_template_by_id(template_id, company_id, db)
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        is_favorite = await template_manager.toggle_template_favorite(
+            template_id=template_id,
+            user_id=current_user["id"],
+            db=db
+        )
+        
+        return {"message": "Template favorite status updated", "is_favorite": is_favorite}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error toggling template favorite: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to toggle template favorite: {str(e)}")
+
+@app.get("/chatbot/api/templates/favorites")
+async def get_favorite_templates(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """Get user's favorite templates"""
+    try:
+        template_manager = TemplateManager(db)
+        company_id = current_user.get("company_id")
+        
+        # If no company_id, return empty favorites instead of error
+        if not company_id:
+            logger.warning(f"User {current_user.get('email')} has no company_id, returning empty favorites")
+            return {"favorites": []}
+        
+        favorites = await template_manager.get_user_favorites(
+            user_id=current_user["id"],
+            company_id=company_id
+        )
+        
+        return {"favorites": favorites}
+    except Exception as e:
+        logger.error(f"Error getting favorite templates: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get favorite templates: {str(e)}")
+
+@app.get("/chatbot/api/templates/{template_id}/variables")
+async def get_template_variables(template_id: str, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """Get variables for a specific template"""
+    try:
+        template_manager = TemplateManager(db)
+        company_id = current_user.get("company_id")
+        
+        # If no company_id, still try to get template variables for public templates
+        if not company_id:
+            logger.warning(f"User {current_user.get('email')} has no company_id, checking for public template {template_id}")
+            # Try to get variables without company restriction for public templates
+            try:
+                variables = await template_manager.get_template_variables(template_id)
+                return {"variables": variables}
+            except Exception:
+                return {"variables": []}
+        
+        # First verify the template exists and user has access
+        template = await template_manager.get_template_by_id(template_id, company_id)
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        variables = await template_manager.get_template_variables(template_id)
+        return {"variables": variables}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting template variables: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get template variables: {str(e)}")
+
+@app.post("/chatbot/api/templates/usage")
+async def record_template_usage(usage_data: dict, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """Record template usage"""
+    try:
+        template_manager = TemplateManager(db)
+        template_id = usage_data.get("template_id")
+        variable_values = usage_data.get("variable_values", {})
+        chat_history_id = usage_data.get("chat_history_id")
+        
+        if not template_id:
+            raise HTTPException(status_code=400, detail="Template ID is required")
+        
+        company_id = current_user.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Company ID not found")
+        
+        # Verify template exists and user has access
+        template = await template_manager.get_template_by_id(template_id, company_id)
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        # Create TemplateUsageCreate object
+        usage_create = TemplateUsageCreate(
+            template_id=template_id,
+            variable_values=variable_values,
+            chat_history_id=chat_history_id
+        )
+        
+        usage_result = await template_manager.record_template_usage(
+            usage_create,
+            current_user["id"],
+            company_id
+        )
+        
+        return {"message": "Template usage recorded", "usage_id": usage_result.get("id")}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error recording template usage: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to record template usage: {str(e)}")
+
+@app.post("/chatbot/api/templates/favorites")
+async def add_template_favorite(favorite_data: dict, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """Add template to favorites"""
+    try:
+        template_manager = TemplateManager(db)
+        template_id = favorite_data.get("template_id")
+        
+        if not template_id:
+            raise HTTPException(status_code=400, detail="Template ID is required")
+        
+        company_id = current_user.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Company ID not found")
+        
+        # Verify template exists and user has access
+        template = await template_manager.get_template_by_id(template_id, company_id)
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        is_favorite = await template_manager.toggle_template_favorite(
+            template_id=template_id,
+            user_id=current_user["id"]
+        )
+        
+        return {"message": "Template added to favorites", "is_favorite": is_favorite}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding template favorite: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to add template favorite: {str(e)}")
+
+@app.delete("/chatbot/api/templates/favorites/{template_id}")
+async def remove_template_favorite(template_id: str, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """Remove template from favorites"""
+    try:
+        template_manager = TemplateManager(db)
+        company_id = current_user.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Company ID not found")
+        
+        # Verify template exists and user has access
+        template = await template_manager.get_template_by_id(template_id, company_id)
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        is_favorite = await template_manager.toggle_template_favorite(
+            template_id=template_id,
+            user_id=current_user["id"]
+        )
+        
+        return {"message": "Template removed from favorites", "is_favorite": is_favorite}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error removing template favorite: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to remove template favorite: {str(e)}")
+
+# Template Variable Processing Endpoint
+@app.post("/chatbot/api/templates/{template_id}/process")
+async def process_template_variables(template_id: str, variables: dict, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """Process template with variable substitution"""
+    try:
+        company_id = current_user.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Company ID not found")
+        
+        # Get template
+        template = await template_manager.get_template_by_id(template_id, company_id, db)
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        # Process variables
+        processed_content = await template_manager.process_template_variables(
+            template_content=template["content"],
+            variables=variables,
+            db=db
+        )
+        
+        return {
+            "processed_content": processed_content,
+            "original_template": template
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing template variables: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to process template variables: {str(e)}")
+
+# Company Template Settings Endpoints
+@app.get("/chatbot/api/templates/settings")
+async def get_company_template_settings(current_user = Depends(get_company_admin), db: SupabaseConnection = Depends(get_db)):
+    """Get company template settings (admin only)"""
+    try:
+        company_id = current_user.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Company ID not found")
+        
+        settings = await company_template_settings_manager.get_settings(company_id, db)
+        return {"settings": settings}
+    except Exception as e:
+        logger.error(f"Error getting template settings: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get template settings: {str(e)}")
+
+@app.put("/chatbot/api/templates/settings")
+async def update_company_template_settings(settings_data: dict, current_user = Depends(get_company_admin), db: SupabaseConnection = Depends(get_db)):
+    """Update company template settings (admin only)"""
+    try:
+        company_id = current_user.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Company ID not found")
+        
+        success = await company_template_settings_manager.update_settings(
+            company_id=company_id,
+            allow_user_templates=settings_data.get("allow_user_templates", True),
+            require_approval=settings_data.get("require_approval", False),
+            max_templates_per_user=settings_data.get("max_templates_per_user", 10),
+            db=db
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update settings")
+        
+        return {"message": "Template settings updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating template settings: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update template settings: {str(e)}")
+
+# Template Analytics Endpoints
+@app.get("/chatbot/api/templates/analytics")
+async def get_template_analytics(current_user = Depends(get_company_admin), db: SupabaseConnection = Depends(get_db)):
+    """Get template usage analytics (admin only)"""
+    try:
+        company_id = current_user.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Company ID not found")
+        
+        analytics = await template_manager.get_template_analytics(company_id, db)
+        return {"analytics": analytics}
+    except Exception as e:
+        logger.error(f"Error getting template analytics: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get template analytics: {str(e)}")
 
 # フロントエンドのビルドディレクトリを指定
 frontend_build_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")

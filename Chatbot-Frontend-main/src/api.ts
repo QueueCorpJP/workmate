@@ -183,10 +183,13 @@ export interface Notification {
 // 全ての通知を取得（全ユーザー共通）
 export const getNotifications = async (): Promise<Notification[]> => {
   try {
+    console.log("🔍 Getting notifications from: /notifications");
     const response = await api.get('/notifications');
+    console.log("✅ Notifications response:", response.data);
     return response.data;
   } catch (error) {
     console.error("通知の取得に失敗しました:", error);
+    console.error("Error details:", error);
     throw error;
   }
 };
@@ -194,10 +197,13 @@ export const getNotifications = async (): Promise<Notification[]> => {
 // 通知を作成（管理者用）
 export const createNotification = async (notification: Omit<Notification, 'id' | 'created_at' | 'updated_at' | 'created_by'>): Promise<Notification> => {
   try {
+    console.log("🔍 Creating notification:", notification);
     const response = await api.post('/notifications', notification);
+    console.log("✅ Create notification response:", response.data);
     return response.data;
   } catch (error) {
     console.error("通知の作成に失敗しました:", error);
+    console.error("Error details:", error);
     throw error;
   }
 };
@@ -205,9 +211,12 @@ export const createNotification = async (notification: Omit<Notification, 'id' |
 // 通知を削除（管理者用）
 export const deleteNotification = async (notificationId: string): Promise<void> => {
   try {
+    console.log("🔍 Deleting notification:", notificationId);
     await api.delete(`/notifications/${notificationId}`);
+    console.log("✅ Notification deleted successfully");
   } catch (error) {
     console.error("通知の削除に失敗しました:", error);
+    console.error("Error details:", error);
     throw error;
   }
 };
