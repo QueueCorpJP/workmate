@@ -74,6 +74,10 @@ interface Category {
   description: string;
   display_order: number;
   is_active: boolean;
+  category_type: 'system' | 'company';
+  company_id?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface TemplateManagementTabProps {
@@ -128,6 +132,7 @@ const TemplateManagementTab: React.FC<TemplateManagementTabProps> = ({ user }) =
     description: '',
     display_order: 0,
     is_active: true,
+    category_type: 'company', // デフォルトは会社カテゴリ
   });
 
   // Loading states
@@ -403,6 +408,7 @@ const TemplateManagementTab: React.FC<TemplateManagementTabProps> = ({ user }) =
       description: '',
       display_order: 0,
       is_active: true,
+      category_type: 'company', // デフォルトは会社カテゴリ
     });
     setSelectedCategory(null);
   };
@@ -419,6 +425,7 @@ const TemplateManagementTab: React.FC<TemplateManagementTabProps> = ({ user }) =
       description: category.description,
       display_order: category.display_order,
       is_active: category.is_active,
+      category_type: category.category_type || 'company', // カテゴリタイプを保持
     });
     setEditCategoryDialogOpen(true);
   };

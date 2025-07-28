@@ -45,6 +45,7 @@ class TemplateCategoryCreate(BaseModel):
     description: str
     icon: Optional[str] = None
     display_order: int = 0
+    category_type: str = "company"  # system, company
 
 class TemplateUsageCreate(BaseModel):
     template_id: str
@@ -59,23 +60,45 @@ class TemplateManager:
     
     # カテゴリ管理
     async def get_categories(self, company_id: Optional[str] = None) -> List[Dict]:
-        """カテゴリ一覧を取得"""
+        """カテゴリ一覧を取得（会社別フィルタリング）"""
         try:
-            # アクティブなカテゴリのみを表示順で取得
-            result = select_data(
+            # システムカテゴリと会社カテゴリを取得
+            categories = []
+            
+            # 1. システムカテゴリを取得（全社共通）
+            system_result = select_data(
                 "template_categories",
-                filters={"is_active": True},
+                filters={
+                    "is_active": True,
+                    "category_type": "system"
+                },
                 order="display_order asc, created_at asc"
             )
             
-            if result.success and result.data:
-                return result.data
-            return []
+            if system_result.success and system_result.data:
+                categories.extend(system_result.data)
+            
+            # 2. 会社カテゴリを取得（company_idがある場合のみ）
+            if company_id:
+                company_result = select_data(
+                    "template_categories",
+                    filters={
+                        "is_active": True,
+                        "category_type": "company",
+                        "company_id": company_id
+                    },
+                    order="display_order asc, created_at asc"
+                )
+                
+                if company_result.success and company_result.data:
+                    categories.extend(company_result.data)
+            
+            return categories
         except Exception as e:
             print(f"カテゴリ取得エラー: {e}")
             return []
     
-    async def create_category(self, category_data: TemplateCategoryCreate, created_by: str) -> Dict:
+    async def create_category(self, category_data: TemplateCategoryCreate, created_by: str, company_id: Optional[str] = None) -> Dict:
         """新しいカテゴリを作成"""
         try:
             category_dict = {
@@ -84,10 +107,19 @@ class TemplateManager:
                 "description": category_data.description,
                 "icon": category_data.icon,
                 "display_order": category_data.display_order,
+                "category_type": category_data.category_type,
                 "is_active": True,
                 "created_at": datetime.datetime.now().isoformat(),
                 "updated_at": datetime.datetime.now().isoformat()
             }
+            
+            # category_typeに応じてcompany_idを設定
+            if category_data.category_type == "company":
+                if not company_id:
+                    raise Exception("会社カテゴリの作成にはcompany_idが必要です")
+                category_dict["company_id"] = company_id
+            else:  # system
+                category_dict["company_id"] = None
             
             result = insert_data("template_categories", category_dict)
             

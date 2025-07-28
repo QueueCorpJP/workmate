@@ -63,6 +63,8 @@ async def create_default_template_data():
                 "name": category["name"],
                 "description": category["description"],
                 "display_order": category["display_order"],
+                "category_type": "system",  # システムカテゴリとして設定
+                "company_id": None,  # システムカテゴリは会社に属さない
                 "is_active": True,
                 "created_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat()
@@ -74,12 +76,12 @@ async def create_default_template_data():
                 result = insert_data("template_categories", category_data)
                 if result.success:
                     category_ids[category["name"]] = category_data["id"]
-                    print(f"✅ Created category: {category['name']}")
+                    print(f"✅ Created system category: {category['name']}")
                 else:
                     print(f"❌ Failed to create category: {category['name']}")
             else:
                 category_ids[category["name"]] = existing.data[0]["id"]
-                print(f"📋 Category already exists: {category['name']}")
+                print(f"📋 System category already exists: {category['name']}")
         
         # Default templates
         default_templates = [

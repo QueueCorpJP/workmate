@@ -3722,12 +3722,12 @@ async def delete_notification(notification_id: str, current_user = Depends(get_a
 # Template Categories Endpoints
 @app.get("/chatbot/api/templates/categories")
 async def get_template_categories(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
-    """Get all template categories for the user's company"""
+    """Get template categories (system + company specific)"""
     try:
         template_manager = TemplateManager(db)
         company_id = current_user.get("company_id")
         
-        # If no company_id, get all public categories
+        # Get system categories + company categories
         categories = await template_manager.get_categories(company_id)
         return {"categories": categories}
     except Exception as e:
@@ -3740,8 +3740,16 @@ async def create_template_category(category_data: TemplateCategoryCreate, curren
     try:
         template_manager = TemplateManager(db)
         created_by = current_user.get("id")
+        company_id = current_user.get("company_id")
         
-        category = await template_manager.create_category(category_data, created_by)
+        # Only allow company type categories for non-system admins
+        if category_data.category_type == "system":
+            # Only super admins can create system categories
+            if current_user.get("role") != "super_admin":
+                raise HTTPException(status_code=403, detail="Only super admins can create system categories")
+            company_id = None
+        
+        category = await template_manager.create_category(category_data, created_by, company_id)
         return {"message": "Template category created successfully", "category": category}
     except Exception as e:
         logger.error(f"Error creating template category: {str(e)}")
