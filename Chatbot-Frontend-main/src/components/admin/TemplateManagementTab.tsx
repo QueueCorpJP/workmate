@@ -48,6 +48,10 @@ import CancelIcon from "@mui/icons-material/Cancel";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import FavoriteIcon from "@mui/icons-material/Favorite";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import InfoIcon from "@mui/icons-material/Info";
+import TipsAndUpdatesIcon from "@mui/icons-material/TipsAndUpdates";
+import MenuBookIcon from "@mui/icons-material/MenuBook";
 import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
 import LoadingIndicator from "./LoadingIndicator";
 import api from "../../api";
@@ -139,6 +143,7 @@ const TemplateManagementTab: React.FC<TemplateManagementTabProps> = ({ user }) =
   const [isCreating, setIsCreating] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [helpDialogOpen, setHelpDialogOpen] = useState(false);
 
   // Access control - only allow user and admin roles
   if (user?.role === "employee") {
@@ -495,6 +500,33 @@ const TemplateManagementTab: React.FC<TemplateManagementTabProps> = ({ user }) =
             >
               テンプレート管理
             </Typography>
+            <Tooltip title="プロンプトテンプレートガイドを見る">
+              <IconButton
+                onClick={() => setHelpDialogOpen(true)}
+                sx={{
+                  ml: 1,
+                  color: theme.palette.primary.main,
+                  backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                  '&:hover': {
+                    backgroundColor: alpha(theme.palette.primary.main, 0.2),
+                  },
+                  animation: 'pulse 2s infinite',
+                  '@keyframes pulse': {
+                    '0%': {
+                      boxShadow: `0 0 0 0 ${alpha(theme.palette.primary.main, 0.7)}`,
+                    },
+                    '70%': {
+                      boxShadow: `0 0 0 10px ${alpha(theme.palette.primary.main, 0)}`,
+                    },
+                    '100%': {
+                      boxShadow: `0 0 0 0 ${alpha(theme.palette.primary.main, 0)}`,
+                    },
+                  },
+                }}
+              >
+                <HelpOutlineIcon />
+              </IconButton>
+            </Tooltip>
           </Box>
 
           <Button
@@ -1217,6 +1249,274 @@ const TemplateManagementTab: React.FC<TemplateManagementTabProps> = ({ user }) =
               startIcon={isDeleting ? null : <DeleteIcon />}
             >
               {isDeleting ? <LoadingIndicator size={20} message="" /> : '削除'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Help Guide Dialog */}
+        <Dialog
+          open={helpDialogOpen}
+          onClose={() => setHelpDialogOpen(false)}
+          maxWidth="lg"
+          fullWidth
+          fullScreen={isMobile}
+          PaperProps={{
+            sx: {
+              borderRadius: isMobile ? 0 : 3,
+              maxHeight: '90vh',
+              background: 'linear-gradient(135deg, #f8fbff 0%, #e3f2fd 100%)',
+            },
+          }}
+        >
+          <DialogTitle
+            sx={{
+              background: 'linear-gradient(135deg, #1976d2 0%, #1565c0 100%)',
+              color: 'white',
+              textAlign: 'center',
+              py: 3,
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+              <MenuBookIcon sx={{ fontSize: 32 }} />
+              <Typography variant="h4" component="div" sx={{ fontWeight: 700 }}>
+                プロンプトテンプレート完全ガイド
+              </Typography>
+            </Box>
+          </DialogTitle>
+          
+          <DialogContent sx={{ p: 0 }}>
+            <Box sx={{ 
+              maxHeight: isMobile ? 'calc(100vh - 120px)' : '70vh', 
+              overflowY: 'auto',
+              p: 3,
+            }}>
+              {/* 概要セクション */}
+              <Paper elevation={3} sx={{ p: 3, mb: 3, borderRadius: 3, background: 'rgba(255,255,255,0.9)' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <InfoIcon sx={{ color: 'primary.main', mr: 1, fontSize: 28 }} />
+                  <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main' }}>
+                    プロンプトテンプレートとは？
+                  </Typography>
+                </Box>
+                <Typography variant="body1" sx={{ lineHeight: 1.8, mb: 2 }}>
+                  プロンプトテンプレートは、AIチャットボットとの対話を効率化するための事前定義された質問パターンです。
+                  よく使用する質問や指示を保存し、ワンクリックで呼び出すことができます。
+                </Typography>
+                <Box sx={{ bgcolor: '#e3f2fd', p: 2, borderRadius: 2, borderLeft: '4px solid #2196f3' }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600, color: '#1976d2' }}>
+                    💡 効果：作業効率が最大70%向上し、一貫性のある質問が可能になります
+                  </Typography>
+                </Box>
+              </Paper>
+
+              {/* 作成方法セクション */}
+              <Paper elevation={3} sx={{ p: 3, mb: 3, borderRadius: 3, background: 'rgba(255,255,255,0.9)' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <TipsAndUpdatesIcon sx={{ color: '#1976d2', mr: 1, fontSize: 28 }} />
+                  <Typography variant="h5" sx={{ fontWeight: 700, color: '#1976d2' }}>
+                    テンプレート作成の手順
+                  </Typography>
+                </Box>
+                
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: 'text.primary' }}>
+                    ステップ1: 基本情報の入力
+                  </Typography>
+                  <Stack spacing={1} sx={{ ml: 2 }}>
+                    <Typography variant="body2">• <strong>タイトル</strong>: テンプレートの目的がわかる名前を付ける</Typography>
+                    <Typography variant="body2">• <strong>説明</strong>: どんな場面で使うかを詳しく記載</Typography>
+                    <Typography variant="body2">• <strong>カテゴリ</strong>: 整理しやすいカテゴリを選択</Typography>
+                  </Stack>
+                </Box>
+
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: 'text.primary' }}>
+                    ステップ2: テンプレート内容の作成
+                  </Typography>
+                  <Stack spacing={1} sx={{ ml: 2 }}>
+                    <Typography variant="body2">• 具体的で明確な指示を記載</Typography>
+                    <Typography variant="body2">• 文脈を含めて詳細に説明</Typography>
+                    <Typography variant="body2">• 期待する回答形式を指定</Typography>
+                  </Stack>
+                </Box>
+
+                <Box sx={{ bgcolor: '#e3f2fd', p: 2, borderRadius: 2, borderLeft: '4px solid #1976d2' }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600, color: '#1565c0' }}>
+                    ⭐ コツ：「5W1H」を意識して、具体的で実行可能な指示を作成しましょう
+                  </Typography>
+                </Box>
+              </Paper>
+
+              {/* 効果的な使い方セクション */}
+              <Paper elevation={3} sx={{ p: 3, mb: 3, borderRadius: 3, background: 'rgba(255,255,255,0.9)' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <TipsAndUpdatesIcon sx={{ color: '#1976d2', mr: 1, fontSize: 28 }} />
+                  <Typography variant="h5" sx={ { fontWeight: 700, color: '#1976d2' }}>
+                    効果的なテンプレート作成のポイント
+                  </Typography>
+                </Box>
+                
+                <Grid container spacing={2}>
+                  <Grid item xs={12} md={6}>
+                    <Box sx={{ bgcolor: '#e3f2fd', p: 2, borderRadius: 2, height: '100%' }}>
+                      <Typography variant="h6" sx={{ fontWeight: 600, color: '#1976d2', mb: 1 }}>
+                        ✅ 良い例
+                      </Typography>
+                      <Stack spacing={1}>
+                        <Typography variant="body2">• 具体的な指示を含む</Typography>
+                        <Typography variant="body2">• 期待する回答形式を明記</Typography>
+                        <Typography variant="body2">• 文脈情報を提供</Typography>
+                        <Typography variant="body2">• 専門用語を定義</Typography>
+                      </Stack>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <Box sx={{ bgcolor: '#ffebee', p: 2, borderRadius: 2, height: '100%' }}>
+                      <Typography variant="h6" sx={{ fontWeight: 600, color: 'error.main', mb: 1 }}>
+                        ❌ 避けるべき例
+                      </Typography>
+                      <Stack spacing={1}>
+                        <Typography variant="body2">• 曖昧で抽象的な指示</Typography>
+                        <Typography variant="body2">• 一般的すぎる質問</Typography>
+                        <Typography variant="body2">• 文脈のない短い質問</Typography>
+                        <Typography variant="body2">• 複数の質問を混在</Typography>
+                      </Stack>
+                    </Box>
+                  </Grid>
+                </Grid>
+              </Paper>
+
+              {/* 実用例セクション */}
+              <Paper elevation={3} sx={{ p: 3, mb: 3, borderRadius: 3, background: 'rgba(255,255,255,0.9)' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <DescriptionIcon sx={{ color: '#1976d2', mr: 1, fontSize: 28 }} />
+                  <Typography variant="h5" sx={{ fontWeight: 700, color: '#1976d2' }}>
+                    実用的なテンプレート例
+                  </Typography>
+                </Box>
+                
+                <Stack spacing={3}>
+                  <Box sx={{ bgcolor: '#e3f2fd', p: 2, borderRadius: 2 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#1976d2', mb: 1 }}>
+                      📧 ビジネスメール作成
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontStyle: 'italic', mb: 1 }}>
+                      「以下の内容でプロフェッショナルなビジネスメールを作成してください：
+                      <br />• 宛先: [相手の名前・役職]
+                      <br />• 目的: [メールの目的]
+                      <br />• 要点: [伝えたい内容]
+                      <br />• トーン: 丁寧かつ簡潔に」
+                    </Typography>
+                  </Box>
+
+                  <Box sx={{ bgcolor: '#e8f4fd', p: 2, borderRadius: 2 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#1565c0', mb: 1 }}>
+                      📊 データ分析依頼
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontStyle: 'italic', mb: 1 }}>
+                      「以下のデータを分析し、実用的な改善提案を提供してください：
+                      <br />• データ内容: [データの説明]
+                      <br />• 分析目的: [何を知りたいか]
+                      <br />• 期待する結果: [具体的な成果物]
+                      <br />• 形式: 箇条書きで3つの改善案を提示」
+                    </Typography>
+                  </Box>
+
+                  <Box sx={{ bgcolor: '#f0f8ff', p: 2, borderRadius: 2 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#1976d2', mb: 1 }}>
+                      🎯 プロジェクト計画
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontStyle: 'italic', mb: 1 }}>
+                      「以下のプロジェクトの詳細な実行計画を作成してください：
+                      <br />• プロジェクト名: [プロジェクト名]
+                      <br />• 目標: [達成したい目標]
+                      <br />• 期間: [実行期間]
+                      <br />• 制約条件: [制約やリスク]
+                      <br />• 成果物: タスクリスト、スケジュール、リスク対策を含む」
+                    </Typography>
+                  </Box>
+                </Stack>
+              </Paper>
+
+              {/* 管理のコツセクション */}
+              <Paper elevation={3} sx={{ p: 3, mb: 3, borderRadius: 3, background: 'rgba(255,255,255,0.9)' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <CategoryIcon sx={{ color: '#1976d2', mr: 1, fontSize: 28 }} />
+                  <Typography variant="h5" sx={{ fontWeight: 700, color: '#1976d2' }}>
+                    テンプレート管理のベストプラクティス
+                  </Typography>
+                </Box>
+                
+                <Grid container spacing={3}>
+                  <Grid item xs={12} md={4}>
+                    <Box sx={{ textAlign: 'center', p: 2 }}>
+                      <CategoryIcon sx={{ fontSize: 48, color: '#1976d2', mb: 1 }} />
+                      <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
+                        カテゴリ分類
+                      </Typography>
+                      <Typography variant="body2">
+                        目的別にカテゴリを作成し、整理された状態を保つ
+                      </Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={12} md={4}>
+                    <Box sx={{ textAlign: 'center', p: 2 }}>
+                      <EditIcon sx={{ fontSize: 48, color: '#1565c0', mb: 1 }} />
+                      <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
+                        定期的な見直し
+                      </Typography>
+                      <Typography variant="body2">
+                        月1回程度でテンプレートの効果を検証し、改善する
+                      </Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={12} md={4}>
+                    <Box sx={{ textAlign: 'center', p: 2 }}>
+                      <ContentCopyIcon sx={{ fontSize: 48, color: '#42a5f5', mb: 1 }} />
+                      <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
+                        チーム共有
+                      </Typography>
+                      <Typography variant="body2">
+                        効果的なテンプレートをチーム内で共有し、ナレッジを蓄積
+                      </Typography>
+                    </Box>
+                  </Grid>
+                </Grid>
+              </Paper>
+
+              {/* サポート情報 */}
+              <Paper elevation={3} sx={{ p: 3, borderRadius: 3, background: 'linear-gradient(135deg, #1976d2 0%, #1565c0 100%)', color: 'white' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, textAlign: 'center' }}>
+                  🚀 今すぐ始めましょう！
+                </Typography>
+                <Typography variant="body1" sx={{ textAlign: 'center', mb: 2 }}>
+                  効果的なプロンプトテンプレートで、AI活用の生産性を最大化しましょう。
+                  わからないことがあれば、いつでもこのガイドを参照してください。
+                </Typography>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                    💡 ヒント: このガイドは随時更新されます。定期的にチェックして最新情報をご確認ください。
+                  </Typography>
+                </Box>
+              </Paper>
+            </Box>
+          </DialogContent>
+          
+          <DialogActions sx={{ p: 3, background: 'rgba(255,255,255,0.95)' }}>
+            <Button
+              onClick={() => setHelpDialogOpen(false)}
+              variant="contained"
+              size="large"
+              sx={{
+                borderRadius: 3,
+                px: 4,
+                background: 'linear-gradient(135deg, #1976d2 0%, #1565c0 100%)',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #1565c0 0%, #0d47a1 100%)',
+                },
+              }}
+            >
+              理解しました
             </Button>
           </DialogActions>
         </Dialog>
