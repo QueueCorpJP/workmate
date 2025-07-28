@@ -724,6 +724,19 @@ function ChatInterface() {
   const handleTemplateSelect = (processedTemplate: string) => {
     setInput(processedTemplate);
     setShowTemplateModal(false);
+    
+    // テンプレート選択後、入力フィールドにフォーカスを当てる
+    setTimeout(() => {
+      const inputElement = document.querySelector('textarea[placeholder*="質問を入力"]');
+      if (inputElement) {
+        (inputElement as HTMLTextAreaElement).focus();
+        // カーソルを最後に移動
+        (inputElement as HTMLTextAreaElement).setSelectionRange(
+          processedTemplate.length, 
+          processedTemplate.length
+        );
+      }
+    }, 100);
   };
 
 
@@ -1326,14 +1339,15 @@ function ChatInterface() {
             placeholder={isLoading ? "AIが回答を準備中..." : "質問を入力してください..."}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => {
+            onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && input.trim()) {
                 e.preventDefault();
                 handleSend();
               }
             }}
             multiline
-            maxRows={1}
+            maxRows={input.split('\n').length > 1 ? Math.min(input.split('\n').length, 6) : 1}
+            minRows={1}
             variant="outlined"
             disabled={isLoading}
             sx={{
@@ -1347,7 +1361,8 @@ function ChatInterface() {
                   : "0 2px 6px rgba(37, 99, 235, 0.04)",
                 pr: { xs: 3.2, sm: 3.5 },
                 transition: "all 0.3s ease",
-                maxHeight: { xs: "42px", sm: "44px", md: "46px" },
+                minHeight: { xs: "42px", sm: "44px", md: "46px" },
+                maxHeight: input.split('\n').length > 1 ? "auto" : { xs: "42px", sm: "44px", md: "46px" },
                 overflowY: "hidden",
                 border: isLoading 
                   ? "1px solid rgba(37, 99, 235, 0.15)" 
