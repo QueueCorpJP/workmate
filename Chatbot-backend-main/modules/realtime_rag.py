@@ -429,11 +429,14 @@ class RealtimeRAGProcessor:
         💡 Step 4. LLMへ送信
         Top-K チャンクと元の質問を Gemini Flash 2.5 に渡して、要約せずに「原文ベース」で回答を生成
         """
-        logger.info(f"💡 Step 4: LLM回答生成開始 ({len(similar_chunks)}個のチャンク使用)")
+        logger.info(f"💡 Step 4: LLM回答生成開始 ({len(similar_chunks) if similar_chunks else 0}個のチャンク使用)")
         
-        if not similar_chunks:
+        if not similar_chunks or len(similar_chunks) == 0:
             logger.warning("類似チャンクが見つからないため、一般的な回答を生成")
-            return "申し訳ございませんが、ご質問に関連する情報が見つかりませんでした。より具体的な質問をしていただけますでしょうか。"
+            return {
+                "answer": "申し訳ございませんが、ご質問に関連する情報が見つかりませんでした。より具体的な質問をしていただけますでしょうか。",
+                "used_chunks": []
+            }
         
         try:
             # 🔍 Step 4: コンテキスト構築ログ
@@ -648,12 +651,22 @@ class RealtimeRAGProcessor:
                                     except Exception as db_error:
                                         logger.error(f"❌ データベースからのソース取得エラー: {db_error}")
                                         # エラー時はused_chunksの既存情報を使用
-                                        actual_source_names = [chunk.get('document_name', 'Unknown') for chunk in used_chunks if chunk.get('document_name')]
+                                        # None値と空文字列、'None'文字列を除外
+                                        actual_source_names = [
+                                            chunk.get('document_name', 'Unknown') 
+                                            for chunk in used_chunks 
+                                            if chunk.get('document_name') and 
+                                               chunk.get('document_name').strip() and 
+                                               chunk.get('document_name') != 'None'
+                                        ]
                                 
                                 # used_chunksを実際に取得されたソース名でフィルタリング
                                 filtered_used_chunks = []
                                 for chunk in used_chunks:
-                                    chunk_doc_name = chunk.get('document_name', '')
+                                    chunk_doc_name = chunk.get('document_name', '') or ''
+                                    # None値や'None'文字列をスキップ
+                                    if not chunk_doc_name or chunk_doc_name.strip() == '' or chunk_doc_name == 'None':
+                                        continue
                                     if chunk_doc_name in actual_source_names:
                                         filtered_used_chunks.append(chunk)
                                 
@@ -665,7 +678,11 @@ class RealtimeRAGProcessor:
                                 
                                 for chunk in filtered_used_chunks:
                                     chunk_content = chunk.get('content', '') or chunk.get('snippet', '')
-                                    chunk_doc_name = chunk.get('document_name', '')
+                                    chunk_doc_name = chunk.get('document_name', '') or ''
+                                    
+                                    # None値や'None'文字列をスキップ
+                                    if not chunk_doc_name or chunk_doc_name.strip() == '' or chunk_doc_name == 'None':
+                                        continue
                                     
                                     if chunk_content and len(chunk_content) > 20:
                                         # チャンク内容のキーフレーズを抽出（3文字以上の単語）
@@ -715,7 +732,10 @@ class RealtimeRAGProcessor:
                                     
                                     # 上位チャンクを追加（最大10件まで）
                                     for chunk in sorted_chunks[:10]:
-                                        chunk_doc_name = chunk.get('document_name', '')
+                                        chunk_doc_name = chunk.get('document_name', '') or ''
+                                        # None値や'None'文字列をスキップ
+                                        if not chunk_doc_name or chunk_doc_name.strip() == '' or chunk_doc_name == 'None':
+                                            continue
                                         if chunk not in final_used_chunks:
                                             final_used_chunks.append(chunk)
                                             if chunk_doc_name and chunk_doc_name not in actually_used_sources:
@@ -730,7 +750,13 @@ class RealtimeRAGProcessor:
                                 if not final_used_chunks and used_chunks:
                                     logger.error("🚨 全チャンクが除外されました。元のused_chunksを使用（安全装置）")
                                     final_used_chunks = used_chunks[:3]  # 元の最大3件
-                                    actually_used_sources = list(set([chunk.get('document_name', 'Unknown') for chunk in final_used_chunks if chunk.get('document_name')]))
+                                    actually_used_sources = list(set([
+                                        chunk.get('document_name', 'Unknown') 
+                                        for chunk in final_used_chunks 
+                                        if chunk.get('document_name') and 
+                                           chunk.get('document_name').strip() and 
+                                           chunk.get('document_name') != 'None'
+                                    ]))
                                 
                                 logger.info(f"📁 最終確定ソース: {actually_used_sources}")
                                 logger.info(f"🎯 最終使用チャンク数: {len(final_used_chunks)}件")
