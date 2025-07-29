@@ -674,30 +674,63 @@ class RealtimeRAGProcessor:
                                         
                                         # 回答文中にチャンクのキーフレーズが含まれているかチェック
                                         matched_phrases = 0
-                                        for phrase in key_phrases[:10]:  # 最初の10個のフレーズで判定
+                                        for phrase in key_phrases[:15]:  # 最初の15個のフレーズで判定（拡張）
+                                            # 1. 完全一致
                                             if phrase in answer:
                                                 matched_phrases += 1
+                                            # 2. 部分一致（3文字以上で、長いフレーズの場合）
+                                            elif len(phrase) >= 6:
+                                                for answer_word in answer.split():
+                                                    if phrase in answer_word or answer_word in phrase:
+                                                        matched_phrases += 0.5  # 部分マッチは0.5点
+                                                        break
                                         
                                         # 一定以上のフレーズマッチがあれば実際に使用されたと判定
-                                        relevance_score = matched_phrases / min(len(key_phrases), 10) if key_phrases else 0
+                                        # 分母を調整（部分マッチも考慮）
+                                        max_possible_matches = min(len(key_phrases), 15)
+                                        relevance_score = matched_phrases / max_possible_matches if max_possible_matches > 0 else 0
                                         
-                                        if relevance_score >= 0.1:  # 10%以上のキーフレーズが一致
+                                        # 関連性閾値を緩和し、短いチャンクには特別処理
+                                        min_threshold = 0.05  # 5%に緩和
+                                        
+                                        # 短いチャンク（100文字未満）は閾値を更に緩和
+                                        if len(chunk_content) < 100:
+                                            min_threshold = 0.02  # 2%に緩和
+                                            logger.info(f"📝 短いチャンク検出: {chunk_doc_name} (長さ: {len(chunk_content)}文字)")
+                                        
+                                        if relevance_score >= min_threshold:
                                             final_used_chunks.append(chunk)
                                             if chunk_doc_name not in actually_used_sources:
                                                 actually_used_sources.append(chunk_doc_name)
-                                            logger.info(f"✅ 使用チャンク確定: {chunk_doc_name} (関連度: {relevance_score:.2f})")
+                                            logger.info(f"✅ 使用チャンク確定: {chunk_doc_name} (関連度: {relevance_score:.2f}, 閾値: {min_threshold:.2f})")
                                         else:
-                                            logger.info(f"❌ 使用チャンク除外: {chunk_doc_name} (関連度: {relevance_score:.2f})")
+                                            logger.info(f"❌ 使用チャンク除外: {chunk_doc_name} (関連度: {relevance_score:.2f}, 閾値: {min_threshold:.2f})")
                                 
-                                # 結果が空の場合は、最低限度のフォールバック
-                                if not final_used_chunks and filtered_used_chunks:
-                                    logger.warning("⚠️ 関連性チェックで全て除外されました。最高類似度チャンクを使用")
-                                    # 類似度スコアが最も高いものを選択
-                                    best_chunk = max(filtered_used_chunks, key=lambda x: x.get('similarity_score', 0))
-                                    final_used_chunks.append(best_chunk)
-                                    best_doc_name = best_chunk.get('document_name', '')
-                                    if best_doc_name:
-                                        actually_used_sources.append(best_doc_name)
+                                # 結果が不十分な場合の包括的フォールバック
+                                if len(final_used_chunks) < 3 and filtered_used_chunks:
+                                    logger.warning(f"⚠️ 関連性チェック結果が不十分（{len(final_used_chunks)}件）。高類似度チャンクを追加")
+                                    
+                                    # 類似度順でソート
+                                    sorted_chunks = sorted(filtered_used_chunks, key=lambda x: x.get('similarity_score', 0), reverse=True)
+                                    
+                                    # 上位チャンクを追加（最大5件まで）
+                                    for chunk in sorted_chunks[:5]:
+                                        chunk_doc_name = chunk.get('document_name', '')
+                                        if chunk not in final_used_chunks:
+                                            final_used_chunks.append(chunk)
+                                            if chunk_doc_name and chunk_doc_name not in actually_used_sources:
+                                                actually_used_sources.append(chunk_doc_name)
+                                                logger.info(f"🔄 フォールバック追加: {chunk_doc_name} (類似度: {chunk.get('similarity_score', 0):.2f})")
+                                        
+                                        # 最低3件確保したら終了
+                                        if len(final_used_chunks) >= 3:
+                                            break
+                                
+                                # 最終安全チェック：全て除外された場合の緊急フォールバック
+                                if not final_used_chunks and used_chunks:
+                                    logger.error("🚨 全チャンクが除外されました。元のused_chunksを使用（安全装置）")
+                                    final_used_chunks = used_chunks[:3]  # 元の最大3件
+                                    actually_used_sources = list(set([chunk.get('document_name', 'Unknown') for chunk in final_used_chunks if chunk.get('document_name')]))
                                 
                                 logger.info(f"📁 最終確定ソース: {actually_used_sources}")
                                 logger.info(f"🎯 最終使用チャンク数: {len(final_used_chunks)}件")
