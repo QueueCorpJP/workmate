@@ -453,7 +453,7 @@ class RealtimeRAGProcessor:
             used_chunks = []
             
             for i, chunk in enumerate(similar_chunks):
-                chunk_content = f"【参考資料{i+1}: {chunk['document_name']} - チャンク{chunk['chunk_index']}】\n{chunk['content']}\n"
+                chunk_content = f"【{chunk['document_name']}】\n{chunk['content']}\n"
                 chunk_length = len(chunk_content)
                 
                 print(f"  {i+1:2d}. 📄 {chunk['document_name']} [チャンク#{chunk['chunk_index']}]")
@@ -541,15 +541,25 @@ class RealtimeRAGProcessor:
 • ❌ 完全一致のみを求める厳格な判断
 • ✅ 代わりに：「参考資料を確認したところ、○○という情報がございます」
 
-**【その他の指針】**
-• 情報の出典としてファイル名は明示可能ですが、内部構造情報（行番号等）は出力しない
-• 専門的な内容も分かりやすく説明
-• 文末には「ご不明な点がございましたら、お気軽にお申し付けください。」を追加
+**【情報の出典・引用に関する重要なルール】**
+• ファイル名のみ言及可能：「○○.xlsx」「○○.csv」「○○.pdf」など
+• ❌ 絶対に出力してはいけない内容：
+  - チャンク番号（例：「チャンク232」「チャンク#45」）
+  - 行番号（例：「行12」「12行目」）
+  - 内部ID（例：「chunk_id: 123」）
+  - データベース構造情報（例：「テーブル名」「カラム名」）
+  - システム内部情報（例：「参考資料1:」「参考資料2:」など）
+• ✅ 正しい引用例：
+  - 「CB受注案件一覧表テスト.xlsxによりますと...」
+  - 「○○.csvの情報では...」
+  - 「△△.pdfに記載されている内容によると...」
+• ❌ 間違った引用例：
+  - 「参考資料1: CB受注案件一覧表テスト.xlsx - チャンク232」
+  - 「○○.csv（行15）の情報では...」
 
 **【その他の指針】**
-• 情報の出典としてファイル名は明示可能ですが、内部構造情報（行番号等）は出力しない
 • 専門的な内容も分かりやすく説明
-• 実際に参照した資料のファイル名を回答文中で明確に言及してください
+• 実際に参照した資料のファイル名を自然な文章の中で言及してください
 • 文末には「ご不明な点がございましたら、お気軽にお申し付けください。」を追加
 
 ご質問：
@@ -625,28 +635,27 @@ class RealtimeRAGProcessor:
                                 actual_source_names = []
                                 if doc_ids:
                                     try:
-                                        from .database import get_database_connection
+                                        from supabase_adapter import get_supabase_client
                                         
-                                        with get_database_connection() as conn:
-                                            with conn.cursor() as cur:
-                                                # document_sources テーブルから name を取得
-                                                placeholders = ','.join(['%s'] * len(doc_ids))
-                                                query = f"""
-                                                SELECT id, name, type 
-                                                FROM document_sources 
-                                                WHERE id IN ({placeholders}) AND active = true
-                                                """
-                                                
-                                                cur.execute(query, doc_ids)
-                                                source_results = cur.fetchall()
-                                                
-                                                logger.info(f"📄 データベース検索結果: {len(source_results)}件")
-                                                
-                                                for row in source_results:
-                                                    source_id, source_name, source_type = row
-                                                    if source_name and source_name not in actual_source_names:
-                                                        actual_source_names.append(source_name)
-                                                        logger.info(f"✅ 有効ソース: {source_name} (ID: {source_id}, Type: {source_type})")
+                                        # Supabaseクライアントを使用してdocument_sourcesテーブルから情報を取得
+                                        supabase = get_supabase_client()
+                                        
+                                        # IN句を使用してdoc_idsに一致するレコードを取得
+                                        response = supabase.table('document_sources').select('id, name, type').in_('id', doc_ids).eq('active', True).execute()
+                                        
+                                        logger.info(f"📄 データベース検索結果: {len(response.data) if response.data else 0}件")
+                                        
+                                        if response.data:
+                                            # 実際に存在するソース名のリストを作成
+                                            for row in response.data:
+                                                source_id = row.get('id')
+                                                source_name = row.get('name')
+                                                source_type = row.get('type')
+                                                if source_name and source_name not in actual_source_names:
+                                                    actual_source_names.append(source_name)
+                                                    logger.info(f"✅ 有効ソース: {source_name} (ID: {source_id}, Type: {source_type})")
+                                        else:
+                                            logger.warning("⚠️ document_sourcesテーブルからレコードが見つかりませんでした")
                                                 
                                     except Exception as db_error:
                                         logger.error(f"❌ データベースからのソース取得エラー: {db_error}")
