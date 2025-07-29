@@ -538,7 +538,7 @@ class DocumentProcessorRecordBased:
             logger.info(f"🔍 CSV レコード抽出開始: {filename}")
             
             # CSV用の文字エンコーディング検出
-            from .knowledge.csv_processor import detect_csv_encoding, detect_mojibake_in_content
+            from modules.knowledge.csv_processor import detect_csv_encoding, detect_mojibake_in_content
             encoding = detect_csv_encoding(file_content)
             logger.info(f"📝 検出されたエンコーディング: {encoding}")
             
@@ -596,7 +596,7 @@ class DocumentProcessorRecordBased:
             import io
             
             # エンコーディング検出
-            from .knowledge.csv_processor import detect_csv_encoding
+            from modules.knowledge.csv_processor import detect_csv_encoding
             encoding = detect_csv_encoding(file_content)
             text_content = file_content.decode(encoding, errors='ignore')
             

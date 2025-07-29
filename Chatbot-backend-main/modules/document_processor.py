@@ -782,10 +782,10 @@ class DocumentProcessor:
         try:
             # まずGemini OCRを試行
             try:
-                from modules.knowledge.ocr import ocr_pdf_to_text_from_bytes
-            except ImportError:
-                logger.error("❌ OCR module import failed - knowledge module not available")
-                raise Exception("OCR module not available")
+                from .knowledge.ocr import ocr_pdf_to_text_from_bytes
+            except ImportError as e:
+                logger.error(f"❌ OCR module import failed - {e}")
+                raise Exception(f"OCR module not available: {e}")
             
             logger.info("🔄 Gemini OCRでテキスト抽出を試行中...")
             ocr_text = await ocr_pdf_to_text_from_bytes(content)
@@ -903,84 +903,125 @@ class DocumentProcessor:
         try:
             import PyPDF2
             from io import BytesIO
-            # Import PDF helper functions - create them inline if module doesn't exist
-            try:
-                from modules.knowledge.pdf import fix_mojibake_text, check_text_corruption, extract_text_with_encoding_fallback
-            except ImportError:
-                logger.warning("PDF helper functions not available, using fallback implementations")
-                # Define fallback functions inline
-                def fix_mojibake_text(text):
-                    """Simple mojibake fix"""
-                    if not text:
-                        return text
-                    return text.replace('縺', 'い').replace('繧', 'う').replace('繝', 'え')
-                
-                def check_text_corruption(text):
-                    """Simple corruption check"""
-                    if not text:
-                        return True
-                    return '縺' in text or '繧' in text or '繝' in text or '\ufffd' in text
-                
-                def extract_text_with_encoding_fallback(page):
-                    """Simple text extraction with encoding fallback"""
-                    try:
-                        return page.extract_text() or ""
-                    except Exception:
-                        return ""
             
+            # 文字化け修復辞書（完全版）
+            MOJIBAKE_MAPPING = {
+                # ユーザー報告の文字化けパターン
+                'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½': '会社名不明',
+                'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½': '請求書',
+                'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½': '支払い',
+                # 一般的な文字化けパターン
+                'ï¿½': '',  # 空文字に置換
+                '': '',    # 空文字除去
+                # 半角カタカナの正規化
+                'ｶ': 'カ', 'ﾀ': 'タ', 'ﾅ': 'ナ', 'ﾊ': 'ハ', 'ﾏ': 'マ', 'ﾔ': 'ヤ', 'ﾗ': 'ラ', 'ﾜ': 'ワ',
+                'ｷ': 'キ', 'ﾁ': 'チ', 'ﾆ': 'ニ', 'ﾋ': 'ヒ', 'ﾐ': 'ミ', 'ﾘ': 'リ',
+                'ｸ': 'ク', 'ﾂ': 'ツ', 'ﾇ': 'ヌ', 'ﾌ': 'フ', 'ﾑ': 'ム', 'ﾕ': 'ユ', 'ﾙ': 'ル',
+                'ｹ': 'ケ', 'ﾃ': 'テ', 'ﾈ': 'ネ', 'ﾍ': 'ヘ', 'ﾒ': 'メ', 'ﾖ': 'ヨ', 'ﾚ': 'レ',
+                'ｺ': 'コ', 'ﾄ': 'ト', 'ﾉ': 'ノ', 'ﾎ': 'ホ', 'ﾓ': 'モ', 'ﾛ': 'ロ', 'ﾝ': 'ン',
+                'ｶﾞ': 'ガ', 'ｷﾞ': 'ギ', 'ｸﾞ': 'グ', 'ｹﾞ': 'ゲ', 'ｺﾞ': 'ゴ',
+                'ｻ': 'サ', 'ｼ': 'シ', 'ｽ': 'ス', 'ｾ': 'セ', 'ｿ': 'ソ',
+                'ｻﾞ': 'ザ', 'ｼﾞ': 'ジ', 'ｽﾞ': 'ズ', 'ｾﾞ': 'ゼ', 'ｿﾞ': 'ゾ',
+                'ｱ': 'ア', 'ｲ': 'イ', 'ｳ': 'ウ', 'ｴ': 'エ', 'ｵ': 'オ',
+                'ﾀﾞ': 'ダ', 'ﾁﾞ': 'ヂ', 'ﾂﾞ': 'ヅ', 'ﾃﾞ': 'デ', 'ﾄﾞ': 'ド',
+                'ﾊﾞ': 'バ', 'ﾋﾞ': 'ビ', 'ﾌﾞ': 'ブ', 'ﾍﾞ': 'ベ', 'ﾎﾞ': 'ボ',
+                'ﾊﾟ': 'パ', 'ﾋﾟ': 'ピ', 'ﾌﾟ': 'プ', 'ﾍﾟ': 'ペ', 'ﾎﾟ': 'ポ',
+                'ｧ': 'ァ', 'ｨ': 'ィ', 'ｩ': 'ゥ', 'ｪ': 'ェ', 'ｫ': 'ォ',
+                'ｬ': 'ャ', 'ｭ': 'ュ', 'ｮ': 'ョ', 'ｯ': 'ッ',
+                'ｰ': 'ー', '･': '・',
+            }
+            
+            def fix_mojibake_text(text):
+                """文字化けテキストを修復"""
+                if not text:
+                    return text
+                
+                # 長いパターンから順に置換（より具体的なパターンを優先）
+                sorted_patterns = sorted(MOJIBAKE_MAPPING.items(), key=lambda x: len(x[0]), reverse=True)
+                
+                fixed_text = text
+                for pattern, replacement in sorted_patterns:
+                    if pattern in fixed_text:
+                        fixed_text = fixed_text.replace(pattern, replacement)
+                
+                # 追加のクリーンアップ
+                fixed_text = fixed_text.replace('\ufffd', '')  # Unicode replacement character
+                
+                return fixed_text
+            
+            def check_text_corruption(text):
+                """テキストの文字化け度を判定"""
+                if not text or len(text) < 10:
+                    return False, 0, 0
+                
+                import re
+                
+                # 文字化けパターン
+                corruption_patterns = [
+                    r'ï¿½+',  # UTF-8文字化け
+                    r'[]{10,}',  # 長い空文字列
+                    r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]{3,}',  # 制御文字
+                    r'[^\w\s\u3000-\u30ff\u4e00-\u9faf\u3400-\u4dbf]{10,}',  # 連続記号
+                    r'\d+\(\)\[',  # 数字+()[ パターン
+                ]
+                
+                corruption_count = 0
+                for pattern in corruption_patterns:
+                    matches = re.findall(pattern, text)
+                    corruption_count += len(matches)
+                
+                corruption_ratio = corruption_count / len(text) * 100
+                
+                # 閾値を下げて敏感に検出
+                is_corrupted = corruption_ratio > 2.0 or corruption_count > 5
+                
+                return is_corrupted, corruption_ratio, corruption_count
+            
+            # PDFリーダーを作成
             pdf_reader = PyPDF2.PdfReader(BytesIO(content))
-            text_parts = []
-            corrupted_pages = []
+            extracted_pages = []
             total_pages = len(pdf_reader.pages)
+            corrupted_pages = 0
             
-            logger.info(f"📄 PDF総ページ数: {total_pages}")
+            logger.info(f"📄 PyPDF2で{total_pages}ページの抽出開始")
             
             for page_num, page in enumerate(pdf_reader.pages):
                 try:
-                    # 強化されたテキスト抽出を使用
-                    page_text = extract_text_with_encoding_fallback(page)
+                    # テキスト抽出
+                    page_text = page.extract_text()
                     
                     if page_text and page_text.strip():
-                        # 文字化けチェック
-                        if check_text_corruption(page_text):
-                            logger.info(f"ページ {page_num + 1} で文字化けを検出、修復を適用")
-                            page_text = fix_mojibake_text(page_text)
-                            corrupted_pages.append(page_num + 1)
+                        # 文字化け修復
+                        fixed_text = fix_mojibake_text(page_text)
                         
-                        text_parts.append(f"=== ページ {page_num + 1} ===\n{page_text}")
-                        logger.debug(f"✅ ページ {page_num + 1}: {len(page_text)}文字抽出")
+                        # 文字化けチェック
+                        is_corrupted, corruption_ratio, corruption_count = check_text_corruption(fixed_text)
+                        
+                        if is_corrupted:
+                            corrupted_pages += 1
+                            logger.warning(f"⚠️ ページ{page_num + 1}: 文字化け検出 ({corruption_ratio:.1f}%)")
+                        
+                        extracted_pages.append(f"\n--- ページ {page_num + 1} ---\n{fixed_text}")
                     else:
-                        text_parts.append(f"=== ページ {page_num + 1} ===\n[テキスト抽出できませんでした]")
-                        logger.warning(f"⚠️ ページ {page_num + 1}: テキスト抽出失敗")
+                        logger.warning(f"⚠️ ページ{page_num + 1}: テキストなし")
+                        extracted_pages.append(f"\n--- ページ {page_num + 1} ---\n[テキストなし]")
                         
                 except Exception as page_error:
-                    logger.warning(f"ページ {page_num + 1} 抽出エラー: {page_error}")
-                    text_parts.append(f"=== ページ {page_num + 1} ===\n[ページ抽出エラー: {str(page_error)}]")
+                    logger.error(f"❌ ページ{page_num + 1}抽出エラー: {page_error}")
+                    extracted_pages.append(f"\n--- ページ {page_num + 1} ---\n[抽出エラー: {str(page_error)}]")
             
-            if text_parts:
-                final_text = "\n\n".join(text_parts)
-                total_chars = len(final_text)
-                valid_pages = len([p for p in text_parts if "テキスト抽出できませんでした" not in p and "ページ抽出エラー" not in p])
-                
-                logger.info(f"✅ PyPDF2フォールバック完了:")
-                logger.info(f"   - 処理ページ数: {total_pages}")
-                logger.info(f"   - 有効ページ数: {valid_pages}")
-                logger.info(f"   - 文字化け修復ページ: {len(corrupted_pages)}")
-                logger.info(f"   - 総抽出文字数: {total_chars}")
-                
-                if corrupted_pages:
-                    logger.info(f"   - 修復したページ: {corrupted_pages}")
-                
-                return final_text
-            else:
-                logger.error("❌ 全ページでテキスト抽出に失敗")
-                return "[PDF処理エラー: すべてのページでテキスト抽出に失敗しました]"
-                
-        except Exception as fallback_error:
-            logger.error(f"❌ PyPDF2フォールバック失敗: {fallback_error}")
-            import traceback
-            logger.error(f"スタックトレース: {traceback.format_exc()}")
-            return f"[PDF処理エラー: {str(fallback_error)}]\n\n基本的なテキスト抽出も失敗しました。PDFファイルが破損している可能性があります。"
+            # 結果統計
+            final_text = "\n".join(extracted_pages)
+            logger.info(f"✅ PyPDF2フォールバック完了:")
+            logger.info(f"   - 総ページ数: {total_pages}")
+            logger.info(f"   - 文字化けページ: {corrupted_pages}")
+            logger.info(f"   - 抽出文字数: {len(final_text)}")
+            
+            return final_text
+            
+        except Exception as e:
+            logger.error(f"❌ PyPDF2フォールバック失敗: {e}")
+            return f"PyPDF2フォールバック処理エラー: {str(e)}"
     
     async def _extract_text_from_excel(self, content: bytes) -> str:
         """Excelファイルからテキストを抽出（ExcelDataCleanerを使用）"""
