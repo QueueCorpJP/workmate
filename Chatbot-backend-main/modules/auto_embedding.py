@@ -117,7 +117,7 @@ class AutoEmbeddingGenerator:
                             content=content
                         )
                         
-                        # gemini-embedding-exp-03-07は辞書形式で{'embedding': [...]}を返す
+                        # gemini-embedding-001は辞書形式で{'embedding': [...]}を返す
                         if isinstance(response, dict) and 'embedding' in response:
                             embedding_vector = response['embedding']
                         elif hasattr(response, 'embedding') and response.embedding:
@@ -175,7 +175,7 @@ class AutoEmbeddingGenerator:
                     content=content
                 )
                 
-                # gemini-embedding-exp-03-07は辞書形式で{'embedding': [...]}を返す
+                # gemini-embedding-001は辞書形式で{'embedding': [...]}を返す
                 if isinstance(response, dict) and 'embedding' in response:
                     embedding_vector = response['embedding']
                 elif hasattr(response, 'embedding') and response.embedding:
@@ -260,7 +260,7 @@ class AutoEmbeddingGenerator:
                             content=content
                         )
                         
-                        # gemini-embedding-exp-03-07は辞書形式で{'embedding': [...]}を返す
+                        # gemini-embedding-001は辞書形式で{'embedding': [...]}を返す
                         if isinstance(response, dict) and 'embedding' in response:
                             embedding_vector = response['embedding']
                         elif hasattr(response, 'embedding') and response.embedding:

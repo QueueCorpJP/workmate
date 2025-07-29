@@ -376,7 +376,7 @@ class QuestionVariantsGenerator:
                 prompt,
                 generation_config={
                     'temperature': 0.4,  # 一貫性重視で意味変更を防止
-                    'max_output_tokens': 2048,  # 50個のバリエーション生成
+                    'max_output_tokens': 4096,  # 50個のバリエーション生成
                     'top_p': 0.8,  # 適度な多様性
                     'top_k': 50    # 適度な候補数
                 }

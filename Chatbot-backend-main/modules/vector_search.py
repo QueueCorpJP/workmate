@@ -24,7 +24,7 @@ class VectorSearchSystem:
     
     def __init__(self):
         """初期化"""
-        self.embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-exp-03-07")
+        self.embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
         
         self.db_url = self._get_db_url()
         self.pgvector_available = False
@@ -167,7 +167,7 @@ class VectorSearchSystem:
             )
             """
     
-    async def vector_similarity_search(self, query: str, company_id: str = None, limit: int = 20) -> List[Dict]:
+    async def vector_similarity_search(self, query: str, company_id: str = None, limit: int = 250) -> List[Dict]:
         """ベクトル類似検索を実行（pgvector対応版）"""
         try:
             # クエリの埋め込み生成
@@ -181,9 +181,11 @@ class VectorSearchSystem:
                 with conn.cursor() as cur:
                     if self.pgvector_available:
                         # pgvectorが利用可能な場合の高速検索
-                        similarity_sql = "1 - (c.embedding <=> %s::vector)"
-                        order_sql = "c.embedding <=> %s::vector"
-                        params = [query_vector]
+                        # クエリベクトルを文字列形式に変換してvector型にキャスト
+                        vector_str = '[' + ','.join(map(str, query_vector)) + ']'
+                        similarity_sql = f"1 - (c.embedding <=> '{vector_str}'::vector)"
+                        order_sql = f"c.embedding <=> '{vector_str}'::vector"
+                        params = []
                     else:
                         # pgvectorが利用できない場合のフォールバック検索
                         logger.warning("⚠️ pgvectorが無効のため、フォールバック検索を使用")
@@ -220,10 +222,7 @@ class VectorSearchSystem:
                     
                     # ソートと制限
                     sql += f" ORDER BY {order_sql} LIMIT %s"
-                    if self.pgvector_available:
-                        params.extend([query_vector, limit])
-                    else:
-                        params.append(limit)
+                    params.append(limit)
                     
                     logger.info(f"実行SQL: {sql}")
                     logger.info(f"パラメータ: {params}")
@@ -253,7 +252,10 @@ class VectorSearchSystem:
                             'search_type': 'vector_chunks_pgvector' if self.pgvector_available else 'vector_chunks_fallback'
                         })
                     
-                    logger.info(f"✅ ベクトル検索完了: {len(search_results)}件の結果")
+                    # 結果の安定化：類似度順、次にチャンクID順でソート（一貫した順序保証）
+                    search_results.sort(key=lambda x: (-x['similarity_score'], str(x['chunk_id'])))
+                    
+                    logger.info(f"✅ ベクトル検索完了: {len(search_results)}件の結果（安定ソート済み）")
                     
                     # 🔍 詳細チャンク選択ログ - 全結果を表示
                     print("\n" + "="*80)
@@ -303,7 +305,7 @@ class VectorSearchSystem:
             
             return []
     
-    def get_document_content_by_similarity(self, query: str, company_id: str = None, max_results: int = 20) -> str:
+    def get_document_content_by_similarity(self, query: str, company_id: str = None, max_results: int = 100) -> str:
         """類似度に基づいてドキュメントの内容を取得"""
         try:
             # ベクトル検索実行
@@ -316,11 +318,11 @@ class VectorSearchSystem:
             # 結果を組み立て
             relevant_content = []
             total_length = 0
-            max_total_length = 50000
+            max_total_length = 120000
             
             print("\n" + "="*80)
             print(f"📋 【コンテンツ構築ログ】{len(search_results)}件のチャンクを処理中...")
-            print(f"🎯 類似度閾値: 0.15 (これ以下は除外)")
+            print(f"🎯 類似度閾値: 0.05 (これ以下は除外)")
             print(f"📏 最大文字数: {max_total_length:,}文字")
             print("="*80)
             
@@ -334,7 +336,7 @@ class VectorSearchSystem:
                 print(f"      🎯 類似度: {similarity:.4f}")
                 
                 # 類似度閾値（超高精度検索のため大幅に下げる）
-                threshold = 0.15  # より多くの関連結果を取得
+                threshold = 0.05  # より多くの関連結果を取得（大幅緩和）
                 if similarity < threshold:
                     print(f"      ❌ 除外理由: 類似度が閾値未満 ({similarity:.4f} < {threshold})")
                     print()
@@ -342,7 +344,7 @@ class VectorSearchSystem:
                 
                 # スニペットを追加
                 if snippet and len(snippet.strip()) > 0:
-                    content_piece = f"\n=== {doc_name} - チャンク{chunk_idx} (類似度: {similarity:.3f}) ===\n{snippet}\n"
+                    content_piece = f"\n=== {doc_name} - 参考資料{chunk_idx} (類似度: {similarity:.3f}) ===\n{snippet}\n"
                     
                     if total_length + len(content_piece) <= max_total_length:
                         relevant_content.append(content_piece)

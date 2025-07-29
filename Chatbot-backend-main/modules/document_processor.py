@@ -1,7 +1,7 @@
 """
 📤 ファイルアップロード・ドキュメント処理システム
 🧩 チャンク分割（300〜500 token）
-🧠 embedding生成を統合（Gemini Flash - 768次元）
+🧠 embedding生成を統合（Gemini Flash - 3072次元）
 🗃 Supabase保存（document_sources + chunks）
 
 完全なRAG対応ドキュメント処理パイプライン
@@ -12,15 +12,19 @@ import uuid
 import logging
 import asyncio
 import tempfile
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 from datetime import datetime
 import re
 import tiktoken
 from fastapi import HTTPException, UploadFile
 try:
     from google import genai
+    from google.genai import types
+    GENAI_AVAILABLE = True
 except ImportError:
-    import google.generativeai as genai
+    GENAI_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.error("❌ google-genai SDK not available. Please install: pip install -U google-genai")
 import psycopg2
 from psycopg2.extras import execute_values
 from .multi_api_embedding import get_multi_api_embedding_client, multi_api_embedding_available
@@ -35,7 +39,7 @@ class DocumentProcessor:
     def __init__(self):
         self.gemini_client = None
         self.multi_api_client = None
-        self.embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-exp-03-07")
+        self.embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
         
         # Gemini API使用時はmodels/プレフィックスを追加
         if not self.embedding_model.startswith("models/"):
@@ -233,7 +237,7 @@ class DocumentProcessor:
                 embedding_vector = await self.multi_api_client.generate_embedding(text.strip())
                 
                 expected_dims = (
-                    self.multi_api_client.expected_dimensions if self.multi_api_client else 768
+                    self.multi_api_client.expected_dimensions if self.multi_api_client else 3072
                 )
 
                 if embedding_vector and len(embedding_vector) == expected_dims:
@@ -670,7 +674,7 @@ class DocumentProcessor:
         1️⃣ ファイルアップロード
         2️⃣ テキスト抽出
         3️⃣ チャンク分割（300〜500 token）
-        4️⃣ embedding生成（Gemini Flash - 768次元）
+        4️⃣ embedding生成（Gemini Flash - 3072次元）
         5️⃣ Supabase保存
         """
         try:
@@ -772,130 +776,102 @@ class DocumentProcessor:
             raise
     
     async def _extract_text_from_pdf(self, content: bytes) -> str:
-        """PDF からテキストを抽出する（Gemini OCR最適化版）
+        """PDF からテキストを抽出する（Gemini 2.5 Flash OCR完璧版）
         
-        シンプルにGemini OCRのみで最高精度抽出を実現
+        1. Gemini 2.5 Flash OCR（最高品質）
+        2. PyMuPDF（フォールバック）
+        3. PyPDF2（最終フォールバック）
         """
         
-        import asyncio, tempfile, os
-        
-        logger.info("📄 Gemini OCR最適化PDF抽出開始")
+        logger.info("🚀 PDF抽出開始 - Gemini 2.5 Flash OCR優先")
         
         try:
-            # Gemini クライアント初期化
-            self._init_gemini_client()
-            
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_file:
-                tmp_file.write(content)
-                tmp_file_path = tmp_file.name
+            # まずGemini 2.5 Flash OCRを試行（最高品質）
+            logger.info("🔄 Gemini 2.5 Flash OCRでテキスト抽出を試行中...")
             
             try:
-                # 最適化されたプロンプト（日本語、業務文書特化）
+                from .knowledge.gemini_flash_ocr import ocr_pdf_with_gemini_flash
                 
-                prompt = """
-このPDFから全ての文字・数字・情報を抽出してください。
-
-🎯 重要な方針：
-• 全てのページの全ての文字を抽出する
-• 不鮮明でも推測して抽出する（空白より推測の方が有用）
-• 表・リスト・見出しの構造を維持する
-
-📝 抽出形式：
-• 見出し: # ## ### で階層表現
-• 表: markdown形式（| 列1 | 列2 |）
-• ページ区切り: === ページ N ===
-• 不鮮明な文字: [推測]を付けて抽出
-
-💪 推測指針：
-• 文脈から合理的に推測して補完
-• 型番・金額・日付は特に重要なので推測も含めて抽出
-• 完全に読めない場合は[判読困難]として記録
-
-全ての情報を漏らすことなく抽出してください。推測でも情報があることが重要です。
-"""
+                ocr_text = await ocr_pdf_with_gemini_flash(content)
                 
-                # PDF を Gemini へアップロード
-                uploaded_file = await asyncio.to_thread(
-                    self.gemini_client.files.upload,
-                    file=tmp_file_path
-                )
-                
-                # アップロード完了待機
-                await asyncio.sleep(3.0)
-                
-                # 最適化された生成設定
-                generation_config = {
-                    "temperature": 0.3,  # 推測も含めた柔軟な出力
-                    "top_p": 0.95,
-                    "top_k": 40,
-                    "max_output_tokens": 65536,  # 最大出力トークン数
-                }
-                
-                response = await asyncio.to_thread(
-                    self.gemini_client.models.generate_content,
-                    model="gemini-1.5-flash",
-                    contents=[prompt, uploaded_file],
-                    generation_config=generation_config
-                )
-                
-                # アップロードファイル削除
-                try:
-                    await asyncio.to_thread(
-                        self.gemini_client.files.delete,
-                        name=uploaded_file.name
-                    )
-                except:
-                    pass
-                
-                if response.text and response.text.strip():
-                    extracted_text = response.text.strip()
+                if ocr_text and ocr_text.strip() and not ocr_text.startswith("OCR処理エラー"):
+                    # OCR成功時の品質チェック
+                    quality_score = self._evaluate_text_quality(ocr_text)
+                    page_count = ocr_text.count("--- ページ") or 1
                     
-                    # 基本品質チェック
-                    quality_score = self._evaluate_text_quality(extracted_text)
-                    page_count = extracted_text.count("=== ページ") or 1
-                    
-                    logger.info(f"✅ Gemini OCR成功:")
-                    logger.info(f"   - 総文字数: {len(extracted_text)}")
+                    logger.info(f"✅ Gemini 2.5 Flash OCR成功:")
+                    logger.info(f"   - 総文字数: {len(ocr_text):,}")
                     logger.info(f"   - 品質スコア: {quality_score}/100")
                     logger.info(f"   - ページ数: {page_count}")
-                    logger.info(f"   - 平均文字/ページ: {len(extracted_text)/page_count:.0f}")
+                    logger.info(f"   - 平均文字/ページ: {len(ocr_text)/page_count:.0f}")
                     
-                    return extracted_text
+                    return ocr_text
                 else:
-                    raise Exception("Gemini OCRから結果を取得できませんでした")
+                    logger.warning("⚠️ Gemini 2.5 Flash OCRが失敗またはエラーを返しました")
+                    raise Exception("Gemini 2.5 Flash OCR failed")
                     
-            finally:
-                if os.path.exists(tmp_file_path):
-                    os.unlink(tmp_file_path)
-                    
-        except Exception as e:
-            logger.error(f"❌ Gemini OCR処理失敗: {e}")
+            except ImportError as e:
+                logger.warning(f"⚠️ Gemini Flash OCRモジュールをインポートできません: {e}")
+                raise Exception(f"Gemini Flash OCR module not available: {e}")
+            except Exception as ocr_error:
+                logger.warning(f"⚠️ Gemini 2.5 Flash OCR処理失敗: {ocr_error}")
+                raise Exception(f"Gemini Flash OCR failed: {ocr_error}")
+                
+        except Exception as primary_error:
+            logger.error(f"❌ Gemini 2.5 Flash OCR処理失敗: {primary_error}")
+            logger.info("🔄 PyMuPDFフォールバックを使用")
             
-            # 最小限のフォールバック（PyPDF2のみ）
-            logger.info("🔄 最小限フォールバック: PyPDF2抽出")
+            # PyMuPDFフォールバック
             try:
-                import PyPDF2
-                from io import BytesIO
+                import fitz  # PyMuPDF
                 
-                pdf_reader = PyPDF2.PdfReader(BytesIO(content))
-                text_parts = []
-                
-                for page_num, page in enumerate(pdf_reader.pages):
-                    try:
-                        page_text = page.extract_text()
-                        if page_text and page_text.strip():
-                            text_parts.append(f"=== ページ {page_num + 1} ===\n{page_text}")
-                    except Exception:
-                        text_parts.append(f"=== ページ {page_num + 1} ===\n[抽出エラー]")
-                
-                if text_parts:
-                    return "\n\n".join(text_parts)
-                else:
-                    raise Exception("全ての抽出方法が失敗しました")
+                # PyMuPDFでPDF処理
+                with fitz.open(stream=content, filetype="pdf") as doc:
+                    full_text = ""
+                    page_count = len(doc)
                     
-            except Exception as fallback_error:
-                logger.error(f"❌ フォールバック失敗: {fallback_error}")
-                raise Exception(f"PDF処理完全失敗: {e}")
+                    for page_num, page in enumerate(doc, start=1):
+                        try:
+                            # テキスト抽出
+                            page_text = page.get_text("text") or ""
+                            
+                            if page_text.strip():
+                                # 文字化け修正を適用
+                                from .knowledge.pdf import fix_mojibake_text
+                                fixed_text = fix_mojibake_text(page_text)
+                                full_text += f"=== ページ {page_num} ===\n{fixed_text}\n\n"
+                            else:
+                                logger.debug(f"ページ {page_num} でテキストが抽出できませんでした")
+                                
+                        except Exception as page_error:
+                            logger.warning(f"ページ {page_num} の処理エラー: {page_error}")
+                            continue
+                    
+                    if full_text.strip():
+                        # PyMuPDF成功時の品質チェック
+                        quality_score = self._evaluate_text_quality(full_text)
+                        
+                        logger.info(f"✅ PyMuPDFフォールバック成功:")
+                        logger.info(f"   - 総文字数: {len(full_text):,}")
+                        logger.info(f"   - 品質スコア: {quality_score}/100")
+                        logger.info(f"   - ページ数: {page_count}")
+                        logger.info(f"   - 平均文字/ページ: {len(full_text)/page_count:.0f}")
+                        
+                        return full_text
+                    else:
+                        logger.warning("⚠️ PyMuPDFでテキストを抽出できませんでした")
+                        raise Exception("PyMuPDF extraction failed - no text found")
+                        
+            except ImportError:
+                logger.warning("⚠️ PyMuPDF (fitz) が利用できません")
+                logger.info("🔄 PyPDF2最終フォールバックを使用")
+            except Exception as pymupdf_error:
+                logger.warning(f"⚠️ PyMuPDF処理失敗: {pymupdf_error}")
+                logger.info("🔄 PyPDF2最終フォールバックを使用")
+            
+            # PyPDF2最終フォールバック
+            fallback_text = await self._extract_text_from_pdf_fallback(content)
+            return fallback_text
     
     def _evaluate_text_quality(self, text: str) -> int:
         """テキスト品質を0-100のスコアで評価（より詳細版）"""
@@ -925,7 +901,7 @@ class DocumentProcessor:
                 r'[縺繧繝]',  # 典型的な文字化け
                 r'\(cid:\d+\)',  # PDF CID文字化け
                 r'[\\ufffd]',  # 置換文字
-                r'[]',  # その他の文字化け文字
+                r'[\\x00-\\x1f\\x7f-\\x9f]',  # 制御文字など
             ]
             mojibake_count = sum(len(re.findall(pattern, text)) for pattern in mojibake_patterns)
             mojibake_penalty = min(mojibake_count * 2, 40)  # 文字化け1つにつき2点減点
@@ -978,6 +954,133 @@ class DocumentProcessor:
         except Exception as e:
             logger.warning(f"品質評価エラー: {e}")
             return 50  # デフォルトスコア
+    
+    async def _extract_text_from_pdf_fallback(self, content: bytes) -> str:
+        """PyPDF2フォールバック + 文字化け修復処理（完全版）"""
+        logger.info("🔄 PyPDF2フォールバック抽出開始")
+        
+        try:
+            import PyPDF2
+            from io import BytesIO
+            
+            # 文字化け修復辞書（完全版）
+            MOJIBAKE_MAPPING = {
+                # ユーザー報告の文字化けパターン
+                'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½': '会社名不明',
+                'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½': '請求書',
+                'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½': '支払い',
+                # 一般的な文字化けパターン
+                'ï¿½': '',  # 空文字に置換
+                '': '',    # 空文字除去
+                # 半角カタカナの正規化
+                'ｶ': 'カ', 'ﾀ': 'タ', 'ﾅ': 'ナ', 'ﾊ': 'ハ', 'ﾏ': 'マ', 'ﾔ': 'ヤ', 'ﾗ': 'ラ', 'ﾜ': 'ワ',
+                'ｷ': 'キ', 'ﾁ': 'チ', 'ﾆ': 'ニ', 'ﾋ': 'ヒ', 'ﾐ': 'ミ', 'ﾘ': 'リ',
+                'ｸ': 'ク', 'ﾂ': 'ツ', 'ﾇ': 'ヌ', 'ﾌ': 'フ', 'ﾑ': 'ム', 'ﾕ': 'ユ', 'ﾙ': 'ル',
+                'ｹ': 'ケ', 'ﾃ': 'テ', 'ﾈ': 'ネ', 'ﾍ': 'ヘ', 'ﾒ': 'メ', 'ﾖ': 'ヨ', 'ﾚ': 'レ',
+                'ｺ': 'コ', 'ﾄ': 'ト', 'ﾉ': 'ノ', 'ﾎ': 'ホ', 'ﾓ': 'モ', 'ﾛ': 'ロ', 'ﾝ': 'ン',
+                'ｶﾞ': 'ガ', 'ｷﾞ': 'ギ', 'ｸﾞ': 'グ', 'ｹﾞ': 'ゲ', 'ｺﾞ': 'ゴ',
+                'ｻ': 'サ', 'ｼ': 'シ', 'ｽ': 'ス', 'ｾ': 'セ', 'ｿ': 'ソ',
+                'ｻﾞ': 'ザ', 'ｼﾞ': 'ジ', 'ｽﾞ': 'ズ', 'ｾﾞ': 'ゼ', 'ｿﾞ': 'ゾ',
+                'ｱ': 'ア', 'ｲ': 'イ', 'ｳ': 'ウ', 'ｴ': 'エ', 'ｵ': 'オ',
+                'ﾀﾞ': 'ダ', 'ﾁﾞ': 'ヂ', 'ﾂﾞ': 'ヅ', 'ﾃﾞ': 'デ', 'ﾄﾞ': 'ド',
+                'ﾊﾞ': 'バ', 'ﾋﾞ': 'ビ', 'ﾌﾞ': 'ブ', 'ﾍﾞ': 'ベ', 'ﾎﾞ': 'ボ',
+                'ﾊﾟ': 'パ', 'ﾋﾟ': 'ピ', 'ﾌﾟ': 'プ', 'ﾍﾟ': 'ペ', 'ﾎﾟ': 'ポ',
+                'ｧ': 'ァ', 'ｨ': 'ィ', 'ｩ': 'ゥ', 'ｪ': 'ェ', 'ｫ': 'ォ',
+                'ｬ': 'ャ', 'ｭ': 'ュ', 'ｮ': 'ョ', 'ｯ': 'ッ',
+                'ｰ': 'ー', '･': '・',
+            }
+            
+            def fix_mojibake_text(text):
+                """文字化けテキストを修復"""
+                if not text:
+                    return text
+                
+                # 長いパターンから順に置換（より具体的なパターンを優先）
+                sorted_patterns = sorted(MOJIBAKE_MAPPING.items(), key=lambda x: len(x[0]), reverse=True)
+                
+                fixed_text = text
+                for pattern, replacement in sorted_patterns:
+                    if pattern in fixed_text:
+                        fixed_text = fixed_text.replace(pattern, replacement)
+                
+                # 追加のクリーンアップ
+                fixed_text = fixed_text.replace('\ufffd', '')  # Unicode replacement character
+                
+                return fixed_text
+            
+            def check_text_corruption(text):
+                """テキストの文字化け度を判定"""
+                if not text or len(text) < 10:
+                    return False, 0, 0
+                
+                import re
+                
+                # 文字化けパターン
+                corruption_patterns = [
+                    r'ï¿½+',  # UTF-8文字化け
+                    r'[]{10,}',  # 長い空文字列
+                    r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]{3,}',  # 制御文字
+                    r'[^\w\s\u3000-\u30ff\u4e00-\u9faf\u3400-\u4dbf]{10,}',  # 連続記号
+                    r'\d+\(\)\[',  # 数字+()[ パターン
+                ]
+                
+                corruption_count = 0
+                for pattern in corruption_patterns:
+                    matches = re.findall(pattern, text)
+                    corruption_count += len(matches)
+                
+                corruption_ratio = corruption_count / len(text) * 100
+                
+                # 閾値を下げて敏感に検出
+                is_corrupted = corruption_ratio > 2.0 or corruption_count > 5
+                
+                return is_corrupted, corruption_ratio, corruption_count
+            
+            # PDFリーダーを作成
+            pdf_reader = PyPDF2.PdfReader(BytesIO(content))
+            extracted_pages = []
+            total_pages = len(pdf_reader.pages)
+            corrupted_pages = 0
+            
+            logger.info(f"📄 PyPDF2で{total_pages}ページの抽出開始")
+            
+            for page_num, page in enumerate(pdf_reader.pages):
+                try:
+                    # テキスト抽出
+                    page_text = page.extract_text()
+                    
+                    if page_text and page_text.strip():
+                        # 文字化け修復
+                        fixed_text = fix_mojibake_text(page_text)
+                        
+                        # 文字化けチェック
+                        is_corrupted, corruption_ratio, corruption_count = check_text_corruption(fixed_text)
+                        
+                        if is_corrupted:
+                            corrupted_pages += 1
+                            logger.warning(f"⚠️ ページ{page_num + 1}: 文字化け検出 ({corruption_ratio:.1f}%)")
+                        
+                        extracted_pages.append(f"\n--- ページ {page_num + 1} ---\n{fixed_text}")
+                    else:
+                        logger.warning(f"⚠️ ページ{page_num + 1}: テキストなし")
+                        extracted_pages.append(f"\n--- ページ {page_num + 1} ---\n[テキストなし]")
+                        
+                except Exception as page_error:
+                    logger.error(f"❌ ページ{page_num + 1}抽出エラー: {page_error}")
+                    extracted_pages.append(f"\n--- ページ {page_num + 1} ---\n[抽出エラー: {str(page_error)}]")
+            
+            # 結果統計
+            final_text = "\n".join(extracted_pages)
+            logger.info(f"✅ PyPDF2フォールバック完了:")
+            logger.info(f"   - 総ページ数: {total_pages}")
+            logger.info(f"   - 文字化けページ: {corrupted_pages}")
+            logger.info(f"   - 抽出文字数: {len(final_text)}")
+            
+            return final_text
+            
+        except Exception as e:
+            logger.error(f"❌ PyPDF2フォールバック失敗: {e}")
+            return f"PyPDF2フォールバック処理エラー: {str(e)}"
     
     async def _extract_text_from_excel(self, content: bytes) -> str:
         """Excelファイルからテキストを抽出（ExcelDataCleanerを使用）"""

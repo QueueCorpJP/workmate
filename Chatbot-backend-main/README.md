@@ -81,6 +81,19 @@ GEMINI_API_KEY=AI...7I
 YOUTUBE_API_KEY=your_youtube_api_key_here
 
 # ========================================
+# PDF処理設定（オプション）
+# ========================================
+
+# Gemini 2.5 Flash OCR設定（最高品質PDF処理）
+# GEMINI_API_KEY は上記で設定済み
+
+# カスタムPopplerパス（従来OCR使用時のみ - 非推奨）
+# POPPLER_PATH=/path/to/poppler/bin
+
+# 埋め込みモデル設定
+EMBEDDING_MODEL=gemini-embedding-001
+
+# ========================================
 # レガシー設定（互換性のため）
 # ========================================
 
@@ -102,6 +115,69 @@ DB_PORT=5432
 # HTTP_PROXY=http://proxy.company.com:8080
 # HTTPS_PROXY=https://proxy.company.com:8080
 ```
+
+## PDF処理の設定について
+
+このアプリケーションでは、PDFファイルの処理に最新のAI技術を活用した複数の方法を提供しています：
+
+### 🚀 最推奨: Gemini 2.5 Flash OCR（完璧版）
+
+**Gemini 2.5 Flash Vision API** を使用した最高品質のOCR処理：
+
+```bash
+# .envファイルにGemini API Key設定（必須）
+GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+この設定により：
+- ✅ **Gemini 2.5 Flash Vision API** で最高精度OCR
+- ✅ **PyMuPDF** でPDF→画像変換（Poppler不要）
+- ✅ **バッチ処理** による高速化
+- ✅ **自動リトライ機能** とエラーハンドリング
+- ✅ **画像品質最適化** で認識精度向上
+- ✅ **構造化テキスト抽出**（表・リスト・見出し対応）
+
+### 🔄 フォールバック処理
+
+Gemini OCR失敗時の自動フォールバック：
+- ✅ **PyMuPDF** でのテキスト直接抽出
+- ✅ **PyPDF2** での最終フォールバック処理
+
+### PyMuPDFのインストール（必須）
+
+Gemini 2.5 Flash OCRとフォールバック処理のため、PyMuPDFのインストールが必要です：
+
+```bash
+pip install PyMuPDF
+```
+
+> **注意**: PyMuPDFは既にrequirements.txtに含まれています。`pip install -r requirements.txt`で自動インストールされます。
+
+### 🔧 従来のOCR（非推奨）
+
+従来のpdf2image + PopplerベースのOCRも利用可能ですが、非推奨です：
+
+#### Windows:
+```bash
+# Condaを使用
+conda install -c conda-forge poppler
+
+# Chocolateyを使用
+choco install poppler
+```
+
+#### Ubuntu/Debian:
+```bash
+sudo apt-get update
+sudo apt-get install poppler-utils
+```
+
+#### macOS:
+```bash
+brew install poppler
+```
+
+> **推奨**: 従来OCRではなく、Gemini 2.5 Flash OCRを使用してください。
 
 ## FastAPI アプリの実行
 

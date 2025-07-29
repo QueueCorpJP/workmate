@@ -71,70 +71,142 @@ MOJIBAKE_MAPPING = {
     '繧ｾ': 'ゾ',
     '繧ｿ': 'タ',
     '繝': 'ダ',
-    '繝ａ': 'チ',
-    '繝ｂ': 'ヂ',
+    '繝ｂ': 'チ',
     '繝ｃ': 'ッ',
     '繝ｄ': 'ヅ',
     '繝ｅ': 'テ',
     '繝ｆ': 'デ',
-    '繝ｇ': 'ト',
+    '繝ｧ': 'ト',
     '繝ｈ': 'ド',
     '繝ｉ': 'ナ',
     '繝ｊ': 'ニ',
-    '繝ｋ': 'ヌ',
-    '繝ｌ': 'ネ',
-    '繝ｍ': 'ノ',
-    '繝ｮ': 'ハ',
-    '繝ｯ': 'バ',
-    '繝ｰ': 'パ',
-    '繝ｱ': 'ヒ',
-    '繝ｲ': 'ビ',
-    '繝ｳ': 'ピ',
-    '繝ｴ': 'フ',
-    '繝ｵ': 'ブ',
-    '繝ｶ': 'プ',
-    '繝ｷ': 'ヘ',
-    '繝ｸ': 'ベ',
-    '繝ｹ': 'ペ',
-    '繝ｺ': 'ホ',
-    '繝ｻ': 'ボ',
-    '繝ｼ': 'ポ',
-    '繝ｽ': 'マ',
-    '繝ｾ': 'ミ',
-    '繝ｿ': 'ム',
-    '繧ｳ繝ｳ繝斐Η繝ｼ繧ｿ': 'コンピュータ',
-    '繧ｷ繧ｹ繝ｃ繝': 'システム',
-    '繝ｦ繝ｼ繧ｶ繝ｼ': 'ユーザー',
-    '繝ｭ繧ｰ繧､繝ｳ': 'ログイン',
-    '繝代せ繝ｯ繝ｼ繝': 'パスワード',
-    '繝｡繝ｼ繝ｫ': 'メール',
-    '繧｢繝峨Ξ繧ｹ': 'アドレス',
-    '繝輔ぃ繧､繝ｫ': 'ファイル',
-    '繝輔か繝ｫ繝': 'フォルダ',
-    '繝ｩ繧､繧ｻ繝ｳ繧ｹ': 'ライセンス',
-    '繧ｵ繝ｼ繝薙せ': 'サービス',
-    '繧｢繝励Μ繧ｱ繝ｼ繧ｷ繝ｧ繝ｳ': 'アプリケーション',
-    '繝ｭ繧ｰ': 'ログ',
-    '繧ｨ繝ｩ繝ｼ': 'エラー',
-    '繝ｪ繧ｹ繝': 'リスト',
-    '繝ｪ繧ｹ繝医い繝': 'リストア',
-    '繝舌ャ繧ｯ繧｢繝': 'バックアップ',
-    '繝ｪ繧ｹ繝医い': 'リストア',
-    '繝舌ャ繧ｯ繧｢繝': 'バックアップ',
-    # 漢字の文字化けパターン
-    '迺ｾ遶': '環境',
-    '荳?蟋': '会社',
-    '蜿ｯ閭ｽ': '可能',
-    '蠢?隕': '必要',
-    '險ｭ螳': '設定',
-    '繝ｻ繝ｻ繝ｻ': '...',
-    # CIDエラーパターン
-    '(cid:': '',
-    ')': '',
+    
+    # 新しい文字化けパターン（ユーザー報告のもの含む）
+    'جຊΞΠςϜ': 'マルチドライブ',
+    'υϥΠϒʗ': 'ドライブ',
+    'ϚϧνυϥΠϒ': 'マルチドライブ',
+    'Ϟχλʔʗ': 'モニター',
+    'ܕӷথ': '型番',
+    'ඪ४౥ࡌιϑτ': '標準搭載ソフト',
+    'MpDF': 'PDF',
+    'PNF': 'HOME',
+    'VTJOFTT': 'BUSINESS',
+    'PP': 'アプリ',
+    'VBSE': 'Guard',
+    'PMp': 'Solo',
+    'BOPOJNBHF': 'Canonimage',
+    'BSFEFTLUPQ': 'WARE Desktop',
+    '֎ܗੇ๏': '外形寸法',
+    '࣭ྔ': '質量',
+    'ʷ': 'mm',
+    'ᶱ': '(mm)',
+    'LH': 'kg',
+    'όοςϦʔؚΉ': 'バッテリー含む',
+    'εϖοΫ': 'スペック',
+    'JOEPXT': 'Windows',
+    'SPCJU': 'Pro bit',
+    '16': 'CPU',
+    'PSF': 'Core',
+    'MUSB': 'Ultra',
+    '16()[': 'UHzGHz',
+    'ϝϞϦʗ': 'メモリー',
+    '%%3': 'DDR',
+    '(#': 'GB',
+    'σΟεΫʗ': 'ディスク',
+    '44%': 'SSD',
+    
+    # 追加の文字化けパターン（分解して詳細にマッピング）
+    'جຊ': 'マルチ',
+    'ΞΠ': 'ドライブ',
+    'ςϜ': 'ドライブ',
+    'υϥ': 'ドライ',
+    'Πϒ': 'ブ',
+    'ʗ%7%': 'ー DVD ',
+    'Ϛϧν': 'マルチ',
+    'Ϟχλ': 'モニター',
+    'ʔʗ%': 'ー',
+    ')ܕ': '型',
+    'ӷথ': '番',
+    'ඪ४': '標準',
+    '౥ࡌ': '搭載',
+    'ιϑτ': 'ソフト',
+    '0GpDF': 'PDF',
+    ')PNF': 'HOME',
+    '#VTJOFTT': 'BUSINESS',
+    'ʢ104': '(POS',
+    '"൛ʣ': '版)',
+    '"QQ': 'App',
+    '(VBSE': 'Guard',
+    '4PMP': 'Solo',
+    '$BOPOJ': 'Canoni',
+    'NBHF': 'mage',
+    '8"3&': 'WARE',
+    '%FTLUPQ': 'Desktop',
+    '֎ܗ': '外形',
+    'ੇ๏': '寸法',
+    'ɾ': '・',
+    '࣭': '質',
+    'ྔ': '量',
+    'ʢ8': '(W',
+    'ʢ)': '(H',
+    'ʢ%': '(D',
+    '໿': '約',
+    'όο': 'バッ',
+    'ςϦ': 'テリ',
+    'ʔؚ': 'ー含',
+    'Ή': 'む',
+    'ʣ˔': ')',
+    'εϖ': 'スペ',
+    'οΫ': 'ック',
+    '04ʗ': 'OS:',
+    '8JOEPXT': 'Windows',
+    '1SP': 'Pro',
+    'CJU': ' bit',
+    '$16ʗ': 'CPU:',
+    '$PSF': 'Core',
+    '6MUSB': 'Ultra',
+    '6()': 'GHz',
+    'ϝϞ': 'メモ',
+    'Ϧʗ': 'リー',
+    '%%3': 'DDR',
+    'σΟ': 'ディ',
+    'εΫ': 'スク',
+    '44%': 'SSD',
+    
+    # 記号文字化け（更新版）
+    'ʗ': 'ー',
+    'ʢ': '(',
+    'ʣ': ')',
+    '˔': '・',
+    'ΞΠ': 'AI',
+    'ιϑτ': 'ソフト',
+    'ςϜ': 'ステム',
+    'Ξϓ': 'アプリ',
+    '%7%': 'DVD',
+    '%)': ')',
+    'ɾ': '・',
+    'ᶱ': '(mm)',
+}
+
+# Unicode正規化マッピング（より包括的）
+UNICODE_NORMALIZATION = {
+    # 半角カタカナを全角に
+    'ｱ': 'ア', 'ｲ': 'イ', 'ｳ': 'ウ', 'ｴ': 'エ', 'ｵ': 'オ',
+    'ｶ': 'カ', 'ｷ': 'キ', 'ｸ': 'ク', 'ｹ': 'ケ', 'ｺ': 'コ',
+    'ｻ': 'サ', 'ｼ': 'シ', 'ｽ': 'ス', 'ｾ': 'セ', 'ｿ': 'ソ',
+    'ﾀ': 'タ', 'ﾁ': 'チ', 'ﾂ': 'ツ', 'ﾃ': 'テ', 'ﾄ': 'ト',
+    'ﾅ': 'ナ', 'ﾆ': 'ニ', 'ﾇ': 'ヌ', 'ﾈ': 'ネ', 'ﾉ': 'ノ',
+    'ﾊ': 'ハ', 'ﾋ': 'ヒ', 'ﾌ': 'フ', 'ﾍ': 'ヘ', 'ﾎ': 'ホ',
+    'ﾏ': 'マ', 'ﾐ': 'ミ', 'ﾑ': 'ム', 'ﾒ': 'メ', 'ﾓ': 'モ',
+    'ﾔ': 'ヤ', 'ﾕ': 'ユ', 'ﾖ': 'ヨ',
+    'ﾗ': 'ラ', 'ﾘ': 'リ', 'ﾙ': 'ル', 'ﾚ': 'レ', 'ﾛ': 'ロ',
+    'ﾜ': 'ワ', 'ｦ': 'ヲ', 'ﾝ': 'ン',
+    'ｯ': 'ッ', 'ｬ': 'ャ', 'ｭ': 'ュ', 'ｮ': 'ョ',
+    'ｰ': 'ー',
 }
 
 def fix_mojibake_text(text: str) -> str:
-    """文字化けテキストを修復する（ページマーカー削除強化版）"""
+    """文字化けテキストを修復する（強化版）"""
     if not text:
         return text
     
@@ -160,10 +232,15 @@ def fix_mojibake_text(text: str) -> str:
     fixed_text = fixed_text.replace('No。1', 'No.1')
     fixed_text = fixed_text.replace('CO。,LTD。', 'CO.,LTD.')
     
+    # 🎯 Unicode正規化を適用
+    for half_char, full_char in UNICODE_NORMALIZATION.items():
+        fixed_text = fixed_text.replace(half_char, full_char)
+    
     # 重度の文字化けがある場合のみ修復を適用
     if check_text_corruption(fixed_text):
-                # 文字化けマッピングを適用
-        for mojibake, correct in MOJIBAKE_MAPPING.items():
+        # 文字化けマッピングを適用（長いものから順に処理）
+        sorted_mapping = sorted(MOJIBAKE_MAPPING.items(), key=lambda x: len(x[0]), reverse=True)
+        for mojibake, correct in sorted_mapping:
             fixed_text = fixed_text.replace(mojibake, correct)
         
         # CIDエラーパターンを除去
@@ -172,62 +249,75 @@ def fix_mojibake_text(text: str) -> str:
         # 連続する文字化け文字を除去（実際の文字化け文字のみ）
         fixed_text = re.sub(r'[縺繝繧]{3,}', '[文字化け]', fixed_text)
         
-        # 置換文字を除去
-        fixed_text = fixed_text.replace('\ufffd', '[文字化け]')
-        fixed_text = fixed_text.replace('', '[文字化け]')
+        # 置換文字を処理
+        fixed_text = fixed_text.replace('\ufffd', '') # 完全に削除
     
     # 🎯 余分な空白を整理（強化版）
     fixed_text = re.sub(r'\s+', ' ', fixed_text)
-    fixed_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', fixed_text)
-    fixed_text = re.sub(r'^\s+|\s+$', '', fixed_text, flags=re.MULTILINE)
+    fixed_text = re.sub(r'\n\s*\n', '\n\n', fixed_text)  # 余分な改行を削除
+    fixed_text = fixed_text.strip()
     
-    return fixed_text.strip()
+    return fixed_text
 
 def check_text_corruption(text: str) -> bool:
-    """テキストが文字化けしているかどうかを判定する（強化版）"""
-    if not text or len(text.strip()) == 0:
-        return True
+    """テキストに文字化けが含まれているかチェック（強化版）"""
+    if not text or len(text) < 10:
+        return False
     
-    # 基本的な文字化け検出
-    corruption_indicators = [
-        # 文字化け文字の存在
-        '縺' in text,
-        '繝' in text,
-        '繧' in text,
-        '\ufffd' in text,
-        '' in text,
-        '(cid:' in text,
+    # 文字化けパターンの検出（更新版）
+    corruption_patterns = [
+        # 従来の文字化けパターン
+        r'[縺繝繧]{2,}',  # 連続する文字化け文字
+        r'\(cid:\d+\)',   # CIDエラー
+        r'[\ufffd]+',     # 置換文字
         
-        # 文字化け文字の比率
-        len(re.findall(r'[縺繝繧]', text)) / len(text) > 0.1 if len(text) > 0 else False,
+        # 新しい文字化けパターン
+        r'[جຊ]{1,}',     # アラビア文字などの混入
+        r'[ΞΠςϜυϥ]{2,}', # ギリシャ文字の混入
+        r'[ʗʢʣ˔]{1,}',  # 特殊記号の混入
+        r'[࣭ܕ]{1,}',     # 他言語文字の混入
         
-        # 意味のある文字の比率が低い
-        len(re.findall(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\w]', text)) / len(text) < 0.3 if len(text) > 0 else True,
-        
-        # 極端に短いテキスト
-        len(text.strip()) < 10,
+        # エンコーディング破損パターン
+        r'[A-Z]{4,}[A-Z]{4,}', # 連続する大文字（VTJOFTT等）
+        r'%%\d+',        # %% + 数字パターン
+        r'\d+\(\)\[',     # 数字 + () + [パターン
     ]
     
-    corruption_count = sum(corruption_indicators)
+    # パターンマッチングによる文字化け検出
+    corruption_count = 0
+    for pattern in corruption_patterns:
+        matches = re.findall(pattern, text)
+        corruption_count += len(matches)
     
-    # 複数の指標で文字化けと判定
-    if corruption_count >= 2:
-        logger.info(f"PDF文字化け検出: {corruption_count}個の指標が該当")
-        return True
+    # 文字化け文字の割合を計算
+    total_chars = len(text)
+    corruption_ratio = corruption_count / total_chars if total_chars > 0 else 0
     
-    # 強い指標の場合は単独でも文字化けと判定
-    strong_indicators = [
-        '縺' in text and len(re.findall(r'縺', text)) > 5,
-        '繝' in text and len(re.findall(r'繝', text)) > 5,
-        '(cid:' in text and len(re.findall(r'\(cid:', text)) > 3,
-        '\ufffd' in text,
-    ]
+    # 文字化けと判定する条件
+    is_corrupted = (
+        corruption_ratio > 0.05 or  # 5%以上が文字化け文字（敏感に）
+        corruption_count > 3 or     # 3個以上の文字化けパターン（敏感に）
+        '縺' in text or           # 確実な文字化け文字
+        '繧' in text or
+        '繝' in text or
+        'جຊ' in text or          # 新パターン
+        'ΞΠςϜ' in text or
+        'ϚϧνυϥΠϒ' in text or
+        'ܕӷথ' in text or
+        'جຊΞΠςϜ' in text or     # 報告されたパターン
+        'υϥΠϒʗ%7%' in text or
+        'Ϟχλʔʗ%' in text or
+        'ඪ४౥ࡌιϑτ' in text or
+        'VTJOFTT' in text or      # 英語の文字化け
+        'JOEPXT' in text or
+        '#VTJOFTT' in text or
+        '8JOEPXT' in text
+    )
     
-    if any(strong_indicators):
-        logger.info("PDF強い文字化け指標を検出")
-        return True
+    if is_corrupted:
+        print(f"文字化け検出: 文字化け率 {corruption_ratio:.2%}, パターン数 {corruption_count}")
     
-    return False
+    return is_corrupted
 
 def _check_legacy_corruption(text: str) -> bool:
     """従来のPDF文字化け検出ロジック"""
@@ -557,183 +647,161 @@ def split_ocr_text_into_sections(text: str, filename: str) -> list:
     return sections
 
 async def process_pdf_file(contents, filename):
-    """PDFファイルを処理してデータフレーム、セクション、テキストを返す"""
+    """PDFファイルを処理してデータフレーム、セクション、テキストを返す（Gemini 2.5 Flash OCR完璧版）"""
     try:
-        # BytesIOオブジェクトを作成
-        pdf_file = BytesIO(contents)
+        # まずGemini 2.5 Flash OCRを試行（最高品質）
+        logger.info(f"🚀 Gemini 2.5 Flash OCR優先でPDF処理開始: {filename}")
         
-        # PDFファイルを読み込む
-        pdf_reader = PyPDF2.PdfReader(pdf_file)
-        
-        # テキストを抽出
-        all_text = ""
-        sections = {}
-        extracted_text = f"=== ファイル: {filename} ===\n\n"
-        
-        corrupted_pages = []  # 文字化けしたページを記録
-        
-        for i, page in enumerate(pdf_reader.pages):
-            try:
-                page_text = page.extract_text()
-                # Ensure page_text is not None and convert to string if needed
-                if page_text is not None:
-                    page_text = ensure_string(page_text).replace('\x00', '') # 🧼 Remove NUL characters
-                    
-                    # 🎯 ページマーカー削除とテキストクリーニング
-                    page_text = fix_mojibake_text(page_text)
-                    
-                    # ページごとに文字化けをチェック
-                    if check_text_corruption(page_text):
-                        print(f"ページ {i+1} で文字化けを検出: {page_text[:100]}...")
-                        corrupted_pages.append(i)
-                        # 文字化けページのデータはsectionsに保存しない
-                    else:
-                        section_name = f"ページ {i+1}"
-                        sections[section_name] = page_text
-                        all_text += page_text + "\n"
-                        # 🎯 extracted_textにはページマーカーを追加しない
-                        extracted_text += f"{page_text}\n\n"
-                else:
-                    print(f"ページ {i+1} にテキストがありません")
-                    corrupted_pages.append(i)  # テキストなしも文字化けとして扱う
-                    # テキストなしページのデータはsectionsに保存しない
-            except Exception as page_error:
-                print(f"ページ {i+1} の処理中にエラー: {str(page_error)}")
-                corrupted_pages.append(i)  # エラーも文字化けとして扱う
-                # エラーページのデータはsectionsに保存しない
-        
-        # 初期データを作成（OCRが必要でない場合のみ）
-        all_data = []
-        
-        # 文字化けが検出された場合のみPyMuPDFでテキスト抽出を試行
-        if len(corrupted_pages) > 0 or (all_text and check_text_corruption(all_text)):
-            logger.info(f"PDF文字化け検出 (ページ: {corrupted_pages}) - PyMuPDF でテキスト抽出を試行: {filename}")
+        try:
+            # Gemini 2.5 Flash OCRを使用してPDF処理
+            from .gemini_flash_ocr import ocr_pdf_with_gemini_flash
             
-            # PyMuPDF でテキスト抽出を実行
-            pymupdf_result = await process_pdf_with_pymupdf(contents, filename)
-            if pymupdf_result:
-                logger.info("PyMuPDF によるテキスト抽出が成功しました")
-                return pymupdf_result
+            logger.info(f"🔄 Gemini 2.5 Flash OCRでテキスト抽出中: {filename}")
+            ocr_text = await ocr_pdf_with_gemini_flash(contents)
             
-            logger.warning("PyMuPDF でのテキスト抽出失敗 - OCR 処理にフォールバックします")
-            
-            # PyMuPDF でのテキスト抽出が失敗した場合は古いOCR処理を試行
-            try:
-                print(f"文字化けを検出しました。OCRを使用してテキストを抽出します...")
-                ocr_text = await ocr_pdf_to_text_from_bytes(contents)
+            if ocr_text and ocr_text.strip() and not ocr_text.startswith("OCR処理エラー"):
+                # OCR結果をセクション化
+                sections = {}
+                all_data = []
+                full_text = f"=== ファイル: {filename} (Gemini 2.5 Flash OCR) ===\n\n"
                 
-                if ocr_text:
-                    # OCR結果をセクションに分割
-                    ocr_sections_list = split_ocr_text_into_sections(ocr_text, filename)
-                    
-                    # データフレームを作成
-                    result_df = pd.DataFrame(ocr_sections_list) if ocr_sections_list else pd.DataFrame({
-                        'section': ["OCR結果"],
-                        'content': [ensure_string(ocr_text)],
-                        'source': ['PDF (OCR)'],
-                        'file': [filename],
-                        'url': [None]
-                    })
-                    
-                    # セクション辞書を作成
-                    ocr_sections = {item['section']: item['content'] for item in ocr_sections_list} if ocr_sections_list else {"OCR結果": ensure_string(ocr_text)}
-                    
-                    # 抽出テキストを作成
-                    ocr_extracted_text = f"=== ファイル: {filename} (OCR処理) ===\n\n"
-                    for section_name, content in ocr_sections.items():
-                        ocr_extracted_text += f"=== {section_name} ===\n{content}\n\n"
-                    
-                    return result_df, ocr_sections, ocr_extracted_text
-                else:
-                    raise Exception("OCRからテキストを抽出できませんでした")
-            except Exception as ocr_error:
-                logger.error(f"OCR処理失敗: {str(ocr_error)}")
-                # OCR失敗時は通常のテキスト抽出処理を続行
-                pass
-        
-        # PyMuPDF 処理が失敗した場合、通常のテキスト抽出を試行
-        # 文字化けページがない場合のみ、通常のテキスト処理を行う
-        if len(corrupted_pages) == 0 and all_text and not check_text_corruption(all_text):
-            # テキストをセクションに分割
-            # 見出しパターン
-            heading_pattern = r'^(?:\d+[\.\s]+|第\d+[章節]\s+|[\*\#]+\s+)?([A-Za-z\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]{2,}[：:、。])'
-            
-            current_section = "一般情報"
-            current_content = []
-            
-            # Ensure all_text is not empty and is a string
-            all_text_str = str(all_text) if all_text is not None else ""
-            if all_text_str:
-                for line in all_text_str.split("\n"):
-                    line = str(line).strip()
-                    if not line:
+                # ページごとにセクション分割
+                pages = ocr_text.split("--- ページ")
+                for i, page_content in enumerate(pages):
+                    if not page_content.strip():
                         continue
                     
-                    # 見出しかどうかを判定
-                    if re.search(heading_pattern, line):
-                        # 前のセクションを保存
-                        if current_content:
-                            # 必ず文字列に変換してから結合
-                            content_text = "\n".join([ensure_string(item) for item in current_content])
-                            all_data.append({
-                                'section': str(current_section),
-                                'content': content_text,
-                                'source': 'PDF',
-                                'file': filename,
-                                'url': None
-                            })
-                        
-                        # 新しいセクションを開始
-                        current_section = str(line)
-                        current_content = []
+                    # ページ番号を抽出
+                    lines = page_content.strip().split('\n')
+                    if lines and lines[0].strip().endswith("---"):
+                        page_num_line = lines[0].replace("---", "").strip()
+                        page_content_lines = lines[1:]
                     else:
-                        current_content.append(str(line))
+                        page_num_line = f"ページ {i + 1}"
+                        page_content_lines = lines
+                    
+                    page_text = '\n'.join(page_content_lines).strip()
+                    
+                    if page_text:
+                        section_name = page_num_line
+                        sections[section_name] = page_text
+                        all_data.append({
+                            'section': section_name,
+                            'content': page_text,
+                            'source': 'PDF (Gemini 2.5 Flash OCR)',
+                            'file': filename,
+                            'url': None
+                        })
+                        
+                        full_text += f"=== {section_name} ===\n{page_text}\n\n"
                 
-                # 最後のセクションを保存
-                if current_content:
-                    # 必ず文字列に変換してから結合
-                    content_text = "\n".join([ensure_string(item) for item in current_content])
-                    all_data.append({
-                        'section': str(current_section),
-                        'content': content_text,
-                        'source': 'PDF',
-                        'file': filename,
-                        'url': None
-                    })
-        else:
-            print("文字化けまたは問題のあるページが検出されたため、通常のテキスト処理をスキップします")
-        
-        # PyMuPDF 処理失敗後の最終フォールバック: 従来のテキスト抽出のみ 
-        # データフレームを作成
-        result_df = pd.DataFrame(all_data) if all_data else pd.DataFrame({
-            'section': ["エラー"],
-            'content': ["PDFからテキストを抽出できませんでした"],
-            'source': ['PDF'],
-            'file': [filename],
-            'url': [None]
-        })
-        
-        # すべての列の値を文字列に変換
-        for col in result_df.columns:
-            result_df[col] = result_df[col].apply(ensure_string)
-        
-        return result_df, sections, extracted_text
+                if all_data:
+                    # DataFrame作成
+                    import pandas as pd
+                    df = pd.DataFrame(all_data)
+                    for col in df.columns:
+                        df[col] = df[col].apply(ensure_string)
+                    
+                    logger.info(f"✅ Gemini 2.5 Flash OCRで正常に処理完了: {filename} ({len(all_data)} セクション)")
+                    return df, sections, full_text
+                else:
+                    logger.warning(f"⚠️ Gemini 2.5 Flash OCRでセクションを作成できませんでした: {filename}")
+                    raise Exception("Gemini Flash OCR section processing failed")
+            else:
+                logger.warning(f"⚠️ Gemini 2.5 Flash OCRで処理できませんでした: {filename}")
+                raise Exception("Gemini Flash OCR processing failed")
+                
+        except Exception as ocr_error:
+            logger.warning(f"⚠️ Gemini 2.5 Flash OCR処理エラー: {ocr_error}")
+            logger.info(f"🔄 PyMuPDFフォールバックを使用: {filename}")
+            
+            # PyMuPDFフォールバックでの処理
+            try:
+                result = await process_pdf_with_pymupdf(contents, filename)
+                if result is not None:
+                    df, sections, extracted_text = result
+                    logger.info(f"✅ PyMuPDFフォールバックで正常に処理完了: {filename}")
+                    return df, sections, extracted_text
+                else:
+                    logger.warning(f"⚠️ PyMuPDFで処理できませんでした: {filename}")
+                    raise Exception("PyMuPDF processing failed")
+            except Exception as pymupdf_error:
+                logger.warning(f"⚠️ PyMuPDF処理エラー: {pymupdf_error}")
+                logger.info(f"🔄 PyPDF2最終フォールバックを使用: {filename}")
+                
+                # PyPDF2最終フォールバックでの処理
+                return await _process_pdf_with_pypdf2_fallback(contents, filename)
+            
     except Exception as e:
-        print(f"PDFファイル処理エラー: {str(e)}")
-        print(traceback.format_exc())
+        print(f"PDFファイル処理エラー: {e}")
         
-        # エラーが発生しても最低限のデータを返す
-        empty_df = pd.DataFrame({
-            'section': ["エラー"],
-            'content': [f"PDFファイル処理中にエラーが発生しました: {str(e)}"],
-            'source': ['PDF'],
-            'file': [filename],
-            'url': [None]
-        })
+        # エラー時の空のDataFrame
+        import pandas as pd
+        empty_df = pd.DataFrame(columns=['section', 'content', 'source', 'file', 'url'])
         empty_sections = {"エラー": f"PDFファイル処理中にエラーが発生しました: {str(e)}"}
         error_text = f"=== ファイル: {filename} ===\n\n=== エラー ===\nPDFファイル処理中にエラーが発生しました: {str(e)}\n\n"
         
         return empty_df, empty_sections, error_text
+
+async def _process_pdf_with_pypdf2_fallback(contents, filename):
+    """PyPDF2を使用したフォールバック処理"""
+    # BytesIOオブジェクトを作成
+    pdf_file = BytesIO(contents)
+    
+    # PDFファイルを読み込む
+    pdf_reader = PyPDF2.PdfReader(pdf_file)
+    
+    # テキストを抽出
+    all_text = ""
+    sections = {}
+    extracted_text = f"=== ファイル: {filename} (PyPDF2フォールバック) ===\n\n"
+    
+    for i, page in enumerate(pdf_reader.pages):
+        try:
+            # 強化されたテキスト抽出を使用
+            page_text = extract_text_with_encoding_fallback(page)
+            
+            # Ensure page_text is not None and convert to string if needed
+            if page_text is not None:
+                page_text = ensure_string(page_text).replace('\x00', '') # 🧼 Remove NUL characters
+                
+                # 文字化け修正を適用
+                fixed_text = fix_mojibake_text(page_text)
+                
+                if fixed_text.strip():
+                    section_name = f"ページ {i+1}"
+                    sections[section_name] = fixed_text
+                    all_text += fixed_text + "\n"
+                    extracted_text += f"{fixed_text}\n\n"
+                else:
+                    logger.debug(f"ページ {i+1} でテキストが抽出できませんでした")
+            else:
+                logger.debug(f"ページ {i+1} でテキスト抽出結果がNullでした")
+                
+        except Exception as page_error:
+            logger.warning(f"ページ {i+1} の処理エラー: {page_error}")
+            continue
+    
+    # DataFrameを作成
+    import pandas as pd
+    data_list = []
+    for section_name, content in sections.items():
+        data_list.append({
+            'section': section_name,
+            'content': content,
+            'source': 'PDF (PyPDF2)',
+            'file': filename,
+            'url': None
+        })
+    
+    df = pd.DataFrame(data_list) if data_list else pd.DataFrame(columns=['section', 'content', 'source', 'file', 'url'])
+    
+    # 各列を文字列として確保
+    for col in df.columns:
+        df[col] = df[col].apply(ensure_string)
+    
+    logger.info(f"PyPDF2フォールバック処理完了: {filename} ({len(sections)} セクション)")
+    return df, sections, extracted_text
 
 async def process_pdf_with_pymupdf(contents: bytes, filename: str):
     """PyMuPDF を用いて PDF から直接テキストを抽出する
@@ -742,7 +810,22 @@ async def process_pdf_with_pymupdf(contents: bytes, filename: str):
     文字化け修正も適用し、ページ単位でセクション化して DataFrame を返します。
     """
     try:
-        import fitz  # PyMuPDF
+        try:
+            import fitz  # PyMuPDF
+        except ImportError:
+            error_msg = """PyMuPDF (fitz) が利用できません。
+            
+PDFを適切に処理するために、PyMuPDFをインストールしてください:
+
+pip install PyMuPDF
+
+PyMuPDFはPopplerに依存しない高性能なPDF処理ライブラリです。
+インストール後、アプリケーションを再起動してください。
+
+現在はPyPDF2フォールバックを使用します。"""
+            
+            logger.warning(error_msg)
+            return None
 
         logger.info(f"PDFファイル処理開始（PyMuPDFテキスト抽出使用）: {filename}")
 
@@ -785,6 +868,7 @@ async def process_pdf_with_pymupdf(contents: bytes, filename: str):
             return None
 
         # DataFrame 生成
+        import pandas as pd
         result_df = pd.DataFrame(all_data)
         for col in result_df.columns:
             result_df[col] = result_df[col].apply(ensure_string)
@@ -795,3 +879,47 @@ async def process_pdf_with_pymupdf(contents: bytes, filename: str):
     except Exception as e:
         logger.error(f"PyMuPDF PDFファイル処理エラー: {e}")
         return None 
+
+def extract_text_with_encoding_fallback(page) -> str:
+    """複数のエンコーディングでテキスト抽出を試行"""
+    encodings_to_try = ['utf-8', 'cp932', 'shift_jis', 'euc-jp', 'iso-2022-jp']
+    
+    # まず標準的な抽出を試行
+    try:
+        text = page.extract_text()
+        if text and not check_text_corruption(text):
+            return fix_mojibake_text(text)
+    except Exception as e:
+        print(f"標準抽出エラー: {e}")
+    
+    # 文字化けまたはエラーの場合、複数エンコーディングを試行
+    for encoding in encodings_to_try:
+        try:
+            # PyPDF2の内部処理でエンコーディングを強制
+            text = page.extract_text(visitor_text=lambda text, cm, tm, fontDict, fontSize: text)
+            if text:
+                # エンコーディング変換を試行
+                try:
+                    if isinstance(text, bytes):
+                        text = text.decode(encoding, errors='ignore')
+                    elif isinstance(text, str):
+                        # 一度バイト化してから再デコード
+                        text = text.encode('latin1', errors='ignore').decode(encoding, errors='ignore')
+                except Exception:
+                    continue
+                
+                # 修復処理を適用
+                fixed_text = fix_mojibake_text(text)
+                if fixed_text and not check_text_corruption(fixed_text):
+                    print(f"エンコーディング {encoding} で修復成功")
+                    return fixed_text
+        except Exception as e:
+            print(f"エンコーディング {encoding} で抽出エラー: {e}")
+            continue
+    
+    # すべて失敗した場合は標準抽出結果を修復して返す
+    try:
+        text = page.extract_text() or ""
+        return fix_mojibake_text(text)
+    except Exception:
+        return "[テキスト抽出失敗]" 

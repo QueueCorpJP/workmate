@@ -153,27 +153,31 @@ def get_cors_origins():
     """環境に応じたCORS許可オリジンを取得します"""
     environment = get_environment()
     
+    # 基本的な本番ドメイン
+    production_origins = [
+        "https://workmatechat.com",
+        "https://www.workmatechat.com",
+        "https://workmate-frontend.vercel.app"
+    ]
+    
+    # ローカル開発用オリジン
+    frontend_ports = os.getenv("FRONTEND_PORTS", "3000,3025,5173")
+    ports = [port.strip() for port in frontend_ports.split(",")]
+    
+    local_origins = []
+    for port in ports:
+        if port.isdigit():
+            local_origins.extend([
+                f"http://localhost:{port}",
+                f"http://127.0.0.1:{port}"
+            ])
+    
     if environment == "production":
-        # 本番環境のオリジン
-        return [
-            "https://workmatechat.com",
-            "https://www.workmatechat.com",
-            "https://workmate-frontend.vercel.app"
-        ]
+        # 本番環境でもローカル開発からのアクセスを許可（開発・テスト用）
+        return production_origins + local_origins
     else:
-        # ローカル開発環境のオリジン
-        frontend_ports = os.getenv("FRONTEND_PORTS", "3000,3025,5173")
-        ports = [port.strip() for port in frontend_ports.split(",")]
-        
-        origins = []
-        for port in ports:
-            if port.isdigit():
-                origins.extend([
-                    f"http://localhost:{port}",
-                    f"http://127.0.0.1:{port}"
-                ])
-        
-        return origins
+        # 開発環境では全てのオリジンを許可
+        return local_origins + production_origins
 
 # 🔄 ハイブリッド処理設定
 HYBRID_PROCESSING_ENABLED = os.getenv("HYBRID_PROCESSING_ENABLED", "true").lower() == "true"

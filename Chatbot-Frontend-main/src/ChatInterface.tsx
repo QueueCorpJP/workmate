@@ -55,6 +55,7 @@ import ArticleIcon from "@mui/icons-material/Article";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import TableChartIcon from "@mui/icons-material/TableChart";
 import PersonIcon from "@mui/icons-material/Person";
+import PostAddIcon from "@mui/icons-material/PostAdd";
 import api from "./api";
 import { cache } from "./utils/cache";
 import DemoLimits from "./components/DemoLimits";
@@ -63,6 +64,7 @@ import ApplicationForm from "./components/ApplicationForm";
 import MarkdownRenderer from "./components/MarkdownRenderer";
 import NotificationButton from "./components/NotificationButton";
 import NotificationModal from "./components/NotificationModal";
+import TemplateSelectionModal from "./components/TemplateSelectionModal";
 import { useTheme } from "@mui/material/styles";
 import { useMediaQuery } from "@mui/material";
 import { 
@@ -135,6 +137,9 @@ function ChatInterface() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
+
+  // テンプレート機能の状態
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
 
   // メッセージエリアのスタイルを改善 - モバイル対応を強化
   const messageContainerStyles = {
@@ -390,6 +395,8 @@ function ChatInterface() {
     setIsLoading(true);
 
     try {
+      console.log("🚀 チャット送信開始:", { userMessage, userId: user?.id });
+      
       const response = await api.post(`/chat`, {
         text: userMessage,
         employee_id: user?.id,
@@ -398,208 +405,190 @@ function ChatInterface() {
 
       // デバッグ情報を詳しく出力
       console.log("=== チャット回答処理 ===");
-      console.log("バックエンドからの完全なレスポンス:", response);
-      console.log("レスポンスデータ:", response.data);
-      console.log("レスポンステキスト:", response.data.response);
-      console.log("バックエンドからのソース情報:", response.data.source);
+      console.log("✅ バックエンドからの完全なレスポンス:", response);
+      console.log("📊 レスポンスステータス:", response.status);
+      console.log("📄 レスポンスヘッダー:", response.headers);
+      console.log("🔍 レスポンスデータ:", response.data);
+      console.log("📝 レスポンステキスト:", response.data?.response);
+      console.log("📄 バックエンドからのソース情報:", response.data?.source);
+      
+      // レスポンスデータの型チェック
+      if (!response.data) {
+        throw new Error("レスポンスデータが空です");
+      }
+      
+      if (typeof response.data !== 'object') {
+        throw new Error(`予期しないレスポンス形式: ${typeof response.data}`);
+      }
       
       // レスポンステキストから情報ソース部分を分離
       let responseText = response.data.response || "";
       let sourceInfo = "";
       
+      console.log("🔄 レスポンステキスト処理開始");
+      
       // まずバックエンドからのsourceフィールドを優先使用
-      if (response.data.source && response.data.source.trim()) {
-        sourceInfo = response.data.source.trim();
-        console.log("✅ バックエンドからのソース情報を使用:", sourceInfo);
+      try {
+        if (response.data.source && response.data.source.trim()) {
+          sourceInfo = response.data.source.trim();
+          console.log("✅ バックエンドからのソース情報を使用:", sourceInfo);
+        }
+      } catch (sourceError) {
+        console.error("⚠️ ソース情報処理エラー:", sourceError);
       }
       
       // 💡 大幅に強化されたソース抽出パターン
-      // 1. 従来の情報ソースパターン
-      const sourcePatterns = [
-        /(?:\n|^)\s*情報ソース[:：]\s*(.+?)(?:\n|$)/s,
-        /(?:\n|^)\s*参考資料[:：]\s*(.+?)(?:\n|$)/s,
-        /(?:\n|^)\s*参考[:：]\s*(.+?)(?:\n|$)/s,
-        /(?:\n|^)\s*ソース[:：]\s*(.+?)(?:\n|$)/s
-      ];
-      
-      // 2. 📄 新しいファイル名検出パターン（大幅強化）
-      const fileNamePatterns = [
-        // 「ファイル名」形式（拡張子あり）
-        /「([^」]+\.(?:pdf|xlsx?|docx?|txt|csv|pptx?))」/gi,
-        // 『ファイル名』形式（拡張子あり）
-        /『([^』]+\.(?:pdf|xlsx?|docx?|txt|csv|pptx?))』/gi,
-        // "ファイル名"形式（拡張子あり）
-        /"([^"]+\.(?:pdf|xlsx?|docx?|txt|csv|pptx?))"/gi,
-        // 'ファイル名'形式（拡張子あり）
-        /'([^']+\.(?:pdf|xlsx?|docx?|txt|csv|pptx?))'/gi,
-        
-        // 🆕 拡張子なしの文書名検出パターン
-        // 「文書名」に記載されております等
-        /「([^」]+)」(?:に記載されております|に記載されています|に掲載されております|に掲載されています|について記載|をご参照|が記載)/gi,
-        // 『文書名』に記載されております等  
-        /『([^』]+)』(?:に記載されております|に記載されています|に掲載されております|に掲載されています|について記載|をご参照|が記載)/gi,
-        // "文書名"に記載されております等
-        /"([^"]+)"(?:に記載されております|に記載されています|に掲載されております|に掲載されています|について記載|をご参照|が記載)/gi,
-        
-        // 複数の「文書名」
-        /複数の「([^」]+)」/gi,
-        /複数の『([^』]+)』/gi,
-        /複数の"([^"]+)"/gi,
-        
-        // ファイル名.拡張子（前後に特定文字）
-        /(?:は|が|の|を|に|で|から)([^\s、。！？,\.]+\.(?:pdf|xlsx?|docx?|txt|csv|pptx?))(?:に|で|から|の|を|が|は|と|、|。|にて)/gi,
-        // 記載されております、記載がございます等の前
-        /([^\s、。！？,\.]+\.(?:pdf|xlsx?|docx?|txt|csv|pptx?))(?:に記載|について|をご参照|にて記載|が記載|に掲載|より)/gi,
-        // こちらは、以下は等の後
-        /(?:こちらは|以下は|下記は|詳細は)([^\s、。！？,\.]+\.(?:pdf|xlsx?|docx?|txt|csv|pptx?))(?:に|で|から|の|を|より)/gi
-      ];
-      
-      // 従来のソースパターンで検索
-      if (!sourceInfo) {
-        for (const pattern of sourcePatterns) {
-          const sourceMatch = responseText.match(pattern);
-          if (sourceMatch) {
-            const extractedSource = sourceMatch[1].trim();
-            if (extractedSource) {
-              sourceInfo = extractedSource;
-              console.log("✅ 従来パターンから抽出した情報ソース:", sourceInfo);
-              // 情報ソース部分をレスポンステキストから削除
-              responseText = responseText.replace(pattern, '').trim();
-              console.log("情報ソース除去後のテキスト:", responseText);
-              break;
-            }
-          }
-        }
-      }
-      
-      // 📄 新機能：ファイル名検出による自動ソース抽出
-      if (!sourceInfo) {
-        const detectedFiles = new Set();
-        
-        // 各ファイル名パターンでチェック
-        for (const pattern of fileNamePatterns) {
-          const matches = responseText.matchAll(pattern);
-          for (const match of matches) {
-            if (match[1]) {
-              const fileName = match[1].trim();
-              if (fileName && fileName.length > 0) {
-                detectedFiles.add(fileName);
-                console.log("🔍 ファイル名を検出:", fileName);
-              }
-            }
-          }
-        }
-        
-        // 検出されたファイル名をソース情報として設定
-        if (detectedFiles.size > 0) {
-          sourceInfo = Array.from(detectedFiles).join(', ');
-          console.log("✅ ファイル名から自動抽出したソース情報:", sourceInfo);
-        }
-      }
-      
-      // 📋 追加：シンプルなファイル名パターンも検索
-      if (!sourceInfo) {
-        // ファイル名のような単語を検索（より緩い条件）
-        const simpleFilePattern = /([a-zA-Z0-9_\-（）()一-龠ァ-ヴｱ-ﾝ]+\.(?:pdf|xlsx?|docx?|txt|csv|pptx?))/gi;
-        const simpleMatches = responseText.match(simpleFilePattern);
-        if (simpleMatches && simpleMatches.length > 0) {
-          // 重複を除去して最初の3つまで
-          const uniqueFiles = [...new Set(simpleMatches)].slice(0, 3);
-          sourceInfo = uniqueFiles.join(', ');
-          console.log("✅ シンプルパターンから抽出したソース情報:", sourceInfo);
-        }
-      }
-      
-      // 🆕 最終フォールバック：資料参照を示唆するキーワードがある場合
-      if (!sourceInfo) {
-        const referenceKeywords = [
-          '記載されております',
-          '記載されています', 
-          '掲載されております',
-          '掲載されています',
-          '記載がございます',
-          '参照してください',
-          'をご確認ください',
-          'に基づいて',
-          '資料によると',
-          '文書に',
-          'ファイルに',
-          'データから'
+      try {
+        // 1. 従来の情報ソースパターン
+        const sourcePatterns = [
+          /(?:\n|^)\s*情報ソース[:：]\s*(.+?)(?:\n|$)/s,
+          /(?:\n|^)\s*参考資料[:：]\s*(.+?)(?:\n|$)/s,
+          /(?:\n|^)\s*参考[:：]\s*(.+?)(?:\n|$)/s,
+          /(?:\n|^)\s*ソース[:：]\s*(.+?)(?:\n|$)/s
         ];
         
-        const hasReference = referenceKeywords.some(keyword => 
-          responseText.includes(keyword)
-        );
+        // 2. 📄 新しいファイル名検出パターン（大幅強化）
+        const fileNamePatterns = [
+          // 「ファイル名」形式（拡張子あり）
+          /「([^」]+\.(?:pdf|xlsx?|docx?|txt|csv|pptx?))」/gi,
+          // 『ファイル名』形式（拡張子あり）
+          /『([^』]+\.(?:pdf|xlsx?|docx?|txt|csv|pptx?))』/gi,
+          // ( ファイル名 ) 形式
+          /\(\s*([^)]+\.(?:pdf|xlsx?|docx?|txt|csv|pptx?))\s*\)/gi,
+          // [ ファイル名 ] 形式
+          /\[\s*([^\]]+\.(?:pdf|xlsx?|docx?|txt|csv|pptx?))\s*\]/gi,
+          // "ファイル名" 形式
+          /"([^"]+\.(?:pdf|xlsx?|docx?|txt|csv|pptx?))"/gi,
+          // 'ファイル名' 形式
+          /'([^']+\.(?:pdf|xlsx?|docx?|txt|csv|pptx?))'/gi,
+          // ファイル名.拡張子 （前後に文字がない独立した形式）
+          /(?:^|\s)([^\s]+\.(?:pdf|xlsx?|docx?|txt|csv|pptx?))(?:\s|$)/gi,
+          // より具体的なファイル名パターン（日本語を含む）
+          /([あ-んア-ンー一-龯a-zA-Z0-9\-_]+\.(?:pdf|xlsx?|docx?|txt|csv|pptx?))/gi
+        ];
         
-        if (hasReference) {
-          // 「」や『』内の文字列を検索してソース候補を探す
-          const quotedContent = [];
-          const quotedPatterns = [
-            /「([^」]+)」/g,
-            /『([^』]+)』/g,
-            /"([^"]+)"/g
-          ];
+        console.log("🔍 ソース抽出処理中...");
+        
+        // ソース情報の抽出とクリーンアップ処理
+        if (!sourceInfo && responseText) {
+          const sourcesToExtract = [];
           
-          quotedPatterns.forEach(pattern => {
-            const matches = responseText.matchAll(pattern);
-            for (const match of matches) {
-              if (match[1] && match[1].length > 2) {
-                quotedContent.push(match[1]);
+          // 従来のソースパターンチェック
+          for (const pattern of sourcePatterns) {
+            const match = responseText.match(pattern);
+            if (match && match[1]) {
+              sourcesToExtract.push(match[1].trim());
+              // マッチした部分をレスポンステキストから削除
+              responseText = responseText.replace(pattern, '\n').trim();
+            }
+          }
+          
+          // ファイル名パターンチェック
+          const fileMatches = new Set<string>();
+          for (const pattern of fileNamePatterns) {
+            let match;
+            while ((match = pattern.exec(responseText)) !== null) {
+              const fileName = match[1].trim();
+              if (fileName && fileName.length > 3) { // 最小長チェック
+                fileMatches.add(fileName);
               }
             }
-          });
+          }
           
-          if (quotedContent.length > 0) {
-            sourceInfo = quotedContent.slice(0, 3).join(', ');
-            console.log("✅ フォールバック：引用文から抽出したソース情報:", sourceInfo);
-          } else {
-            // 最後の手段：資料参照があることを示す
-            sourceInfo = "参考資料";
-            console.log("✅ フォールバック：最小限のソース情報を設定");
+          sourcesToExtract.push(...Array.from(fileMatches));
+          
+          if (sourcesToExtract.length > 0) {
+            sourceInfo = sourcesToExtract.join(', ');
+            console.log("📄 テキストから抽出したソース情報:", sourceInfo);
           }
         }
+        
+        console.log("✅ ソース抽出処理完了");
+      } catch (extractError) {
+        console.error("⚠️ ソース抽出処理エラー:", extractError);
       }
-      
-      // 最終的なソース情報をログ出力
-      console.log("🎯 最終的なソース情報:", sourceInfo);
+
       console.log("📝 最終的なレスポンステキスト:", responseText);
       
       // メッセージにBOT応答を追加
-      setMessages((prev) => [
-        ...prev,
-        {
-          text: responseText,
-          isUser: false,
-          source: sourceInfo,
-        },
-      ]);
+      try {
+        console.log("🔄 メッセージ追加処理開始");
+        setMessages((prev) => [
+          ...prev,
+          {
+            text: responseText,
+            isUser: false,
+            source: sourceInfo,
+          },
+        ]);
+        console.log("✅ メッセージ追加完了");
+      } catch (messageError) {
+        console.error("❌ メッセージ追加エラー:", messageError);
+        throw new Error(`メッセージ追加に失敗: ${messageError.message}`);
+      }
 
       // 利用制限の表示を更新（無制限アカウントでない場合）
-      if (!isUnlimited && response.data.remaining_questions !== undefined) {
-        console.log("利用制限更新:", {
-          remaining_questions: response.data.remaining_questions,
-          limit_reached: response.data.limit_reached,
-        });
-        
-        // AuthContextの状態を更新
-        updateRemainingQuestions(response.data.remaining_questions);
+      try {
+        if (!isUnlimited && response.data.remaining_questions !== undefined) {
+          console.log("🔄 利用制限更新処理開始");
+          console.log("利用制限更新:", {
+            remaining_questions: response.data.remaining_questions,
+            limit_reached: response.data.limit_reached,
+          });
+          
+          // AuthContextの状態を更新
+          updateRemainingQuestions(response.data.remaining_questions);
 
-        // 制限に達した場合はアラートを表示
-        if (response.data.limit_reached) {
-          console.log("質問制限に達しました");
-          setShowLimitReachedAlert(true);
+          // 制限に達した場合はアラートを表示
+          if (response.data.limit_reached) {
+            console.log("質問制限に達しました");
+            setShowLimitReachedAlert(true);
+          }
+          console.log("✅ 利用制限更新完了");
         }
+      } catch (limitError) {
+        console.error("⚠️ 利用制限更新エラー:", limitError);
+        // 利用制限更新エラーは致命的ではないので、処理を続行
       }
+      
+      console.log("🎉 チャット処理完了");
+      
     } catch (error: any) {
-      console.error("チャットエラー:", error.response || error);
+      console.error("❌ チャットエラー詳細:", {
+        error,
+        response: error.response,
+        request: error.request,
+        message: error.message,
+        stack: error.stack
+      });
+
+      // エラーの詳細な分析
+      let errorDetails = "";
+      if (error.response) {
+        errorDetails = `HTTP ${error.response.status}: ${error.response.statusText}`;
+        console.error("サーバーエラー詳細:", {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data,
+          headers: error.response.headers
+        });
+      } else if (error.request) {
+        errorDetails = "ネットワークエラー: レスポンスが受信されませんでした";
+        console.error("ネットワークエラー詳細:", error.request);
+      } else {
+        errorDetails = `クライアントエラー: ${error.message}`;
+        console.error("クライアントエラー詳細:", error.message);
+      }
 
       // エラーメッセージの取得
-      let errorMessage =
-        "すみません、エラーが発生しました。もう一度お試しください。";
+      let errorMessage = "すみません、エラーが発生しました。もう一度お試しください。";
+      
       if (error.response?.data?.detail) {
         errorMessage = error.response.data.detail;
       } else if (error.message) {
-        errorMessage = error.message;
+        errorMessage = `${error.message} (${errorDetails})`;
+      } else {
+        errorMessage = `システムエラーが発生しました (${errorDetails})`;
       }
 
       // 利用制限エラーの場合は特別な処理
@@ -613,6 +602,7 @@ function ChatInterface() {
         errorMessage = error.response.data.detail;
       }
 
+      console.log("🔄 エラーメッセージをチャットに追加:", errorMessage);
       setMessages((prev) => [
         ...prev,
         {
@@ -621,6 +611,7 @@ function ChatInterface() {
         },
       ]);
     } finally {
+      console.log("🔄 チャット処理終了 - ローディング状態をクリア");
       setIsLoading(false);
     }
   };
@@ -705,6 +696,33 @@ function ChatInterface() {
 
   const handleCloseNotifications = () => {
     setShowNotificationModal(false);
+  };
+
+  // テンプレート関連のイベントハンドラー
+  const handleOpenTemplateModal = () => {
+    setShowTemplateModal(true);
+  };
+
+  const handleCloseTemplateModal = () => {
+    setShowTemplateModal(false);
+  };
+
+  const handleTemplateSelect = (processedTemplate: string) => {
+    setInput(processedTemplate);
+    setShowTemplateModal(false);
+    
+    // テンプレート選択後、入力フィールドにフォーカスを当てる
+    setTimeout(() => {
+      const inputElement = document.querySelector('textarea[placeholder*="質問を入力"]');
+      if (inputElement) {
+        (inputElement as HTMLTextAreaElement).focus();
+        // カーソルを最後に移動
+        (inputElement as HTMLTextAreaElement).setSelectionRange(
+          processedTemplate.length, 
+          processedTemplate.length
+        );
+      }
+    }, 100);
   };
 
 
@@ -923,6 +941,33 @@ function ChatInterface() {
               />
             </Box>
           )}
+
+          {/* テンプレートボタン */}
+          <Tooltip title="プロンプトテンプレート" placement="bottom">
+            <IconButton
+              color="inherit"
+              onClick={handleOpenTemplateModal}
+              sx={{
+                ml: { xs: 0.5, sm: 0.75 },
+                bgcolor: "rgba(255, 255, 255, 0.15)",
+                backdropFilter: "blur(4px)",
+                p: { xs: 1.2, sm: 1.5 },
+                width: { xs: 40, sm: 46 },
+                height: { xs: 40, sm: 46 },
+                "&:hover": {
+                  bgcolor: "rgba(255, 255, 255, 0.25)",
+                  transform: "translateY(-2px)",
+                  boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                },
+                transition: "all 0.2s ease",
+                boxShadow: "0 2px 6px rgba(0, 0, 0, 0.12)",
+                borderRadius: "14px",
+                border: "1px solid rgba(255, 255, 255, 0.3)",
+              }}
+            >
+              <PostAddIcon sx={{ fontSize: { xs: "1.3rem", sm: "1.5rem" } }} />
+            </IconButton>
+          </Tooltip>
           
           {messages.length > 0 && (
             <Tooltip title="チャット履歴をクリア" placement="bottom">
@@ -1280,14 +1325,15 @@ function ChatInterface() {
             placeholder={isLoading ? "AIが回答を準備中..." : "質問を入力してください..."}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => {
+            onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && input.trim()) {
                 e.preventDefault();
                 handleSend();
               }
             }}
             multiline
-            maxRows={1}
+            maxRows={input.split('\n').length > 1 ? Math.min(input.split('\n').length, 6) : 1}
+            minRows={1}
             variant="outlined"
             disabled={isLoading}
             sx={{
@@ -1301,7 +1347,8 @@ function ChatInterface() {
                   : "0 2px 6px rgba(37, 99, 235, 0.04)",
                 pr: { xs: 3.2, sm: 3.5 },
                 transition: "all 0.3s ease",
-                maxHeight: { xs: "42px", sm: "44px", md: "46px" },
+                minHeight: { xs: "42px", sm: "44px", md: "46px" },
+                maxHeight: input.split('\n').length > 1 ? "auto" : { xs: "42px", sm: "44px", md: "46px" },
                 overflowY: "hidden",
                 border: isLoading 
                   ? "1px solid rgba(37, 99, 235, 0.15)" 
@@ -1812,6 +1859,13 @@ function ChatInterface() {
           onNotificationUpdate={() => {}}
         />
       )}
+
+      {/* テンプレート選択モーダル */}
+      <TemplateSelectionModal
+        open={showTemplateModal}
+        onClose={handleCloseTemplateModal}
+        onTemplateSelect={handleTemplateSelect}
+      />
     </Box>
   );
 }

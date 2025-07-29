@@ -341,7 +341,7 @@ function LoginPage() {
                 component="h2"
                 sx={{
                   fontWeight: 600,
-                  color: "text.primary",
+                  color: "#2563EB",
                   mb: 3,
                   textAlign: "center",
                 }}
@@ -483,12 +483,12 @@ function LoginPage() {
                 target="_blank"
                 rel="noopener"
                 sx={{
-                  color: "text.secondary",
+                  color: "#64748b",
                   textDecoration: "none",
                   fontSize: "0.875rem",
                   transition: "color 0.2s",
                   "&:hover": {
-                    color: "primary.main",
+                    color: "#2563EB",
                   },
                 }}
               >
@@ -498,12 +498,12 @@ function LoginPage() {
                 component={RouterLink}
                 to="/guide"
                 sx={{
-                  color: "text.secondary",
+                  color: "#64748b",
                   textDecoration: "none",
                   fontSize: "0.875rem",
                   transition: "color 0.2s",
                   "&:hover": {
-                    color: "primary.main",
+                    color: "#2563EB",
                   },
                 }}
               >
@@ -513,12 +513,12 @@ function LoginPage() {
                 component={RouterLink}
                 to="/password-reset"
                 sx={{
-                  color: "text.secondary",
+                  color: "#64748b",
                   textDecoration: "none",
                   fontSize: "0.875rem",
                   transition: "color 0.2s",
                   "&:hover": {
-                    color: "primary.main",
+                    color: "#2563EB",
                   },
                 }}
               >
@@ -527,12 +527,12 @@ function LoginPage() {
               <Link
                 href="#"
                 sx={{
-                  color: "text.secondary",
+                  color: "#64748b",
                   textDecoration: "none",
                   fontSize: "0.875rem",
                   transition: "color 0.2s",
                   "&:hover": {
-                    color: "primary.main",
+                    color: "#2563EB",
                   },
                 }}
               >

@@ -9,7 +9,15 @@ import asyncio
 import re
 from typing import List, Dict, Optional, Tuple
 from dotenv import load_dotenv
-import google.generativeai as genai
+# 新しいGoogle GenAI SDKをインポート
+try:
+    from google import genai
+    from google.genai import types
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    genai = None
+    types = None
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import json
@@ -136,7 +144,13 @@ class UltraAccurateRAGProcessor:
         ✏️ Step 1. 質問入力（超高精度版）
         質問の前処理と意図分析を実行
         """
-        logger.info(f"✏️ Step 1: 超高精度質問受付 - '{question[:50]}...'")
+        # ChatMessageオブジェクトから文字列を取得
+        if hasattr(question, 'text'):
+            question_text = question.text
+        else:
+            question_text = str(question)
+        
+        logger.info(f"✏️ Step 1: 超高精度質問受付 - '{question_text[:50]}...'")
         
         if not question or not question.strip():
             raise ValueError("質問が空です")
@@ -170,11 +184,11 @@ class UltraAccurateRAGProcessor:
         try:
             # 検索戦略に基づいた結果数調整
             if intent_analysis['is_company_specific']:
-                max_results = 25  # 会社特化の場合は多めに取得
+                max_results = 120  # 会社特化の場合は多めに取得
             elif intent_analysis['is_contact_inquiry']:
-                max_results = 20
+                max_results = 100
             else:
-                max_results = 15
+                max_results = 80
             
             # 超高精度検索実行
             search_results = await self.ultra_search.ultra_accurate_search(
@@ -256,7 +270,7 @@ class UltraAccurateRAGProcessor:
             
             # コンテキストピースの構築
             context_piece = f"""
-【文書: {result.document_name} - チャンク{result.chunk_index}】
+【参考資料{i+1}: {result.document_name}】
 信頼度: {result.confidence_score:.3f} | 関連度: {result.relevance_score:.3f}
 
 {result.content}
@@ -267,13 +281,13 @@ class UltraAccurateRAGProcessor:
             if total_length + len(context_piece) <= self.max_context_length:
                 context_parts.append(context_piece)
                 total_length += len(context_piece)
-                logger.info(f"  {i+1}. 追加: {result.document_name} [チャンク{result.chunk_index}] ({len(context_piece)}文字)")
+                logger.info(f"  {i+1}. 追加: {result.document_name} (セクション{result.chunk_index}) ({len(context_piece)}文字)")
             else:
                 logger.info(f"  {i+1}. 文字数制限により除外")
                 break
         
         final_context = "".join(context_parts)
-        logger.info(f"✅ 超高精度コンテキスト構築完了: {len(context_parts)-1}個のチャンク、{len(final_context)}文字")
+        logger.info(f"✅ 超高精度コンテキスト構築完了: {len(context_parts)}個の参考資料、{len(final_context)}文字")
         
         return final_context
     
@@ -342,8 +356,8 @@ class UltraAccurateRAGProcessor:
                 generation_config=genai.types.GenerationConfig(
                     temperature=0.1,  # より一貫した回答のため低めに設定
                     top_p=0.8,
-                    top_k=40,
-                    max_output_tokens=4000,
+                    top_k=150,
+                    max_output_tokens=8192,
                 )
             )
             
@@ -433,7 +447,13 @@ class UltraAccurateRAGProcessor:
         🎯 超高精度RAG処理のメインフロー
         全ステップを統合した最高精度の処理
         """
-        logger.info(f"🎯 超高精度RAG処理開始: '{question[:50]}...'")
+        # ChatMessageオブジェクトから文字列を取得
+        if hasattr(question, 'text'):
+            question_text = question.text
+        else:
+            question_text = str(question)
+        
+        logger.info(f"🎯 超高精度RAG処理開始: '{question_text[:50]}...'")
         
         try:
             # Step 1: 質問受付
@@ -462,7 +482,27 @@ class UltraAccurateRAGProcessor:
                 }
             
             # Step 4: プロンプト構築
-            prompt = self.build_ultra_prompt(search_data, context)
+            prompt = f"""あなたは{company_name}の社内向け丁寧で親切なアシスタントです。
+
+回答の際の重要な指針：
+• 回答は丁寧な敬語で行ってください。
+• **手元の参考資料に関連する情報が含まれている場合は、それを活用して回答してください。**
+• **参考資料の情報から推測できることや、関連する内容があれば積極的に提供してください。**
+• **完全に一致する情報がなくても、部分的に関連する情報があれば有効活用してください。**
+• 情報の出典として「ファイル名」や「資料名」までは明示して構いませんが、技術的な内部管理情報（列番号、行番号、分割番号、データベースのIDなど）は一切出力しないでください
+• 代表者名や会社名など、ユーザーが聞いている情報だけを端的に答え、表形式やファイル構造の言及は不要です。
+• **全く関連性がない場合のみ、その旨を丁寧に説明してください。**
+• 専門的な内容も、日常の言葉で分かりやすく説明してください。
+• 手続きや連絡先については、正確な情報を漏れなくご案内してください。
+• 文末には「ご不明な点がございましたら、お気軽にお申し付けください。」と添えてください。
+
+お客様からのご質問：
+{question}
+
+手元の参考資料：
+{final_context}
+
+それでは、ご質問にお答えいたします："""
             
             # Step 5: 回答生成
             final_result = await self.step5_generate_ultra_response(search_data, context, prompt)

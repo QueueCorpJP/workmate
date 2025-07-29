@@ -13,12 +13,12 @@
 import os
 import logging
 import asyncio
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from dotenv import load_dotenv
-import google.generativeai as genai
+import requests
+import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
-import json
 from datetime import datetime
 import urllib.parse  # 追加
 import re # 追加
@@ -34,8 +34,8 @@ class RealtimeRAGProcessor:
     def __init__(self):
         """初期化"""
         self.use_vertex_ai = False  # Vertex AIを無効化
-        self.embedding_model = "gemini-embedding-exp-03-07"  # Geminiエンベディングモデルを使用
-        self.expected_dimensions = 3072  # 実際のデータに合わせて3072次元に変更
+        self.embedding_model = "gemini-embedding-001"  # Geminiエンベディングモデルを使用
+        self.expected_dimensions = 3072  # gemini-embedding-001は3072次元
         
         # API キーの設定
         self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
@@ -46,9 +46,8 @@ class RealtimeRAGProcessor:
         if not self.api_key:
             raise ValueError("GOOGLE_API_KEY または GEMINI_API_KEY 環境変数が設定されていません")
         
-        # Gemini APIクライアントの初期化（チャット用）
-        genai.configure(api_key=self.api_key)
-        self.chat_client = genai.GenerativeModel(self.chat_model)
+        # Gemini API の直接呼び出し用URL
+        self.api_base_url = "https://generativelanguage.googleapis.com/v1beta"
         
         # Gemini Embeddingクライアントの初期化（埋め込み用）
         try:
@@ -69,7 +68,7 @@ class RealtimeRAGProcessor:
         
         logger.info(f"✅ リアルタイムRAGプロセッサ初期化完了: エンベディング={self.embedding_model} ({self.expected_dimensions}次元)")
 
-    async def _keyword_search(self, query: str, company_id: Optional[str], limit: int = 10) -> List[Dict]:
+    async def _keyword_search(self, query: str, company_id: Optional[str], limit: int = 40) -> List[Dict]:
         """
         キーワードベースの検索（ILIKEを使用）
         """
@@ -136,7 +135,13 @@ class RealtimeRAGProcessor:
         ✏️ Step 1. 質問入力
         ユーザーがチャットボットに質問を入力
         """
-        logger.info(f"✏️ Step 1: 質問受付 - '{question[:50]}...'")
+        # ChatMessageオブジェクトから文字列を取得
+        if hasattr(question, 'text'):
+            question_text = question.text
+        else:
+            question_text = str(question)
+        
+        logger.info(f"✏️ Step 1: 質問受付 - '{question_text[:50]}...'")
         
         if not question or not question.strip():
             raise ValueError("質問が空です")
@@ -155,12 +160,12 @@ class RealtimeRAGProcessor:
     async def step2_generate_embedding(self, question: str) -> List[float]:
         """
         🧠 Step 2. embedding 生成
-        Gemini embedding-exp-03-07 を使って、質問文をベクトルに変換（768次元）
+        Gemini embedding-001 を使って、質問文をベクトルに変換（3072次元）
         """
         logger.info(f"🧠 Step 2: エンベディング生成中...")
         
         try:
-            # gemini-embedding-exp-03-07モデルで3072次元を生成
+            # gemini-embedding-001モデルで3072次元を生成
             embedding_vector = await self.embedding_client.generate_embedding(
                 question
             )
@@ -179,7 +184,7 @@ class RealtimeRAGProcessor:
             logger.error(f"❌ Step 2エラー: エンベディング生成失敗 - {e}")
             raise
     
-    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 20) -> List[Dict]:
+    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 200) -> List[Dict]:
         """
         🔍 Step 3. 類似チャンク検索（Top-K）
         Supabaseの chunks テーブルから、ベクトル距離が近いチャンクを pgvector を用いて取得
@@ -191,9 +196,11 @@ class RealtimeRAGProcessor:
             with psycopg2.connect(self.db_url, cursor_factory=RealDictCursor) as conn:
                 with conn.cursor() as cur:
                     # 🔍 まず、埋め込みベクトルが利用可能なチャンクでベクトル類似検索
+                    
+                    # Convert query vector to proper string format and cast to vector type
                     vector_str = '[' + ','.join(map(str, query_embedding)) + ']'
                     
-                    sql_vector = """
+                    sql_vector = f"""
                     SELECT
                         c.id,
                         c.doc_id,
@@ -201,7 +208,7 @@ class RealtimeRAGProcessor:
                         c.content,
                         ds.name as document_name,
                         ds.type as document_type,
-                        1 - (c.embedding <=> %s) as similarity_score,
+                        1 - (c.embedding <=> '{vector_str}'::vector) as similarity_score,
                         'vector' as search_method
                     FROM chunks c
                     LEFT JOIN document_sources ds ON ds.id = c.doc_id
@@ -210,7 +217,7 @@ class RealtimeRAGProcessor:
                       AND LENGTH(c.content) > 10
                     """
                     
-                    params_vector = [vector_str]
+                    params_vector = []
                     
                     # 会社IDフィルタ（オプション）
                     if company_id:
@@ -218,8 +225,8 @@ class RealtimeRAGProcessor:
                         params_vector.append(company_id)
                     
                     # ベクトル距離順でソート
-                    sql_vector += " ORDER BY c.embedding <=> %s LIMIT %s"
-                    params_vector.extend([vector_str, top_k])
+                    sql_vector += f" ORDER BY c.embedding <=> '{vector_str}'::vector LIMIT %s"
+                    params_vector.append(top_k)
                     
                     logger.info(f"実行SQL: ベクトル類似検索 (Top-{top_k})")
                     cur.execute(sql_vector, params_vector)
@@ -246,7 +253,7 @@ class RealtimeRAGProcessor:
                         })
                     
                     # 🔍 PDFファイルの結果が少ない場合、フォールバック検索を実行
-                    if pdf_vector_count < 3:  # PDFファイルの結果が3件未満の場合
+                    if pdf_vector_count < 10:  # PDFファイルの結果が10件未満の場合
                         logger.info("📄 PDFファイルの結果が少ないため、フォールバック検索を実行")
                         
                         # 埋め込みベクトルがないチャンクに対してテキスト検索を実行
@@ -305,7 +312,7 @@ class RealtimeRAGProcessor:
                         file_type_distribution[doc_type] = file_type_distribution.get(doc_type, 0) + 1
                     
                     # PDFファイルの結果が依然として少ない場合
-                    if file_type_distribution.get('pdf', 0) < 2:
+                    if file_type_distribution.get('pdf', 0) < 5:
                         logger.info("📄 PDFファイル結果が不足しているため、追加検索を実行")
                         
                         # 会社全体のPDFファイルから代表的なチャンクを取得
@@ -417,7 +424,7 @@ class RealtimeRAGProcessor:
             logger.error(f"❌ Step 3エラー: 類似検索失敗 - {e}")
             raise
     
-    async def step4_generate_answer(self, question: str, similar_chunks: List[Dict], company_name: str = "お客様の会社", company_id: str = None) -> str:
+    async def step4_generate_answer(self, question: str, similar_chunks: List[Dict], company_name: str = "お客様の会社", company_id: str = None) -> Dict[str, Any]:
         """
         💡 Step 4. LLMへ送信
         Top-K チャンクと元の質問を Gemini Flash 2.5 に渡して、要約せずに「原文ベース」で回答を生成
@@ -433,13 +440,13 @@ class RealtimeRAGProcessor:
             print("\n" + "="*80)
             print(f"💡 【Step 4: LLM回答生成 - コンテキスト構築】")
             print(f"📊 利用可能チャンク数: {len(similar_chunks)}個")
-            print(f"📏 最大コンテキスト長: {80000:,}文字")  # 制限を少し下げる
+            print(f"📏 最大コンテキスト長: {200000:,}文字")  # さらに多くの情報を含める
             print("="*80)
             
             # コンテキスト構築（原文ベース）
             context_parts = []
             total_length = 0
-            max_context_length = 80000  # 8万文字に制限（安全のため）
+            max_context_length = 200000  # 20万文字に制限（さらに多くの情報を含める）
             used_chunks = []
             
             for i, chunk in enumerate(similar_chunks):
@@ -536,6 +543,12 @@ class RealtimeRAGProcessor:
 • 専門的な内容も分かりやすく説明
 • 文末には「ご不明な点がございましたら、お気軽にお申し付けください。」を追加
 
+**【その他の指針】**
+• 情報の出典としてファイル名は明示可能ですが、内部構造情報（行番号等）は出力しない
+• 専門的な内容も分かりやすく説明
+• 実際に参照した資料のファイル名を回答文中で明確に言及してください
+• 文末には「ご不明な点がございましたら、お気軽にお申し付けください。」を追加
+
 ご質問：
 {question}
 
@@ -547,65 +560,201 @@ class RealtimeRAGProcessor:
             logger.info("🤖 Gemini Flash 2.5に回答生成を依頼中...")
             logger.info(f"📏 プロンプト長: {len(prompt):,}文字")
             
-            # Gemini Flash 2.5で回答生成（設定を調整）
-            response = self.chat_client.generate_content(
-                prompt,
-                generation_config=genai.GenerationConfig(
-                    temperature=0.2,  # 少し創造性を上げる
-                    max_output_tokens=4096,  # 出力トークン数を増加
-                    top_p=0.9,  # 多様性を少し上げる
-                    top_k=50    # より多くの候補を考慮
-                )
-            )
+            # Gemini API への直接リクエスト
+            api_url = f"{self.api_base_url}/models/{self.chat_model}:generateContent"
             
-            logger.info("📥 Geminiからのレスポンス受信完了")
+            headers = {
+                "Content-Type": "application/json",
+                "x-goog-api-key": self.api_key
+            }
             
-            # レスポンス処理の改善（詳細なデバッグ情報付き）
-            answer = None
+            request_data = {
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": prompt
+                            }
+                        ]
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "maxOutputTokens": 8192,
+                    "topP": 0.8,
+                    "topK": 40
+                }
+            }
             
-            if response:
-                logger.info(f"✅ レスポンスオブジェクト存在: {type(response)}")
+            try:
+                response = requests.post(api_url, headers=headers, json=request_data, timeout=60)
+                response.raise_for_status()
                 
-                # 候補の確認
-                if hasattr(response, 'candidates') and response.candidates:
-                    logger.info(f"📋 候補数: {len(response.candidates)}")
+                logger.info("📥 Geminiからのレスポンス受信完了")
+                
+                response_data = response.json()
+                answer = None
+                
+                if "candidates" in response_data and response_data["candidates"]:
+                    logger.info(f"📋 候補数: {len(response_data['candidates'])}")
                     
                     try:
-                        # まず response.text を試す
-                        answer = response.text
-                        if answer:
-                            answer = answer.strip()
-                            logger.info("✅ response.textから回答を取得")
-                        else:
-                            logger.warning("⚠️ response.textが空")
-                    except (ValueError, AttributeError) as e:
-                        logger.warning(f"⚠️ response.text使用不可: {e}")
-                        
-                        # partsから手動で抽出
-                        try:
-                            parts = []
-                            for i, candidate in enumerate(response.candidates):
-                                logger.info(f"   候補{i+1}: {type(candidate)}")
+                        candidate = response_data["candidates"][0]
+                        if "content" in candidate and "parts" in candidate["content"]:
+                            parts = candidate["content"]["parts"]
+                            if parts and "text" in parts[0]:
+                                answer = parts[0]["text"]
+                                logger.info(f"✅ 回答取得成功: {len(answer)}文字")
                                 
-                                if hasattr(candidate, 'content') and candidate.content:
-                                    if hasattr(candidate.content, 'parts'):
-                                        for j, part in enumerate(candidate.content.parts):
-                                            logger.info(f"     パート{j+1}: {type(part)}")
-                                            if hasattr(part, 'text') and part.text:
-                                                parts.append(part.text)
-                                                logger.info(f"     テキスト長: {len(part.text)}文字")
-                            
-                            if parts:
-                                answer = ''.join(parts).strip()
-                                logger.info("✅ partsから回答を抽出")
+                                # データベースの関連テーブルを使って正確なソース情報を取得
+                                logger.info("🔍 データベース関連テーブルからソース情報取得開始...")
+                                
+                                # used_chunksに含まれるdoc_idを抽出
+                                doc_ids = []
+                                for chunk in used_chunks:
+                                    doc_id = chunk.get('document_id') or chunk.get('doc_id')
+                                    if doc_id and doc_id not in doc_ids:
+                                        doc_ids.append(doc_id)
+                                
+                                logger.info(f"📄 検索対象doc_id: {doc_ids}")
+                                
+                                # データベースからdocument_sourcesテーブルを検索してファイル名を取得
+                                actual_source_names = []
+                                if doc_ids:
+                                    try:
+                                        from .database import get_database_connection
+                                        
+                                        with get_database_connection() as conn:
+                                            with conn.cursor() as cur:
+                                                # document_sources テーブルから name を取得
+                                                placeholders = ','.join(['%s'] * len(doc_ids))
+                                                query = f"""
+                                                SELECT id, name, type 
+                                                FROM document_sources 
+                                                WHERE id IN ({placeholders}) AND active = true
+                                                """
+                                                
+                                                cur.execute(query, doc_ids)
+                                                source_results = cur.fetchall()
+                                                
+                                                logger.info(f"📄 データベース検索結果: {len(source_results)}件")
+                                                
+                                                for row in source_results:
+                                                    source_id, source_name, source_type = row
+                                                    if source_name and source_name not in actual_source_names:
+                                                        actual_source_names.append(source_name)
+                                                        logger.info(f"✅ 有効ソース: {source_name} (ID: {source_id}, Type: {source_type})")
+                                                
+                                    except Exception as db_error:
+                                        logger.error(f"❌ データベースからのソース取得エラー: {db_error}")
+                                        # エラー時はused_chunksの既存情報を使用
+                                        actual_source_names = [chunk.get('document_name', 'Unknown') for chunk in used_chunks if chunk.get('document_name')]
+                                
+                                # used_chunksを実際に取得されたソース名でフィルタリング
+                                filtered_used_chunks = []
+                                for chunk in used_chunks:
+                                    chunk_doc_name = chunk.get('document_name', '')
+                                    if chunk_doc_name in actual_source_names:
+                                        filtered_used_chunks.append(chunk)
+                                
+                                logger.info(f"🎯 データベース関連結果: {len(filtered_used_chunks)}件のチャンクが実際のソースと一致")
+                                
+                                # さらに回答内容との関連性をチェックして、実際に使用されたチャンクのみを特定
+                                final_used_chunks = []
+                                actually_used_sources = []
+                                
+                                for chunk in filtered_used_chunks:
+                                    chunk_content = chunk.get('content', '') or chunk.get('snippet', '')
+                                    chunk_doc_name = chunk.get('document_name', '')
+                                    
+                                    if chunk_content and len(chunk_content) > 20:
+                                        # チャンク内容のキーフレーズを抽出（3文字以上の単語）
+                                        import re
+                                        key_phrases = re.findall(r'\b\w{3,}\b', chunk_content)
+                                        
+                                        # 回答文中にチャンクのキーフレーズが含まれているかチェック
+                                        matched_phrases = 0
+                                        for phrase in key_phrases[:15]:  # 最初の15個のフレーズで判定（拡張）
+                                            # 1. 完全一致
+                                            if phrase in answer:
+                                                matched_phrases += 1
+                                            # 2. 部分一致（3文字以上で、長いフレーズの場合）
+                                            elif len(phrase) >= 6:
+                                                for answer_word in answer.split():
+                                                    if phrase in answer_word or answer_word in phrase:
+                                                        matched_phrases += 0.5  # 部分マッチは0.5点
+                                                        break
+                                        
+                                        # 一定以上のフレーズマッチがあれば実際に使用されたと判定
+                                        # 分母を調整（部分マッチも考慮）
+                                        max_possible_matches = min(len(key_phrases), 15)
+                                        relevance_score = matched_phrases / max_possible_matches if max_possible_matches > 0 else 0
+                                        
+                                        # 関連性閾値を緩和し、短いチャンクには特別処理
+                                        min_threshold = 0.05  # 5%に緩和
+                                        
+                                        # 短いチャンク（100文字未満）は閾値を更に緩和
+                                        if len(chunk_content) < 100:
+                                            min_threshold = 0.02  # 2%に緩和
+                                            logger.info(f"📝 短いチャンク検出: {chunk_doc_name} (長さ: {len(chunk_content)}文字)")
+                                        
+                                        if relevance_score >= min_threshold:
+                                            final_used_chunks.append(chunk)
+                                            if chunk_doc_name not in actually_used_sources:
+                                                actually_used_sources.append(chunk_doc_name)
+                                            logger.info(f"✅ 使用チャンク確定: {chunk_doc_name} (関連度: {relevance_score:.2f}, 閾値: {min_threshold:.2f})")
+                                        else:
+                                            logger.info(f"❌ 使用チャンク除外: {chunk_doc_name} (関連度: {relevance_score:.2f}, 閾値: {min_threshold:.2f})")
+                                
+                                # 結果が不十分な場合の包括的フォールバック（5件まで拡張）
+                                if len(final_used_chunks) < 5 and filtered_used_chunks:
+                                    logger.warning(f"⚠️ 関連性チェック結果が不十分（{len(final_used_chunks)}件）。高類似度チャンクを追加")
+                                    
+                                    # 類似度順でソート
+                                    sorted_chunks = sorted(filtered_used_chunks, key=lambda x: x.get('similarity_score', 0), reverse=True)
+                                    
+                                    # 上位チャンクを追加（最大10件まで）
+                                    for chunk in sorted_chunks[:10]:
+                                        chunk_doc_name = chunk.get('document_name', '')
+                                        if chunk not in final_used_chunks:
+                                            final_used_chunks.append(chunk)
+                                            if chunk_doc_name and chunk_doc_name not in actually_used_sources:
+                                                actually_used_sources.append(chunk_doc_name)
+                                                logger.info(f"🔄 フォールバック追加: {chunk_doc_name} (類似度: {chunk.get('similarity_score', 0):.2f})")
+                                        
+                                        # 最低7件確保したら終了
+                                        if len(final_used_chunks) >= 7:
+                                            break
+                                
+                                # 最終安全チェック：全て除外された場合の緊急フォールバック
+                                if not final_used_chunks and used_chunks:
+                                    logger.error("🚨 全チャンクが除外されました。元のused_chunksを使用（安全装置）")
+                                    final_used_chunks = used_chunks[:3]  # 元の最大3件
+                                    actually_used_sources = list(set([chunk.get('document_name', 'Unknown') for chunk in final_used_chunks if chunk.get('document_name')]))
+                                
+                                logger.info(f"📁 最終確定ソース: {actually_used_sources}")
+                                logger.info(f"🎯 最終使用チャンク数: {len(final_used_chunks)}件")
+                                
+                                # フィルタリング結果を適用
+                                used_chunks = final_used_chunks
+                                    
                             else:
-                                logger.error("❌ partsからテキストを抽出できませんでした")
-                        except Exception as parts_error:
-                            logger.error(f"❌ parts抽出エラー: {parts_error}")
+                                logger.warning("⚠️ テキストパーツが空です")
+                        else:
+                            logger.warning("⚠️ コンテンツまたはパーツが空です")
+                            
+                    except Exception as e:
+                        logger.error(f"❌ レスポンス解析エラー: {e}")
+                        answer = None
                 else:
-                    logger.error("❌ 候補が存在しません")
-            else:
-                logger.error("❌ レスポンスオブジェクトが空です")
+                    logger.warning("⚠️ 無効なレスポンスまたは候補なし")
+                    
+            except requests.exceptions.RequestException as e:
+                logger.error(f"❌ API リクエストエラー: {e}")
+                answer = None
+            except Exception as e:
+                logger.error(f"❌ 予期しないエラー: {e}")
+                answer = None
             
             # 回答の検証と処理
             if answer and len(answer.strip()) > 0:
@@ -620,9 +769,15 @@ class RealtimeRAGProcessor:
 {answer}
 
 より詳細な情報が必要でしたら、具体的な項目をお教えください。参考資料から正確な情報を提供いたします。"""
-                    return fallback_answer
+                    return {
+                        "answer": fallback_answer,
+                        "used_chunks": used_chunks
+                    }
                 
-                return answer
+                return {
+                    "answer": answer,
+                    "used_chunks": used_chunks
+                }
             else:
                 logger.error("❌ LLMからの回答が空または取得できませんでした")
                 logger.error(f"   レスポンス詳細: {response}")
@@ -638,7 +793,10 @@ class RealtimeRAGProcessor:
                 
                 fallback_parts.append("\nより詳細な情報については、改めてお問い合わせください。")
                 
-                return "\n".join(fallback_parts)
+                return {
+                    "answer": "\n".join(fallback_parts),
+                    "used_chunks": used_chunks
+                }
         
         except Exception as e:
             logger.error(f"❌ Step 4エラー: LLM回答生成失敗 - {e}")
@@ -648,15 +806,18 @@ class RealtimeRAGProcessor:
             # エラー時でも可能な限り情報を提供
             error_response_parts = ["申し訳ございませんが、システムエラーが発生しました。"]
             
-            if similar_chunks and len(similar_chunks) > 0:
-                error_response_parts.append(f"\n検索では{len(similar_chunks)}件の関連資料が見つかりました。")
-                if similar_chunks[0].get('content'):
-                    first_content = similar_chunks[0]['content'][:200]
+            if used_chunks and len(used_chunks) > 0:
+                error_response_parts.append(f"\n検索では{len(used_chunks)}件の関連資料が見つかりました。")
+                if used_chunks[0].get('content'):
+                    first_content = used_chunks[0]['content'][:200]
                     error_response_parts.append(f"関連情報の一部: {first_content}...")
             
             error_response_parts.append("\nしばらく時間をおいてから再度お試しください。")
             
-            return "\n".join(error_response_parts)
+            return {
+                "answer": "\n".join(error_response_parts),
+                "used_chunks": []  # エラー時は空のリスト
+            }
     
     async def step5_display_answer(self, answer: str, metadata: Dict = None, used_chunks: List = None) -> Dict:
         """
@@ -675,31 +836,43 @@ class RealtimeRAGProcessor:
         if metadata:
             result.update(metadata)
         
-        # 使用されたチャンクの詳細情報を追加
+        # 使用されたチャンクの詳細情報を追加 - main.pyが期待する形式で返す
         if used_chunks:
             source_documents = []
+            seen_names = set()
             for chunk in used_chunks[:5]:  # 最大5個のソース文書
-                doc_info = {
-                    "document_name": chunk.get('document_name', 'Unknown Document'),
-                    "document_type": chunk.get('document_type', 'unknown'),
-                    "chunk_id": chunk.get('chunk_id', ''),
-                    "similarity_score": chunk.get('similarity_score', 0.0),
-                    "content_preview": (chunk.get('content', '') or '')[:100] + "..." if chunk.get('content') else ""
-                }
-                source_documents.append(doc_info)
+                doc_name = chunk.get('document_name', 'Unknown Document')
+                # 重複する名前は除外し、システム回答等は除外
+                if doc_name not in seen_names and doc_name not in ['システム回答', 'unknown', 'Unknown']:
+                    doc_info = {
+                        "name": doc_name,  # main.pyが期待するフィールド名
+                        "filename": doc_name,  # 後方互換性
+                        "document_name": doc_name,  # 後方互換性
+                        "document_type": chunk.get('document_type', 'unknown'),
+                        "similarity_score": chunk.get('similarity_score', 0.0)
+                    }
+                    source_documents.append(doc_info)
+                    seen_names.add(doc_name)
             
-            result["source_documents"] = source_documents
+            result["sources"] = source_documents  # main.pyが期待するフィールド名
+            result["source_documents"] = source_documents  # 後方互換性のため残す
             result["total_sources"] = len(used_chunks)
         
         logger.info(f"✅ リアルタイムRAG処理完了: {len(answer)}文字の回答")
         return result
     
-    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 20) -> Dict:
+    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 200) -> Dict:
         """
         🚀 リアルタイムRAG処理フロー全体の実行（Gemini質問分析統合版）
         新しい3段階アプローチ: Gemini分析 → SQL検索 → Embedding検索（フォールバック）
         """
-        logger.info(f"🚀 リアルタイムRAG処理開始: '{question[:50]}...'")
+        # ChatMessageオブジェクトから文字列を取得
+        if hasattr(question, 'text'):
+            question_text = question.text
+        else:
+            question_text = str(question)
+        
+        logger.info(f"🚀 リアルタイムRAG処理開始: '{question_text[:50]}...'")
         
         try:
             # Step 1: 質問入力
@@ -712,7 +885,7 @@ class RealtimeRAGProcessor:
             # Step 3: ベクトル検索とキーワード検索を並列実行
             search_tasks = [
                 self.step3_similarity_search(query_embedding, company_id, top_k),
-                self._keyword_search(processed_question, company_id, 5) # キーワード検索は5件まで
+                self._keyword_search(processed_question, company_id, 30) # キーワード検索は30件まで
             ]
             results_list = await asyncio.gather(*search_tasks, return_exceptions=True)
 
@@ -751,10 +924,12 @@ class RealtimeRAGProcessor:
             }
             
             # Step 4: LLM回答生成
-            answer = await self.step4_generate_answer(processed_question, similar_chunks, company_name, company_id)
+            generation_result = await self.step4_generate_answer(processed_question, similar_chunks, company_name, company_id)
+            answer = generation_result["answer"]
+            actually_used_chunks = generation_result["used_chunks"]
             
-            # Step 5: 回答表示（使用されたチャンク情報を含める）
-            result = await self.step5_display_answer(answer, metadata, similar_chunks)
+            # Step 5: 回答表示（実際に使用されたチャンク情報を含める）
+            result = await self.step5_display_answer(answer, metadata, actually_used_chunks)
             
             logger.info(f"🎉 リアルタイムRAG処理成功完了")
             return result
@@ -786,7 +961,7 @@ def get_realtime_rag_processor() -> Optional[RealtimeRAGProcessor]:
     
     return _realtime_rag_processor
 
-async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 20) -> Dict:
+async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 200) -> Dict:
     """
     リアルタイムRAG処理の外部呼び出し用関数
     

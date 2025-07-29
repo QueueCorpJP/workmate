@@ -19,11 +19,11 @@ from .database import get_db
 from .models import ChatHistoryItem, AnalysisResult, EmployeeUsageResult
 from .company import DEFAULT_COMPANY_NAME
 from .knowledge_base import knowledge_base
-from .knowledge.url import extract_text_from_url
-from .knowledge.excel import process_excel_file
-from .knowledge.excel_sheets_processor import process_excel_file_with_sheets_api, is_excel_file
-from .knowledge.pdf import process_pdf_file
-from .knowledge.text import process_txt_file
+from modules.knowledge.url import extract_text_from_url
+from modules.knowledge.excel import process_excel_file
+from modules.knowledge.excel_sheets_processor import process_excel_file_with_sheets_api, is_excel_file
+from modules.knowledge.pdf import process_pdf_file
+from modules.knowledge.text import process_txt_file
 from supabase_adapter import select_data, insert_data, update_data, delete_data
 from .auth import get_current_admin
 
@@ -73,9 +73,9 @@ async def refresh_knowledge_base():
                     try:
                         extracted_text = await extract_text_from_url(url)
                         if not extracted_text.startswith("URLからのテキスト抽出エラー:"):
-                            from .knowledge.url import process_url_content
+                            from modules.knowledge.url import process_url_content
                             df, sections, processed_text = await process_url_content(url, extracted_text)
-                            from .knowledge.base import _update_knowledge_base
+                            from modules.knowledge.base import _update_knowledge_base
                             _update_knowledge_base(df, processed_text, is_file=False, source_name=url)
                         print(f"URL {url} を再処理しました")
                     except Exception as e:
@@ -129,7 +129,7 @@ async def refresh_knowledge_base():
                             df, sections, extracted_text = process_txt_file(content, file_name)
                         
                         # 知識ベースを更新
-                        from .knowledge.base import _update_knowledge_base
+                        from modules.knowledge.base import _update_knowledge_base
                         _update_knowledge_base(df, extracted_text, is_file=True, source_name=file_name)
                         print(f"ファイル {file_name} を再処理しました")
                     except Exception as e:
@@ -141,9 +141,9 @@ async def refresh_knowledge_base():
                 try:
                     extracted_text = await extract_text_from_url(source_name)
                     if not extracted_text.startswith("URLからのテキスト抽出エラー:"):
-                        from .knowledge.url import process_url_content
+                        from modules.knowledge.url import process_url_content
                         df, sections, processed_text = await process_url_content(source_name, extracted_text)
-                        from .knowledge.base import _update_knowledge_base
+                        from modules.knowledge.base import _update_knowledge_base
                         _update_knowledge_base(df, processed_text, is_file=False, source_name=source_name)
                     print(f"URL {source_name} を再処理しました")
                 except Exception as e:

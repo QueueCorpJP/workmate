@@ -56,18 +56,22 @@ const SourceCitation: React.FC<SourceCitationProps> = ({ source }) => {
 
   console.log("✅ SourceCitation表示を実行します:", sourceString);
 
-  // ソース解析（シンプル化）
+  // ソース解析（document_sources.nameのみを表示）
   const parseSourceInfo = (sourceText: string) => {
     console.log("ソース解析開始:", sourceText);
     
-    // 単純にカンマ区切りで分割
+    // document_sources.nameのみを表示するため、シンプルに処理
     if (sourceText.includes(',')) {
       const sources = sourceText.split(',').map(s => s.trim()).filter(s => s.length > 0);
       console.log("カンマ区切りで解析:", sources);
-      return sources;
+      // 各ソースからdocument_sources.nameのみを抽出
+      return sources.map(source => {
+        // 既にnameのみの場合はそのまま返す
+        return source;
+      });
     }
     
-    // 単一のソース
+    // 単一のソース（document_sources.nameのみ）
     console.log("単一ソースとして解析:", [sourceText]);
     return [sourceText];
   };

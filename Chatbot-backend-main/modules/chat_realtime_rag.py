@@ -178,7 +178,7 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                     question=message_text,
                     company_id=company_id,
                     company_name=company_name,
-                    top_k=15  # Top-15チャンクを取得
+                    top_k=150  # Top-150チャンクを取得
                 )
                 
                 if rag_result and rag_result.get("answer"):
@@ -252,17 +252,24 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                                 
                                 # ソース情報は document_sources.name のみを使用
                                 # 検索方法やキーワードは含めない
-                                source_name = "関連資料"
                                 
-                                source_info_list.append({
-                                    "name": source_name,
-                                    "type": "knowledge_base",
-                                    "relevance": top_similarity,
-                                    "search_method": search_method,
-                                    "chunks_count": chunks_used,
-                                    "keywords": keywords[:5],
-                                    "similarity_score": f"{top_similarity:.3f}"
-                                })
+                                # 実際に使用されたドキュメントの名前を取得
+                                if rag_result.get('used_chunks'):
+                                    for chunk in rag_result['used_chunks'][:3]:  # 最大3個
+                                        doc_name = chunk.get('document_name', '関連資料')
+                                        if doc_name and doc_name != 'Unknown':
+                                            source_info_list.append({
+                                                "name": doc_name,  # document_sources.nameのみ使用
+                                                "type": "knowledge_base",
+                                                "relevance": top_similarity
+                                            })
+                                else:
+                                    # フォールバック: 一般的な名前
+                                    source_info_list.append({
+                                        "name": "関連資料",  # document_sources.nameのみ使用
+                                        "type": "knowledge_base",
+                                        "relevance": top_similarity
+                                    })
                             else:
                                 # チャンクが使用されていない場合
                                 source_info_list.append({
@@ -440,7 +447,7 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
 • **手元の参考資料に関連する情報が含まれている場合は、それを活用して回答してください。**
 • **参考資料の情報から推測できることや、関連する内容があれば積極的に提供してください。**
 • **完全に一致する情報がなくても、部分的に関連する情報があれば有効活用してください。**
-• 情報の出典として「ファイル名」や「資料名」までは明示して構いませんが、列番号、行番号、チャンク番号、データベースのIDなどの内部的な構造情報は一切出力しないでください。
+• 情報の出典として「ファイル名」や「資料名」までは明示して構いませんが、技術的な内部管理情報（列番号、行番号、分割番号、データベースのIDなど）は一切出力しないでください。
 • 代表者名や会社名など、ユーザーが聞いている情報だけを端的に答え、表形式やファイル構造の言及は不要です。
 • **全く関連性がない場合のみ、その旨を丁寧に説明してください。**
 • 専門的な内容も、日常の言葉で分かりやすく説明してください。
