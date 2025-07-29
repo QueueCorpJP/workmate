@@ -170,14 +170,15 @@ JSON形式のみで回答してください：
 """
             
             # Gemini 2.5 Flashで分析実行
+            import google.generativeai as genai
             response = self.gemini_model.generate_content(
                 prompt,
-                generation_config={
-                    'temperature': 0.1,  # 一貫性重視
-                    'max_output_tokens': 1024,
-                    'top_p': 0.8,
-                    'top_k': 40
-                }
+                generation_config=genai.GenerationConfig(
+                    temperature=0.1,  # 一貫性重視
+                    max_output_tokens=1024,
+                    top_p=0.8,
+                    top_k=40
+                )
             )
             
             if not response or not response.candidates:

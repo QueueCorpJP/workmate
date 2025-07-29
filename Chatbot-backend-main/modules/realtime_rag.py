@@ -190,47 +190,59 @@ class RealtimeRAGProcessor:
         try:
             with psycopg2.connect(self.db_url, cursor_factory=RealDictCursor) as conn:
                 with conn.cursor() as cur:
-                    # PG Vectorを使用したベクトル類似検索（document_sources.nameを必ず使用）
-                    cur.execute("""
-                        SELECT 
-                            c.id as chunk_id,
-                            c.doc_id as document_id,
-                            c.chunk_index,
-                            c.content as snippet,
-                            ds.name as document_name,
-                            ds.type as document_type,
-                            ds.special,
-                            (1 - (c.embedding <=> %s)) as similarity_score
-                        FROM chunks c
-                        INNER JOIN document_sources ds ON ds.id = c.doc_id
-                        WHERE c.embedding IS NOT NULL 
-                            AND ds.active = true
-                            AND (%s IS NULL OR ds.company_id = %s OR ds.company_id IS NULL)
-                        ORDER BY c.embedding <=> %s
-                        LIMIT %s
-                    """, (query_embedding, company_id, company_id, query_embedding, top_k))
+                    # 🔍 まず、埋め込みベクトルが利用可能なチャンクでベクトル類似検索
+                    vector_str = '[' + ','.join(map(str, query_embedding)) + ']'
                     
-                    results = cur.fetchall()
-                    logger.info(f"✅ PGVector検索完了: {len(results)}件の結果取得")
+                    sql_vector = """
+                    SELECT
+                        c.id,
+                        c.doc_id,
+                        c.chunk_index,
+                        c.content,
+                        ds.name as document_name,
+                        ds.type as document_type,
+                        1 - (c.embedding <=> %s) as similarity_score,
+                        'vector' as search_method
+                    FROM chunks c
+                    LEFT JOIN document_sources ds ON ds.id = c.doc_id
+                    WHERE c.embedding IS NOT NULL
+                      AND c.content IS NOT NULL
+                      AND LENGTH(c.content) > 10
+                    """
+                    
+                    params_vector = [vector_str]
+                    
+                    # 会社IDフィルタ（オプション）
+                    if company_id:
+                        sql_vector += " AND c.company_id = %s"
+                        params_vector.append(company_id)
+                    
+                    # ベクトル距離順でソート
+                    sql_vector += " ORDER BY c.embedding <=> %s LIMIT %s"
+                    params_vector.extend([vector_str, top_k])
+                    
+                    logger.info(f"実行SQL: ベクトル類似検索 (Top-{top_k})")
+                    cur.execute(sql_vector, params_vector)
+                    vector_results = cur.fetchall()
                     
                     # 🔍 PDFファイルのベクトル検索結果を確認
-                    pdf_vector_count = len([r for r in results if r['document_type'] == 'pdf'])
-                    excel_vector_count = len([r for r in results if r['document_type'] == 'excel'])
+                    pdf_vector_count = len([r for r in vector_results if r['document_type'] == 'pdf'])
+                    excel_vector_count = len([r for r in vector_results if r['document_type'] == 'excel'])
                     
-                    logger.info(f"ベクトル検索結果: PDF={pdf_vector_count}件, Excel={excel_vector_count}件, 総計={len(results)}件")
+                    logger.info(f"ベクトル検索結果: PDF={pdf_vector_count}件, Excel={excel_vector_count}件, 総計={len(vector_results)}件")
                     
                     # 結果を辞書のリストに変換
                     similar_chunks = []
-                    for row in results:
+                    for row in vector_results:
                         similar_chunks.append({
-                            'chunk_id': row['chunk_id'],
-                            'doc_id': row['document_id'],
+                            'chunk_id': row['id'],
+                            'doc_id': row['doc_id'],
                             'chunk_index': row['chunk_index'],
-                            'content': row['snippet'],
+                            'content': row['content'],
                             'document_name': row['document_name'],
                             'document_type': row['document_type'],
                             'similarity_score': float(row['similarity_score']),
-                            'search_method': 'vector' # ベクトル検索の場合は'vector'を固定
+                            'search_method': row['search_method']
                         })
                     
                     # 🔍 PDFファイルの結果が少ない場合、フォールバック検索を実行
@@ -424,34 +436,37 @@ class RealtimeRAGProcessor:
             print(f"📏 最大コンテキスト長: {80000:,}文字")  # 制限を少し下げる
             print("="*80)
             
-            # 有効なチャンクのコンテンツを構築（プロンプト用）
-            context = ""
+            # コンテキスト構築（原文ベース）
+            context_parts = []
+            total_length = 0
+            max_context_length = 80000  # 8万文字に制限（安全のため）
             used_chunks = []
-            total_context_length = 0
             
-            print(f"📊 利用可能チャンク数: {len(similar_chunks)}個")
-            
-            for i, chunk in enumerate(similar_chunks[:top_k]):
-                # チャンク情報の準備
-                chunk_content = f"【参考資料{i+1}: {chunk['document_name']}】\n{chunk['content']}\n"
+            for i, chunk in enumerate(similar_chunks):
+                chunk_content = f"【参考資料{i+1}: {chunk['document_name']} - チャンク{chunk['chunk_index']}】\n{chunk['content']}\n"
+                chunk_length = len(chunk_content)
                 
-                print(f"  {i+1:2d}. 📄 {chunk['document_name']} (セクション{chunk['chunk_index']})")
+                print(f"  {i+1:2d}. 📄 {chunk['document_name']} [チャンク#{chunk['chunk_index']}]")
+                print(f"      🎯 類似度: {chunk['similarity_score']:.4f}")
+                print(f"      📏 文字数: {chunk_length:,}文字")
                 
-                context += chunk_content
-                used_chunks.append(chunk)
-                total_context_length += len(chunk_content)
-                
-                print(f"         💡 {i+1}個の参考資料を最終的に使用")
-                
-                if total_context_length > 3000:  # コンテンツ長制限
+                if total_length + chunk_length > max_context_length:
+                    print(f"      ❌ 除外: コンテキスト長制限超過 (現在: {total_length:,}文字)")
+                    print(f"         💡 {i}個のチャンクを最終的に使用")
                     break
+                
+                context_parts.append(chunk_content)
+                total_length += chunk_length
+                used_chunks.append(chunk)
+                print(f"      ✅ 採用: 累計 {total_length:,}文字")
+                print(f"      📝 内容プレビュー: {(chunk['content'] or '')[:100].replace(chr(10), ' ')}...")
+                print()
             
-            context = "\n".join(context.splitlines()) # 改行を統一
+            context = "\n".join(context_parts)
             
             print(f"📋 最終コンテキスト情報:")
-            print(f"   📊 使用資料数: {len(used_chunks)}個")
-            print(f"   📏 総文字数: {len(context):,}文字")
-            print(f"   ✅ 使用資料数: {len(used_chunks)}個")
+            print(f"   ✅ 使用チャンク数: {len(used_chunks)}個")
+            print(f"   �� 総文字数: {len(context):,}文字")
             print("="*80 + "\n")
             
             # 🎯 特別指示を取得してプロンプトの一番前に配置
@@ -517,7 +532,7 @@ class RealtimeRAGProcessor:
 • ✅ 代わりに：「参考資料を確認したところ、○○という情報がございます」
 
 **【その他の指針】**
-• 情報の出典として「ファイル名」や「資料名」は明示可能ですが、技術的な内部構造情報（行番号、分割番号、データベースIDなど）は出力しない
+• 情報の出典としてファイル名は明示可能ですが、内部構造情報（行番号等）は出力しない
 • 専門的な内容も分かりやすく説明
 • 文末には「ご不明な点がございましたら、お気軽にお申し付けください。」を追加
 
@@ -665,10 +680,9 @@ class RealtimeRAGProcessor:
             source_documents = []
             seen_names = set()
             for chunk in used_chunks[:5]:  # 最大5個のソース文書
-                # document_sources.nameのみを使用（ファイルパスや内部IDは除外）
                 doc_name = chunk.get('document_name', 'Unknown Document')
                 # 重複する名前は除外
-                if doc_name and doc_name != 'Unknown Document' and doc_name not in seen_names:
+                if doc_name not in seen_names:
                     doc_info = {
                         "document_name": doc_name,  # document_sources.nameのみ使用
                         "document_type": chunk.get('document_type', 'unknown'),

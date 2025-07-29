@@ -91,7 +91,7 @@ class QuestionVariantsGenerator:
                 return None
             
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('models/gemini-2.0-flash')
+            model = genai.GenerativeModel('gemini-2.5-flash')
             return model
         except Exception as e:
             logger.error(f"❌ Gemini設定エラー: {e}")

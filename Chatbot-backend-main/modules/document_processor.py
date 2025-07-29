@@ -772,9 +772,10 @@ class DocumentProcessor:
             raise
     
     async def _extract_text_from_pdf(self, content: bytes) -> str:
-        """PDF からテキストを抽出する（Gemini OCR最適化版）
+        """PDF からテキストを抽出する（Gemini OCR最適化版 + フォールバック対応）
         
         シンプルにGemini OCRのみで最高精度抽出を実現
+        ただし、503エラー等の場合はPyPDF2フォールバックを使用
         """
         
         import asyncio, tempfile, os
@@ -822,6 +823,7 @@ class DocumentProcessor:
                 
                 # アップロード完了待機
                 await asyncio.sleep(3.0)
+
                 
                 # 最適化された生成設定
                 import google.generativeai as genai
@@ -832,10 +834,12 @@ class DocumentProcessor:
                     max_output_tokens=65536,  # 最大出力トークン数
                 )
                 
+                # Gemini 2.5 Flash モデルを取得（最新の推奨モデル）
+                model = genai.GenerativeModel("gemini-2.5-flash")
+                
                 response = await asyncio.to_thread(
-                    self.gemini_client.models.generate_content,
-                    model="gemini-1.5-flash",
-                    contents=[prompt, uploaded_file],
+                    model.generate_content,
+                    [prompt, uploaded_file],
                     generation_config=generation_config
                 )
                 
@@ -865,38 +869,32 @@ class DocumentProcessor:
                 else:
                     raise Exception("Gemini OCRから結果を取得できませんでした")
                     
+            except Exception as gemini_error:
+                logger.error(f"❌ Gemini OCR処理失敗: {gemini_error}")
+                
+                # 503エラーまたはその他のGeminiエラーの場合はPyPDF2フォールバックを使用
+                if "503" in str(gemini_error) or "Service Unavailable" in str(gemini_error):
+                    logger.info("🔄 503エラーのため、PyPDF2フォールバックを使用")
+                else:
+                    logger.info("🔄 Geminiエラーのため、PyPDF2フォールバックを使用")
+                
+                # PyPDF2フォールバックで処理
+                fallback_text = await self._extract_text_from_pdf_fallback(content)
+                return fallback_text
+                
             finally:
-                if os.path.exists(tmp_file_path):
-                    os.unlink(tmp_file_path)
+                # 一時ファイルをクリーンアップ
+                try:
+                    if os.path.exists(tmp_file_path):
+                        os.unlink(tmp_file_path)
+                except:
+                    pass
                     
         except Exception as e:
-            logger.error(f"❌ Gemini OCR処理失敗: {e}")
-            
-            # 最小限のフォールバック（PyPDF2のみ）
-            logger.info("🔄 最小限フォールバック: PyPDF2抽出")
-            try:
-                import PyPDF2
-                from io import BytesIO
-                
-                pdf_reader = PyPDF2.PdfReader(BytesIO(content))
-                text_parts = []
-                
-                for page_num, page in enumerate(pdf_reader.pages):
-                    try:
-                        page_text = page.extract_text()
-                        if page_text and page_text.strip():
-                            text_parts.append(f"=== ページ {page_num + 1} ===\n{page_text}")
-                    except Exception:
-                        text_parts.append(f"=== ページ {page_num + 1} ===\n[抽出エラー]")
-                
-                if text_parts:
-                    return "\n\n".join(text_parts)
-                else:
-                    raise Exception("全ての抽出方法が失敗しました")
-                    
-            except Exception as fallback_error:
-                logger.error(f"❌ フォールバック失敗: {fallback_error}")
-                raise Exception(f"PDF処理完全失敗: {e}")
+            logger.error(f"❌ PDF抽出の全体エラー: {e}")
+            # 最終フォールバック
+            fallback_text = await self._extract_text_from_pdf_fallback(content)
+            return fallback_text
     
     def _evaluate_text_quality(self, text: str) -> int:
         """テキスト品質を0-100のスコアで評価（より詳細版）"""
@@ -979,6 +977,63 @@ class DocumentProcessor:
         except Exception as e:
             logger.warning(f"品質評価エラー: {e}")
             return 50  # デフォルトスコア
+    
+    async def _extract_text_from_pdf_fallback(self, content: bytes) -> str:
+        """PyPDF2フォールバック + 文字化け修復処理"""
+        logger.info("🔄 PyPDF2フォールバック抽出開始")
+        
+        try:
+            import PyPDF2
+            from io import BytesIO
+            from knowledge.pdf import fix_mojibake_text, check_text_corruption
+            
+            pdf_reader = PyPDF2.PdfReader(BytesIO(content))
+            text_parts = []
+            corrupted_pages = []
+            
+            for page_num, page in enumerate(pdf_reader.pages):
+                try:
+                    # 強化されたテキスト抽出を使用
+                    from knowledge.pdf import extract_text_with_encoding_fallback
+                    page_text = extract_text_with_encoding_fallback(page)
+                    
+                    if page_text and page_text.strip():
+                        # 文字化けチェック
+                        if check_text_corruption(page_text):
+                            logger.info(f"ページ {page_num + 1} で文字化けを検出、修復を適用")
+                            page_text = fix_mojibake_text(page_text)
+                            corrupted_pages.append(page_num + 1)
+                        
+                        text_parts.append(f"=== ページ {page_num + 1} ===\n{page_text}")
+                    else:
+                        text_parts.append(f"=== ページ {page_num + 1} ===\n[テキスト抽出できませんでした]")
+                        
+                except Exception as page_error:
+                    logger.warning(f"ページ {page_num + 1} 抽出エラー: {page_error}")
+                    text_parts.append(f"=== ページ {page_num + 1} ===\n[ページ抽出エラー: {str(page_error)}]")
+            
+            if text_parts:
+                final_text = "\n\n".join(text_parts)
+                
+                # 統計情報をログ出力
+                total_chars = len(final_text)
+                page_count = len(text_parts)
+                corrupted_count = len(corrupted_pages)
+                
+                logger.info(f"✅ PyPDF2フォールバック完了:")
+                logger.info(f"   - 総文字数: {total_chars}")
+                logger.info(f"   - ページ数: {page_count}")
+                logger.info(f"   - 文字化け修復ページ: {corrupted_count}件 {corrupted_pages}")
+                logger.info(f"   - 平均文字/ページ: {total_chars/page_count:.0f}")
+                
+                return final_text
+            else:
+                raise Exception("すべてのページでテキスト抽出に失敗しました")
+                
+        except Exception as fallback_error:
+            logger.error(f"❌ PyPDF2フォールバック失敗: {fallback_error}")
+            # 最小限のエラーハンドリング
+            return f"[PDF処理エラー: {str(fallback_error)}]\n\n基本的なテキスト抽出も失敗しました。PDFファイルが破損している可能性があります。"
     
     async def _extract_text_from_excel(self, content: bytes) -> str:
         """Excelファイルからテキストを抽出（ExcelDataCleanerを使用）"""
