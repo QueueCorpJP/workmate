@@ -107,25 +107,49 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
 
   // Fetch categories on component mount
   useEffect(() => {
+    console.log('Modal open state changed:', open);
     if (open) {
+      // Reset state when modal opens
+      console.log('Resetting modal state and fetching categories');
+      setSelectedTemplate(null);
+      setCurrentTab(0);
+      setError('');
+      setTemplates([]);
+      setSelectedCategory('');
       fetchCategories();
     }
   }, [open]);
 
   // Fetch templates when category changes
   useEffect(() => {
-    if (selectedCategory) {
+    console.log('useEffect triggered - selectedCategory:', selectedCategory, 'open:', open);
+    if (selectedCategory && open) {
+      console.log('Calling fetchTemplates with categoryId:', selectedCategory);
       fetchTemplates(selectedCategory);
+    } else {
+      console.log('Not fetching templates - selectedCategory:', selectedCategory, 'open:', open);
     }
-  }, [selectedCategory]);
+  }, [selectedCategory, open]);
 
   const fetchCategories = async () => {
     try {
       setLoading(true);
+      setError('');
+      console.log('Fetching categories...');
       const response = await api.get('/templates/categories');
-      setCategories(response.data.categories || []);
-      if (response.data.categories && response.data.categories.length > 0) {
-        setSelectedCategory(response.data.categories[0].id);
+      const fetchedCategories = response.data.categories || [];
+      console.log('Fetched categories:', fetchedCategories);
+      setCategories(fetchedCategories);
+      
+      // Always select the first category if available
+      if (fetchedCategories.length > 0) {
+        const firstCategoryId = fetchedCategories[0].id;
+        console.log('Setting first category:', firstCategoryId);
+        setSelectedCategory(firstCategoryId);
+        // Don't call fetchTemplates here - it will be called by useEffect
+      } else {
+        console.log('No categories available');
+        setError('利用可能なカテゴリがありません');
       }
     } catch (error) {
       console.error('Failed to fetch categories:', error);
@@ -136,13 +160,27 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
   };
 
   const fetchTemplates = async (categoryId: string) => {
+    if (!categoryId) {
+      console.log('No categoryId provided to fetchTemplates');
+      return;
+    }
+    
     try {
       setLoading(true);
-      const response = await api.get(`/templates/category/${categoryId}`);
-      setTemplates(response.data.templates || []);
+      setTemplates([]); // Clear existing templates first
+      console.log(`Fetching templates for category: ${categoryId}`);
+      const response = await api.get(`/templates?category_id=${categoryId}`);
+      const fetchedTemplates = response.data.templates || [];
+      console.log(`Fetched ${fetchedTemplates.length} templates:`, fetchedTemplates);
+      setTemplates(fetchedTemplates);
+      
+      if (fetchedTemplates.length === 0) {
+        console.log(`No templates found for category: ${categoryId}`);
+      }
     } catch (error) {
       console.error('Failed to fetch templates:', error);
       setError('テンプレートの取得に失敗しました');
+      setTemplates([]);
     } finally {
       setLoading(false);
     }
@@ -245,7 +283,7 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          background: 'linear-gradient(135deg, #2563eb, #3b82f6)',
+          background: 'linear-gradient(135deg, #1976d2 0%, #1565c0 100%)',
           color: 'white',
           py: isSmallMobile ? 1 : 2,
           px: isSmallMobile ? 2 : 3,
@@ -266,17 +304,29 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {isMobile && currentTab === 0 && (
-            <IconButton 
-              onClick={() => setMobileDrawerOpen(true)} 
-              sx={{ color: 'white', p: isSmallMobile ? 1 : 1.5 }}
-              size={isSmallMobile ? 'small' : 'medium'}
+          {isMobile && currentTab === 0 && selectedCategory && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<FilterListIcon />}
+              onClick={() => setMobileDrawerOpen(true)}
+              sx={{ 
+                fontSize: '0.7rem',
+                minWidth: 'auto',
+                px: 1,
+                color: 'white',
+                borderColor: 'rgba(255,255,255,0.5)',
+                '&:hover': {
+                  borderColor: 'white',
+                  backgroundColor: 'rgba(255,255,255,0.1)',
+                },
+              }}
             >
-              <FilterListIcon />
-            </IconButton>
+              {categories.find(c => c.id === selectedCategory)?.name || 'カテゴリ'}
+            </Button>
           )}
           <IconButton 
-            onClick={handleClose} 
+            onClick={onClose} 
             sx={{ color: 'white', p: isSmallMobile ? 1 : 1.5 }}
             size={isSmallMobile ? 'small' : 'medium'}
           >
@@ -332,14 +382,27 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
           onClose={() => setMobileDrawerOpen(false)}
           sx={{
             '& .MuiDrawer-paper': {
-              width: 280,
-              maxWidth: '80vw',
+              width: 300,
+              maxWidth: '85vw',
+              background: 'linear-gradient(135deg, #f8fbff 0%, #e3f2fd 100%)',
             },
           }}
         >
-          <Box sx={{ p: 2 }}>
-            <Typography variant="h6" fontWeight={600} mb={2} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <FilterListIcon />
+          <Box sx={{ p: 3 }}>
+            <Typography 
+              variant="h6" 
+              fontWeight={700} 
+              mb={3} 
+              sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 1,
+                color: '#1976d2',
+                borderBottom: '2px solid #e3f2fd',
+                pb: 2,
+              }}
+            >
+              <FilterListIcon sx={{ color: '#1976d2' }} />
               カテゴリ
             </Typography>
             {loading ? (
@@ -353,14 +416,23 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                     <ListItemButton
                       selected={selectedCategory === category.id}
                       onClick={() => {
+                        console.log('Category selected:', category.id, category.name);
                         setSelectedCategory(category.id);
                         setMobileDrawerOpen(false);
+                        // 即座にテンプレートを読み込む
+                        fetchTemplates(category.id);
                       }}
                       sx={{
-                        borderRadius: 1,
+                        borderRadius: 2,
+                        mb: 1,
                         border: selectedCategory === category.id ? 2 : 1,
-                        borderColor: selectedCategory === category.id ? 'primary.main' : 'divider',
-                        '&:hover': { borderColor: 'primary.main' },
+                        borderColor: selectedCategory === category.id ? '#1976d2' : 'divider',
+                        backgroundColor: selectedCategory === category.id ? '#e3f2fd' : 'white',
+                        '&:hover': { 
+                          borderColor: '#1976d2',
+                          backgroundColor: '#f0f8ff',
+                        },
+                        transition: 'all 0.2s ease-in-out',
                       }}
                     >
                       <ListItemText
@@ -424,7 +496,11 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                         borderColor: selectedCategory === category.id ? 'primary.main' : 'divider',
                         '&:hover': { borderColor: 'primary.main' },
                       }}
-                      onClick={() => setSelectedCategory(category.id)}
+                      onClick={() => {
+                        console.log('Desktop category selected:', category.id, category.name);
+                        setSelectedCategory(category.id);
+                        fetchTemplates(category.id);
+                      }}
                     >
                       <CardContent sx={{ p: isTablet ? 1.5 : 2, '&:last-child': { pb: isTablet ? 1.5 : 2 } }}>
                         <Typography 
@@ -458,25 +534,7 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
               flexDirection: 'column',
               minHeight: 0,
             }}>
-              {/* Mobile Category Filter Button */}
-              {isMobile && (
-                <Box sx={{ mb: 2 }}>
-                  <Button
-                    variant="outlined"
-                    startIcon={<FilterListIcon />}
-                    onClick={() => setMobileDrawerOpen(true)}
-                    size={isSmallMobile ? 'small' : 'medium'}
-                    sx={{ 
-                      fontSize: isSmallMobile ? '0.75rem' : '0.875rem',
-                      mb: 1,
-                    }}
-                  >
-                    {selectedCategory ? 
-                      categories.find(c => c.id === selectedCategory)?.name || 'カテゴリを選択' 
-                      : 'カテゴリを選択'}
-                  </Button>
-                </Box>
-              )}
+              {/* Empty space for mobile - category filter is now in header */}
 
               <Box sx={{ 
                 display: 'flex', 
@@ -494,8 +552,17 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                   テンプレート一覧
                 </Typography>
                 <IconButton 
-                  onClick={() => fetchTemplates(selectedCategory)} 
+                  onClick={() => {
+                    console.log('Refresh button clicked, selectedCategory:', selectedCategory);
+                    if (selectedCategory) {
+                      fetchTemplates(selectedCategory);
+                    } else {
+                      console.log('No category selected for refresh');
+                      setError('カテゴリを選択してください');
+                    }
+                  }} 
                   size={isSmallMobile ? 'small' : 'medium'}
+                  disabled={!selectedCategory}
                 >
                   <RefreshIcon sx={{ fontSize: isSmallMobile ? 18 : 20 }} />
                 </IconButton>
@@ -511,17 +578,24 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                   overflow: 'auto',
                   minHeight: 0,
                 }}>
-                  {templates.length === 0 ? (
+                  {templates.length === 0 && !loading ? (
                     <Box sx={{ 
                       textAlign: 'center', 
                       py: isSmallMobile ? 3 : 4,
                       color: 'text.secondary',
                     }}>
+                      <DescriptionIcon sx={{ fontSize: 48, opacity: 0.3, mb: 2 }} />
                       <Typography 
                         variant="body2"
-                        sx={{ fontSize: isSmallMobile ? '0.8rem' : '0.875rem' }}
+                        sx={{ fontSize: isSmallMobile ? '0.8rem' : '0.875rem', mb: 1 }}
                       >
-                        テンプレートが見つかりません
+                        このカテゴリにはまだテンプレートがありません
+                      </Typography>
+                      <Typography 
+                        variant="caption"
+                        sx={{ fontSize: isSmallMobile ? '0.7rem' : '0.75rem' }}
+                      >
+                        管理者に新しいテンプレートの追加を依頼してください
                       </Typography>
                     </Box>
                   ) : (
