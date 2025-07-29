@@ -287,7 +287,7 @@ class UltraAccurateSearchSystem:
             logger.error(f"埋め込み生成エラー: {e}")
             return []
     
-    async def ultra_accurate_search(self, query: str, company_id: str = None, max_results: int = 20) -> List[UltraSearchResult]:
+    async def ultra_accurate_search(self, query: str, company_id: str = None, max_results: int = 100) -> List[UltraSearchResult]:
         """超高精度検索の実行"""
         try:
             logger.info(f"🚀 超高精度検索開始: '{query}'")
@@ -346,7 +346,7 @@ class UltraAccurateSearchSystem:
             logger.error(f"詳細エラー: {traceback.format_exc()}")
             return []
     
-    async def _execute_ultra_search(self, query_vector: List[float], query: str, company_id: str = None, limit: int = 40) -> List[Dict]:
+    async def _execute_ultra_search(self, query_vector: List[float], query: str, company_id: str = None, limit: int = 150) -> List[Dict]:
         """超高精度ベクトル検索の実行"""
         try:
             with psycopg2.connect(self.db_url, cursor_factory=RealDictCursor) as conn:

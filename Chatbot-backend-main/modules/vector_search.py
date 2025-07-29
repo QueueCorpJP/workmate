@@ -167,7 +167,7 @@ class VectorSearchSystem:
             )
             """
     
-    async def vector_similarity_search(self, query: str, company_id: str = None, limit: int = 20) -> List[Dict]:
+    async def vector_similarity_search(self, query: str, company_id: str = None, limit: int = 100) -> List[Dict]:
         """ベクトル類似検索を実行（pgvector対応版）"""
         try:
             # クエリの埋め込み生成
@@ -302,7 +302,7 @@ class VectorSearchSystem:
             
             return []
     
-    def get_document_content_by_similarity(self, query: str, company_id: str = None, max_results: int = 20) -> str:
+    def get_document_content_by_similarity(self, query: str, company_id: str = None, max_results: int = 100) -> str:
         """類似度に基づいてドキュメントの内容を取得"""
         try:
             # ベクトル検索実行
@@ -315,11 +315,11 @@ class VectorSearchSystem:
             # 結果を組み立て
             relevant_content = []
             total_length = 0
-            max_total_length = 50000
+            max_total_length = 120000
             
             print("\n" + "="*80)
             print(f"📋 【コンテンツ構築ログ】{len(search_results)}件のチャンクを処理中...")
-            print(f"🎯 類似度閾値: 0.15 (これ以下は除外)")
+            print(f"🎯 類似度閾値: 0.05 (これ以下は除外)")
             print(f"📏 最大文字数: {max_total_length:,}文字")
             print("="*80)
             
@@ -333,7 +333,7 @@ class VectorSearchSystem:
                 print(f"      🎯 類似度: {similarity:.4f}")
                 
                 # 類似度閾値（超高精度検索のため大幅に下げる）
-                threshold = 0.15  # より多くの関連結果を取得
+                threshold = 0.05  # より多くの関連結果を取得（大幅緩和）
                 if similarity < threshold:
                     print(f"      ❌ 除外理由: 類似度が閾値未満 ({similarity:.4f} < {threshold})")
                     print()

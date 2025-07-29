@@ -184,11 +184,11 @@ class UltraAccurateRAGProcessor:
         try:
             # 検索戦略に基づいた結果数調整
             if intent_analysis['is_company_specific']:
-                max_results = 25  # 会社特化の場合は多めに取得
+                max_results = 120  # 会社特化の場合は多めに取得
             elif intent_analysis['is_contact_inquiry']:
-                max_results = 20
+                max_results = 100
             else:
-                max_results = 15
+                max_results = 80
             
             # 超高精度検索実行
             search_results = await self.ultra_search.ultra_accurate_search(
