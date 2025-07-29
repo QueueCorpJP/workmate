@@ -372,14 +372,15 @@ class QuestionVariantsGenerator:
 """
             
             # Gemini実行（保守的設定：意味を変えない言い換え重視）
+            import google.generativeai as genai
             response = self.gemini_model.generate_content(
                 prompt,
-                generation_config={
-                    'temperature': 0.4,  # 一貫性重視で意味変更を防止
-                    'max_output_tokens': 2048,  # 50個のバリエーション生成
-                    'top_p': 0.8,  # 適度な多様性
-                    'top_k': 50    # 適度な候補数
-                }
+                generation_config=genai.GenerationConfig(
+                    temperature=0.4,  # 一貫性重視で意味変更を防止
+                    max_output_tokens=2048,  # 50個のバリエーション生成
+                    top_p=0.8,  # 適度な多様性
+                    top_k=50    # 適度な候補数
+                )
             )
             
             if not response or not response.text:

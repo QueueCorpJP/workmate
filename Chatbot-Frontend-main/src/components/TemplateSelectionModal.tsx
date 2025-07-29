@@ -501,7 +501,7 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                         setSelectedCategory(category.id);
                         fetchTemplates(category.id);
                       }}
-                    >
+                  >
                       <CardContent sx={{ p: isTablet ? 1.5 : 2, '&:last-child': { pb: isTablet ? 1.5 : 2 } }}>
                         <Typography 
                           variant="body2" 
@@ -590,7 +590,7 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                         sx={{ fontSize: isSmallMobile ? '0.8rem' : '0.875rem', mb: 1 }}
                       >
                         このカテゴリにはまだテンプレートがありません
-                      </Typography>
+                </Typography>
                       <Typography 
                         variant="caption"
                         sx={{ fontSize: isSmallMobile ? '0.7rem' : '0.75rem' }}
@@ -759,7 +759,7 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                     overflow: 'auto',
                   maxHeight: isSmallMobile ? '60vh' : '50vh',
                 }}
-              >
+                  >
                 {processTemplate(selectedTemplate)}
               </Box>
                 </Box>

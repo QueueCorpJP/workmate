@@ -256,7 +256,7 @@ class UltraAccurateRAGProcessor:
             
             # コンテキストピースの構築
             context_piece = f"""
-【文書: {result.document_name} - チャンク{result.chunk_index}】
+【参考資料{i+1}: {result.document_name}】
 信頼度: {result.confidence_score:.3f} | 関連度: {result.relevance_score:.3f}
 
 {result.content}
@@ -267,13 +267,13 @@ class UltraAccurateRAGProcessor:
             if total_length + len(context_piece) <= self.max_context_length:
                 context_parts.append(context_piece)
                 total_length += len(context_piece)
-                logger.info(f"  {i+1}. 追加: {result.document_name} [チャンク{result.chunk_index}] ({len(context_piece)}文字)")
+                logger.info(f"  {i+1}. 追加: {result.document_name} (セクション{result.chunk_index}) ({len(context_piece)}文字)")
             else:
                 logger.info(f"  {i+1}. 文字数制限により除外")
                 break
         
         final_context = "".join(context_parts)
-        logger.info(f"✅ 超高精度コンテキスト構築完了: {len(context_parts)-1}個のチャンク、{len(final_context)}文字")
+        logger.info(f"✅ 超高精度コンテキスト構築完了: {len(context_parts)}個の参考資料、{len(final_context)}文字")
         
         return final_context
     
@@ -462,7 +462,27 @@ class UltraAccurateRAGProcessor:
                 }
             
             # Step 4: プロンプト構築
-            prompt = self.build_ultra_prompt(search_data, context)
+            prompt = f"""あなたは{company_name}の社内向け丁寧で親切なアシスタントです。
+
+回答の際の重要な指針：
+• 回答は丁寧な敬語で行ってください。
+• **手元の参考資料に関連する情報が含まれている場合は、それを活用して回答してください。**
+• **参考資料の情報から推測できることや、関連する内容があれば積極的に提供してください。**
+• **完全に一致する情報がなくても、部分的に関連する情報があれば有効活用してください。**
+• 情報の出典として「ファイル名」や「資料名」までは明示して構いませんが、技術的な内部管理情報（列番号、行番号、分割番号、データベースのIDなど）は一切出力しないでください
+• 代表者名や会社名など、ユーザーが聞いている情報だけを端的に答え、表形式やファイル構造の言及は不要です。
+• **全く関連性がない場合のみ、その旨を丁寧に説明してください。**
+• 専門的な内容も、日常の言葉で分かりやすく説明してください。
+• 手続きや連絡先については、正確な情報を漏れなくご案内してください。
+• 文末には「ご不明な点がございましたら、お気軽にお申し付けください。」と添えてください。
+
+お客様からのご質問：
+{question}
+
+手元の参考資料：
+{final_context}
+
+それでは、ご質問にお答えいたします："""
             
             # Step 5: 回答生成
             final_result = await self.step5_generate_ultra_response(search_data, context, prompt)

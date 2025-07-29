@@ -24,10 +24,11 @@ async def ocr_with_gemini(images, instruction, chunk_size=8):
     async def process_page(idx, image):
         def sync_call():
             try:
+                import google.generativeai as genai
                 prompt = f"{prompt_base}\n\nPage {idx + 1}:"
                 response = model.generate_content(
                     [prompt, image],
-                    generation_config={'temperature': 0.3}
+                    generation_config=genai.GenerationConfig(temperature=0.3)
                 )
                 result_text = ""
                 for part in response.parts:

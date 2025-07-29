@@ -824,12 +824,13 @@ class DocumentProcessor:
                 await asyncio.sleep(3.0)
                 
                 # 最適化された生成設定
-                generation_config = {
-                    "temperature": 0.3,  # 推測も含めた柔軟な出力
-                    "top_p": 0.95,
-                    "top_k": 40,
-                    "max_output_tokens": 65536,  # 最大出力トークン数
-                }
+                import google.generativeai as genai
+                generation_config = genai.GenerationConfig(
+                    temperature=0.3,  # 推測も含めた柔軟な出力
+                    top_p=0.95,
+                    top_k=40,
+                    max_output_tokens=65536,  # 最大出力トークン数
+                )
                 
                 response = await asyncio.to_thread(
                     self.gemini_client.models.generate_content,

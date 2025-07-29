@@ -353,70 +353,63 @@ class UltraAccurateSearchSystem:
                 with conn.cursor() as cur:
                     if self.pgvector_available:
                         # pgvectorを使用した高速検索
-                        sql = """
-                        SELECT
-                            c.id as chunk_id,
-                            c.doc_id as document_id,
-                            c.chunk_index,
-                            c.content as snippet,
-                            ds.name,
-                            ds.type,
-                            ds.special,
-                            1 - (c.embedding <=> %s::vector) as similarity_score
-                        FROM chunks c
-                        LEFT JOIN document_sources ds ON ds.id = c.doc_id
-                        WHERE c.embedding IS NOT NULL
-                          AND c.content IS NOT NULL
-                          AND LENGTH(c.content) > 10
-                        """
-                        
-                        params = [query_vector]
-                        
-                        if company_id:
-                            sql += " AND c.company_id = %s"
-                            params.append(company_id)
-                        
-                        sql += " ORDER BY c.embedding <=> %s::vector LIMIT %s"
-                        params.extend([query_vector, limit])
+                        cur.execute("""
+                            SELECT DISTINCT 
+                                c.id as chunk_id,
+                                c.doc_id as document_id,
+                                c.chunk_index,
+                                c.content as snippet,
+                                ds.name as document_name,
+                                ds.type as document_type,
+                                (1 - (c.embedding <=> %s)) as similarity_score
+                            FROM chunks c
+                            INNER JOIN document_sources ds ON ds.id = c.doc_id
+                            WHERE c.embedding IS NOT NULL 
+                                AND ds.active = true
+                                AND (%s IS NULL OR ds.company_id = %s OR ds.company_id IS NULL)
+                            ORDER BY c.embedding <=> %s
+                            LIMIT %s
+                        """, (query_vector, company_id, company_id, query_vector, limit))
                         
                     else:
-                        # フォールバック検索（テキストベース）
-                        logger.warning("⚠️ pgvectorが無効のため、テキストベース検索を使用")
-                        sql = """
-                        SELECT
-                            c.id as chunk_id,
-                            c.doc_id as document_id,
-                            c.chunk_index,
-                            c.content as snippet,
-                            ds.name,
-                            ds.type,
-                            ds.special,
-                            CASE 
-                                WHEN LOWER(c.content) LIKE %s THEN 0.9
-                                WHEN LOWER(c.content) LIKE %s THEN 0.7
-                                ELSE 0.3
-                            END as similarity_score
-                        FROM chunks c
-                        LEFT JOIN document_sources ds ON ds.id = c.doc_id
-                        WHERE c.content IS NOT NULL
-                          AND LENGTH(c.content) > 10
-                        """
-                        
-                        query_like = f"%{query.lower()}%"
-                        query_partial = f"%{query[:3].lower()}%"
-                        params = [query_like, query_partial]
-                        
-                        if company_id:
-                            sql += " AND c.company_id = %s"
-                            params.append(company_id)
-                        
-                        sql += " ORDER BY similarity_score DESC LIMIT %s"
-                        params.append(limit)
+                        # フォールバック: L2距離計算
+                        cur.execute("""
+                            SELECT DISTINCT 
+                                c.id as chunk_id,
+                                c.doc_id as document_id,
+                                c.chunk_index,
+                                c.content as snippet,
+                                ds.name as document_name,
+                                ds.type as document_type,
+                                0.7 as similarity_score
+                            FROM chunks c
+                            INNER JOIN document_sources ds ON ds.id = c.doc_id
+                            WHERE c.content IS NOT NULL 
+                                AND ds.active = true
+                                AND (%s IS NULL OR ds.company_id = %s OR ds.company_id IS NULL)
+                            LIMIT %s
+                        """, (company_id, company_id, limit))
                     
-                    cur.execute(sql, params)
                     results = cur.fetchall()
                     
-                    return [dict(row) for row in results]
+                    # 結果を変換（document_sources.nameを必ず使用）
+                    for row in results:
+                        # document_sources.nameを必ず使用
+                        document_name = row['document_name'] if row['document_name'] else 'Unknown Document'
+                        
+                        search_results.append(UltraSearchResult(
+                            chunk_id=row['chunk_id'],
+                            document_id=row['document_id'],
+                            chunk_index=row['chunk_index'],
+                            content=row['snippet'],
+                            document_name=document_name,  # document_sources.nameのみ
+                            document_type=row['document_type'],
+                            relevance_score=float(row['similarity_score']),
+                            confidence_score=float(row['similarity_score']) * 0.9,
+                            search_method="ultra_accurate_vector"
+                        ))
+                    
+                    return search_results
         
         except Exception as e:
             logger.error(f"超高精度検索実行エラー: {e}")
@@ -445,13 +438,13 @@ class UltraAccurateSearchSystem:
             return UltraSearchResult(
                 chunk_id=result['chunk_id'],
                 document_id=result['document_id'],
-                document_name=result['name'] or 'Unknown',
+                document_name=result['document_name'],
                 content=result['snippet'] or '',
                 similarity_score=result['similarity_score'],
                 relevance_score=relevance_score,
                 confidence_score=confidence_score,
                 chunk_index=result['chunk_index'],
-                document_type=result['type'] or 'document',
+                document_type=result['document_type'],
                 search_method='ultra_accurate',
                 query_match_score=query_match_score,
                 semantic_score=semantic_score,
@@ -518,7 +511,7 @@ class UltraAccurateSearchSystem:
                 logger.info(f"     関連度: {result.relevance_score:.3f} (信頼度: {result.confidence_score:.3f})")
                 
                 if result.content and len(result.content.strip()) > 0:
-                    content_piece = f"\n=== {result.document_name} - チャンク{result.chunk_index} (関連度: {result.relevance_score:.3f}) ===\n{result.content}\n"
+                    content_piece = f"\n=== {result.document_name} - 参考資料{result.chunk_index} (関連度: {result.relevance_score:.3f}) ===\n{result.content}\n"
                     
                     if total_length + len(content_piece) <= max_total_length:
                         relevant_content.append(content_piece)

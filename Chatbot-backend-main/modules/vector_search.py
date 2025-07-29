@@ -342,7 +342,7 @@ class VectorSearchSystem:
                 
                 # スニペットを追加
                 if snippet and len(snippet.strip()) > 0:
-                    content_piece = f"\n=== {doc_name} - チャンク{chunk_idx} (類似度: {similarity:.3f}) ===\n{snippet}\n"
+                    content_piece = f"\n=== {doc_name} - 参考資料{chunk_idx} (類似度: {similarity:.3f}) ===\n{snippet}\n"
                     
                     if total_length + len(content_piece) <= max_total_length:
                         relevant_content.append(content_piece)

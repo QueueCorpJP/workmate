@@ -847,7 +847,7 @@ const GuideBook = () => {
                           </StepLabel>
                           <StepContent>
                             <Typography variant="body2" sx={{ mb: 2 }}>
-                              各サブタスクに対して独立したベクトル検索を実行し、関連する文書チャンクを取得します。
+                              各サブタスクに対して独立したベクトル検索を実行し、関連する参考文書を取得します。
                             </Typography>
                           </StepContent>
                         </Step>
