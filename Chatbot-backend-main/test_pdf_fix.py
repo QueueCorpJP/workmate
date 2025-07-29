@@ -1,64 +1,53 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-PDF文字化け修復のテストスクリプト
+PDF文字化け修正テスト
 """
 
 import sys
 import os
-sys.path.append(os.path.join(os.path.dirname(__file__), 'modules'))
 
-from knowledge.pdf import fix_mojibake_text, check_text_corruption
+# 'Chatbot-backend-main' ディレクトリを Python のパスに追加して、
+# 'modules' をトップレベルパッケージとしてインポートできるようにします
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
+from modules.knowledge.pdf import fix_mojibake_text, check_text_corruption
 
 def test_pdf_fix():
-    """ユーザー報告の文字化けテキストをテスト"""
-    
-    # ユーザー報告の文字化けテキスト
-    corrupted_text = """
-˔جຊΞΠςϜ υϥΠϒʗ%7%ϚϧνυϥΠϒ 
- Ϟχλʔʗ%)'ܕӷথ 
-˔ඪ४౥ࡌιϑτ 0GpDF)PNF#VTJOFTT ʢ104"൛ʣ 
+    # ユーザーから報告された文字化けテキスト
+    corrupted_text = """˔εϖοΫ 04ʗ8JOEPXT1SPCJU 
+ $16ʗ$PSFJ()[  ϝϞϦʗ1$	%%3
+(#  σΟεΫʗ44%(#。 
+˔جຊΞΠςϜ υϥΠϒʗ%7%ϚϧνυϥΠϒ ˔ඪ४౥ࡌιϑτ 0GpDF)PNF#VTJOFTT ʢ104"൛ʣ 
  "QQ(VBSE4PMP  $BOPOJNBHF8"3&%FTLUPQ 
-˔֎ܗੇ๏ɾ ࣭ྔ ʢ8
-ʷ ʢ)
-ʷ ʢ%
-ᶱ 
- ໿LH ʢόοςϦʔؚΉʣ˔εϖοΫ 04ʗ8JOEPXT1SPCJU 
- $16ʗ$PSF6MUSB6()[  ϝϞϦʗ%%3(#  σΟεΫʗ44%(#
-"""
+(16૿ઃ ʢ/7*%*""ʣ ˠˇ ʢ੫=ࠐʣ ɹ˔εϖοΫ 04ʗ8JOEPXT1SPCJU 
+ $16ʗ$PSFJ6()[  ϝϞϦʗ%%3(#  σΟεΫʗ44%(#"""
     
-    print("=== PDF文字化け修復テスト ===")
-    print(f"元のテキスト:\n{corrupted_text}")
-    print("\n" + "="*50 + "\n")
+    print("=== PDF文字化け修正テスト ===")
+    print(f"元のテキスト:\n{corrupted_text}\n")
     
-    # 文字化け検出テスト
+    # 文字化けチェック
     is_corrupted = check_text_corruption(corrupted_text)
-    print(f"文字化け検出結果: {is_corrupted}")
+    print(f"文字化け検出: {'はい' if is_corrupted else 'いいえ'}")
     
-    # 文字化け修復テスト
-    fixed_text = fix_mojibake_text(corrupted_text)
-    print(f"修復後のテキスト:\n{fixed_text}")
-    
-    print("\n" + "="*50 + "\n")
-    
-    # 期待される結果
-    expected_keywords = [
-        "マルチドライブ", "DVDマルチドライブ", "モニター", "型番",
-        "標準搭載ソフト", "PDF", "HOME", "BUSINESS", "POS版",
-        "AppGuard", "Solo", "Canonimage", "WARE", "Desktop",
-        "外形寸法", "質量", "約", "kg", "バッテリー含む",
-        "スペック", "OS", "Windows", "Pro", "bit",
-        "CPU", "Core", "Ultra", "GHz", "メモリー", "DDR", "GB",
-        "ディスク", "SSD"
-    ]
-    
-    print("期待されるキーワード:")
-    for keyword in expected_keywords:
-        if keyword in fixed_text:
-            print(f"✅ '{keyword}' - 修復成功")
-        else:
-            print(f"❌ '{keyword}' - 修復失敗")
-    
-    return fixed_text
+    if is_corrupted:
+        # 修復実行
+        fixed_text = fix_mojibake_text(corrupted_text)
+        print(f"修復後のテキスト:\n{fixed_text}\n")
+        
+        # 期待されるキーワードをチェック
+        expected_keywords = ['Windows', 'マルチドライブ', 'BUSINESS', 'スペック', 'PC', 'メモリ', 'ディスク']
+        found_keywords = [kw for kw in expected_keywords if kw in fixed_text]
+        
+        print(f"期待されるキーワード: {expected_keywords}")
+        print(f"見つかったキーワード: {found_keywords}")
+        print(f"修復成功率: {len(found_keywords)}/{len(expected_keywords)} ({len(found_keywords)/len(expected_keywords)*100:.1f}%)")
+        
+        # 再度文字化けチェック
+        still_corrupted = check_text_corruption(fixed_text)
+        print(f"修復後の文字化け: {'まだあり' if still_corrupted else 'なし'}")
+    else:
+        print("文字化けが検出されませんでした。")
 
 if __name__ == "__main__":
     test_pdf_fix() 

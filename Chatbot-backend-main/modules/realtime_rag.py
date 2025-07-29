@@ -191,9 +191,11 @@ class RealtimeRAGProcessor:
             with psycopg2.connect(self.db_url, cursor_factory=RealDictCursor) as conn:
                 with conn.cursor() as cur:
                     # 🔍 まず、埋め込みベクトルが利用可能なチャンクでベクトル類似検索
+                    
+                    # Convert query vector to proper string format and cast to vector type
                     vector_str = '[' + ','.join(map(str, query_embedding)) + ']'
                     
-                    sql_vector = """
+                    sql_vector = f"""
                     SELECT
                         c.id,
                         c.doc_id,
@@ -201,7 +203,7 @@ class RealtimeRAGProcessor:
                         c.content,
                         ds.name as document_name,
                         ds.type as document_type,
-                        1 - (c.embedding <=> %s) as similarity_score,
+                        1 - (c.embedding <=> '{vector_str}'::vector) as similarity_score,
                         'vector' as search_method
                     FROM chunks c
                     LEFT JOIN document_sources ds ON ds.id = c.doc_id
@@ -210,7 +212,7 @@ class RealtimeRAGProcessor:
                       AND LENGTH(c.content) > 10
                     """
                     
-                    params_vector = [vector_str]
+                    params_vector = []
                     
                     # 会社IDフィルタ（オプション）
                     if company_id:
@@ -218,8 +220,8 @@ class RealtimeRAGProcessor:
                         params_vector.append(company_id)
                     
                     # ベクトル距離順でソート
-                    sql_vector += " ORDER BY c.embedding <=> %s LIMIT %s"
-                    params_vector.extend([vector_str, top_k])
+                    sql_vector += f" ORDER BY c.embedding <=> '{vector_str}'::vector LIMIT %s"
+                    params_vector.append(top_k)
                     
                     logger.info(f"実行SQL: ベクトル類似検索 (Top-{top_k})")
                     cur.execute(sql_vector, params_vector)

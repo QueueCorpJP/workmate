@@ -864,7 +864,10 @@ JSON形式のみで回答してください：
             with psycopg2.connect(self.db_url, cursor_factory=RealDictCursor) as conn:
                 with conn.cursor() as cur:
                     # pgvectorを使用したベクトル検索
-                    sql = """
+                    # Convert Python list to PostgreSQL vector format
+                    vector_str = '[' + ','.join(map(str, query_embedding)) + ']'
+                    
+                    sql = f"""
                     SELECT DISTINCT
                         c.id as chunk_id,
                         c.doc_id as document_id,
@@ -872,7 +875,7 @@ JSON形式のみで回答してください：
                         c.content as snippet,
                         ds.name as document_name,
                         ds.type as document_type,
-                        (1 - (c.embedding <=> %s::vector)) as score
+                        (1 - (c.embedding <=> '{vector_str}'::vector)) as score
                     FROM chunks c
                     LEFT JOIN document_sources ds ON ds.id = c.doc_id
                     WHERE c.content IS NOT NULL
@@ -880,7 +883,7 @@ JSON形式のみで回答してください：
                       AND LENGTH(c.content) > 10
                     """
                     
-                    params = [str(query_embedding)]
+                    params = []
                     
                     if company_id:
                         sql += " AND c.company_id = %s"

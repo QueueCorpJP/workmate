@@ -353,23 +353,26 @@ class UltraAccurateSearchSystem:
                 with conn.cursor() as cur:
                     if self.pgvector_available:
                         # pgvectorを使用した高速検索
-                        cur.execute("""
-                            SELECT DISTINCT 
+                        # Convert Python list to PostgreSQL vector format
+                        vector_str = '[' + ','.join(map(str, query_vector)) + ']'
+                        
+                        cur.execute(f"""
+                            SELECT DISTINCT
                                 c.id as chunk_id,
                                 c.doc_id as document_id,
                                 c.chunk_index,
                                 c.content as snippet,
                                 ds.name as document_name,
                                 ds.type as document_type,
-                                (1 - (c.embedding <=> %s)) as similarity_score
+                                (1 - (c.embedding <=> '{vector_str}'::vector)) as similarity_score
                             FROM chunks c
                             INNER JOIN document_sources ds ON ds.id = c.doc_id
-                            WHERE c.embedding IS NOT NULL 
+                            WHERE c.embedding IS NOT NULL
                                 AND ds.active = true
                                 AND (%s IS NULL OR ds.company_id = %s OR ds.company_id IS NULL)
-                            ORDER BY c.embedding <=> %s
+                            ORDER BY c.embedding <=> '{vector_str}'::vector
                             LIMIT %s
-                        """, (query_vector, company_id, company_id, query_vector, limit))
+                        """, (company_id, company_id, limit))
                         
                     else:
                         # フォールバック: L2距離計算
@@ -393,21 +396,20 @@ class UltraAccurateSearchSystem:
                     results = cur.fetchall()
                     
                     # 結果を変換（document_sources.nameを必ず使用）
+                    search_results = []
                     for row in results:
                         # document_sources.nameを必ず使用
                         document_name = row['document_name'] if row['document_name'] else 'Unknown Document'
                         
-                        search_results.append(UltraSearchResult(
-                            chunk_id=row['chunk_id'],
-                            document_id=row['document_id'],
-                            chunk_index=row['chunk_index'],
-                            content=row['snippet'],
-                            document_name=document_name,  # document_sources.nameのみ
-                            document_type=row['document_type'],
-                            relevance_score=float(row['similarity_score']),
-                            confidence_score=float(row['similarity_score']) * 0.9,
-                            search_method="ultra_accurate_vector"
-                        ))
+                        search_results.append({
+                            'chunk_id': row['chunk_id'],
+                            'document_id': row['document_id'],
+                            'chunk_index': row['chunk_index'],
+                            'snippet': row['snippet'],
+                            'document_name': document_name,  # document_sources.nameのみ
+                            'document_type': row['document_type'],
+                            'similarity_score': float(row['similarity_score'])
+                        })
                     
                     return search_results
         

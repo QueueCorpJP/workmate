@@ -249,9 +249,8 @@ def fix_mojibake_text(text: str) -> str:
         # 連続する文字化け文字を除去（実際の文字化け文字のみ）
         fixed_text = re.sub(r'[縺繝繧]{3,}', '[文字化け]', fixed_text)
         
-        # 置換文字を除去
-        fixed_text = fixed_text.replace('\ufffd', '[文字化け]')
-        fixed_text = fixed_text.replace('', '[文字化け]')
+        # 置換文字を処理
+        fixed_text = fixed_text.replace('\ufffd', '') # 完全に削除
     
     # 🎯 余分な空白を整理（強化版）
     fixed_text = re.sub(r'\s+', ' ', fixed_text)
@@ -281,10 +280,7 @@ def check_text_corruption(text: str) -> bool:
         # エンコーディング破損パターン
         r'[A-Z]{4,}[A-Z]{4,}', # 連続する大文字（VTJOFTT等）
         r'%%\d+',        # %% + 数字パターン
-        r'\d+\(\)[',     # 数字 + () + [パターン
-        
-        # バイナリデータの混入
-        r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]+',
+        r'\d+\(\)\[',     # 数字 + () + [パターン
     ]
     
     # パターンマッチングによる文字化け検出

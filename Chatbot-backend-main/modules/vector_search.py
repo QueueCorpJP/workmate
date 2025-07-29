@@ -181,9 +181,11 @@ class VectorSearchSystem:
                 with conn.cursor() as cur:
                     if self.pgvector_available:
                         # pgvectorが利用可能な場合の高速検索
-                        similarity_sql = "1 - (c.embedding <=> %s::vector)"
-                        order_sql = "c.embedding <=> %s::vector"
-                        params = [query_vector]
+                        # クエリベクトルを文字列形式に変換してvector型にキャスト
+                        vector_str = '[' + ','.join(map(str, query_vector)) + ']'
+                        similarity_sql = f"1 - (c.embedding <=> '{vector_str}'::vector)"
+                        order_sql = f"c.embedding <=> '{vector_str}'::vector"
+                        params = []
                     else:
                         # pgvectorが利用できない場合のフォールバック検索
                         logger.warning("⚠️ pgvectorが無効のため、フォールバック検索を使用")
@@ -220,10 +222,7 @@ class VectorSearchSystem:
                     
                     # ソートと制限
                     sql += f" ORDER BY {order_sql} LIMIT %s"
-                    if self.pgvector_available:
-                        params.extend([query_vector, limit])
-                    else:
-                        params.append(limit)
+                    params.append(limit)
                     
                     logger.info(f"実行SQL: {sql}")
                     logger.info(f"パラメータ: {params}")

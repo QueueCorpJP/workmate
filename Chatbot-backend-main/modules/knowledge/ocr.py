@@ -7,6 +7,7 @@ import traceback
 from pdf2image import convert_from_bytes
 from ..config import setup_gemini
 from ..database import ensure_string
+import google.generativeai as genai
 
 # Geminiモデルをセットアップ
 model = setup_gemini()
@@ -24,11 +25,17 @@ async def ocr_with_gemini(images, instruction, chunk_size=8):
     async def process_page(idx, image):
         def sync_call():
             try:
-                import google.generativeai as genai
                 prompt = f"{prompt_base}\n\nPage {idx + 1}:"
+                
+                # 生成設定を正しく作成
+                generation_config = genai.GenerationConfig(
+                    temperature=0.3,
+                    max_output_tokens=8192,
+                )
+                
                 response = model.generate_content(
                     [prompt, image],
-                    generation_config=genai.GenerationConfig(temperature=0.3)
+                    generation_config=generation_config
                 )
                 result_text = ""
                 for part in response.parts:
