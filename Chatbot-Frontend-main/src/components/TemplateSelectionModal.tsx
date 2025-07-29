@@ -330,8 +330,8 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
             sx={{ color: 'white', p: isSmallMobile ? 1 : 1.5 }}
             size={isSmallMobile ? 'small' : 'medium'}
           >
-            <CloseIcon />
-          </IconButton>
+          <CloseIcon />
+        </IconButton>
         </Box>
       </DialogTitle>
 
@@ -464,38 +464,38 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
           }}>
             {/* Desktop Category Sidebar */}
             {!isMobile && (
-              <Box
-                sx={{
+            <Box
+              sx={{
                   width: isTablet ? 200 : 250,
-                  borderRight: 1,
-                  borderColor: 'divider',
-                  p: 2,
-                  overflow: 'auto',
-                }}
-              >
+                borderRight: 1,
+                borderColor: 'divider',
+                p: 2,
+                overflow: 'auto',
+              }}
+            >
                 <Typography 
                   variant="subtitle2" 
                   fontWeight={600} 
                   mb={2}
                   sx={{ fontSize: isTablet ? '0.8rem' : '0.875rem' }}
                 >
-                  カテゴリ
-                </Typography>
-                {loading ? (
+                カテゴリ
+              </Typography>
+              {loading ? (
                   <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-                    <CircularProgress size={24} />
+                <CircularProgress size={24} />
                   </Box>
-                ) : (
-                  categories.map((category) => (
-                    <Card
-                      key={category.id}
-                      sx={{
-                        mb: 1,
-                        cursor: 'pointer',
-                        border: selectedCategory === category.id ? 2 : 1,
-                        borderColor: selectedCategory === category.id ? 'primary.main' : 'divider',
-                        '&:hover': { borderColor: 'primary.main' },
-                      }}
+              ) : (
+                categories.map((category) => (
+                  <Card
+                    key={category.id}
+                    sx={{
+                      mb: 1,
+                      cursor: 'pointer',
+                      border: selectedCategory === category.id ? 2 : 1,
+                      borderColor: selectedCategory === category.id ? 'primary.main' : 'divider',
+                      '&:hover': { borderColor: 'primary.main' },
+                    }}
                       onClick={() => {
                         console.log('Desktop category selected:', category.id, category.name);
                         setSelectedCategory(category.id);
@@ -508,20 +508,20 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                           fontWeight={600}
                           sx={{ fontSize: isTablet ? '0.75rem' : '0.875rem' }}
                         >
-                          {category.name}
-                        </Typography>
+                        {category.name}
+                      </Typography>
                         <Typography 
                           variant="caption" 
                           color="text.secondary"
                           sx={{ fontSize: isTablet ? '0.7rem' : '0.75rem' }}
                         >
-                          {category.description}
-                        </Typography>
-                      </CardContent>
-                    </Card>
-                  ))
-                )}
-              </Box>
+                        {category.description}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </Box>
             )}
 
             {/* Template List */}
@@ -609,9 +609,9 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                       lg={isMobile ? 12 : 4}
                       key={template.id}
                     >
-                      <Card
-                        sx={{
-                          cursor: 'pointer',
+                  <Card
+                    sx={{
+                      cursor: 'pointer',
                           border: 1,
                           borderColor: 'divider',
                           height: '100%',
@@ -623,9 +623,9 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                             boxShadow: 2,
                             transform: 'translateY(-2px)',
                           },
-                        }}
-                        onClick={() => handleTemplateSelect(template)}
-                      >
+                    }}
+                    onClick={() => handleTemplateSelect(template)}
+                  >
                         <CardContent sx={{ 
                           flex: 1, 
                           p: isSmallMobile ? 1.5 : 2,
@@ -645,8 +645,8 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                                  WebkitBoxOrient: 'vertical',
                                }}
                              >
-                               {template.title}
-                             </Typography>
+                            {template.title}
+                          </Typography>
                            </Box>
 
                           <Typography
@@ -691,15 +691,15 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                                 fontSize: isSmallMobile ? '0.65rem' : '0.75rem',
                               }}
                             />
-                          </Box>
-                        </CardContent>
-                      </Card>
+                      </Box>
+                    </CardContent>
+                  </Card>
                                            </Grid>
                      ))}
                    </Grid>
                  )}
                </Box>
-             )}
+              )}
             </Box>
           </Box>
         )}
@@ -744,10 +744,10 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
               >
                 テンプレート内容
               </Typography>
-              <Box
-                sx={{
-                  border: 1,
-                  borderColor: 'divider',
+                <Box
+                  sx={{
+                    border: 1,
+                    borderColor: 'divider',
                   borderRadius: 1,
                   p: isSmallMobile ? 1.5 : 2,
                   bgcolor: 'grey.50',
@@ -756,13 +756,13 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                   fontFamily: 'monospace',
                   fontSize: isSmallMobile ? '0.75rem' : '0.875rem',
                   lineHeight: 1.4,
-                  overflow: 'auto',
+                    overflow: 'auto',
                   maxHeight: isSmallMobile ? '60vh' : '50vh',
                 }}
               >
                 {processTemplate(selectedTemplate)}
               </Box>
-            </Box>
+                </Box>
           </Box>
         )}
       </DialogContent>

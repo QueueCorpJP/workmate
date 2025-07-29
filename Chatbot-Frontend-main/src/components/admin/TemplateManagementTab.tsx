@@ -510,18 +510,6 @@ const TemplateManagementTab: React.FC<TemplateManagementTabProps> = ({ user }) =
                   '&:hover': {
                     backgroundColor: alpha(theme.palette.primary.main, 0.2),
                   },
-                  animation: 'pulse 2s infinite',
-                  '@keyframes pulse': {
-                    '0%': {
-                      boxShadow: `0 0 0 0 ${alpha(theme.palette.primary.main, 0.7)}`,
-                    },
-                    '70%': {
-                      boxShadow: `0 0 0 10px ${alpha(theme.palette.primary.main, 0)}`,
-                    },
-                    '100%': {
-                      boxShadow: `0 0 0 0 ${alpha(theme.palette.primary.main, 0)}`,
-                    },
-                  },
                 }}
               >
                 <HelpOutlineIcon />
@@ -1436,6 +1424,160 @@ const TemplateManagementTab: React.FC<TemplateManagementTabProps> = ({ user }) =
                     </Typography>
                   </Box>
                 </Stack>
+              </Paper>
+
+              {/* 初心者向けテンプレートフォーマット例セクション */}
+              <Paper elevation={3} sx={{ p: 3, mb: 3, borderRadius: 3, background: 'rgba(255,255,255,0.9)' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <TipsAndUpdatesIcon sx={{ color: '#1976d2', mr: 1, fontSize: 28 }} />
+                  <Typography variant="h5" sx={{ fontWeight: 700, color: '#1976d2' }}>
+                    初心者向け：コピー&ペーストで使えるテンプレートフォーマット
+                  </Typography>
+                </Box>
+                
+                <Alert severity="info" sx={{ mb: 3 }}>
+                  <Typography variant="body2">
+                    以下のフォーマットをコピーして、テンプレート作成時の「テンプレート内容」欄に貼り付けてください。
+                    【】内の部分を具体的な内容に置き換えるだけで、効果的なプロンプトが完成します。
+                  </Typography>
+                </Alert>
+
+                <Stack spacing={3}>
+                  <Box sx={{ bgcolor: '#f8fbff', p: 3, borderRadius: 2, border: '1px solid #e3f2fd' }}>
+                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#1976d2', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <ContentCopyIcon sx={{ fontSize: 20 }} />
+                      📋 基本フォーマット（汎用）
+                    </Typography>
+                    <Box sx={{ bgcolor: '#ffffff', p: 2, borderRadius: 1, fontFamily: 'monospace', fontSize: '0.9rem', border: '1px solid #ddd' }}>
+                      <Typography component="pre" sx={{ margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+{`【役割】
+あなたは【専門分野】の専門家です。
+
+【タスク】
+以下の内容について【具体的な作業内容】してください。
+
+【入力情報】
+・【項目1】: 【内容】
+・【項目2】: 【内容】
+・【項目3】: 【内容】
+
+【出力形式】
+【希望する回答の形式や構造を指定】
+
+【注意事項】
+・【重要なポイント1】
+・【重要なポイント2】
+・【避けるべきこと】`}
+                      </Typography>
+                    </Box>
+                    <Typography variant="caption" sx={{ mt: 1, display: 'block', color: '#666' }}>
+                      💡 使用例：「あなたは営業の専門家です」「メール文章を作成してください」など
+                    </Typography>
+                  </Box>
+
+                  <Box sx={{ bgcolor: '#f0f8ff', p: 3, borderRadius: 2, border: '1px solid #e3f2fd' }}>
+                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#1565c0', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <ContentCopyIcon sx={{ fontSize: 20 }} />
+                      💼 ビジネス文書作成フォーマット
+                    </Typography>
+                    <Box sx={{ bgcolor: '#ffffff', p: 2, borderRadius: 1, fontFamily: 'monospace', fontSize: '0.9rem', border: '1px solid #ddd' }}>
+                      <Typography component="pre" sx={{ margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+{`【文書の種類】
+【メール/提案書/報告書/議事録など】を作成してください。
+
+【基本情報】
+・宛先：【相手の名前・役職】
+・件名：【メールの件名】
+・目的：【文書を作成する目的】
+
+【内容詳細】
+・背景：【なぜこの文書が必要か】
+・要点：【伝えたい主要なポイント】
+・期待する結果：【相手にどう行動してほしいか】
+
+【スタイル要件】
+・トーン：【丁寧/カジュアル/フォーマル】
+・文字数：【約○○文字】
+・構成：【挨拶→本文→締め】`}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  <Box sx={{ bgcolor: '#fff8f0', p: 3, borderRadius: 2, border: '1px solid #ffe0b2' }}>
+                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#f57c00', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <ContentCopyIcon sx={{ fontSize: 20 }} />
+                      📊 分析・調査フォーマット
+                    </Typography>
+                    <Box sx={{ bgcolor: '#ffffff', p: 2, borderRadius: 1, fontFamily: 'monospace', fontSize: '0.9rem', border: '1px solid #ddd' }}>
+                      <Typography component="pre" sx={{ margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+{`【分析対象】
+【データ/資料/状況】について詳しく分析してください。
+
+【分析の観点】
+・【観点1】：【具体的な分析ポイント】
+・【観点2】：【具体的な分析ポイント】
+・【観点3】：【具体的な分析ポイント】
+
+【提供データ】
+【ここに分析対象のデータや情報を記載】
+
+【求める成果物】
+1. 【結果1】：【詳細な説明】
+2. 【結果2】：【詳細な説明】
+3. 【結果3】：【詳細な説明】
+
+【制約条件】
+・期限：【いつまでに】
+・形式：【表/グラフ/文章など】`}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  <Box sx={{ bgcolor: '#f0fff0', p: 3, borderRadius: 2, border: '1px solid #c8e6c8' }}>
+                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#2e7d32', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <ContentCopyIcon sx={{ fontSize: 20 }} />
+                      🎯 問題解決フォーマット
+                    </Typography>
+                    <Box sx={{ bgcolor: '#ffffff', p: 2, borderRadius: 1, fontFamily: 'monospace', fontSize: '0.9rem', border: '1px solid #ddd' }}>
+                      <Typography component="pre" sx={{ margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+{`【現在の問題】
+【具体的な問題の内容】
+
+【問題の背景】
+・発生時期：【いつから】
+・関係者：【誰が関わっているか】
+・影響範囲：【どこまで影響があるか】
+
+【制約条件】
+・予算：【使える費用】
+・期限：【解決期限】
+・リソース：【使える人員・ツール】
+
+【求める解決策】
+以下の形式で3つの解決案を提示してください：
+1. 【解決案1】
+   - 実行方法：【具体的な手順】
+   - 期待効果：【どんな改善が見込めるか】
+   - リスク：【考えられるデメリット】
+
+2. 【解決案2】（同様の形式）
+3. 【解決案3】（同様の形式）`}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Stack>
+
+                <Box sx={{ mt: 3, p: 2, bgcolor: '#e8f5e8', borderRadius: 2, border: '1px solid #4caf50' }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600, color: '#2e7d32', mb: 1 }}>
+                    🚀 使い方のコツ
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#2e7d32' }}>
+                    1. 上記フォーマットをコピーして「テンプレート内容」に貼り付け<br/>
+                    2. 【】内の部分を具体的な内容に置き換え<br/>
+                    3. 必要に応じて項目を追加・削除してカスタマイズ<br/>
+                    4. テストして効果的な結果が得られるまで調整
+                  </Typography>
+                </Box>
               </Paper>
 
               {/* 管理のコツセクション */}
