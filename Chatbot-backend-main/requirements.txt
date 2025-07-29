@@ -1,7 +1,7 @@
 fastapi==0.109.2
 uvicorn==0.27.1
 python-multipart>=0.0.18
-google-generativeai==0.3.2
+google-genai>=0.3.0
 google-cloud-aiplatform>=1.38.0
 google-api-python-client>=2.0.0
 google-auth-httplib2>=0.1.0

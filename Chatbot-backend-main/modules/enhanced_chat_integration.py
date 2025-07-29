@@ -87,7 +87,9 @@ class EnhancedChatIntegration:
     
     async def process_chat_with_enhanced_rag(
         self,
-        question: str,
+        question,
+        db,
+        current_user,
         company_id: str = None,
         company_name: str = "お客様の会社",
         user_id: str = "anonymous"
@@ -96,7 +98,9 @@ class EnhancedChatIntegration:
         拡張RAGを使用したチャット処理
         
         Args:
-            question: ユーザーの質問
+            question: ユーザーの質問（ChatMessageオブジェクトまたは文字列）
+            db: データベース接続
+            current_user: 現在のユーザー
             company_id: 会社ID
             company_name: 会社名
             user_id: ユーザーID
@@ -104,17 +108,23 @@ class EnhancedChatIntegration:
         Returns:
             Dict: 処理結果
         """
-        logger.info(f"🚀 拡張RAGチャット処理開始: '{question[:100]}...'")
+        # ChatMessageオブジェクトから文字列を取得
+        if hasattr(question, 'text'):
+            question_text = question.text
+        else:
+            question_text = str(question)
+        
+        logger.info(f"🚀 拡張RAGチャット処理開始: '{question_text[:100]}...'")
         start_time = datetime.now()
         
         try:
             # 拡張RAGを使用すべきかチェック
-            use_enhanced = self.should_use_enhanced_rag(question)
+            use_enhanced = self.should_use_enhanced_rag(question_text)
             
             if use_enhanced:
                 logger.info("🔄 拡張RAGシステムを使用")
                 result = await process_question_enhanced_realtime(
-                    question=question,
+                    question=question_text,
                     company_id=company_id,
                     company_name=company_name,
                     top_k=15
@@ -134,7 +144,7 @@ class EnhancedChatIntegration:
                 logger.info("📝 基本RAGシステムを使用")
                 if self.basic_available:
                     result = await process_question_realtime(
-                        question=question,
+                        question=question_text,
                         company_id=company_id,
                         company_name=company_name,
                         top_k=20
@@ -165,7 +175,7 @@ class EnhancedChatIntegration:
             result['metadata'].update({
                 'user_id': user_id,
                 'integration_processing_time': processing_time,
-                'question_length': len(question),
+                'question_length': len(question_text),
                 'enhanced_rag_available': self.enhanced_available,
                 'basic_rag_available': self.basic_available
             })
@@ -193,7 +203,7 @@ class EnhancedChatIntegration:
                     "complexity_decision": "error",
                     "user_id": user_id,
                     "integration_processing_time": processing_time,
-                    "question_length": len(question)
+                    "question_length": len(question_text)
                 }
             }
     

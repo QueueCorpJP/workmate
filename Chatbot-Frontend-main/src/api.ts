@@ -81,22 +81,66 @@ const api = axios.create({
   ],
   transformResponse: [
     (data) => {
-      console.log("Response:", { data });
+      console.log("🔄 Response transform開始:", { 
+        dataType: typeof data, 
+        dataLength: data?.length || 0,
+        dataPreview: typeof data === 'string' ? data.substring(0, 200) : data
+      });
+      
       try {
         // 既にオブジェクトの場合はそのまま返す
         if (typeof data === "object" && data !== null) {
+          console.log("✅ データは既にオブジェクト形式");
           return data;
         }
+        
         // 文字列の場合はJSONパースを試行
         if (typeof data === "string" && data) {
-          const parsed = JSON.parse(data);
-          console.log("Parsed response:", parsed);
+          console.log("🔄 文字列データのJSONパース試行...");
+          
+          // 空白文字や制御文字をチェック
+          const cleanData = data.trim();
+          if (!cleanData) {
+            console.log("⚠️ データが空文字列です");
+            return null;
+          }
+          
+          // JSONとして有効かチェック
+          if (!cleanData.startsWith('{') && !cleanData.startsWith('[')) {
+            console.log("⚠️ データがJSON形式ではありません:", cleanData.substring(0, 100));
+            return cleanData; // そのまま返す
+          }
+          
+          const parsed = JSON.parse(cleanData);
+          console.log("✅ JSONパース成功:", { 
+            parsedType: typeof parsed,
+            parsedKeys: parsed && typeof parsed === 'object' ? Object.keys(parsed) : 'not object'
+          });
           return parsed;
         }
+        
+        console.log("✅ データをそのまま返します");
         return data;
+        
       } catch (error) {
-        console.error("Failed to parse response:", error);
-        console.log("Raw response:", data);
+        console.error("❌ レスポンス変換エラー:", {
+          error: error.message,
+          errorType: error.constructor.name,
+          dataType: typeof data,
+          dataLength: data?.length || 0,
+          dataString: typeof data === 'string' ? data.substring(0, 500) : String(data).substring(0, 500)
+        });
+        
+        // パースエラーの詳細分析
+        if (error instanceof SyntaxError) {
+          console.error("JSONパースエラー詳細:", {
+            message: error.message,
+            position: error.message.match(/position (\d+)/) ? error.message.match(/position (\d+)/)[1] : 'unknown',
+            rawData: data
+          });
+        }
+        
+        console.log("⚠️ パースに失敗したため、元データを返します");
         return data;
       }
     },

@@ -12,15 +12,19 @@ import uuid
 import logging
 import asyncio
 import tempfile
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 from datetime import datetime
 import re
 import tiktoken
 from fastapi import HTTPException, UploadFile
 try:
     from google import genai
+    from google.genai import types
+    GENAI_AVAILABLE = True
 except ImportError:
-    import google.generativeai as genai
+    GENAI_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.error("❌ google-genai SDK not available. Please install: pip install -U google-genai")
 import psycopg2
 from psycopg2.extras import execute_values
 from .multi_api_embedding import get_multi_api_embedding_client, multi_api_embedding_available
@@ -772,45 +776,100 @@ class DocumentProcessor:
             raise
     
     async def _extract_text_from_pdf(self, content: bytes) -> str:
-        """PDF からテキストを抽出する（Gemini OCR最適化版 + フォールバック対応）
+        """PDF からテキストを抽出する（Gemini 2.5 Flash OCR完璧版）
         
-        まずGemini OCRで高精度抽出を試行し、失敗時はPyPDF2フォールバックを使用
+        1. Gemini 2.5 Flash OCR（最高品質）
+        2. PyMuPDF（フォールバック）
+        3. PyPDF2（最終フォールバック）
         """
         
-        logger.info("📄 PDF抽出開始 - Gemini OCR優先")
+        logger.info("🚀 PDF抽出開始 - Gemini 2.5 Flash OCR優先")
         
         try:
-            # まずGemini OCRを試行
+            # まずGemini 2.5 Flash OCRを試行（最高品質）
+            logger.info("🔄 Gemini 2.5 Flash OCRでテキスト抽出を試行中...")
+            
             try:
-                from .knowledge.ocr import ocr_pdf_to_text_from_bytes
+                from .knowledge.gemini_flash_ocr import ocr_pdf_with_gemini_flash
+                
+                ocr_text = await ocr_pdf_with_gemini_flash(content)
+                
+                if ocr_text and ocr_text.strip() and not ocr_text.startswith("OCR処理エラー"):
+                    # OCR成功時の品質チェック
+                    quality_score = self._evaluate_text_quality(ocr_text)
+                    page_count = ocr_text.count("--- ページ") or 1
+                    
+                    logger.info(f"✅ Gemini 2.5 Flash OCR成功:")
+                    logger.info(f"   - 総文字数: {len(ocr_text):,}")
+                    logger.info(f"   - 品質スコア: {quality_score}/100")
+                    logger.info(f"   - ページ数: {page_count}")
+                    logger.info(f"   - 平均文字/ページ: {len(ocr_text)/page_count:.0f}")
+                    
+                    return ocr_text
+                else:
+                    logger.warning("⚠️ Gemini 2.5 Flash OCRが失敗またはエラーを返しました")
+                    raise Exception("Gemini 2.5 Flash OCR failed")
+                    
             except ImportError as e:
-                logger.error(f"❌ OCR module import failed - {e}")
-                raise Exception(f"OCR module not available: {e}")
-            
-            logger.info("🔄 Gemini OCRでテキスト抽出を試行中...")
-            ocr_text = await ocr_pdf_to_text_from_bytes(content)
-            
-            if ocr_text and ocr_text.strip() and not ocr_text.startswith("OCR処理中にエラーが発生しました"):
-                # OCR成功時の品質チェック
-                quality_score = self._evaluate_text_quality(ocr_text)
-                page_count = ocr_text.count("--- Page") or 1
+                logger.warning(f"⚠️ Gemini Flash OCRモジュールをインポートできません: {e}")
+                raise Exception(f"Gemini Flash OCR module not available: {e}")
+            except Exception as ocr_error:
+                logger.warning(f"⚠️ Gemini 2.5 Flash OCR処理失敗: {ocr_error}")
+                raise Exception(f"Gemini Flash OCR failed: {ocr_error}")
                 
-                logger.info(f"✅ Gemini OCR成功:")
-                logger.info(f"   - 総文字数: {len(ocr_text)}")
-                logger.info(f"   - 品質スコア: {quality_score}/100")
-                logger.info(f"   - ページ数: {page_count}")
-                logger.info(f"   - 平均文字/ページ: {len(ocr_text)/page_count:.0f}")
-                
-                return ocr_text
-            else:
-                logger.warning("⚠️ Gemini OCRが失敗またはエラーを返しました")
-                raise Exception("Gemini OCR failed")
-                
-        except Exception as ocr_error:
-            logger.error(f"❌ Gemini OCR処理失敗: {ocr_error}")
-            logger.info("🔄 PyPDF2フォールバックを使用")
+        except Exception as primary_error:
+            logger.error(f"❌ Gemini 2.5 Flash OCR処理失敗: {primary_error}")
+            logger.info("🔄 PyMuPDFフォールバックを使用")
             
-            # PyPDF2フォールバックで処理
+            # PyMuPDFフォールバック
+            try:
+                import fitz  # PyMuPDF
+                
+                # PyMuPDFでPDF処理
+                with fitz.open(stream=content, filetype="pdf") as doc:
+                    full_text = ""
+                    page_count = len(doc)
+                    
+                    for page_num, page in enumerate(doc, start=1):
+                        try:
+                            # テキスト抽出
+                            page_text = page.get_text("text") or ""
+                            
+                            if page_text.strip():
+                                # 文字化け修正を適用
+                                from .knowledge.pdf import fix_mojibake_text
+                                fixed_text = fix_mojibake_text(page_text)
+                                full_text += f"=== ページ {page_num} ===\n{fixed_text}\n\n"
+                            else:
+                                logger.debug(f"ページ {page_num} でテキストが抽出できませんでした")
+                                
+                        except Exception as page_error:
+                            logger.warning(f"ページ {page_num} の処理エラー: {page_error}")
+                            continue
+                    
+                    if full_text.strip():
+                        # PyMuPDF成功時の品質チェック
+                        quality_score = self._evaluate_text_quality(full_text)
+                        
+                        logger.info(f"✅ PyMuPDFフォールバック成功:")
+                        logger.info(f"   - 総文字数: {len(full_text):,}")
+                        logger.info(f"   - 品質スコア: {quality_score}/100")
+                        logger.info(f"   - ページ数: {page_count}")
+                        logger.info(f"   - 平均文字/ページ: {len(full_text)/page_count:.0f}")
+                        
+                        return full_text
+                    else:
+                        logger.warning("⚠️ PyMuPDFでテキストを抽出できませんでした")
+                        raise Exception("PyMuPDF extraction failed - no text found")
+                        
+            except ImportError:
+                logger.warning("⚠️ PyMuPDF (fitz) が利用できません")
+                logger.info("🔄 PyPDF2最終フォールバックを使用")
+            except Exception as pymupdf_error:
+                logger.warning(f"⚠️ PyMuPDF処理失敗: {pymupdf_error}")
+                logger.info("🔄 PyPDF2最終フォールバックを使用")
+            
+            # PyPDF2最終フォールバック
             fallback_text = await self._extract_text_from_pdf_fallback(content)
             return fallback_text
     
@@ -842,7 +901,7 @@ class DocumentProcessor:
                 r'[縺繧繝]',  # 典型的な文字化け
                 r'\(cid:\d+\)',  # PDF CID文字化け
                 r'[\\ufffd]',  # 置換文字
-                r'[]',  # その他の文字化け文字
+                r'[\\x00-\\x1f\\x7f-\\x9f]',  # 制御文字など
             ]
             mojibake_count = sum(len(re.findall(pattern, text)) for pattern in mojibake_patterns)
             mojibake_penalty = min(mojibake_count * 2, 40)  # 文字化け1つにつき2点減点

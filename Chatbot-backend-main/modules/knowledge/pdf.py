@@ -647,187 +647,161 @@ def split_ocr_text_into_sections(text: str, filename: str) -> list:
     return sections
 
 async def process_pdf_file(contents, filename):
-    """PDFファイルを処理してデータフレーム、セクション、テキストを返す"""
+    """PDFファイルを処理してデータフレーム、セクション、テキストを返す（Gemini 2.5 Flash OCR完璧版）"""
     try:
-        # BytesIOオブジェクトを作成
-        pdf_file = BytesIO(contents)
+        # まずGemini 2.5 Flash OCRを試行（最高品質）
+        logger.info(f"🚀 Gemini 2.5 Flash OCR優先でPDF処理開始: {filename}")
         
-        # PDFファイルを読み込む
-        pdf_reader = PyPDF2.PdfReader(pdf_file)
-        
-        # テキストを抽出
-        all_text = ""
-        sections = {}
-        extracted_text = f"=== ファイル: {filename} ===\n\n"
-        
-        corrupted_pages = []  # 文字化けしたページを記録
-        
-        for i, page in enumerate(pdf_reader.pages):
-            try:
-                # 強化されたテキスト抽出を使用
-                page_text = extract_text_with_encoding_fallback(page)
+        try:
+            # Gemini 2.5 Flash OCRを使用してPDF処理
+            from .gemini_flash_ocr import ocr_pdf_with_gemini_flash
+            
+            logger.info(f"🔄 Gemini 2.5 Flash OCRでテキスト抽出中: {filename}")
+            ocr_text = await ocr_pdf_with_gemini_flash(contents)
+            
+            if ocr_text and ocr_text.strip() and not ocr_text.startswith("OCR処理エラー"):
+                # OCR結果をセクション化
+                sections = {}
+                all_data = []
+                full_text = f"=== ファイル: {filename} (Gemini 2.5 Flash OCR) ===\n\n"
                 
-                # Ensure page_text is not None and convert to string if needed
-                if page_text is not None:
-                    page_text = ensure_string(page_text).replace('\x00', '') # 🧼 Remove NUL characters
-                    
-                    # ページごとに文字化けをチェック
-                    if check_text_corruption(page_text):
-                        print(f"ページ {i+1} で文字化けを検出: {page_text[:100]}...")
-                        corrupted_pages.append(i)
-                        # 文字化けページでもOCRフォールバックを試行
-                        try:
-                            print(f"ページ {i+1} でOCRフォールバックを試行中...")
-                            # OCR処理を追加実装する場合はここに
-                        except Exception as ocr_error:
-                            print(f"OCRフォールバック失敗: {ocr_error}")
-                    else:
-                        section_name = f"ページ {i+1}"
-                        sections[section_name] = page_text
-                        all_text += page_text + "\n"
-                        # 🎯 extracted_textにはページマーカーを追加しない
-                        extracted_text += f"{page_text}\n\n"
-                else:
-                    print(f"ページ {i+1} にテキストがありません")
-                    corrupted_pages.append(i)  # テキストなしも文字化けとして扱う
-                    # テキストなしページのデータはsectionsに保存しない
-            except Exception as page_error:
-                print(f"ページ {i+1} の処理中にエラー: {str(page_error)}")
-                corrupted_pages.append(i)  # エラーも文字化けとして扱う
-                # エラーページのデータはsectionsに保存しない
-        
-        # 初期データを作成（OCRが必要でない場合のみ）
-        all_data = []
-        
-        # 文字化けが検出された場合のみPyMuPDFでテキスト抽出を試行
-        if len(corrupted_pages) > 0 or (all_text and check_text_corruption(all_text)):
-            logger.info(f"PDF文字化け検出 (ページ: {corrupted_pages}) - PyMuPDF でテキスト抽出を試行: {filename}")
-            
-            # PyMuPDF でテキスト抽出を実行
-            pymupdf_result = await process_pdf_with_pymupdf(contents, filename)
-            if pymupdf_result:
-                logger.info("PyMuPDF によるテキスト抽出が成功しました")
-                return pymupdf_result
-            
-            logger.warning("PyMuPDF でのテキスト抽出失敗 - OCR 処理にフォールバックします")
-            
-            # PyMuPDF でのテキスト抽出が失敗した場合は古いOCR処理を試行
-            try:
-                print(f"文字化けを検出しました。OCRを使用してテキストを抽出します...")
-                ocr_text = await ocr_pdf_to_text_from_bytes(contents)
-                
-                if ocr_text:
-                    # OCR結果をセクションに分割
-                    ocr_sections_list = split_ocr_text_into_sections(ocr_text, filename)
-                    
-                    # データフレームを作成
-                    result_df = pd.DataFrame(ocr_sections_list) if ocr_sections_list else pd.DataFrame({
-                        'section': ["OCR結果"],
-                        'content': [ensure_string(ocr_text)],
-                        'source': ['PDF (OCR)'],
-                        'file': [filename],
-                        'url': [None]
-                    })
-                    
-                    # セクション辞書を作成
-                    ocr_sections = {item['section']: item['content'] for item in ocr_sections_list} if ocr_sections_list else {"OCR結果": ensure_string(ocr_text)}
-                    
-                    # 抽出テキストを作成
-                    ocr_extracted_text = f"=== ファイル: {filename} (OCR処理) ===\n\n"
-                    for section_name, content in ocr_sections.items():
-                        ocr_extracted_text += f"=== {section_name} ===\n{content}\n\n"
-                    
-                    return result_df, ocr_sections, ocr_extracted_text
-                else:
-                    raise Exception("OCRからテキストを抽出できませんでした")
-            except Exception as ocr_error:
-                logger.error(f"OCR処理失敗: {str(ocr_error)}")
-                # OCR失敗時は通常のテキスト抽出処理を続行
-                pass
-        
-        # PyMuPDF 処理が失敗した場合、通常のテキスト抽出を試行
-        # 文字化けページがない場合のみ、通常のテキスト処理を行う
-        if len(corrupted_pages) == 0 and all_text and not check_text_corruption(all_text):
-            # テキストをセクションに分割
-            # 見出しパターン
-            heading_pattern = r'^(?:\d+[\.\s]+|第\d+[章節]\s+|[\*\#]+\s+)?([A-Za-z\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]{2,}[：:、。])'
-            
-            current_section = "一般情報"
-            current_content = []
-            
-            # Ensure all_text is not empty and is a string
-            all_text_str = str(all_text) if all_text is not None else ""
-            if all_text_str:
-                for line in all_text_str.split("\n"):
-                    line = str(line).strip()
-                    if not line:
+                # ページごとにセクション分割
+                pages = ocr_text.split("--- ページ")
+                for i, page_content in enumerate(pages):
+                    if not page_content.strip():
                         continue
                     
-                    # 見出しかどうかを判定
-                    if re.search(heading_pattern, line):
-                        # 前のセクションを保存
-                        if current_content:
-                            # 必ず文字列に変換してから結合
-                            content_text = "\n".join([ensure_string(item) for item in current_content])
-                            all_data.append({
-                                'section': str(current_section),
-                                'content': content_text,
-                                'source': 'PDF',
-                                'file': filename,
-                                'url': None
-                            })
-                        
-                        # 新しいセクションを開始
-                        current_section = str(line)
-                        current_content = []
+                    # ページ番号を抽出
+                    lines = page_content.strip().split('\n')
+                    if lines and lines[0].strip().endswith("---"):
+                        page_num_line = lines[0].replace("---", "").strip()
+                        page_content_lines = lines[1:]
                     else:
-                        current_content.append(str(line))
+                        page_num_line = f"ページ {i + 1}"
+                        page_content_lines = lines
+                    
+                    page_text = '\n'.join(page_content_lines).strip()
+                    
+                    if page_text:
+                        section_name = page_num_line
+                        sections[section_name] = page_text
+                        all_data.append({
+                            'section': section_name,
+                            'content': page_text,
+                            'source': 'PDF (Gemini 2.5 Flash OCR)',
+                            'file': filename,
+                            'url': None
+                        })
+                        
+                        full_text += f"=== {section_name} ===\n{page_text}\n\n"
                 
-                # 最後のセクションを保存
-                if current_content:
-                    # 必ず文字列に変換してから結合
-                    content_text = "\n".join([ensure_string(item) for item in current_content])
-                    all_data.append({
-                        'section': str(current_section),
-                        'content': content_text,
-                        'source': 'PDF',
-                        'file': filename,
-                        'url': None
-                    })
-        else:
-            print("文字化けまたは問題のあるページが検出されたため、通常のテキスト処理をスキップします")
-        
-        # PyMuPDF 処理失敗後の最終フォールバック: 従来のテキスト抽出のみ 
-        # データフレームを作成
-        result_df = pd.DataFrame(all_data) if all_data else pd.DataFrame({
-            'section': ["エラー"],
-            'content': ["PDFからテキストを抽出できませんでした"],
-            'source': ['PDF'],
-            'file': [filename],
-            'url': [None]
-        })
-        
-        # すべての列の値を文字列に変換
-        for col in result_df.columns:
-            result_df[col] = result_df[col].apply(ensure_string)
-        
-        return result_df, sections, extracted_text
+                if all_data:
+                    # DataFrame作成
+                    import pandas as pd
+                    df = pd.DataFrame(all_data)
+                    for col in df.columns:
+                        df[col] = df[col].apply(ensure_string)
+                    
+                    logger.info(f"✅ Gemini 2.5 Flash OCRで正常に処理完了: {filename} ({len(all_data)} セクション)")
+                    return df, sections, full_text
+                else:
+                    logger.warning(f"⚠️ Gemini 2.5 Flash OCRでセクションを作成できませんでした: {filename}")
+                    raise Exception("Gemini Flash OCR section processing failed")
+            else:
+                logger.warning(f"⚠️ Gemini 2.5 Flash OCRで処理できませんでした: {filename}")
+                raise Exception("Gemini Flash OCR processing failed")
+                
+        except Exception as ocr_error:
+            logger.warning(f"⚠️ Gemini 2.5 Flash OCR処理エラー: {ocr_error}")
+            logger.info(f"🔄 PyMuPDFフォールバックを使用: {filename}")
+            
+            # PyMuPDFフォールバックでの処理
+            try:
+                result = await process_pdf_with_pymupdf(contents, filename)
+                if result is not None:
+                    df, sections, extracted_text = result
+                    logger.info(f"✅ PyMuPDFフォールバックで正常に処理完了: {filename}")
+                    return df, sections, extracted_text
+                else:
+                    logger.warning(f"⚠️ PyMuPDFで処理できませんでした: {filename}")
+                    raise Exception("PyMuPDF processing failed")
+            except Exception as pymupdf_error:
+                logger.warning(f"⚠️ PyMuPDF処理エラー: {pymupdf_error}")
+                logger.info(f"🔄 PyPDF2最終フォールバックを使用: {filename}")
+                
+                # PyPDF2最終フォールバックでの処理
+                return await _process_pdf_with_pypdf2_fallback(contents, filename)
+            
     except Exception as e:
-        print(f"PDFファイル処理エラー: {str(e)}")
-        print(traceback.format_exc())
+        print(f"PDFファイル処理エラー: {e}")
         
-        # エラーが発生しても最低限のデータを返す
-        empty_df = pd.DataFrame({
-            'section': ["エラー"],
-            'content': [f"PDFファイル処理中にエラーが発生しました: {str(e)}"],
-            'source': ['PDF'],
-            'file': [filename],
-            'url': [None]
-        })
+        # エラー時の空のDataFrame
+        import pandas as pd
+        empty_df = pd.DataFrame(columns=['section', 'content', 'source', 'file', 'url'])
         empty_sections = {"エラー": f"PDFファイル処理中にエラーが発生しました: {str(e)}"}
         error_text = f"=== ファイル: {filename} ===\n\n=== エラー ===\nPDFファイル処理中にエラーが発生しました: {str(e)}\n\n"
         
         return empty_df, empty_sections, error_text
+
+async def _process_pdf_with_pypdf2_fallback(contents, filename):
+    """PyPDF2を使用したフォールバック処理"""
+    # BytesIOオブジェクトを作成
+    pdf_file = BytesIO(contents)
+    
+    # PDFファイルを読み込む
+    pdf_reader = PyPDF2.PdfReader(pdf_file)
+    
+    # テキストを抽出
+    all_text = ""
+    sections = {}
+    extracted_text = f"=== ファイル: {filename} (PyPDF2フォールバック) ===\n\n"
+    
+    for i, page in enumerate(pdf_reader.pages):
+        try:
+            # 強化されたテキスト抽出を使用
+            page_text = extract_text_with_encoding_fallback(page)
+            
+            # Ensure page_text is not None and convert to string if needed
+            if page_text is not None:
+                page_text = ensure_string(page_text).replace('\x00', '') # 🧼 Remove NUL characters
+                
+                # 文字化け修正を適用
+                fixed_text = fix_mojibake_text(page_text)
+                
+                if fixed_text.strip():
+                    section_name = f"ページ {i+1}"
+                    sections[section_name] = fixed_text
+                    all_text += fixed_text + "\n"
+                    extracted_text += f"{fixed_text}\n\n"
+                else:
+                    logger.debug(f"ページ {i+1} でテキストが抽出できませんでした")
+            else:
+                logger.debug(f"ページ {i+1} でテキスト抽出結果がNullでした")
+                
+        except Exception as page_error:
+            logger.warning(f"ページ {i+1} の処理エラー: {page_error}")
+            continue
+    
+    # DataFrameを作成
+    import pandas as pd
+    data_list = []
+    for section_name, content in sections.items():
+        data_list.append({
+            'section': section_name,
+            'content': content,
+            'source': 'PDF (PyPDF2)',
+            'file': filename,
+            'url': None
+        })
+    
+    df = pd.DataFrame(data_list) if data_list else pd.DataFrame(columns=['section', 'content', 'source', 'file', 'url'])
+    
+    # 各列を文字列として確保
+    for col in df.columns:
+        df[col] = df[col].apply(ensure_string)
+    
+    logger.info(f"PyPDF2フォールバック処理完了: {filename} ({len(sections)} セクション)")
+    return df, sections, extracted_text
 
 async def process_pdf_with_pymupdf(contents: bytes, filename: str):
     """PyMuPDF を用いて PDF から直接テキストを抽出する
@@ -839,7 +813,18 @@ async def process_pdf_with_pymupdf(contents: bytes, filename: str):
         try:
             import fitz  # PyMuPDF
         except ImportError:
-            logger.warning("PyMuPDF (fitz) が利用できません。PyPDF2フォールバックを使用します。")
+            error_msg = """PyMuPDF (fitz) が利用できません。
+            
+PDFを適切に処理するために、PyMuPDFをインストールしてください:
+
+pip install PyMuPDF
+
+PyMuPDFはPopplerに依存しない高性能なPDF処理ライブラリです。
+インストール後、アプリケーションを再起動してください。
+
+現在はPyPDF2フォールバックを使用します。"""
+            
+            logger.warning(error_msg)
             return None
 
         logger.info(f"PDFファイル処理開始（PyMuPDFテキスト抽出使用）: {filename}")
@@ -883,6 +868,7 @@ async def process_pdf_with_pymupdf(contents: bytes, filename: str):
             return None
 
         # DataFrame 生成
+        import pandas as pd
         result_df = pd.DataFrame(all_data)
         for col in result_df.columns:
             result_df[col] = result_df[col].apply(ensure_string)

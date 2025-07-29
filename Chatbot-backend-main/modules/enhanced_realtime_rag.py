@@ -95,7 +95,13 @@ class EnhancedRealtimeRAGProcessor:
         Returns:
             QuestionAnalysis: 質問分析結果とサブタスク
         """
-        logger.info(f"✏️ Step 1: 質問分析・分割開始 - '{question[:100]}...'")
+        # ChatMessageオブジェクトから文字列を取得
+        if hasattr(question, 'text'):
+            question_text = question.text
+        else:
+            question_text = str(question)
+        
+        logger.info(f"✏️ Step 1: 質問分析・分割開始 - '{question_text[:100]}...'")
         
         try:
             # Gemini 2.5 Flashで質問を分析
@@ -612,7 +618,13 @@ JSON形式で回答してください：
         Returns:
             Dict: 処理結果
         """
-        logger.info(f"🚀 拡張リアルタイムRAG処理開始: '{question[:100]}...'")
+        # ChatMessageオブジェクトから文字列を取得
+        if hasattr(question, 'text'):
+            question_text = question.text
+        else:
+            question_text = str(question)
+        
+        logger.info(f"🚀 拡張リアルタイムRAG処理開始: '{question_text[:100]}...'")
         start_time = datetime.now()
         
         try:
@@ -672,10 +684,11 @@ JSON形式で回答してください：
             # 最終結果の構築
             result = {
                 "answer": final_answer,
+                "sources": self._extract_source_documents(all_chunks[:10]),  # main.pyが期待するフィールド名
                 "timestamp": datetime.now().isoformat(),
                 "status": "completed",
                 "metadata": metadata,
-                "source_documents": self._extract_source_documents(all_chunks[:10])  # 最大10個のソース
+                "source_documents": self._extract_source_documents(all_chunks[:10])  # 後方互換性のため残す
             }
             
             logger.info(f"🎉 拡張リアルタイムRAG処理成功完了: {total_processing_time:.2f}秒")
@@ -696,16 +709,24 @@ JSON形式で回答してください：
             return error_result
     
     def _extract_source_documents(self, chunks: List[Dict]) -> List[Dict]:
-        """ソース文書情報を抽出 - document_sources.nameのみを使用"""
+        """ソース文書情報を抽出 - main.pyが期待する形式で返す"""
         source_documents = []
         seen_docs = set()
         
         for chunk in chunks:
-            # document_sources.nameのみを使用
-            doc_name = chunk.get('document_name', 'Unknown Document')
-            if doc_name and doc_name not in seen_docs:
+            # document_sources.nameを取得（複数のフィールド名を試行）
+            doc_name = (
+                chunk.get('document_name') or
+                chunk.get('name') or
+                chunk.get('filename') or
+                'Unknown Document'
+            )
+            
+            if doc_name and doc_name not in seen_docs and doc_name not in ['システム回答', 'unknown', 'Unknown']:
                 doc_info = {
-                    "document_name": doc_name,  # document_sources.nameのみ
+                    "name": doc_name,  # main.pyが期待するフィールド名
+                    "filename": doc_name,  # 後方互換性
+                    "document_name": doc_name,  # 後方互換性
                     "document_type": chunk.get('document_type', 'unknown'),
                     "similarity_score": chunk.get('similarity_score', 0.0)
                 }

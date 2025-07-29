@@ -9,7 +9,15 @@ import asyncio
 import re
 from typing import List, Dict, Optional, Tuple
 from dotenv import load_dotenv
-import google.generativeai as genai
+# 新しいGoogle GenAI SDKをインポート
+try:
+    from google import genai
+    from google.genai import types
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    genai = None
+    types = None
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import json
@@ -136,7 +144,13 @@ class UltraAccurateRAGProcessor:
         ✏️ Step 1. 質問入力（超高精度版）
         質問の前処理と意図分析を実行
         """
-        logger.info(f"✏️ Step 1: 超高精度質問受付 - '{question[:50]}...'")
+        # ChatMessageオブジェクトから文字列を取得
+        if hasattr(question, 'text'):
+            question_text = question.text
+        else:
+            question_text = str(question)
+        
+        logger.info(f"✏️ Step 1: 超高精度質問受付 - '{question_text[:50]}...'")
         
         if not question or not question.strip():
             raise ValueError("質問が空です")
@@ -433,7 +447,13 @@ class UltraAccurateRAGProcessor:
         🎯 超高精度RAG処理のメインフロー
         全ステップを統合した最高精度の処理
         """
-        logger.info(f"🎯 超高精度RAG処理開始: '{question[:50]}...'")
+        # ChatMessageオブジェクトから文字列を取得
+        if hasattr(question, 'text'):
+            question_text = question.text
+        else:
+            question_text = str(question)
+        
+        logger.info(f"🎯 超高精度RAG処理開始: '{question_text[:50]}...'")
         
         try:
             # Step 1: 質問受付

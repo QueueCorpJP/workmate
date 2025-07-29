@@ -1309,57 +1309,90 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
         print(f"📊 システム状態: {system_status}")
         
         # Enhanced RAGでチャット処理
-        print("🔄 Enhanced RAG処理開始...")
-        result = await enhanced_chat.process_chat_with_enhanced_rag(message, db, current_user)
-        print("✅ Enhanced RAG処理完了")
+        result = await enhanced_chat.process_chat_with_enhanced_rag(
+            question=message,
+            db=db,
+            current_user=current_user,
+            company_id=current_user.get("company_id"),
+            company_name=current_user.get("company_name", "お客様の会社"),
+            user_id=current_user["id"]
+        )
         
-        # ChatResponseオブジェクトが返された場合
-        if hasattr(result, 'response'):
-            # sourcesフィールドからsource文字列を生成
-            source_text = ""
-            if hasattr(result, 'sources') and result.sources:
-                # sourcesからファイル名を抽出してカンマ区切りで結合
-                source_names = []
-                for source in result.sources[:3]:  # 最大3つのソースを表示
-                    # document_sources.nameのみを使用
-                    source_name = source.get('name', '') if isinstance(source, dict) else str(source)
-                    if source_name and source_name not in ['システム回答', 'unknown', 'Unknown']:
-                        source_names.append(source_name.strip())
-                source_text = ', '.join(source_names) if source_names else ""
-            
-            print(f"📄 抽出されたソース情報: '{source_text}'")
-            
-            # 新しいChatResponseを作成してsourceフィールドを設定
-            return ChatResponse(
-                response=result.response,
-                source=source_text,
-                remaining_questions=getattr(result, 'remaining_questions', None),
-                limit_reached=getattr(result, 'limit_reached', None)
-            )
+        # 結果の安全性チェック
+        if not isinstance(result, dict):
+            raise Exception(f"Enhanced RAGが辞書以外の型を返しました: {type(result)}")
         
-        # 辞書形式の場合
-        source_text = ""
+        # 必須キーの存在確認
+        if 'answer' not in result:
+            raise Exception("Enhanced RAGの結果に'answer'キーがありません")
+        
+        # 結果の処理
         if isinstance(result, dict):
-            # sourcesフィールドからsource文字列を生成
+            # Enhanced RAGの結果から回答とソース情報を抽出
+            answer = result.get("answer", "")
             sources = result.get("sources", [])
+            metadata = result.get("metadata", {})
+            
+            # 回答の安全性チェック
+            if not answer:
+                answer = "申し訳ございませんが、回答を生成できませんでした。"
+            
+            if not isinstance(answer, str):
+                answer = str(answer)
+            
+            # ソース情報を文字列に変換
+            source_text = ""
             if sources:
                 source_names = []
                 for source in sources[:3]:  # 最大3つのソースを表示
-                    # document_sources.nameのみを使用
-                    source_name = source.get('name', '') if isinstance(source, dict) else str(source)
+                    if isinstance(source, dict):
+                        source_name = source.get('name', source.get('filename', ''))
+                    else:
+                        source_name = str(source)
+                    
                     if source_name and source_name not in ['システム回答', 'unknown', 'Unknown']:
                         source_names.append(source_name.strip())
                 source_text = ', '.join(source_names) if source_names else ""
+        
+                    # 利用制限チェック
+            from modules.database import get_usage_limits, update_usage_count
+            current_limits = get_usage_limits(current_user["id"], db)
+            remaining_questions = None
+            limit_reached = False  # デフォルト値を設定
             
-            print(f"📄 辞書から抽出されたソース情報: '{source_text}'")
+            if not current_limits.get("is_unlimited", False):
+                updated_limits = update_usage_count(current_user["id"], "questions_used", db)
+                if updated_limits:
+                    remaining_questions = updated_limits["questions_limit"] - updated_limits["questions_used"]
+                    limit_reached = remaining_questions <= 0
+        
+                    # ChatResponseオブジェクト作成
+            # 文字列の安全化処理
+            def safe_string(text: str) -> str:
+                """文字列を安全な形式に変換"""
+                if not text:
+                    return ""
+                
+                # Unicode文字の正規化
+                import unicodedata
+                normalized = unicodedata.normalize('NFKC', str(text))
+                
+                # 制御文字の除去
+                import re
+                cleaned = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', normalized)
+                
+                return cleaned.strip()
+            
+            # 安全化された値を使用
+            safe_response = safe_string(answer) if answer else "申し訳ございませんが、回答を生成できませんでした。"
+            safe_source = safe_string(source_text) if source_text else ""
             
             return ChatResponse(
-                response=result.get("response", "システムエラーが発生しました"),
-                source=source_text,
-                remaining_questions=result.get("remaining_questions", 0),
-                limit_reached=result.get("limit_reached", False)
+                response=safe_response,
+                source=safe_source,
+                remaining_questions=remaining_questions,
+                limit_reached=limit_reached
             )
-        
     except Exception as e:
         print(f"⚠️ Enhanced RAGエラー: {e}")
         print("🔄 フォールバック: 従来のGemini質問分析RAGシステムを使用")
@@ -1367,62 +1400,58 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
         # フォールバック: 従来のGemini質問分析RAGシステムを使用
         try:
             from modules.chat_realtime_rag import process_chat_with_realtime_rag
-            print("🧠 Gemini質問分析統合RAGシステムを使用（フォールバック）")
             result = await process_chat_with_realtime_rag(message, db, current_user)
             
-            # ChatResponseオブジェクトが返された場合
-            if hasattr(result, 'response'):
-                source_text = ""
-                if hasattr(result, 'sources') and result.sources:
-                    source_names = []
-                    for source in result.sources[:3]:
-                        # document_sources.nameのみを使用
-                        source_name = source.get('name', '') if isinstance(source, dict) else str(source)
-                        if source_name and source_name not in ['システム回答', 'unknown', 'Unknown']:
-                            source_names.append(source_name.strip())
-                    source_text = ', '.join(source_names) if source_names else ""
-                
-                return ChatResponse(
-                    response=result.response,
-                    source=source_text,
-                    remaining_questions=getattr(result, 'remaining_questions', None),
-                    limit_reached=getattr(result, 'limit_reached', None)
-                )
-            
-            # 辞書形式の場合
             if isinstance(result, dict):
-                sources = result.get("sources", [])
-                source_names = []
-                if sources:
-                    for source in sources[:3]:
-                        # document_sources.nameのみを使用
-                        source_name = source.get('name', '') if isinstance(source, dict) else str(source)
-                        if source_name and source_name not in ['システム回答', 'unknown', 'Unknown']:
-                            source_names.append(source_name.strip())
-                    source_text = ', '.join(source_names) if source_names else ""
+                # 辞書形式の結果を処理
+                answer = result.get("response", "")
+                source_text = result.get("source", "")
                 
                 return ChatResponse(
-                    response=result.get("response", "システムエラーが発生しました"),
+                    response=answer if answer else "申し訳ございませんが、回答を生成できませんでした。",
                     source=source_text,
                     remaining_questions=result.get("remaining_questions", 0),
                     limit_reached=result.get("limit_reached", False)
                 )
+            else:
+                # ChatResponseオブジェクトの場合
+                if hasattr(result, 'response'):
+                    return result
+                else:
+                    return ChatResponse(
+                        response="システムエラーが発生しました。",
+                        source="",
+                        remaining_questions=0,
+                        limit_reached=False
+                    )
         
         except Exception as fallback_error:
             print(f"⚠️ フォールバックも失敗: {fallback_error}")
             print("🔄 最終フォールバック: 従来のprocess_chat_message関数を使用")
             
             # 最終フォールバック: 従来のprocess_chat_message関数を使用
-            from modules.chat import process_chat_message
-            result = await process_chat_message(message, db, current_user)
-            
-            # 応答を返す
-            return ChatResponse(
-                response=result["response"],
-                source=result.get("source", ""),
-                remaining_questions=result.get("remaining_questions", 0),
-                limit_reached=result.get("limit_reached", False)
-            )
+            try:
+                from modules.chat import process_chat_message
+                result = await process_chat_message(message, db, current_user)
+                
+                if isinstance(result, dict):
+                    return ChatResponse(
+                        response=result.get("response", "申し訳ございませんが、回答を生成できませんでした。"),
+                        source=result.get("source", ""),
+                        remaining_questions=result.get("remaining_questions", 0),
+                        limit_reached=result.get("limit_reached", False)
+                    )
+                else:
+                    # ChatResponseオブジェクトの場合はそのまま返す
+                    return result
+            except Exception as final_error:
+                print(f"❌ 最終フォールバックも失敗: {final_error}")
+                return ChatResponse(
+                    response="申し訳ございませんが、システムエラーが発生しました。しばらく時間をおいて再度お試しください。",
+                    source="",
+                    remaining_questions=0,
+                    limit_reached=False
+                )
 
 @app.post("/chatbot/api/chat-chunked-info", response_model=dict)
 async def chat_chunked_info(message: ChatMessage, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):

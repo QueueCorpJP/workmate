@@ -103,7 +103,7 @@ async def analyze_pdf_quality():
                         issues.append("内容が短すぎる")
                     
                     # 意味のある日本語が含まれているかチェック
-                    japanese_chars = len(re.findall(r'[ひらがなカタカナ漢字]', content))
+                    japanese_chars = len(re.findall(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]', content))
                     if japanese_chars / len(content) < 0.1:
                         issues.append("日本語の割合が低い")
                     

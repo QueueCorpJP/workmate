@@ -15,10 +15,10 @@ import logging
 import asyncio
 from typing import List, Dict, Optional, Tuple
 from dotenv import load_dotenv
-import google.generativeai as genai
+import requests
+import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
-import json
 from datetime import datetime
 import urllib.parse  # 追加
 import re # 追加
@@ -46,9 +46,8 @@ class RealtimeRAGProcessor:
         if not self.api_key:
             raise ValueError("GOOGLE_API_KEY または GEMINI_API_KEY 環境変数が設定されていません")
         
-        # Gemini APIクライアントの初期化（チャット用）
-        genai.configure(api_key=self.api_key)
-        self.chat_client = genai.GenerativeModel(self.chat_model)
+        # Gemini API の直接呼び出し用URL
+        self.api_base_url = "https://generativelanguage.googleapis.com/v1beta"
         
         # Gemini Embeddingクライアントの初期化（埋め込み用）
         try:
@@ -136,7 +135,13 @@ class RealtimeRAGProcessor:
         ✏️ Step 1. 質問入力
         ユーザーがチャットボットに質問を入力
         """
-        logger.info(f"✏️ Step 1: 質問受付 - '{question[:50]}...'")
+        # ChatMessageオブジェクトから文字列を取得
+        if hasattr(question, 'text'):
+            question_text = question.text
+        else:
+            question_text = str(question)
+        
+        logger.info(f"✏️ Step 1: 質問受付 - '{question_text[:50]}...'")
         
         if not question or not question.strip():
             raise ValueError("質問が空です")
@@ -549,65 +554,68 @@ class RealtimeRAGProcessor:
             logger.info("🤖 Gemini Flash 2.5に回答生成を依頼中...")
             logger.info(f"📏 プロンプト長: {len(prompt):,}文字")
             
-            # Gemini Flash 2.5で回答生成（設定を調整）
-            response = self.chat_client.generate_content(
-                prompt,
-                generation_config=genai.GenerationConfig(
-                    temperature=0.2,  # 少し創造性を上げる
-                    max_output_tokens=4096,  # 出力トークン数を増加
-                    top_p=0.9,  # 多様性を少し上げる
-                    top_k=50    # より多くの候補を考慮
-                )
-            )
+            # Gemini API への直接リクエスト
+            api_url = f"{self.api_base_url}/models/{self.chat_model}:generateContent"
             
-            logger.info("📥 Geminiからのレスポンス受信完了")
+            headers = {
+                "Content-Type": "application/json",
+                "x-goog-api-key": self.api_key
+            }
             
-            # レスポンス処理の改善（詳細なデバッグ情報付き）
-            answer = None
+            request_data = {
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": prompt
+                            }
+                        ]
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "maxOutputTokens": 4096,
+                    "topP": 0.9,
+                    "topK": 50
+                }
+            }
             
-            if response:
-                logger.info(f"✅ レスポンスオブジェクト存在: {type(response)}")
+            try:
+                response = requests.post(api_url, headers=headers, json=request_data, timeout=60)
+                response.raise_for_status()
                 
-                # 候補の確認
-                if hasattr(response, 'candidates') and response.candidates:
-                    logger.info(f"📋 候補数: {len(response.candidates)}")
+                logger.info("📥 Geminiからのレスポンス受信完了")
+                
+                response_data = response.json()
+                answer = None
+                
+                if "candidates" in response_data and response_data["candidates"]:
+                    logger.info(f"📋 候補数: {len(response_data['candidates'])}")
                     
                     try:
-                        # まず response.text を試す
-                        answer = response.text
-                        if answer:
-                            answer = answer.strip()
-                            logger.info("✅ response.textから回答を取得")
-                        else:
-                            logger.warning("⚠️ response.textが空")
-                    except (ValueError, AttributeError) as e:
-                        logger.warning(f"⚠️ response.text使用不可: {e}")
-                        
-                        # partsから手動で抽出
-                        try:
-                            parts = []
-                            for i, candidate in enumerate(response.candidates):
-                                logger.info(f"   候補{i+1}: {type(candidate)}")
-                                
-                                if hasattr(candidate, 'content') and candidate.content:
-                                    if hasattr(candidate.content, 'parts'):
-                                        for j, part in enumerate(candidate.content.parts):
-                                            logger.info(f"     パート{j+1}: {type(part)}")
-                                            if hasattr(part, 'text') and part.text:
-                                                parts.append(part.text)
-                                                logger.info(f"     テキスト長: {len(part.text)}文字")
-                            
-                            if parts:
-                                answer = ''.join(parts).strip()
-                                logger.info("✅ partsから回答を抽出")
+                        candidate = response_data["candidates"][0]
+                        if "content" in candidate and "parts" in candidate["content"]:
+                            parts = candidate["content"]["parts"]
+                            if parts and "text" in parts[0]:
+                                answer = parts[0]["text"]
+                                logger.info(f"✅ 回答抽出成功: {len(answer)}文字")
                             else:
-                                logger.error("❌ partsからテキストを抽出できませんでした")
-                        except Exception as parts_error:
-                            logger.error(f"❌ parts抽出エラー: {parts_error}")
+                                logger.warning("⚠️ テキストパーツが空です")
+                        else:
+                            logger.warning("⚠️ コンテンツまたはパーツが空です")
+                            
+                    except Exception as e:
+                        logger.error(f"❌ レスポンス解析エラー: {e}")
+                        answer = None
                 else:
-                    logger.error("❌ 候補が存在しません")
-            else:
-                logger.error("❌ レスポンスオブジェクトが空です")
+                    logger.warning("⚠️ 無効なレスポンスまたは候補なし")
+                    
+            except requests.exceptions.RequestException as e:
+                logger.error(f"❌ API リクエストエラー: {e}")
+                answer = None
+            except Exception as e:
+                logger.error(f"❌ 予期しないエラー: {e}")
+                answer = None
             
             # 回答の検証と処理
             if answer and len(answer.strip()) > 0:
@@ -677,23 +685,26 @@ class RealtimeRAGProcessor:
         if metadata:
             result.update(metadata)
         
-        # 使用されたチャンクの詳細情報を追加 - document_sources.nameのみを使用
+        # 使用されたチャンクの詳細情報を追加 - main.pyが期待する形式で返す
         if used_chunks:
             source_documents = []
             seen_names = set()
             for chunk in used_chunks[:5]:  # 最大5個のソース文書
                 doc_name = chunk.get('document_name', 'Unknown Document')
-                # 重複する名前は除外
-                if doc_name not in seen_names:
+                # 重複する名前は除外し、システム回答等は除外
+                if doc_name not in seen_names and doc_name not in ['システム回答', 'unknown', 'Unknown']:
                     doc_info = {
-                        "document_name": doc_name,  # document_sources.nameのみ使用
+                        "name": doc_name,  # main.pyが期待するフィールド名
+                        "filename": doc_name,  # 後方互換性
+                        "document_name": doc_name,  # 後方互換性
                         "document_type": chunk.get('document_type', 'unknown'),
                         "similarity_score": chunk.get('similarity_score', 0.0)
                     }
                     source_documents.append(doc_info)
                     seen_names.add(doc_name)
             
-            result["source_documents"] = source_documents
+            result["sources"] = source_documents  # main.pyが期待するフィールド名
+            result["source_documents"] = source_documents  # 後方互換性のため残す
             result["total_sources"] = len(used_chunks)
         
         logger.info(f"✅ リアルタイムRAG処理完了: {len(answer)}文字の回答")
@@ -704,7 +715,13 @@ class RealtimeRAGProcessor:
         🚀 リアルタイムRAG処理フロー全体の実行（Gemini質問分析統合版）
         新しい3段階アプローチ: Gemini分析 → SQL検索 → Embedding検索（フォールバック）
         """
-        logger.info(f"🚀 リアルタイムRAG処理開始: '{question[:50]}...'")
+        # ChatMessageオブジェクトから文字列を取得
+        if hasattr(question, 'text'):
+            question_text = question.text
+        else:
+            question_text = str(question)
+        
+        logger.info(f"🚀 リアルタイムRAG処理開始: '{question_text[:50]}...'")
         
         try:
             # Step 1: 質問入力
