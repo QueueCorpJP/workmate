@@ -184,7 +184,7 @@ class RealtimeRAGProcessor:
             logger.error(f"❌ Step 2エラー: エンベディング生成失敗 - {e}")
             raise
     
-    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 200) -> List[Dict]:
+    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 100) -> List[Dict]:
         """
         🔍 Step 3. 類似チャンク検索（Top-K）
         Supabaseの chunks テーブルから、ベクトル距離が近いチャンクを pgvector を用いて取得
@@ -443,13 +443,13 @@ class RealtimeRAGProcessor:
             print("\n" + "="*80)
             print(f"💡 【Step 4: LLM回答生成 - コンテキスト構築】")
             print(f"📊 利用可能チャンク数: {len(similar_chunks)}個")
-            print(f"📏 最大コンテキスト長: {200000:,}文字")  # さらに多くの情報を含める
+            print(f"📏 最大コンテキスト長: {100000:,}文字")  # プロンプト全体の制限を考慮
             print("="*80)
             
             # コンテキスト構築（原文ベース）
             context_parts = []
             total_length = 0
-            max_context_length = 200000  # 20万文字に制限（さらに多くの情報を含める）
+            max_context_length = 100000  # 10万文字に制限（プロンプト全体の制限を考慮）
             used_chunks = []
             
             for i, chunk in enumerate(similar_chunks):
@@ -908,7 +908,7 @@ class RealtimeRAGProcessor:
         logger.info(f"✅ リアルタイムRAG処理完了: {len(answer)}文字の回答")
         return result
     
-    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 200) -> Dict:
+    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 100) -> Dict:
         """
         🚀 リアルタイムRAG処理フロー全体の実行（Gemini質問分析統合版）
         新しい3段階アプローチ: Gemini分析 → SQL検索 → Embedding検索（フォールバック）
@@ -1008,7 +1008,7 @@ def get_realtime_rag_processor() -> Optional[RealtimeRAGProcessor]:
     
     return _realtime_rag_processor
 
-async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 200) -> Dict:
+async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 100) -> Dict:
     """
     リアルタイムRAG処理の外部呼び出し用関数
     
