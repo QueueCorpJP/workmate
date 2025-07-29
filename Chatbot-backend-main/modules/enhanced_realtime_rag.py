@@ -198,7 +198,7 @@ JSON形式で回答してください：
                 analysis_prompt,
                 generation_config=genai.GenerationConfig(
                     temperature=0.1,  # 一貫性重視
-                    max_output_tokens=2048,
+                    max_output_tokens=8192,
                     top_p=0.8,
                     top_k=40
                 )
@@ -558,7 +558,7 @@ JSON形式で回答してください：
                 integration_prompt,
                 generation_config=genai.GenerationConfig(
                     temperature=0.3,  # 創造性と一貫性のバランス
-                    max_output_tokens=4096,
+                    max_output_tokens=8192,
                     top_p=0.9,
                     top_k=50
                 )

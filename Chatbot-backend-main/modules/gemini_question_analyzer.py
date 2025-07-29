@@ -175,7 +175,7 @@ JSON形式のみで回答してください：
                 prompt,
                 generation_config=genai.GenerationConfig(
                     temperature=0.1,  # 一貫性重視
-                    max_output_tokens=1024,
+                    max_output_tokens=2048,
                     top_p=0.8,
                     top_k=40
                 )
