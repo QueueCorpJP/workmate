@@ -341,7 +341,7 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
         # 会社IDに基づいてアクティブなリソースを取得
         if company_id:
             safe_print(f"🏢 会社ID {company_id} のアクティブリソースを取得中...")
-            active_resources = get_active_resources_by_company_id(company_id, db)
+            active_resources = await get_active_resources_by_company_id(company_id, db)
             safe_print(f"📚 アクティブリソース数: {len(active_resources)}")
             
             if not active_resources:
