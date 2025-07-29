@@ -978,22 +978,24 @@ class DocumentProcessor:
             return 50  # デフォルトスコア
     
     async def _extract_text_from_pdf_fallback(self, content: bytes) -> str:
-        """PyPDF2フォールバック + 文字化け修復処理"""
+        """PyPDF2フォールバック + 文字化け修復処理（完全版）"""
         logger.info("🔄 PyPDF2フォールバック抽出開始")
         
         try:
             import PyPDF2
             from io import BytesIO
-            from knowledge.pdf import fix_mojibake_text, check_text_corruption
+            from .knowledge.pdf import fix_mojibake_text, check_text_corruption, extract_text_with_encoding_fallback
             
             pdf_reader = PyPDF2.PdfReader(BytesIO(content))
             text_parts = []
             corrupted_pages = []
+            total_pages = len(pdf_reader.pages)
+            
+            logger.info(f"📄 PDF総ページ数: {total_pages}")
             
             for page_num, page in enumerate(pdf_reader.pages):
                 try:
                     # 強化されたテキスト抽出を使用
-                    from knowledge.pdf import extract_text_with_encoding_fallback
                     page_text = extract_text_with_encoding_fallback(page)
                     
                     if page_text and page_text.strip():
@@ -1004,8 +1006,10 @@ class DocumentProcessor:
                             corrupted_pages.append(page_num + 1)
                         
                         text_parts.append(f"=== ページ {page_num + 1} ===\n{page_text}")
+                        logger.debug(f"✅ ページ {page_num + 1}: {len(page_text)}文字抽出")
                     else:
                         text_parts.append(f"=== ページ {page_num + 1} ===\n[テキスト抽出できませんでした]")
+                        logger.warning(f"⚠️ ページ {page_num + 1}: テキスト抽出失敗")
                         
                 except Exception as page_error:
                     logger.warning(f"ページ {page_num + 1} 抽出エラー: {page_error}")
@@ -1013,25 +1017,27 @@ class DocumentProcessor:
             
             if text_parts:
                 final_text = "\n\n".join(text_parts)
-                
-                # 統計情報をログ出力
                 total_chars = len(final_text)
-                page_count = len(text_parts)
-                corrupted_count = len(corrupted_pages)
+                valid_pages = len([p for p in text_parts if "テキスト抽出できませんでした" not in p and "ページ抽出エラー" not in p])
                 
                 logger.info(f"✅ PyPDF2フォールバック完了:")
-                logger.info(f"   - 総文字数: {total_chars}")
-                logger.info(f"   - ページ数: {page_count}")
-                logger.info(f"   - 文字化け修復ページ: {corrupted_count}件 {corrupted_pages}")
-                logger.info(f"   - 平均文字/ページ: {total_chars/page_count:.0f}")
+                logger.info(f"   - 処理ページ数: {total_pages}")
+                logger.info(f"   - 有効ページ数: {valid_pages}")
+                logger.info(f"   - 文字化け修復ページ: {len(corrupted_pages)}")
+                logger.info(f"   - 総抽出文字数: {total_chars}")
+                
+                if corrupted_pages:
+                    logger.info(f"   - 修復したページ: {corrupted_pages}")
                 
                 return final_text
             else:
-                raise Exception("すべてのページでテキスト抽出に失敗しました")
+                logger.error("❌ 全ページでテキスト抽出に失敗")
+                return "[PDF処理エラー: すべてのページでテキスト抽出に失敗しました]"
                 
         except Exception as fallback_error:
             logger.error(f"❌ PyPDF2フォールバック失敗: {fallback_error}")
-            # 最小限のエラーハンドリング
+            import traceback
+            logger.error(f"スタックトレース: {traceback.format_exc()}")
             return f"[PDF処理エラー: {str(fallback_error)}]\n\n基本的なテキスト抽出も失敗しました。PDFファイルが破損している可能性があります。"
     
     async def _extract_text_from_excel(self, content: bytes) -> str:

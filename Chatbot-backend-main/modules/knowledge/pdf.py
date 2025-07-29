@@ -836,7 +836,11 @@ async def process_pdf_with_pymupdf(contents: bytes, filename: str):
     文字化け修正も適用し、ページ単位でセクション化して DataFrame を返します。
     """
     try:
-        import fitz  # PyMuPDF
+        try:
+            import fitz  # PyMuPDF
+        except ImportError:
+            logger.warning("PyMuPDF (fitz) が利用できません。PyPDF2フォールバックを使用します。")
+            return None
 
         logger.info(f"PDFファイル処理開始（PyMuPDFテキスト抽出使用）: {filename}")
 
