@@ -921,7 +921,7 @@ const AdminPanel: React.FC = () => {
         },
       ]
       : []),
-    ...(permissions.is_admin_user || permissions.is_special_admin
+    ...(permissions.is_special_admin
       ? [
         {
           icon: <NotificationsIcon sx={{ color: "#3b82f6" }} />,
@@ -1457,8 +1457,8 @@ const AdminPanel: React.FC = () => {
                 />
               )}
 
-              {/* 通知管理タブ - 管理者のみ表示 */}
-              {(permissions.is_admin_user || permissions.is_special_admin) && getActualTabIndex(tabValue) === 8 && (
+              {/* 通知管理タブ - 最高権限管理者のみ表示 */}
+              {permissions.is_special_admin && getActualTabIndex(tabValue) === 8 && (
                 <NotificationManagementTab />
               )}
 
