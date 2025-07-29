@@ -1006,9 +1006,13 @@ const AdminPanel: React.FC = () => {
       case 8: // 通知管理 (管理者のみ)
         // 通知管理は内部で自動読み込みするため何もしない
         break;
-      case 9: // ユーザー管理
-        break;
-      default:
+      default: // ユーザー管理タブ（最後のタブ）
+        if (actualTabIndex === tabDefinitions.length - 1) {
+          // ユーザー管理タブの場合、必要に応じてデータを取得
+          if (isSpecialAdmin && companies.length === 0) {
+            fetchCompanies();
+          }
+        }
         break;
     }
   };
@@ -1459,7 +1463,7 @@ const AdminPanel: React.FC = () => {
               )}
 
               {/* ユーザー管理タブ */}
-              {tabValue === (permissions.is_special_admin ? 9 : 7) && (
+              {tabValue === (tabDefinitions.length - 1) && (
                 <UserManagementTab
                   isSpecialAdmin={isSpecialAdmin}
                   newUserEmail={newUserEmail}

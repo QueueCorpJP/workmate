@@ -4,16 +4,39 @@ PDFからのテキスト抽出とOCR処理を行います
 """
 import asyncio
 import traceback
-from pdf2image import convert_from_bytes
-from ..config import setup_gemini
+import os
+import tempfile
 from ..database import ensure_string
-import google.generativeai as genai
 
-# Geminiモデルをセットアップ
-model = setup_gemini()
+# Handle optional dependencies gracefully
+try:
+    from pdf2image import convert_from_bytes
+    PDF2IMAGE_AVAILABLE = True
+except ImportError:
+    PDF2IMAGE_AVAILABLE = False
+    print("⚠️ pdf2image not available - PDF to image conversion will be disabled")
+
+try:
+    import google.generativeai as genai
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    print("⚠️ google.generativeai not available - Gemini OCR will be disabled")
 
 async def ocr_with_gemini(images, instruction, chunk_size=8):
     """Geminiを使用して画像からテキストを抽出する（8ページずつ分割処理）"""
+    
+    if not GENAI_AVAILABLE:
+        raise ValueError("google.generativeai module is not available. Please install it with: pip install google-generativeai")
+    
+    # Gemini APIキーを取得
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY または GOOGLE_API_KEY 環境変数が設定されていません")
+    
+    # Gemini APIを設定
+    genai.configure(api_key=api_key)
+    
     prompt_base = f"""
 {instruction}
 
@@ -23,40 +46,35 @@ async def ocr_with_gemini(images, instruction, chunk_size=8):
 """
 
     async def process_page(idx, image):
-        def sync_call():
-            try:
-                prompt = f"{prompt_base}\n\nPage {idx + 1}:"
-                
-                # 生成設定を正しく作成
-                generation_config = genai.GenerationConfig(
-                    temperature=0.3,
-                    max_output_tokens=8192,
-                )
-                
-                response = model.generate_content(
-                    [prompt, image],
-                    generation_config=generation_config
-                )
-                result_text = ""
-                for part in response.parts:
-                    # 必ず文字列に変換
-                    if hasattr(part, 'text'):
-                        part_text = ensure_string(part.text)
-                    else:
-                        part_text = ""
-                    result_text += part_text
-                return f"\n\n--- Page {idx + 1} ---\n{result_text}"
-            except Exception as e:
-                print(f"Error processing page {idx + 1}: {str(e)}")
-                return f"\n\n[Error processing page {idx + 1}]: {str(e)}\n"
-
         try:
-            # 処理速度を制御するため少し待機
-            await asyncio.sleep(0.5)
-            return await asyncio.to_thread(sync_call)
+            prompt = f"{prompt_base}\n\nPage {idx + 1}:"
+            
+            # Gemini 1.5 Flash モデルを使用
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            
+            # 生成設定を辞書形式で作成（新しいSDKに対応）
+            generation_config = {
+                "temperature": 0.3,
+                "max_output_tokens": 8192,
+            }
+            
+            # 画像とプロンプトでコンテンツ生成
+            response = await asyncio.to_thread(
+                model.generate_content,
+                [prompt, image],
+                generation_config=generation_config
+            )
+            
+            if response and response.text:
+                result_text = ensure_string(response.text)
+                return f"\n\n--- Page {idx + 1} ---\n{result_text}"
+            else:
+                print(f"Warning: No text extracted from page {idx + 1}")
+                return f"\n\n--- Page {idx + 1} ---\n[テキスト抽出できませんでした]"
+                
         except Exception as e:
-            print(f"Async error processing page {idx + 1}: {str(e)}")
-            return f"\n\n[Error processing page {idx + 1}]: {str(e)}\n"
+            print(f"Error processing page {idx + 1}: {str(e)}")
+            return f"\n\n--- Page {idx + 1} ---\n[Error processing page {idx + 1}]: {str(e)}"
 
     # ページ数が多い場合は分割処理
     if len(images) > chunk_size:
@@ -72,8 +90,16 @@ async def ocr_with_gemini(images, instruction, chunk_size=8):
             
             # チャンクごとにタスクを作成して実行
             tasks = [process_page(i + idx, img) for idx, img in enumerate(chunk_images)]
-            chunk_results = await asyncio.gather(*tasks)
-            all_results.extend(chunk_results)
+            chunk_results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # 例外処理
+            for j, result in enumerate(chunk_results):
+                if isinstance(result, Exception):
+                    page_num = i + j + 1
+                    print(f"Page {page_num} processing failed: {result}")
+                    all_results.append(f"\n\n--- Page {page_num} ---\n[処理エラー: {str(result)}]")
+                else:
+                    all_results.append(result)
             
             # チャンク間で少し待機（APIレート制限対策）
             if i + chunk_size < len(images):
@@ -84,7 +110,17 @@ async def ocr_with_gemini(images, instruction, chunk_size=8):
     else:
         # 通常処理（8ページ以下）
         tasks = [process_page(idx, img) for idx, img in enumerate(images)]
-        results = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # 例外処理
+        processed_results = []
+        for idx, result in enumerate(results):
+            if isinstance(result, Exception):
+                print(f"Page {idx + 1} processing failed: {result}")
+                processed_results.append(f"\n\n--- Page {idx + 1} ---\n[処理エラー: {str(result)}]")
+            else:
+                processed_results.append(result)
+        results = processed_results
 
     # Combine results and ensure it's a string
     combined_text = ""
@@ -142,6 +178,10 @@ async def ocr_pdf_to_text_from_bytes(pdf_content: bytes):
 def convert_pdf_to_images_from_bytes(pdf_content, dpi=200):
     """PDFをPIL画像オブジェクトのリストに変換する"""
     try:
+        if not PDF2IMAGE_AVAILABLE:
+            print("⚠️ pdf2image not available - cannot convert PDF to images")
+            return []
+            
         # Check if pdf_content is valid
         if not pdf_content or len(pdf_content) == 0:
             print("空のPDFコンテンツ")
@@ -186,4 +226,4 @@ def convert_pdf_to_images_from_bytes(pdf_content, dpi=200):
     except Exception as e:
         print(f"PDF画像変換エラー: {str(e)}")
         print(traceback.format_exc())
-        return [] 
+        return []

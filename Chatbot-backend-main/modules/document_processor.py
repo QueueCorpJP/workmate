@@ -774,124 +774,43 @@ class DocumentProcessor:
     async def _extract_text_from_pdf(self, content: bytes) -> str:
         """PDF からテキストを抽出する（Gemini OCR最適化版 + フォールバック対応）
         
-        シンプルにGemini OCRのみで最高精度抽出を実現
-        ただし、503エラー等の場合はPyPDF2フォールバックを使用
+        まずGemini OCRで高精度抽出を試行し、失敗時はPyPDF2フォールバックを使用
         """
         
-        import asyncio, tempfile, os
-        
-        logger.info("📄 Gemini OCR最適化PDF抽出開始")
+        logger.info("📄 PDF抽出開始 - Gemini OCR優先")
         
         try:
-            # Gemini クライアント初期化
-            self._init_gemini_client()
-            
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_file:
-                tmp_file.write(content)
-                tmp_file_path = tmp_file.name
-            
+            # まずGemini OCRを試行
             try:
-                # 最適化されたプロンプト（日本語、業務文書特化）
+                from modules.knowledge.ocr import ocr_pdf_to_text_from_bytes
+            except ImportError:
+                logger.error("❌ OCR module import failed - knowledge module not available")
+                raise Exception("OCR module not available")
+            
+            logger.info("🔄 Gemini OCRでテキスト抽出を試行中...")
+            ocr_text = await ocr_pdf_to_text_from_bytes(content)
+            
+            if ocr_text and ocr_text.strip() and not ocr_text.startswith("OCR処理中にエラーが発生しました"):
+                # OCR成功時の品質チェック
+                quality_score = self._evaluate_text_quality(ocr_text)
+                page_count = ocr_text.count("--- Page") or 1
                 
-                prompt = """
-このPDFから全ての文字・数字・情報を抽出してください。
-
-🎯 重要な方針：
-• 全てのページの全ての文字を抽出する
-• 不鮮明でも推測して抽出する（空白より推測の方が有用）
-• 表・リスト・見出しの構造を維持する
-
-📝 抽出形式：
-• 見出し: # ## ### で階層表現
-• 表: markdown形式（| 列1 | 列2 |）
-• ページ区切り: === ページ N ===
-• 不鮮明な文字: [推測]を付けて抽出
-
-💪 推測指針：
-• 文脈から合理的に推測して補完
-• 型番・金額・日付は特に重要なので推測も含めて抽出
-• 完全に読めない場合は[判読困難]として記録
-
-全ての情報を漏らすことなく抽出してください。推測でも情報があることが重要です。
-"""
+                logger.info(f"✅ Gemini OCR成功:")
+                logger.info(f"   - 総文字数: {len(ocr_text)}")
+                logger.info(f"   - 品質スコア: {quality_score}/100")
+                logger.info(f"   - ページ数: {page_count}")
+                logger.info(f"   - 平均文字/ページ: {len(ocr_text)/page_count:.0f}")
                 
-                # PDF を Gemini へアップロード
-                uploaded_file = await asyncio.to_thread(
-                    self.gemini_client.files.upload,
-                    file=tmp_file_path
-                )
+                return ocr_text
+            else:
+                logger.warning("⚠️ Gemini OCRが失敗またはエラーを返しました")
+                raise Exception("Gemini OCR failed")
                 
-                # アップロード完了待機
-                await asyncio.sleep(3.0)
-
-                
-                # 最適化された生成設定
-                generation_config = genai.GenerationConfig(
-                    temperature=0.3,
-                    top_p=0.95,
-                    top_k=40,
-                    max_output_tokens=8192,  # モデルの最大値に近づける
-                )
-                
-                # Gemini 2.5 Flash モデルを取得
-                model = genai.GenerativeModel("gemini-2.5-flash")
-                
-                response = await asyncio.to_thread(
-                    model.generate_content,
-                    [prompt, uploaded_file],
-                    generation_config=generation_config
-                )
-                
-                # アップロードファイル削除
-                try:
-                    await asyncio.to_thread(
-                        self.gemini_client.files.delete,
-                        name=uploaded_file.name
-                    )
-                except:
-                    pass
-                
-                if response.text and response.text.strip():
-                    extracted_text = response.text.strip()
-                    
-                    # 基本品質チェック
-                    quality_score = self._evaluate_text_quality(extracted_text)
-                    page_count = extracted_text.count("=== ページ") or 1
-                    
-                    logger.info(f"✅ Gemini OCR成功:")
-                    logger.info(f"   - 総文字数: {len(extracted_text)}")
-                    logger.info(f"   - 品質スコア: {quality_score}/100")
-                    logger.info(f"   - ページ数: {page_count}")
-                    logger.info(f"   - 平均文字/ページ: {len(extracted_text)/page_count:.0f}")
-                    
-                    return extracted_text
-                else:
-                    raise Exception("Gemini OCRから結果を取得できませんでした")
-                    
-            except Exception as gemini_error:
-                logger.error(f"❌ Gemini OCR処理失敗: {gemini_error}")
-                
-                # 503エラーまたはその他のGeminiエラーの場合はPyPDF2フォールバックを使用
-                if "503" in str(gemini_error) or "Service Unavailable" in str(gemini_error):
-                    logger.info("🔄 503エラーのため、PyPDF2フォールバックを使用")
-                else:
-                    logger.info("🔄 Geminiエラーのため、PyPDF2フォールバックを使用")
-                
-                # PyPDF2フォールバックで処理
-                fallback_text = await self._extract_text_from_pdf_fallback(content)
-                return fallback_text
-                
-            finally:
-                # 一時ファイルをクリーンアップ
-                try:
-                    if os.path.exists(tmp_file_path):
-                        os.unlink(tmp_file_path)
-                except:
-                    pass
-                    
-        except Exception as e:
-            logger.error(f"❌ PDF抽出の全体エラー: {e}")
-            # 最終フォールバック
+        except Exception as ocr_error:
+            logger.error(f"❌ Gemini OCR処理失敗: {ocr_error}")
+            logger.info("🔄 PyPDF2フォールバックを使用")
+            
+            # PyPDF2フォールバックで処理
             fallback_text = await self._extract_text_from_pdf_fallback(content)
             return fallback_text
     
@@ -984,7 +903,30 @@ class DocumentProcessor:
         try:
             import PyPDF2
             from io import BytesIO
-            from .knowledge.pdf import fix_mojibake_text, check_text_corruption, extract_text_with_encoding_fallback
+            # Import PDF helper functions - create them inline if module doesn't exist
+            try:
+                from modules.knowledge.pdf import fix_mojibake_text, check_text_corruption, extract_text_with_encoding_fallback
+            except ImportError:
+                logger.warning("PDF helper functions not available, using fallback implementations")
+                # Define fallback functions inline
+                def fix_mojibake_text(text):
+                    """Simple mojibake fix"""
+                    if not text:
+                        return text
+                    return text.replace('縺', 'い').replace('繧', 'う').replace('繝', 'え')
+                
+                def check_text_corruption(text):
+                    """Simple corruption check"""
+                    if not text:
+                        return True
+                    return '縺' in text or '繧' in text or '繝' in text or '\ufffd' in text
+                
+                def extract_text_with_encoding_fallback(page):
+                    """Simple text extraction with encoding fallback"""
+                    try:
+                        return page.extract_text() or ""
+                    except Exception:
+                        return ""
             
             pdf_reader = PyPDF2.PdfReader(BytesIO(content))
             text_parts = []

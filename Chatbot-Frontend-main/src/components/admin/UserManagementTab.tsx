@@ -120,46 +120,139 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
     setShowPassword(!showPassword);
   };
 
-  // employeeロールの場合はアクセス権限なしを表示
+  // employeeロールの場合は制限された情報を表示
   if (user?.role === "employee") {
     return (
       <Fade in={true} timeout={400}>
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            minHeight: "400px",
-            textAlign: "center",
-            p: 4,
-          }}
-        >
-          <PersonAddIcon
+        <Box sx={{ p: { xs: 2, sm: 3 } }}>
+          {/* ヘッダー */}
+          <Box
             sx={{
-              fontSize: "4rem",
-              color: "text.disabled",
-              mb: 2,
-            }}
-          />
-          <Typography
-            variant="h6"
-            sx={{
-              fontWeight: 600,
-              color: "text.secondary",
-              mb: 1,
+              mb: 3,
+              display: "flex",
+              alignItems: "center",
+              px: { xs: 1, sm: 0 },
             }}
           >
-            アクセス権限がありません
-          </Typography>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ maxWidth: "400px" }}
-          >
-            社員アカウントには管理者作成権限がありません。<br />
-            管理者にお問い合わせください。
-          </Typography>
+            <PersonAddIcon
+              sx={{
+                mr: 1.5,
+                color: theme.palette.primary.main,
+                fontSize: { xs: "1.8rem", sm: "2rem" },
+              }}
+            />
+            <Typography
+              variant={isMobile ? "h6" : "h5"}
+              sx={{
+                fontWeight: 600,
+                color: "text.primary",
+              }}
+            >
+              ユーザー情報
+            </Typography>
+          </Box>
+
+          {/* 自分の情報カード */}
+          <Card sx={{ mb: 3, borderRadius: 2, boxShadow: 2 }}>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                あなたの情報
+              </Typography>
+              
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <EmailIcon sx={{ mr: 1, color: 'primary.main', fontSize: '1.2rem' }} />
+                    <Typography variant="body2" color="text.secondary">
+                      メールアドレス
+                    </Typography>
+                  </Box>
+                  <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                    {user?.email || 'N/A'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <AdminPanelSettingsIcon sx={{ mr: 1, color: 'primary.main', fontSize: '1.2rem' }} />
+                    <Typography variant="body2" color="text.secondary">
+                      権限レベル
+                    </Typography>
+                  </Box>
+                  <Chip 
+                    label="社員" 
+                    color="default" 
+                    size="small"
+                    sx={{ fontWeight: 500 }}
+                  />
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <BusinessIcon sx={{ mr: 1, color: 'primary.main', fontSize: '1.2rem' }} />
+                    <Typography variant="body2" color="text.secondary">
+                      会社ID
+                    </Typography>
+                  </Box>
+                  <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                    {user?.company_id || 'N/A'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <AccessTimeIcon sx={{ mr: 1, color: 'primary.main', fontSize: '1.2rem' }} />
+                    <Typography variant="body2" color="text.secondary">
+                      作成日
+                    </Typography>
+                  </Box>
+                  <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                    {user?.created_at ? new Date(user.created_at).toLocaleDateString('ja-JP') : 'N/A'}
+                  </Typography>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+
+          {/* 権限についての説明 */}
+          <Alert severity="info" sx={{ mb: 2 }}>
+            <Typography variant="body2">
+              社員アカウントでは、自分の情報のみ確認できます。<br />
+              他のユーザーの管理や新しいユーザーの作成は管理者権限が必要です。
+            </Typography>
+          </Alert>
+
+          {/* 利用可能な機能案内 */}
+          <Card sx={{ borderRadius: 2, boxShadow: 1 }}>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                利用可能な機能
+              </Typography>
+              
+              <Stack spacing={1}>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <Chip label="チャット" color="primary" size="small" sx={{ mr: 1 }} />
+                  <Typography variant="body2">
+                    AIチャットボットとの対話
+                  </Typography>
+                </Box>
+                
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <Chip label="ファイル" color="primary" size="small" sx={{ mr: 1 }} />
+                  <Typography variant="body2">
+                    ドキュメントのアップロードと検索
+                  </Typography>
+                </Box>
+                
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <Chip label="履歴" color="primary" size="small" sx={{ mr: 1 }} />
+                  <Typography variant="body2">
+                    自分のチャット履歴の確認
+                  </Typography>
+                </Box>
+              </Stack>
+            </CardContent>
+          </Card>
         </Box>
       </Fade>
     );
