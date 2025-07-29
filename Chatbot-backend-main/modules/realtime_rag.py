@@ -697,16 +697,55 @@ class RealtimeRAGProcessor:
                                 answer = parts[0]["text"]
                                 logger.info(f"✅ 回答取得成功: {len(answer)}文字")
                                 
-                                # 簡略化されたソース処理（プロンプト長削減のため）
+                                # 🎯 実際に使用されたソースの特定（回答内容との照合）
                                 actually_used_sources = []
-                                for chunk in used_chunks[:7]:  # 最大7件に制限
-                                    chunk_doc_name = chunk.get('document_name', '')
-                                    if chunk_doc_name and chunk_doc_name.strip() and chunk_doc_name != 'None':
-                                        if chunk_doc_name not in actually_used_sources:
-                                            actually_used_sources.append(chunk_doc_name)
+                                actually_used_chunks = []
                                 
-                                logger.info(f"📁 使用ソース: {actually_used_sources}")
-                                logger.info(f"🎯 使用チャンク数: {len(used_chunks[:7])}件")
+                                if answer and len(answer.strip()) > 0:
+                                    logger.info("🔍 回答内容と照合して実際に使用されたソースを特定中...")
+                                    
+                                    for chunk in used_chunks:
+                                        chunk_content = chunk.get('content', '')
+                                        chunk_doc_name = chunk.get('document_name', '')
+                                        
+                                        if not chunk_content or not chunk_doc_name or chunk_doc_name == 'None':
+                                            continue
+                                        
+                                        # チャンク内容が実際に回答で使用されているかをチェック
+                                        is_used = self._is_chunk_actually_used(answer, chunk_content, chunk)
+                                        
+                                        if is_used:
+                                            actually_used_chunks.append(chunk)
+                                            if chunk_doc_name not in actually_used_sources:
+                                                actually_used_sources.append(chunk_doc_name)
+                                                logger.info(f"✅ 実使用ソース確定: {chunk_doc_name}")
+                                        else:
+                                            logger.info(f"❌ 未使用ソース除外: {chunk_doc_name}")
+                                    
+                                    # 実際に使用されたチャンクがない場合の安全装置
+                                    if not actually_used_sources and used_chunks:
+                                        logger.warning("⚠️ 実使用ソースが特定できませんでした - 上位3つのチャンクを使用")
+                                        for chunk in used_chunks[:3]:
+                                            chunk_doc_name = chunk.get('document_name', '')
+                                            if chunk_doc_name and chunk_doc_name.strip() and chunk_doc_name != 'None':
+                                                if chunk_doc_name not in actually_used_sources:
+                                                    actually_used_sources.append(chunk_doc_name)
+                                                    actually_used_chunks.append(chunk)
+                                else:
+                                    # 回答が空の場合はすべてのチャンクを対象とする（フォールバック）
+                                    logger.warning("⚠️ 回答が空のため、すべてのチャンクをソースとして使用")
+                                    for chunk in used_chunks[:7]:
+                                        chunk_doc_name = chunk.get('document_name', '')
+                                        if chunk_doc_name and chunk_doc_name.strip() and chunk_doc_name != 'None':
+                                            if chunk_doc_name not in actually_used_sources:
+                                                actually_used_sources.append(chunk_doc_name)
+                                                actually_used_chunks.append(chunk)
+                                
+                                # 使用されたチャンクを更新
+                                used_chunks = actually_used_chunks
+                                
+                                logger.info(f"📁 実際に使用されたソース: {actually_used_sources}")
+                                logger.info(f"🎯 実際に使用されたチャンク数: {len(actually_used_chunks)}件")
                                 
                             else:
                                 logger.warning("⚠️ partsが空または'text'キーがありません")
@@ -832,9 +871,25 @@ class RealtimeRAGProcessor:
                 fallback_parts.append("• 知りたい項目を明確にしてください")  
                 fallback_parts.append("• 質問を分割して段階的にお聞きください")
                 
+                # フォールバック時にも実際に使用されたソース情報を構築
+                fallback_sources = []
+                seen_names = set()
+                for chunk in used_chunks[:3]:  # 最大3つのソース
+                    doc_name = chunk.get('document_name', 'Unknown Document')
+                    if doc_name not in seen_names and doc_name not in ['システム回答', 'unknown', 'Unknown']:
+                        fallback_sources.append({
+                            "name": doc_name,
+                            "document_name": doc_name,
+                            "document_type": chunk.get('document_type', 'unknown'),
+                            "similarity_score": chunk.get('similarity_score', 0.0)
+                        })
+                        seen_names.add(doc_name)
+                
                 return {
                     "answer": "\n".join(fallback_parts),
-                    "used_chunks": used_chunks
+                    "used_chunks": used_chunks,
+                    "sources": fallback_sources,
+                    "source_documents": fallback_sources
                 }
         
         except Exception as e:
@@ -853,9 +908,25 @@ class RealtimeRAGProcessor:
             
             error_response_parts.append("\nしばらく時間をおいてから再度お試しください。")
             
+            # エラー時にも可能な限りソース情報を構築
+            error_sources = []
+            seen_names = set()
+            for chunk in used_chunks[:2]:  # エラー時は最大2つのソース
+                doc_name = chunk.get('document_name', 'Unknown Document')
+                if doc_name not in seen_names and doc_name not in ['システム回答', 'unknown', 'Unknown']:
+                    error_sources.append({
+                        "name": doc_name,
+                        "document_name": doc_name,
+                        "document_type": chunk.get('document_type', 'unknown'),
+                        "similarity_score": chunk.get('similarity_score', 0.0)
+                    })
+                    seen_names.add(doc_name)
+            
             return {
                 "answer": "\n".join(error_response_parts),
-                "used_chunks": []  # エラー時は空のリスト
+                "used_chunks": [],  # エラー時は空のリスト
+                "sources": error_sources,
+                "source_documents": error_sources
             }
     
     def _extract_customer_info(self, question: str, chunks: List[Dict]) -> Dict[str, str]:
@@ -924,6 +995,76 @@ class RealtimeRAGProcessor:
                 break
         
         return list(set(extracted_data))  # 重複除去
+    
+    def _is_chunk_actually_used(self, answer: str, chunk_content: str, chunk: Dict) -> bool:
+        """回答の内容とチャンクの内容を照合して、実際に使用されているかを判定"""
+        if not answer or not chunk_content:
+            return False
+        
+        # 1. キーワードマッチング（重要な単語やフレーズの照合）
+        import re
+        
+        # チャンクから重要なキーワードを抽出（3文字以上の単語）
+        chunk_keywords = re.findall(r'\b\w{3,}\b', chunk_content)
+        # 数値パターン（日付、金額、コードなど）も抽出
+        chunk_numbers = re.findall(r'\b\d+\b', chunk_content)
+        # 特殊なパターン（会社名、コードなど）
+        chunk_patterns = re.findall(r'[A-Z]{2}\d{7}|株式会社[^\s,、]+|㈱[^\s,、]+', chunk_content)
+        
+        all_chunk_elements = chunk_keywords + chunk_numbers + chunk_patterns
+        
+        if not all_chunk_elements:
+            return False
+        
+        # 2. 回答内での一致率を計算
+        matched_elements = 0
+        total_elements = len(all_chunk_elements[:20])  # 最大20要素で判定
+        
+        for element in all_chunk_elements[:20]:
+            if len(element) >= 3:  # 3文字以上の要素のみ
+                # 完全一致
+                if element in answer:
+                    matched_elements += 1
+                # 部分一致（6文字以上の要素の場合）
+                elif len(element) >= 6:
+                    if any(element in word or word in element for word in answer.split()):
+                        matched_elements += 0.5
+        
+        match_ratio = matched_elements / total_elements if total_elements > 0 else 0
+        
+        # 3. 特別なパターンでの重み付け
+        special_bonus = 0
+        
+        # 会社名や顧客コードなどの重要情報が一致する場合
+        for pattern in chunk_patterns:
+            if pattern in answer:
+                special_bonus += 0.3
+        
+        # 日付や金額などの具体的な数値が一致する場合
+        important_numbers = [num for num in chunk_numbers if len(num) >= 4]  # 4桁以上の数字
+        for num in important_numbers:
+            if num in answer:
+                special_bonus += 0.2
+        
+        final_score = match_ratio + special_bonus
+        
+        # 4. 判定閾値
+        # 複雑な質問の場合は閾値を下げる
+        chunk_doc_name = chunk.get('document_name', '')
+        if any(keyword in chunk_doc_name.lower() for keyword in ['cb', 'wpc', '案件', '契約']):
+            threshold = 0.15  # 案件関連は閾値を下げる
+        else:
+            threshold = 0.25  # 通常の閾値
+        
+        is_used = final_score >= threshold
+        
+        # デバッグログ
+        if is_used:
+            logger.info(f"   ✅ チャンク使用確認: {chunk_doc_name} (スコア: {final_score:.2f}, 閾値: {threshold})")
+        else:
+            logger.info(f"   ❌ チャンク未使用: {chunk_doc_name} (スコア: {final_score:.2f}, 閾値: {threshold})")
+        
+        return is_used
     
     async def step5_display_answer(self, answer: str, metadata: Dict = None, used_chunks: List = None) -> Dict:
         """
@@ -1082,11 +1223,29 @@ class RealtimeRAGProcessor:
             
         except Exception as e:
             logger.error(f"❌ リアルタイムRAG処理エラー: {e}")
+            
+            # エラー時でも可能な限りソース情報を提供
+            error_sources = []
+            if 'similar_chunks' in locals() and similar_chunks:
+                seen_names = set()
+                for chunk in similar_chunks[:2]:  # エラー時は最大2つのソース
+                    doc_name = chunk.get('document_name', 'Unknown Document')
+                    if doc_name not in seen_names and doc_name not in ['システム回答', 'unknown', 'Unknown']:
+                        error_sources.append({
+                            "name": doc_name,
+                            "document_name": doc_name,
+                            "document_type": chunk.get('document_type', 'unknown'),
+                            "similarity_score": chunk.get('similarity_score', 0.0)
+                        })
+                        seen_names.add(doc_name)
+            
             error_result = {
                 "answer": "申し訳ございませんが、システムエラーが発生しました。しばらく時間をおいてから再度お試しください。",
                 "error": str(e),
                 "timestamp": datetime.now().isoformat(),
-                "status": "error"
+                "status": "error",
+                "sources": error_sources,
+                "source_documents": error_sources
             }
             return error_result
 
