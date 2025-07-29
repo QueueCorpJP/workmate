@@ -184,7 +184,7 @@ class RealtimeRAGProcessor:
             logger.error(f"❌ Step 2エラー: エンベディング生成失敗 - {e}")
             raise
     
-    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 100) -> List[Dict]:
+    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 200) -> List[Dict]:
         """
         🔍 Step 3. 類似チャンク検索（Top-K）
         Supabaseの chunks テーブルから、ベクトル距離が近いチャンクを pgvector を用いて取得
@@ -579,10 +579,10 @@ class RealtimeRAGProcessor:
                     }
                 ],
                 "generationConfig": {
-                    "temperature": 0.2,
+                    "temperature": 0.1,
                     "maxOutputTokens": 8192,
-                    "topP": 0.9,
-                    "topK": 50
+                    "topP": 0.8,
+                    "topK": 40
                 }
             }
             
@@ -706,15 +706,15 @@ class RealtimeRAGProcessor:
                                         else:
                                             logger.info(f"❌ 使用チャンク除外: {chunk_doc_name} (関連度: {relevance_score:.2f}, 閾値: {min_threshold:.2f})")
                                 
-                                # 結果が不十分な場合の包括的フォールバック
-                                if len(final_used_chunks) < 3 and filtered_used_chunks:
+                                # 結果が不十分な場合の包括的フォールバック（5件まで拡張）
+                                if len(final_used_chunks) < 5 and filtered_used_chunks:
                                     logger.warning(f"⚠️ 関連性チェック結果が不十分（{len(final_used_chunks)}件）。高類似度チャンクを追加")
                                     
                                     # 類似度順でソート
                                     sorted_chunks = sorted(filtered_used_chunks, key=lambda x: x.get('similarity_score', 0), reverse=True)
                                     
-                                    # 上位チャンクを追加（最大5件まで）
-                                    for chunk in sorted_chunks[:5]:
+                                    # 上位チャンクを追加（最大10件まで）
+                                    for chunk in sorted_chunks[:10]:
                                         chunk_doc_name = chunk.get('document_name', '')
                                         if chunk not in final_used_chunks:
                                             final_used_chunks.append(chunk)
@@ -722,8 +722,8 @@ class RealtimeRAGProcessor:
                                                 actually_used_sources.append(chunk_doc_name)
                                                 logger.info(f"🔄 フォールバック追加: {chunk_doc_name} (類似度: {chunk.get('similarity_score', 0):.2f})")
                                         
-                                        # 最低3件確保したら終了
-                                        if len(final_used_chunks) >= 3:
+                                        # 最低7件確保したら終了
+                                        if len(final_used_chunks) >= 7:
                                             break
                                 
                                 # 最終安全チェック：全て除外された場合の緊急フォールバック
@@ -861,7 +861,7 @@ class RealtimeRAGProcessor:
         logger.info(f"✅ リアルタイムRAG処理完了: {len(answer)}文字の回答")
         return result
     
-    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 100) -> Dict:
+    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 200) -> Dict:
         """
         🚀 リアルタイムRAG処理フロー全体の実行（Gemini質問分析統合版）
         新しい3段階アプローチ: Gemini分析 → SQL検索 → Embedding検索（フォールバック）
@@ -961,7 +961,7 @@ def get_realtime_rag_processor() -> Optional[RealtimeRAGProcessor]:
     
     return _realtime_rag_processor
 
-async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 100) -> Dict:
+async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 200) -> Dict:
     """
     リアルタイムRAG処理の外部呼び出し用関数
     

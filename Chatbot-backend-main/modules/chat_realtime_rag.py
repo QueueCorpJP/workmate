@@ -178,7 +178,7 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                     question=message_text,
                     company_id=company_id,
                     company_name=company_name,
-                    top_k=15  # Top-15チャンクを取得
+                    top_k=150  # Top-150チャンクを取得
                 )
                 
                 if rag_result and rag_result.get("answer"):

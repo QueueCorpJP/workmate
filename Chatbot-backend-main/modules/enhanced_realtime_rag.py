@@ -200,7 +200,7 @@ JSON形式で回答してください：
                     temperature=0.1,  # 一貫性重視
                     max_output_tokens=8192,
                     top_p=0.8,
-                    top_k=40
+                    top_k=150
                 )
             )
             
@@ -359,7 +359,7 @@ JSON形式で回答してください：
         
         return subtasks
     
-    async def step2_individual_embedding_retrieval(self, subtasks: List[SubTask], company_id: str = None, top_k: int = 10) -> List[Tuple[SubTask, List[Dict]]]:
+    async def step2_individual_embedding_retrieval(self, subtasks: List[SubTask], company_id: str = None, top_k: int = 100) -> List[Tuple[SubTask, List[Dict]]]:
         """
         🧠 Step 2: それぞれを個別にEmbedding & Retrieval
         分割されたサブ質問ごとに、embedding検索（RAG）を実行
@@ -604,7 +604,7 @@ JSON形式で回答してください：
         
         return "".join(integration_parts)
     
-    async def process_enhanced_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 15) -> Dict:
+    async def process_enhanced_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 150) -> Dict:
         """
         🚀 拡張リアルタイムRAG処理フロー全体の実行
         長い質問を段階的に処理し、統合された回答を生成
@@ -757,7 +757,7 @@ async def process_question_enhanced_realtime(
     question: str,
     company_id: str = None,
     company_name: str = "お客様の会社",
-    top_k: int = 15
+    top_k: int = 150
 ) -> Dict:
     """
     拡張リアルタイムRAG処理の外部呼び出し用関数

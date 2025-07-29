@@ -167,7 +167,7 @@ class VectorSearchSystem:
             )
             """
     
-    async def vector_similarity_search(self, query: str, company_id: str = None, limit: int = 100) -> List[Dict]:
+    async def vector_similarity_search(self, query: str, company_id: str = None, limit: int = 250) -> List[Dict]:
         """ベクトル類似検索を実行（pgvector対応版）"""
         try:
             # クエリの埋め込み生成
@@ -252,7 +252,10 @@ class VectorSearchSystem:
                             'search_type': 'vector_chunks_pgvector' if self.pgvector_available else 'vector_chunks_fallback'
                         })
                     
-                    logger.info(f"✅ ベクトル検索完了: {len(search_results)}件の結果")
+                    # 結果の安定化：類似度順、次にチャンクID順でソート（一貫した順序保証）
+                    search_results.sort(key=lambda x: (-x['similarity_score'], str(x['chunk_id'])))
+                    
+                    logger.info(f"✅ ベクトル検索完了: {len(search_results)}件の結果（安定ソート済み）")
                     
                     # 🔍 詳細チャンク選択ログ - 全結果を表示
                     print("\n" + "="*80)

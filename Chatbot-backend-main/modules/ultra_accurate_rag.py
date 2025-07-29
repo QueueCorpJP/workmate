@@ -356,7 +356,7 @@ class UltraAccurateRAGProcessor:
                 generation_config=genai.types.GenerationConfig(
                     temperature=0.1,  # より一貫した回答のため低めに設定
                     top_p=0.8,
-                    top_k=40,
+                    top_k=150,
                     max_output_tokens=8192,
                 )
             )

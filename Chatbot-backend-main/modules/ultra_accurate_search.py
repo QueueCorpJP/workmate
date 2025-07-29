@@ -287,7 +287,7 @@ class UltraAccurateSearchSystem:
             logger.error(f"埋め込み生成エラー: {e}")
             return []
     
-    async def ultra_accurate_search(self, query: str, company_id: str = None, max_results: int = 100) -> List[UltraSearchResult]:
+    async def ultra_accurate_search(self, query: str, company_id: str = None, max_results: int = 200) -> List[UltraSearchResult]:
         """超高精度検索の実行"""
         try:
             logger.info(f"🚀 超高精度検索開始: '{query}'")
@@ -491,7 +491,7 @@ class UltraAccurateSearchSystem:
         
         return final_results
     
-    async def get_ultra_accurate_content(self, query: str, company_id: str = None, max_results: int = 15) -> str:
+    async def get_ultra_accurate_content(self, query: str, company_id: str = None, max_results: int = 50) -> str:
         """超高精度文書内容取得"""
         try:
             # 超高精度検索実行
