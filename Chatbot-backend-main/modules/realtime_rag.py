@@ -722,19 +722,19 @@ class RealtimeRAGProcessor:
                                         else:
                                             logger.info(f"❌ 未使用ソース除外: {chunk_doc_name}")
                                     
-                                    # 実際に使用されたチャンクがない場合の安全装置
+                                    # 実際に使用されたチャンクがない場合の安全装置（より制限的に）
                                     if not actually_used_sources and used_chunks:
-                                        logger.warning("⚠️ 実使用ソースが特定できませんでした - 上位3つのチャンクを使用")
-                                        for chunk in used_chunks[:3]:
+                                        logger.warning("⚠️ 実使用ソースが特定できませんでした - 上位2つのチャンクのみ使用")
+                                        for chunk in used_chunks[:2]:
                                             chunk_doc_name = chunk.get('document_name', '')
                                             if chunk_doc_name and chunk_doc_name.strip() and chunk_doc_name != 'None':
                                                 if chunk_doc_name not in actually_used_sources:
                                                     actually_used_sources.append(chunk_doc_name)
                                                     actually_used_chunks.append(chunk)
                                 else:
-                                    # 回答が空の場合はすべてのチャンクを対象とする（フォールバック）
-                                    logger.warning("⚠️ 回答が空のため、すべてのチャンクをソースとして使用")
-                                    for chunk in used_chunks[:7]:
+                                    # 回答が空の場合も制限的に（フォールバック）
+                                    logger.warning("⚠️ 回答が空のため、上位5つのチャンクをソースとして使用")
+                                    for chunk in used_chunks[:5]:
                                         chunk_doc_name = chunk.get('document_name', '')
                                         if chunk_doc_name and chunk_doc_name.strip() and chunk_doc_name != 'None':
                                             if chunk_doc_name not in actually_used_sources:
@@ -776,6 +776,21 @@ class RealtimeRAGProcessor:
             if answer and len(answer.strip()) > 0:
                 logger.info(f"✅ Step 4完了: {len(answer)}文字の回答を生成")
                 logger.info(f"📝 回答プレビュー: {answer[:100]}...")
+                
+                # 🎯 回答の長さ制限（21万文字は長すぎる）
+                max_answer_length = 6000  # 6千文字制限（さらに短縮）
+                if len(answer) > max_answer_length:
+                    logger.warning(f"⚠️ 回答が長すぎます ({len(answer):,}文字) - {max_answer_length:,}文字に短縮")
+                    # 文章の切れ目で短縮する
+                    truncated = answer[:max_answer_length]
+                    last_period = truncated.rfind('。')
+                    last_newline = truncated.rfind('\n')
+                    cut_point = max(last_period, last_newline)
+                    if cut_point > max_answer_length - 1000:  # 切れ目が近い場合
+                        answer = answer[:cut_point + 1] + "\n\n...(回答が長いため省略されました。より具体的な質問をしていただくと、詳細な回答を提供できます)"
+                    else:
+                        answer = answer[:max_answer_length] + "\n\n...(回答が長いため省略されました。より具体的な質問をしていただくと、詳細な回答を提供できます)"
+                    logger.info(f"📏 短縮後回答長: {len(answer):,}文字")
                 
                 # 回答が短すぎる場合の処理
                 if len(answer) < 50:
@@ -830,7 +845,7 @@ class RealtimeRAGProcessor:
                         fallback_parts.append("")
                     
                     fallback_parts.append("⚠️ **処理状況**")
-                    fallback_parts.append("複雑な表形式処理でエラーが発生しましたが、以下の代替案をご提案いたします：")
+                    fallback_parts.append("処理でエラーが発生しました。以下の代替案をご提案いたします：")
                     fallback_parts.append("")
                     fallback_parts.append("📝 **推奨アプローチ**")
                     fallback_parts.append("1. 顧客コードと会社名での基本検索を先に実行")
@@ -1048,17 +1063,13 @@ class RealtimeRAGProcessor:
         
         final_score = match_ratio + special_bonus
         
-        # 4. 判定閾値
-        # 複雑な質問の場合は閾値を下げる
-        chunk_doc_name = chunk.get('document_name', '')
-        if any(keyword in chunk_doc_name.lower() for keyword in ['cb', 'wpc', '案件', '契約']):
-            threshold = 0.15  # 案件関連は閾値を下げる
-        else:
-            threshold = 0.25  # 通常の閾値
+        # 4. 判定閾値（一律で厳格にしてチャンク数を削減）
+        threshold = 0.3  # 全て統一した閾値で判定
         
         is_used = final_score >= threshold
         
         # デバッグログ
+        chunk_doc_name = chunk.get('document_name', 'Unknown')
         if is_used:
             logger.info(f"   ✅ チャンク使用確認: {chunk_doc_name} (スコア: {final_score:.2f}, 閾値: {threshold})")
         else:

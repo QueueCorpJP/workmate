@@ -2,8 +2,9 @@ import axios from "axios";
 
 // 環境を判定する関数
 const getEnvironment = () => {
-  // ホスト名で本番環境を判定
-  if (window.location.hostname === "workmatechat.com") {
+  // ホスト名で本番環境を判定（wwwサブドメインも含む）
+  if (window.location.hostname === "workmatechat.com" ||
+      window.location.hostname === "www.workmatechat.com") {
     return "production";
   }
 

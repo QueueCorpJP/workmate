@@ -177,7 +177,7 @@ JSON形式のみで回答してください：
                     temperature=0.1,  # 一貫性重視
                     max_output_tokens=2048,
                     top_p=0.8,
-                    top_k=150
+                    top_k=20
                 )
             )
             

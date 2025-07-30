@@ -200,7 +200,7 @@ JSON形式で回答してください：
                     temperature=0.1,  # 一貫性重視
                     max_output_tokens=16384,  # 16Kトークンに増加
                     top_p=0.8,
-                    top_k=150
+                    top_k=20
                 )
             )
             
@@ -604,7 +604,7 @@ JSON形式で回答してください：
         
         return "".join(integration_parts)
     
-    async def process_enhanced_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 150) -> Dict:
+    async def process_enhanced_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 20) -> Dict:
         """
         🚀 拡張リアルタイムRAG処理フロー全体の実行
         長い質問を段階的に処理し、統合された回答を生成
@@ -681,14 +681,45 @@ JSON形式で回答してください：
                 "company_name": company_name
             }
             
-            # 最終結果の構築
+            # 🎯 実際に使用されたチャンクのみを特定
+            actually_used_chunks = []
+            if final_answer and len(final_answer.strip()) > 0:
+                logger.info("🔍 Enhanced RAG: 回答内容と照合して実際に使用されたソースを特定中...")
+                
+                for chunk in all_chunks:
+                    chunk_content = chunk.get('content', '')
+                    chunk_doc_name = chunk.get('document_name', '')
+                    
+                    if not chunk_content or not chunk_doc_name or chunk_doc_name == 'None':
+                        continue
+                    
+                    # チャンク内容が実際に回答で使用されているかをチェック
+                    is_used = self._is_chunk_actually_used(final_answer, chunk_content, chunk)
+                    
+                    if is_used:
+                        actually_used_chunks.append(chunk)
+                        logger.info(f"✅ Enhanced RAG実使用ソース確定: {chunk_doc_name}")
+                    else:
+                        logger.info(f"❌ Enhanced RAG未使用ソース除外: {chunk_doc_name}")
+                
+                # 実際に使用されたチャンクがない場合の安全装置（より制限的に）
+                if not actually_used_chunks and all_chunks:
+                    logger.warning("⚠️ Enhanced RAG: 実使用ソースが特定できませんでした - 上位2つのチャンクのみ使用")
+                    actually_used_chunks = all_chunks[:2]
+            else:
+                # 回答が空の場合も制限的に（フォールバック）
+                logger.warning("⚠️ Enhanced RAG: 回答が空のため、上位5つのチャンクをソースとして使用")
+                actually_used_chunks = all_chunks[:5]
+            
+            # 最終結果の構築（実際に使用されたチャンクのみを使用）
             result = {
                 "answer": final_answer,
-                "sources": self._extract_source_documents(all_chunks[:10]),  # main.pyが期待するフィールド名
+                "sources": self._extract_source_documents(actually_used_chunks),  # 実際に使用されたソースのみ
                 "timestamp": datetime.now().isoformat(),
                 "status": "completed",
                 "metadata": metadata,
-                "source_documents": self._extract_source_documents(all_chunks[:10])  # 後方互換性のため残す
+                "source_documents": self._extract_source_documents(actually_used_chunks),  # 実際に使用されたソースのみ
+                "total_sources": len(actually_used_chunks)  # 実際に使用されたソース数
             }
             
             logger.info(f"🎉 拡張リアルタイムRAG処理成功完了: {total_processing_time:.2f}秒")
@@ -734,6 +765,72 @@ JSON形式で回答してください：
                 seen_docs.add(doc_name)
         
         return source_documents
+    
+    def _is_chunk_actually_used(self, answer: str, chunk_content: str, chunk: Dict) -> bool:
+        """回答の内容とチャンクの内容を照合して、実際に使用されているかを判定"""
+        if not answer or not chunk_content:
+            return False
+        
+        # 1. キーワードマッチング（重要な単語やフレーズの照合）
+        import re
+        
+        # チャンクから重要なキーワードを抽出（3文字以上の単語）
+        chunk_keywords = re.findall(r'\b\w{3,}\b', chunk_content)
+        # 数値パターン（日付、金額、コードなど）も抽出
+        chunk_numbers = re.findall(r'\b\d+\b', chunk_content)
+        # 特殊なパターン（会社名、コードなど）
+        chunk_patterns = re.findall(r'[A-Z]{2}\d{7}|株式会社[^\s,、]+|㈱[^\s,、]+', chunk_content)
+        
+        all_chunk_elements = chunk_keywords + chunk_numbers + chunk_patterns
+        
+        if not all_chunk_elements:
+            return False
+        
+        # 2. 回答内での一致率を計算
+        matched_elements = 0
+        total_elements = len(all_chunk_elements[:20])  # 最大20要素で判定
+        
+        for element in all_chunk_elements[:20]:
+            if len(element) >= 3:  # 3文字以上の要素のみ
+                # 完全一致
+                if element in answer:
+                    matched_elements += 1
+                # 部分一致（6文字以上の要素の場合）
+                elif len(element) >= 6:
+                    if any(element in word or word in element for word in answer.split()):
+                        matched_elements += 0.5
+        
+        match_ratio = matched_elements / total_elements if total_elements > 0 else 0
+        
+        # 3. 特別なパターンでの重み付け
+        special_bonus = 0
+        
+        # 会社名や顧客コードなどの重要情報が一致する場合
+        for pattern in chunk_patterns:
+            if pattern in answer:
+                special_bonus += 0.3
+        
+        # 日付や金額などの具体的な数値が一致する場合
+        important_numbers = [num for num in chunk_numbers if len(num) >= 4]  # 4桁以上の数字
+        for num in important_numbers:
+            if num in answer:
+                special_bonus += 0.2
+        
+        final_score = match_ratio + special_bonus
+        
+        # 4. 判定閾値（一律で厳格にしてチャンク数を削減）
+        threshold = 0.3  # 全て統一した閾値で判定
+        
+        is_used = final_score >= threshold
+        
+        # デバッグログ
+        chunk_doc_name = chunk.get('document_name', 'Unknown')
+        if is_used:
+            logger.info(f"   ✅ Enhanced RAGチャンク使用確認: {chunk_doc_name} (スコア: {final_score:.2f}, 閾値: {threshold})")
+        else:
+            logger.info(f"   ❌ Enhanced RAGチャンク未使用: {chunk_doc_name} (スコア: {final_score:.2f}, 閾値: {threshold})")
+        
+        return is_used
 
 
 # グローバルインスタンス
@@ -757,7 +854,7 @@ async def process_question_enhanced_realtime(
     question: str,
     company_id: str = None,
     company_name: str = "お客様の会社",
-    top_k: int = 150
+            top_k: int = 20
 ) -> Dict:
     """
     拡張リアルタイムRAG処理の外部呼び出し用関数
