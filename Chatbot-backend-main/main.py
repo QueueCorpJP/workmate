@@ -113,6 +113,7 @@ print(f"🔗 CORS許可オリジン: {origins}")
 # 緊急CORS修正: 開発環境からのアクセスを強制的に許可
 emergency_origins = [
     "https://workmatechat.com",
+    "https://www.workmatechat.com",  # wwwサブドメイン対応
     "http://localhost:3000",
     "http://localhost:3025",
     "http://localhost:5173",
