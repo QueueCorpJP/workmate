@@ -593,7 +593,6 @@ class RealtimeRAGProcessor:
 【重要な指針】
 • 提供された参考資料を正確に分析してください
 • 表形式での回答が求められた場合、正確な表形式で出力してください
-• 計算が必要な場合、明確な計算過程を示してください
 • ファイル名のみを出典として記載してください（例：「○○.xlsx」「○○.csv」）
 
 【質問】
@@ -850,7 +849,6 @@ class RealtimeRAGProcessor:
                     fallback_parts.append("📝 **推奨アプローチ**")
                     fallback_parts.append("1. 顧客コードと会社名での基本検索を先に実行")
                     fallback_parts.append("2. 契約情報の確認を段階的に実施")
-                    fallback_parts.append("3. 計算が必要な項目は個別に確認")
                     
                 else:
                     # 通常の質問のフォールバック
