@@ -1299,6 +1299,8 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
     # 🚀 新しいEnhanced RAGシステムを優先使用
     try:
         from modules.enhanced_chat_integration import EnhancedChatIntegration
+        from modules.chat_processing import save_chat_history
+        from modules.question_categorizer import categorize_question
         print("🚀 Enhanced RAG統合システムを使用開始")
         
         # Enhanced Chat Integrationを初期化
@@ -1388,6 +1390,38 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
             safe_response = safe_string(answer) if answer else "申し訳ございませんが、回答を生成できませんでした。"
             safe_source = safe_string(source_text) if source_text else ""
             
+            # チャット履歴を保存
+            try:
+                # 質問内容を分析してカテゴリーを決定
+                category_result = categorize_question(message.text)
+                category = category_result.get("category", "general")
+                
+                # ソース文書名を取得
+                primary_source_document = None
+                if sources and len(sources) > 0:
+                    for source in sources:
+                        if isinstance(source, dict):
+                            source_name = source.get('name', source.get('filename', ''))
+                            if source_name and source_name not in ['システム回答', 'unknown', 'Unknown']:
+                                primary_source_document = source_name.strip()
+                                break
+                
+                await save_chat_history(
+                    user_id=current_user["id"],
+                    user_message=message.text,
+                    bot_response=safe_response,
+                    company_id=current_user.get("company_id"),
+                    employee_id=current_user["id"],
+                    employee_name=current_user.get("name"),
+                    category=category,
+                    sentiment="neutral",
+                    model_name="enhanced-rag",
+                    source_document=primary_source_document
+                )
+                print(f"✅ チャット履歴保存完了 (Enhanced RAG)")
+            except Exception as save_error:
+                print(f"⚠️ チャット履歴保存エラー (Enhanced RAG): {save_error}")
+            
             return ChatResponse(
                 response=safe_response,
                 source=safe_source,
@@ -1407,9 +1441,32 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
                 # 辞書形式の結果を処理
                 answer = result.get("response", "")
                 source_text = result.get("source", "")
+                final_answer = answer if answer else "申し訳ございませんが、回答を生成できませんでした。"
+                
+                # チャット履歴を保存
+                try:
+                    # 質問内容を分析してカテゴリーを決定
+                    category_result = categorize_question(message.text)
+                    category = category_result.get("category", "general")
+                    
+                    await save_chat_history(
+                        user_id=current_user["id"],
+                        user_message=message.text,
+                        bot_response=final_answer,
+                        company_id=current_user.get("company_id"),
+                        employee_id=current_user["id"],
+                        employee_name=current_user.get("name"),
+                        category=category,
+                        sentiment="neutral",
+                        model_name="realtime-rag-fallback",
+                        source_document=source_text if source_text else None
+                    )
+                    print(f"✅ チャット履歴保存完了 (Realtime RAG Fallback)")
+                except Exception as save_error:
+                    print(f"⚠️ チャット履歴保存エラー (Realtime RAG Fallback): {save_error}")
                 
                 return ChatResponse(
-                    response=answer if answer else "申し訳ございませんが、回答を生成できませんでした。",
+                    response=final_answer,
                     source=source_text,
                     remaining_questions=result.get("remaining_questions", 0),
                     limit_reached=result.get("limit_reached", False)
@@ -1417,10 +1474,51 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
             else:
                 # ChatResponseオブジェクトの場合
                 if hasattr(result, 'response'):
+                    # チャット履歴を保存
+                    try:
+                        category_result = categorize_question(message.text)
+                        category = category_result.get("category", "general")
+                        
+                        await save_chat_history(
+                            user_id=current_user["id"],
+                            user_message=message.text,
+                            bot_response=result.response,
+                            company_id=current_user.get("company_id"),
+                            employee_id=current_user["id"],
+                            employee_name=current_user.get("name"),
+                            category=category,
+                            sentiment="neutral",
+                            model_name="realtime-rag-fallback-object",
+                            source_document=result.source if hasattr(result, 'source') and result.source else None
+                        )
+                        print(f"✅ チャット履歴保存完了 (Realtime RAG Fallback Object)")
+                    except Exception as save_error:
+                        print(f"⚠️ チャット履歴保存エラー (Realtime RAG Fallback Object): {save_error}")
                     return result
                 else:
+                    error_response = "システムエラーが発生しました。"
+                    # チャット履歴を保存
+                    try:
+                        category_result = categorize_question(message.text)
+                        category = category_result.get("category", "general")
+                        
+                        await save_chat_history(
+                            user_id=current_user["id"],
+                            user_message=message.text,
+                            bot_response=error_response,
+                            company_id=current_user.get("company_id"),
+                            employee_id=current_user["id"],
+                            employee_name=current_user.get("name"),
+                            category=category,
+                            sentiment="neutral",
+                            model_name="realtime-rag-fallback-error"
+                        )
+                        print(f"✅ チャット履歴保存完了 (Realtime RAG Fallback Error)")
+                    except Exception as save_error:
+                        print(f"⚠️ チャット履歴保存エラー (Realtime RAG Fallback Error): {save_error}")
+                    
                     return ChatResponse(
-                        response="システムエラーが発生しました。",
+                        response=error_response,
                         source="",
                         remaining_questions=0,
                         limit_reached=False
@@ -1436,19 +1534,65 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
                 result = await process_chat_message(message, db, current_user)
                 
                 if isinstance(result, dict):
+                    final_response = result.get("response", "申し訳ございませんが、回答を生成できませんでした。")
+                    
+                    # チャット履歴を保存
+                    try:
+                        category_result = categorize_question(message.text)
+                        category = category_result.get("category", "general")
+                        
+                        await save_chat_history(
+                            user_id=current_user["id"],
+                            user_message=message.text,
+                            bot_response=final_response,
+                            company_id=current_user.get("company_id"),
+                            employee_id=current_user["id"],
+                            employee_name=current_user.get("name"),
+                            category=category,
+                            sentiment="neutral",
+                            model_name="final-fallback",
+                            source_document=result.get("source", "") if result.get("source", "") else None
+                        )
+                        print(f"✅ チャット履歴保存完了 (Final Fallback)")
+                    except Exception as save_error:
+                        print(f"⚠️ チャット履歴保存エラー (Final Fallback): {save_error}")
+                    
                     return ChatResponse(
-                        response=result.get("response", "申し訳ございませんが、回答を生成できませんでした。"),
+                        response=final_response,
                         source=result.get("source", ""),
                         remaining_questions=result.get("remaining_questions", 0),
                         limit_reached=result.get("limit_reached", False)
                     )
                 else:
-                    # ChatResponseオブジェクトの場合はそのまま返す
+                    # ChatResponseオブジェクトの場合
+                    # process_chat_message内で既に履歴保存されているため、そのまま返す
                     return result
             except Exception as final_error:
                 print(f"❌ 最終フォールバックも失敗: {final_error}")
+                
+                # 最終エラー時にもチャット履歴を保存
+                error_response = "申し訳ございませんが、システムエラーが発生しました。しばらく時間をおいて再度お試しください。"
+                try:
+                    category_result = categorize_question(message.text)
+                    category = category_result.get("category", "general")
+                    
+                    await save_chat_history(
+                        user_id=current_user["id"],
+                        user_message=message.text,
+                        bot_response=error_response,
+                        company_id=current_user.get("company_id"),
+                        employee_id=current_user["id"],
+                        employee_name=current_user.get("name"),
+                        category=category,
+                        sentiment="neutral",
+                        model_name="system-error"
+                    )
+                    print(f"✅ チャット履歴保存完了 (System Error)")
+                except Exception as save_error:
+                    print(f"⚠️ チャット履歴保存エラー (System Error): {save_error}")
+                
                 return ChatResponse(
-                    response="申し訳ございませんが、システムエラーが発生しました。しばらく時間をおいて再度お試しください。",
+                    response=error_response,
                     source="",
                     remaining_questions=0,
                     limit_reached=False
