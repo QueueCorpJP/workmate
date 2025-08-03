@@ -1,6 +1,6 @@
 """
 🔄 複数API対応エンベディング生成モジュール
-4つのAPIキーを使用してレート制限に対応
+3つのAPIキーを使用してレート制限に対応
 gemini-embedding-001モデルのみ使用（3072次元）
 """
 
@@ -33,25 +33,18 @@ class MultiAPIEmbeddingClient:
         self.embedding_model = "models/gemini-embedding-001"
         self.expected_dimensions = 3072
         
-        # 10個のAPIキーを設定
+        # 3個のAPIキーのみ設定（レート制限対応）
         self.api_keys = [
             os.getenv("GOOGLE_API_KEY_1") or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"),
             os.getenv("GOOGLE_API_KEY_2"),
-            os.getenv("GOOGLE_API_KEY_3"),
-            os.getenv("GOOGLE_API_KEY_4"),
-            os.getenv("GOOGLE_API_KEY_5"),
-            os.getenv("GOOGLE_API_KEY_6"),
-            os.getenv("GOOGLE_API_KEY_7"),
-            os.getenv("GOOGLE_API_KEY_8"),
-            os.getenv("GOOGLE_API_KEY_9"),
-            os.getenv("GOOGLE_API_KEY_10")
+            os.getenv("GOOGLE_API_KEY_3")
         ]
         
         # 有効なAPIキーのみ保持
         self.api_keys = [key for key in self.api_keys if key]
         
         if not self.api_keys:
-            raise ValueError("少なくとも1つのAPIキーが必要です (GOOGLE_API_KEY_1～10)")
+            raise ValueError("少なくとも1つのAPIキーが必要です (GOOGLE_API_KEY_1～3)")
         
         # 各APIキーの状態管理
         self.api_status = {}
