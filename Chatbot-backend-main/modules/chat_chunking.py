@@ -13,7 +13,7 @@ async def process_chunked_chat(
     message: str, 
     user_id: str = "anonymous",
     chunk_size: int = 1200,
-    max_chunks: int = 5
+    max_chunks: int = 70  # 70個に増加
 ) -> Dict[str, Any]:
     """
     チャンク化されたチャット処理

@@ -213,7 +213,7 @@ class RealtimeRAGProcessor:
             logger.error(f"❌ Step 2エラー: エンベディング生成失敗 - {e}")
             raise
     
-    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 50) -> List[Dict]:
+    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 70) -> List[Dict]:
         """
         🔍 Step 3. 類似チャンク検索（Top-K）
         Supabaseの chunks テーブルから、ベクトル距離が近いチャンクを pgvector を用いて取得
@@ -475,17 +475,17 @@ class RealtimeRAGProcessor:
             
             # 動的コンテキスト長制限の計算
             question_length = len(question)
-            base_limit = 200000  # 基本制限を20万文字に大幅増加
+            base_limit = 300000  # 基本制限を30万文字に増加（50チャンク対応）
             
             if question_length > 5000:
                 # 長い質問の場合、コンテキスト制限を増やす
-                max_context_length = min(500000, base_limit + (question_length * 3))  # 最大50万文字
+                max_context_length = min(800000, base_limit + (question_length * 3))  # 最大80万文字
                 print(f"📏 動的コンテキスト長: {max_context_length:,}文字 (長い質問対応)")
             elif question_length > 2000:
-                max_context_length = min(350000, base_limit + (question_length * 2))  # 最大35万文字
+                max_context_length = min(600000, base_limit + (question_length * 2))  # 最大60万文字
                 print(f"📏 動的コンテキスト長: {max_context_length:,}文字 (中程度の質問)")
             else:
-                max_context_length = base_limit  # 20万文字
+                max_context_length = base_limit  # 30万文字
                 print(f"📏 標準コンテキスト長: {max_context_length:,}文字")
             
             print("="*80)
@@ -518,13 +518,13 @@ class RealtimeRAGProcessor:
             context = "\n".join(context_parts)
             
             # プロンプト長の最適化（長すぎる場合は短縮）
-            if len(context) > 100000:  # 10万文字を超える場合
+            if len(context) > 200000:  # 20万文字を超える場合（50チャンク対応のため増加）
                 logger.warning(f"⚠️ コンテキストが長すぎます ({len(context):,}文字) - 短縮処理を実行")
                 # 各チャンクを短縮
                 shortened_parts = []
-                for part in context_parts[:20]:  # 最大20チャンク
-                    if len(part) > 3000:
-                        shortened_parts.append(part[:3000] + "...(省略)")
+                for part in context_parts[:70]:  # 最大70チャンク（増加）
+                    if len(part) > 5000:  # チャンク当たりの制限も緩和
+                        shortened_parts.append(part[:5000] + "...(省略)")
                     else:
                         shortened_parts.append(part)
                 context = "\n".join(shortened_parts)
@@ -1116,7 +1116,7 @@ class RealtimeRAGProcessor:
         logger.info(f"✅ リアルタイムRAG処理完了: {len(answer)}文字の回答")
         return result
     
-    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 50) -> Dict:
+    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 70) -> Dict:
         """
         🚀 リアルタイムRAG処理フロー全体の実行（Gemini質問分析統合版）
         新しい3段階アプローチ: Gemini分析 → SQL検索 → Embedding検索（フォールバック）
@@ -1167,7 +1167,7 @@ class RealtimeRAGProcessor:
         # 通常の処理フロー（分割しない場合または分割失敗時）
         return await self._process_single_segment(question_text, company_id, company_name, top_k)
     
-    async def _process_single_segment(self, question_text: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 50) -> Dict:
+    async def _process_single_segment(self, question_text: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 70) -> Dict:
         """単一セグメントの処理（従来のprocess_realtime_ragの内容）"""
         try:
             # Step 1: 質問入力
@@ -1274,7 +1274,7 @@ def get_realtime_rag_processor() -> Optional[RealtimeRAGProcessor]:
     
     return _realtime_rag_processor
 
-async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 50) -> Dict:
+async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 70) -> Dict:
     """
     リアルタイムRAG処理の外部呼び出し用関数
     

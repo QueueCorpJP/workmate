@@ -604,7 +604,7 @@ JSON形式で回答してください：
         
         return "".join(integration_parts)
     
-    async def process_enhanced_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 50) -> Dict:
+    async def process_enhanced_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 70) -> Dict:
         """
         🚀 拡張リアルタイムRAG処理フロー全体の実行
         長い質問を段階的に処理し、統合された回答を生成
@@ -854,7 +854,7 @@ async def process_question_enhanced_realtime(
     question: str,
     company_id: str = None,
     company_name: str = "お客様の会社",
-            top_k: int = 50
+            top_k: int = 70
 ) -> Dict:
     """
     拡張リアルタイムRAG処理の外部呼び出し用関数

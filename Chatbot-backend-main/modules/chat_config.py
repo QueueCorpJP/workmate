@@ -26,8 +26,8 @@ from .config import setup_gemini
 from .utils import safe_print, safe_safe_print
 
 # 使用制限設定
-USAGE_LIMIT_ENABLED = True
-USAGE_LIMIT_PER_HOUR = 100
+USAGE_LIMIT_ENABLED = False  # 使用量制限を無効化（無限）
+USAGE_LIMIT_PER_HOUR = 999999  # 実質無制限
 CONTEXT_CACHING_ENABLED = True
 
 def get_db_cursor():

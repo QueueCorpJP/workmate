@@ -127,7 +127,7 @@ class EnhancedChatIntegration:
                     question=question_text,
                     company_id=company_id,
                     company_name=company_name,
-                    top_k=50
+                    top_k=70
                 )
                 
                 # 処理タイプを明確化
@@ -147,7 +147,7 @@ class EnhancedChatIntegration:
                         question=question_text,
                         company_id=company_id,
                         company_name=company_name,
-                        top_k=50
+                        top_k=70
                     )
                     
                     # 処理タイプを明確化

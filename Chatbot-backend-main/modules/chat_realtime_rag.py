@@ -178,7 +178,7 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                     question=message_text,
                     company_id=company_id,
                     company_name=company_name,
-                    top_k=50  # システム安定性と検索効率のバランス
+                    top_k=70  # システム安定性と検索効率のバランス
                 )
                 
                 if rag_result and rag_result.get("answer"):
