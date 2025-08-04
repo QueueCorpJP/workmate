@@ -572,21 +572,20 @@ class RealtimeRAGProcessor:
                     print(f"⚠️ 特別指示取得エラー: {e}")
                     logger.warning(f"特別指示取得エラー: {e}")
             
-            # 🎯 複雑な質問の検出（表形式、計算、複数条件など）
+            # 🎯 複雑な質問の検出（表形式、複数条件など）
             complex_indicators = [
                 '表形式', '表で', 'テーブル', '一覧表', '詳細を表', 
-                '計算', '残月数', '残総額', '×', '✕', '物件番号ごと',
-                '条件:', '指示:', '計算ルール', '注意事項', '表示条件'
+                '×', '✕', '物件番号ごと',
+                '条件:', '指示:', '注意事項', '表示条件'
             ]
             
             is_complex_query = any(indicator in question for indicator in complex_indicators)
-            is_calculation_query = any(calc in question for calc in ['計算', '残月数', '残総額', '月額'])
             is_table_query = any(table in question for table in ['表形式', '表で', 'テーブル', '物件番号ごと'])
             
-            logger.info(f"🔍 質問分析: 複雑={is_complex_query}, 計算={is_calculation_query}, 表形式={is_table_query}")
+            logger.info(f"🔍 質問分析: 複雑={is_complex_query}, 表形式={is_table_query}")
             
             # 複雑な質問用の簡潔なプロンプト
-            if is_complex_query or is_table_query or is_calculation_query:
+            if is_complex_query or is_table_query:
                 logger.info("📊 複雑な質問検出 - 専用プロンプトを使用")
                 prompt = f"""{special_instructions_text}あなたは{company_name}の専門アシスタントです。
 
@@ -661,10 +660,10 @@ class RealtimeRAGProcessor:
                     }
                 ],
                 "generationConfig": {
-                    "temperature": 0.05 if (is_complex_query or is_table_query or is_calculation_query) else 0.1,  # 複雑な質問は更に確定的に
+                    "temperature": 0.05 if (is_complex_query or is_table_query) else 0.1,  # 複雑な質問は更に確定的に
                     "maxOutputTokens": 16384,  # 16Kトークンに増加（より詳細な回答用）
-                    "topP": 0.7 if (is_complex_query or is_table_query or is_calculation_query) else 0.8,  # より集中的な応答
-                    "topK": 20 if (is_complex_query or is_table_query or is_calculation_query) else 40  # 選択肢を絞る
+                    "topP": 0.7 if (is_complex_query or is_table_query) else 0.8,  # より集中的な応答
+                    "topK": 20 if (is_complex_query or is_table_query) else 40  # 選択肢を絞る
                 }
             }
             
@@ -824,7 +823,7 @@ class RealtimeRAGProcessor:
                 context_length = len(context) if 'context' in locals() else 0
                 
                 # 複雑な質問の場合の特別な構造化フォールバック
-                if is_complex_query or is_table_query or is_calculation_query:
+                if is_complex_query or is_table_query:
                     logger.info("🛠️ 複雑な質問用の構造化フォールバック開始")
                     
                     # 顧客情報を抽出
