@@ -112,6 +112,7 @@ function ChatInterface() {
     useState<boolean>(false);
 
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -140,6 +141,113 @@ function ChatInterface() {
 
   // テンプレート機能の状態
   const [showTemplateModal, setShowTemplateModal] = useState(false);
+
+  // テキストエリアのオートリサイズ機能（完全版）
+  const adjustTextAreaHeight = useCallback(() => {
+    const textArea = textAreaRef.current;
+    if (!textArea) return;
+
+    // 一時的に高さをリセットして正確なscrollHeightを取得
+    textArea.style.height = 'auto';
+    textArea.style.overflowY = 'hidden';
+    textArea.style.maxHeight = 'none';
+
+    // デバイス別の基本設定（コンパクトサイズ）
+    const minHeight = isMobile ? 32 : isTablet ? 34 : 36;
+    const lineHeight = 24; // より正確な行の高さ（Material-UIのデフォルトに合わせる）
+    
+    // 行数を計算（改行文字数 + 1）
+    const lineCount = Math.max(1, (input.match(/\n/g) || []).length + 1);
+    
+    // 行数に応じた動的な高さ制限
+    let maxLines;
+    if (lineCount === 1) {
+      maxLines = 1; // 1行の場合は1行表示
+    } else if (lineCount <= 3) {
+      maxLines = 4; // 短文の場合は控えめ
+    } else if (lineCount <= 15) {
+      maxLines = Math.max(lineCount + 2, 15); // 余裕を持たせる
+    } else if (lineCount <= 30) {
+      maxLines = Math.max(lineCount + 1, 30); // 長文対応
+    } else {
+      maxLines = Math.min(lineCount + 1, 50); // 超長文対応（最大50行）
+    }
+
+    // ビューポート高さの制限を考慮
+    const viewportHeight = window.innerHeight;
+    const maxViewportHeight = Math.floor(viewportHeight * 0.6); // ビューポートの60%
+    const maxHeightByViewport = Math.max(maxViewportHeight, minHeight);
+
+    // 実際のscrollHeightを取得（最も正確）
+    let scrollBasedHeight = textArea.scrollHeight;
+    
+    // 計算ベースの高さ
+    const calculatedHeight = minHeight + Math.max(0, lineCount - 1) * lineHeight;
+    
+    // より大きい値を選択し、余裕を持たせる
+    const targetHeight = Math.max(scrollBasedHeight, calculatedHeight) + 8; // 8px余裕
+    const maxHeight = Math.min(
+      minHeight + (maxLines - 1) * lineHeight,
+      maxHeightByViewport
+    );
+    
+    // 最終的な高さを決定
+    const finalHeight = Math.min(Math.max(targetHeight, minHeight), maxHeight);
+    
+    textArea.style.height = `${finalHeight}px`;
+    
+    // スクロールの必要性を判断
+    if (targetHeight > maxHeight) {
+      textArea.style.overflowY = 'auto';
+      textArea.style.maxHeight = `${maxHeight}px`;
+    } else {
+      textArea.style.overflowY = 'hidden';
+      textArea.style.maxHeight = 'none';
+    }
+
+    console.log('🔧 オートリサイズ実行:', {
+      lineCount,
+      maxLines,
+      calculatedHeight,
+      scrollBasedHeight,
+      targetHeight,
+      finalHeight,
+      maxHeight,
+      viewportHeight,
+      inputLength: input.length,
+      needsScroll: targetHeight > maxHeight
+    });
+  }, [input, isMobile, isTablet]);
+
+  // inputが変更されるたびにオートリサイズを実行
+  useEffect(() => {
+    adjustTextAreaHeight();
+  }, [adjustTextAreaHeight]);
+
+  // 初期レンダリング時に適切なサイズに設定
+  useEffect(() => {
+    const textArea = textAreaRef.current;
+    if (textArea && input === "") {
+      const minHeight = isMobile ? 32 : isTablet ? 34 : 36;
+      textArea.style.height = `${minHeight}px`;
+      textArea.style.overflowY = 'hidden';
+    }
+  }, [isMobile, isTablet, input]);
+
+  // ウィンドウリサイズ時にもオートリサイズを実行
+  useEffect(() => {
+    const handleResize = () => {
+      // デバウンス処理
+      setTimeout(() => {
+        adjustTextAreaHeight();
+      }, 100);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [adjustTextAreaHeight]);
 
   // メッセージエリアのスタイルを改善 - モバイル対応を強化
   const messageContainerStyles = {
@@ -391,6 +499,16 @@ function ChatInterface() {
 
     const userMessage = input.trim();
     setInput("");
+    // 入力クリア後にテキストエリアの高さをリセット
+    setTimeout(() => {
+      const textArea = textAreaRef.current;
+      if (textArea) {
+        textArea.style.height = 'auto';
+        const minHeight = isMobile ? 32 : isTablet ? 34 : 36;
+        textArea.style.height = `${minHeight}px`;
+        textArea.style.overflowY = 'hidden';
+      }
+    }, 0);
     setMessages((prev) => [...prev, { text: userMessage, isUser: true }]);
     setIsLoading(true);
 
@@ -711,18 +829,49 @@ function ChatInterface() {
     setInput(processedTemplate);
     setShowTemplateModal(false);
     
-    // テンプレート選択後、入力フィールドにフォーカスを当てる
-    setTimeout(() => {
-      const inputElement = document.querySelector('textarea[placeholder*="質問を入力"]');
-      if (inputElement) {
-        (inputElement as HTMLTextAreaElement).focus();
-        // カーソルを最後に移動
-        (inputElement as HTMLTextAreaElement).setSelectionRange(
-          processedTemplate.length, 
-          processedTemplate.length
-        );
+    // テンプレート選択後の処理を段階的に実行してリサイズを確実にする
+    const performResize = () => {
+      const textArea = textAreaRef.current;
+      if (textArea) {
+        // 強制的にリセット
+        textArea.style.height = 'auto';
+        textArea.style.overflowY = 'hidden';
+        textArea.style.maxHeight = 'none';
+        
+        // リサイズ実行
+        requestAnimationFrame(() => {
+          adjustTextAreaHeight();
+        });
       }
-    }, 100);
+    };
+
+    // 即座に1回目実行
+    performResize();
+    
+    // 50ms後に2回目実行（DOM更新待ち）
+    setTimeout(() => {
+      const textArea = textAreaRef.current;
+      if (textArea) {
+        textArea.focus();
+        textArea.setSelectionRange(processedTemplate.length, processedTemplate.length);
+        performResize();
+      }
+    }, 50);
+    
+    // 200ms後に3回目実行（レンダリング完了後）
+    setTimeout(() => {
+      performResize();
+    }, 200);
+    
+    // 500ms後に最終確認
+    setTimeout(() => {
+      performResize();
+      console.log('📝 テンプレート選択完了:', {
+        templateLength: processedTemplate.length,
+        lineCount: (processedTemplate.match(/\n/g) || []).length + 1,
+        finalHeight: textAreaRef.current?.style.height
+      });
+    }, 500);
   };
 
 
@@ -1324,18 +1473,45 @@ function ChatInterface() {
             fullWidth
             placeholder={isLoading ? "AIが回答を準備中..." : "質問を入力してください..."}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              // リアルタイムでリサイズを実行
+              requestAnimationFrame(() => {
+                adjustTextAreaHeight();
+              });
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && input.trim()) {
                 e.preventDefault();
                 handleSend();
               }
+              // Ctrl+R でリサイズを手動実行（デバッグ用）
+              if (e.key === "r" && e.ctrlKey) {
+                e.preventDefault();
+                adjustTextAreaHeight();
+                console.log('🔧 手動リサイズ実行');
+              }
             }}
             multiline
-            maxRows={input.split('\n').length > 1 ? Math.min(input.split('\n').length, 6) : 1}
+            maxRows={Math.min(Math.max(6, (input.match(/\n/g) || []).length + 3), 50)}
             minRows={1}
             variant="outlined"
             disabled={isLoading}
+            inputRef={textAreaRef}
+            inputProps={{
+              style: {
+                resize: 'none', // ユーザーによる手動リサイズを無効化
+                lineHeight: '1.4', // 行間を調整
+                wordWrap: 'break-word', // 長い単語を適切に折り返し
+                whiteSpace: 'pre-wrap', // 改行と空白を保持
+              },
+              onInput: () => {
+                // ペーストやIME入力時にもリサイズ
+                requestAnimationFrame(() => {
+                  adjustTextAreaHeight();
+                });
+              }
+            }}
             sx={{
               "& .MuiOutlinedInput-root": {
                 borderRadius: { xs: "20px", sm: "24px" },
@@ -1345,11 +1521,31 @@ function ChatInterface() {
                 boxShadow: isLoading 
                   ? "0 2px 6px rgba(37, 99, 235, 0.08)" 
                   : "0 2px 6px rgba(37, 99, 235, 0.04)",
-                pr: { xs: 3.2, sm: 3.5 },
+                pr: { xs: 3, sm: 3.2 },
                 transition: "all 0.3s ease",
-                minHeight: { xs: "42px", sm: "44px", md: "46px" },
-                maxHeight: input.split('\n').length > 1 ? "auto" : { xs: "42px", sm: "44px", md: "46px" },
-                overflowY: "hidden",
+                minHeight: { xs: "32px", sm: "34px", md: "36px" },
+                // オートリサイズ機能により高さは動的に調整される
+                height: "auto",
+                // 長文テンプレート対応のための最大高さ
+                maxHeight: "60vh", // ビューポートの60%まで拡張可能（調整）
+                "& textarea": {
+                  scrollBehavior: "smooth", // スムーズスクロール
+                  scrollbarWidth: "thin", // Firefox用
+                  "&::-webkit-scrollbar": {
+                    width: "6px",
+                  },
+                  "&::-webkit-scrollbar-track": {
+                    background: "rgba(0,0,0,0.1)",
+                    borderRadius: "10px",
+                  },
+                  "&::-webkit-scrollbar-thumb": {
+                    background: "rgba(37, 99, 235, 0.3)",
+                    borderRadius: "10px",
+                    "&:hover": {
+                      background: "rgba(37, 99, 235, 0.5)",
+                    },
+                  },
+                },
                 border: isLoading 
                   ? "1px solid rgba(37, 99, 235, 0.15)" 
                   : "1px solid rgba(37, 99, 235, 0.08)",

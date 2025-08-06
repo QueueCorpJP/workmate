@@ -204,7 +204,7 @@ class HybridExcelProcessor:
                     {"role": "user", "content": analysis_prompt}
                 ],
                 temperature=0.1,
-                max_tokens=1000
+                max_tokens=128000  # GPT-4o-miniの最大トークン数
             )
             
             analysis_result = response.choices[0].message.content

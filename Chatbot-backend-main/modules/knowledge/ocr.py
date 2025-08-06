@@ -121,7 +121,7 @@ class GeminiOCRProcessor:
                 ],
                 "generationConfig": {
                     "temperature": 0.3,
-                    "maxOutputTokens": 8192
+                    "maxOutputTokens": 1048576  # 1Mトークン（実質無制限）
                 }
             }
             

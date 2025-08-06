@@ -145,7 +145,7 @@ class GeminiFlashOCRProcessor:
             "contents": [{"parts": parts}],
             "generationConfig": {
                 "temperature": 0.1,  # 精度重視で低温度
-                "maxOutputTokens": 8192,
+                "maxOutputTokens": 1048576,  # 1Mトークン（実質無制限）
                 "topP": 0.8,
                 "topK": 40
             },

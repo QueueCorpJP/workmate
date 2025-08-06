@@ -213,7 +213,7 @@ class RealtimeRAGProcessor:
             logger.error(f"❌ Step 2エラー: エンベディング生成失敗 - {e}")
             raise
     
-    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 70) -> List[Dict]:
+    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 50) -> List[Dict]:
         """
         🔍 Step 3. 類似チャンク検索（Top-K）
         Supabaseの chunks テーブルから、ベクトル距離が近いチャンクを pgvector を用いて取得
@@ -661,7 +661,7 @@ class RealtimeRAGProcessor:
                 ],
                 "generationConfig": {
                     "temperature": 0.05 if (is_complex_query or is_table_query) else 0.1,  # 複雑な質問は更に確定的に
-                    "maxOutputTokens": 16384,  # 16Kトークンに増加（より詳細な回答用）
+                    "maxOutputTokens": 1048576,  # 1Mトークン（実質無制限）
                     "topP": 0.7 if (is_complex_query or is_table_query) else 0.8,  # より集中的な応答
                     "topK": 20 if (is_complex_query or is_table_query) else 40  # 選択肢を絞る
                 }
@@ -1116,7 +1116,7 @@ class RealtimeRAGProcessor:
         logger.info(f"✅ リアルタイムRAG処理完了: {len(answer)}文字の回答")
         return result
     
-    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 70) -> Dict:
+    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 50) -> Dict:
         """
         🚀 リアルタイムRAG処理フロー全体の実行（Gemini質問分析統合版）
         新しい3段階アプローチ: Gemini分析 → SQL検索 → Embedding検索（フォールバック）
@@ -1167,7 +1167,7 @@ class RealtimeRAGProcessor:
         # 通常の処理フロー（分割しない場合または分割失敗時）
         return await self._process_single_segment(question_text, company_id, company_name, top_k)
     
-    async def _process_single_segment(self, question_text: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 70) -> Dict:
+    async def _process_single_segment(self, question_text: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 50) -> Dict:
         """単一セグメントの処理（従来のprocess_realtime_ragの内容）"""
         try:
             # Step 1: 質問入力
@@ -1274,7 +1274,7 @@ def get_realtime_rag_processor() -> Optional[RealtimeRAGProcessor]:
     
     return _realtime_rag_processor
 
-async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 70) -> Dict:
+async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 50) -> Dict:
     """
     リアルタイムRAG処理の外部呼び出し用関数
     
