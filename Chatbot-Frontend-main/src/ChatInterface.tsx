@@ -152,8 +152,8 @@ function ChatInterface() {
     textArea.style.overflowY = 'hidden';
     textArea.style.maxHeight = 'none';
 
-    // デバイス別の基本設定（コンパクトサイズ）
-    const minHeight = isMobile ? 32 : isTablet ? 34 : 36;
+    // デバイス別の基本設定（より小さく）
+    const minHeight = isMobile ? 28 : isTablet ? 30 : 32;
     const lineHeight = 24; // より正確な行の高さ（Material-UIのデフォルトに合わせる）
     
     // 行数を計算（改行文字数 + 1）
@@ -228,7 +228,7 @@ function ChatInterface() {
   useEffect(() => {
     const textArea = textAreaRef.current;
     if (textArea && input === "") {
-      const minHeight = isMobile ? 32 : isTablet ? 34 : 36;
+      const minHeight = isMobile ? 28 : isTablet ? 30 : 32;
       textArea.style.height = `${minHeight}px`;
       textArea.style.overflowY = 'hidden';
     }
@@ -504,7 +504,7 @@ function ChatInterface() {
       const textArea = textAreaRef.current;
       if (textArea) {
         textArea.style.height = 'auto';
-        const minHeight = isMobile ? 32 : isTablet ? 34 : 36;
+        const minHeight = isMobile ? 28 : isTablet ? 30 : 32;
         textArea.style.height = `${minHeight}px`;
         textArea.style.overflowY = 'hidden';
       }
@@ -1523,7 +1523,7 @@ function ChatInterface() {
                   : "0 2px 6px rgba(37, 99, 235, 0.04)",
                 pr: { xs: 3, sm: 3.2 },
                 transition: "all 0.3s ease",
-                minHeight: { xs: "32px", sm: "34px", md: "36px" },
+                minHeight: { xs: "28px", sm: "30px", md: "32px" },
                 // オートリサイズ機能により高さは動的に調整される
                 height: "auto",
                 // 長文テンプレート対応のための最大高さ
