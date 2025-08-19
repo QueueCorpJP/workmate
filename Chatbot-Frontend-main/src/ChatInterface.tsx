@@ -256,7 +256,7 @@ function ChatInterface() {
     flexGrow: 1,
     overflow: "auto",
     p: { xs: 1, sm: 2, md: 3 },
-    pb: { xs: 16, sm: 14, md: 14 }, // モバイルでの余白をさらに増加
+    pb: { xs: 20, sm: 18, md: 18 }, // 入力フィールドとの重なりを防ぐ
     background: "rgba(248, 250, 252, 0.9)",
     backgroundImage:
       "radial-gradient(rgba(37, 99, 235, 0.04) 1px, transparent 0)",
@@ -268,6 +268,17 @@ function ChatInterface() {
     '&::-webkit-scrollbar': {
       display: 'none' // Chrome, Safari, Opera
     },
+    // モバイル向け最適化
+    WebkitOverflowScrolling: 'touch',
+    touchAction: 'pan-y',
+    // 横向き時の最適化
+    '@media (orientation: landscape) and (max-height: 500px)': {
+      p: { xs: 0.5, sm: 1, md: 2 },
+      pb: { xs: 14, sm: 12, md: 12 },
+    },
+    // iOS Safari対応
+    scrollBehavior: 'smooth',
+    WebkitTransform: 'translate3d(0,0,0)',
   };
 
   // メッセージバブルのスタイルを改善 - モバイル対応を強化
@@ -359,12 +370,28 @@ function ChatInterface() {
     backdropFilter: "blur(16px)",
     background: "rgba(255, 255, 255, 0.95)",
     borderTop: "1px solid rgba(37, 99, 235, 0.1)",
-    p: { xs: 1.5, sm: 2, md: 2.5 },
+    p: { xs: 0.8, sm: 1.2, md: 1.5 },
     zIndex: 99, // ヘッダーより下だが他の要素より上に表示
     borderTopLeftRadius: { xs: "20px", sm: "24px" },
     borderTopRightRadius: { xs: "20px", sm: "24px" },
     transition: "all 0.3s ease",
     WebkitTransform: 'translate3d(0,0,0)', // iOSでの表示問題を修正
+    // モバイルキーボード対応
+    paddingBottom: {
+      xs: 'max(env(safe-area-inset-bottom), 8px)',
+      sm: 'max(env(safe-area-inset-bottom), 10px)',
+      md: 'max(env(safe-area-inset-bottom), 12px)'
+    },
+    // タッチデバイス最適化
+    WebkitTouchCallout: 'none',
+    WebkitUserSelect: 'none',
+    touchAction: 'manipulation',
+    // 横向き対応
+    '@media (orientation: landscape) and (max-height: 500px)': {
+      p: { xs: 0.5, sm: 0.8 },
+      borderTopLeftRadius: { xs: "16px", sm: "20px" },
+      borderTopRightRadius: { xs: "16px", sm: "20px" },
+    },
   };
 
   const scrollToBottom = () => {
@@ -1448,10 +1475,16 @@ function ChatInterface() {
     <Box sx={chatInputContainerStyles}>
       <Box
         sx={{
-          maxWidth: { xs: "95%", sm: "90%", md: "85%", lg: "900px" },
+          maxWidth: { 
+            xs: "calc(100% - 16px)", 
+            sm: "90%", 
+            md: "85%", 
+            lg: "900px" 
+          },
           mx: "auto",
           display: "flex",
           flexDirection: "column",
+          px: { xs: 0.5, sm: 0 }, // 小画面での内側余白
         }}
       >
         {/* 入力フィールド */}
@@ -1463,7 +1496,10 @@ function ChatInterface() {
             backgroundColor: "rgba(255, 255, 255, 0.9)",
             transition: "all 0.3s ease",
             width: "100%",
-            mb: { xs: 0.5, sm: 0.8 }, // 下部に少し余白を追加
+            mb: { xs: 0.3, sm: 0.5 }, // 下部に少し余白を追加
+            // モバイルタッチ最適化
+            WebkitTapHighlightColor: 'transparent',
+            touchAction: 'manipulation',
             "&:hover": {
               boxShadow: "0 3px 10px rgba(37, 99, 235, 0.06)",
             },
@@ -1493,7 +1529,7 @@ function ChatInterface() {
               }
             }}
             multiline
-            maxRows={Math.min(Math.max(6, (input.match(/\n/g) || []).length + 3), 50)}
+            maxRows={Math.min(Math.max(4, (input.match(/\n/g) || []).length + 2), 8)}
             minRows={1}
             variant="outlined"
             disabled={isLoading}
@@ -1521,13 +1557,13 @@ function ChatInterface() {
                 boxShadow: isLoading 
                   ? "0 2px 6px rgba(37, 99, 235, 0.08)" 
                   : "0 2px 6px rgba(37, 99, 235, 0.04)",
-                pr: { xs: 3, sm: 3.2 },
+                pr: { xs: 6, sm: 6.5, md: 7 },
                 transition: "all 0.3s ease",
-                minHeight: { xs: "28px", sm: "30px", md: "32px" },
+                minHeight: { xs: "32px", sm: "34px", md: "36px" },
                 // オートリサイズ機能により高さは動的に調整される
                 height: "auto",
                 // 長文テンプレート対応のための最大高さ
-                maxHeight: "60vh", // ビューポートの60%まで拡張可能（調整）
+                maxHeight: "40vh", // ビューポートの40%まで拡張可能（調整）
                 "& textarea": {
                   scrollBehavior: "smooth", // スムーズスクロール
                   scrollbarWidth: "thin", // Firefox用
@@ -1562,17 +1598,20 @@ function ChatInterface() {
                   animation: "shimmer 2s infinite",
                 } : {},
                 "&.Mui-focused": {
-                  boxShadow: "0 3px 10px rgba(37, 99, 235, 0.08)",
+                  boxShadow: "0 4px 12px rgba(37, 99, 235, 0.15)",
                   backgroundColor: "white",
                   transform: "translateY(-1px)",
                   "& .MuiOutlinedInput-notchedOutline": {
-                    borderColor: "rgba(59, 130, 246, 0.5)",
-                    borderWidth: "1px",
+                    borderColor: "#3b82f6",
+                    borderWidth: "2px",
                   },
                 },
                 "&:hover": {
-                  boxShadow: "0 3px 8px rgba(37, 99, 235, 0.06)",
-                  backgroundColor: isLoading ? "rgba(37, 99, 235, 0.02)" : "white",
+                  boxShadow: "0 3px 10px rgba(37, 99, 235, 0.1)",
+                  backgroundColor: isLoading ? "rgba(37, 99, 235, 0.02)" : "rgba(255, 255, 255, 0.98)",
+                  "& .MuiOutlinedInput-notchedOutline": {
+                    borderColor: "rgba(37, 99, 235, 0.3)",
+                  },
                 },
                 "&.Mui-disabled": {
                   backgroundColor: "rgba(37, 99, 235, 0.02)",
@@ -1582,13 +1621,13 @@ function ChatInterface() {
                 },
               },
               "& .MuiOutlinedInput-input": {
-                padding: { xs: "8px 12px", sm: "10px 14px", md: "10px 16px" },
-                fontSize: { xs: "0.85rem", sm: "0.9rem", md: "0.92rem" },
+                padding: { xs: "6px 10px", sm: "8px 12px", md: "10px 14px" },
+                fontSize: { xs: "0.85rem", sm: "0.9rem", md: "1rem" },
                 lineHeight: 1.4,
                 height: "auto",
-                minHeight: { xs: "18px", sm: "20px", md: "22px" },
-                maxHeight: { xs: "18px", sm: "20px", md: "22px" },
-                overflowY: "hidden",
+                minHeight: { xs: "16px", sm: "18px", md: "20px" },
+                // maxHeightを削除してmultilineが正常に動作するように
+                overflowY: "auto",
                 "&.Mui-disabled": {
                   color: "rgba(0, 0, 0, 0.4)",
                   WebkitTextFillColor: "rgba(0, 0, 0, 0.4)",
@@ -1596,11 +1635,13 @@ function ChatInterface() {
                 "&::placeholder": {
                   opacity: isLoading ? 0.7 : 1,
                   transition: "opacity 0.3s ease",
+                  color: "rgba(0, 0, 0, 0.6)",
+                  fontSize: { xs: "0.85rem", sm: "0.9rem", md: "1rem" },
                 },
               },
               "& .MuiOutlinedInput-notchedOutline": {
-                borderColor: "rgba(37, 99, 235, 0.06)",
-                borderWidth: "1px",
+                borderColor: "rgba(37, 99, 235, 0.2)",
+                borderWidth: "1.5px",
               },
             }}
           />
@@ -1621,8 +1662,8 @@ function ChatInterface() {
                   : "rgba(0, 0, 0, 0.04)",
               color:
                 isLoading || !input.trim() ? "rgba(0, 0, 0, 0.3)" : "white",
-              width: { xs: "28px", sm: "30px", md: "32px" },
-              height: { xs: "28px", sm: "30px", md: "32px" },
+              width: { xs: "36px", sm: "38px", md: "40px" },
+              height: { xs: "36px", sm: "38px", md: "40px" },
               minWidth: 0,
               transition: "all 0.2s ease",
               borderRadius: "50%",
@@ -1687,6 +1728,15 @@ function ChatInterface() {
         overflow: "hidden",
         WebkitOverflowScrolling: 'touch', // iOSのスムーススクロール対応
         overscrollBehavior: 'none', // バウンス効果を防止
+        // モバイル向け最適化
+        minHeight: { xs: '-webkit-fill-available', sm: '100vh' },
+        WebkitTouchCallout: 'none',
+        WebkitUserSelect: 'none',
+        touchAction: 'manipulation',
+        // iOS Safariの100vh問題に対応
+        '@supports (height: 100dvh)': {
+          height: '100dvh'
+        }
       }}
     >
       {renderAppBar()}
@@ -1697,14 +1747,34 @@ function ChatInterface() {
           overflow: "hidden",
           position: "relative",
           mt: { xs: '56px', sm: '64px' },
-          height: { xs: 'calc(100vh - 56px)', sm: 'calc(100vh - 64px)' }, // 画面高さからヘッダーの高さを引いた値
+          height: { 
+            xs: 'calc(100vh - 56px)', 
+            sm: 'calc(100vh - 64px)',
+            // iOS Safari対応
+            '@supports (height: 100dvh)': {
+              xs: 'calc(100dvh - 56px)',
+              sm: 'calc(100dvh - 64px)'
+            }
+          },
           WebkitOverflowScrolling: 'touch', // iOSのスムーススクロール対応
           overscrollBehavior: 'contain', // スクロールの慣性を制御
+          // モバイル最適化
+          scrollBehavior: 'smooth',
+          WebkitTransform: 'translate3d(0,0,0)', // ハードウェアアクセラレーション
         }}
       >
         <Container
           maxWidth="lg"
-          sx={{ display: "flex", flexDirection: "column", flexGrow: 1, py: 0 }}
+          sx={{ 
+            display: "flex", 
+            flexDirection: "column", 
+            flexGrow: 1, 
+            py: 0,
+            // 横向き時の最適化
+            '@media (orientation: landscape) and (max-height: 500px)': {
+              py: { xs: 0.5, sm: 1 },
+            }
+          }}
         >
           {/* DemoLimitsを絶対配置にして、メッセージエリアを圧迫しないようにする */}
           {!isUnlimited && (
