@@ -63,6 +63,35 @@ interface TokenUsageData {
   output_tokens_total: number;
 }
 
+interface PricingInfo {
+  company_id: string;
+  company_name: string;
+  pricing_model: string;
+  pricing_description: string;
+  pricing_table: any;
+  cost_examples: any;
+  is_premium_customer: boolean;
+  is_premium_plan?: boolean;
+  plan_details?: {
+    monthly_price_jpy: number;
+    contract_period: string;
+    total_price_jpy: number;
+    features: string[];
+  };
+  total_company_cost_jpy?: number;
+}
+
+interface MemberUsage {
+  member_id: string;
+  member_name: string;
+  member_email: string;
+  total_tokens: number;
+  conversations: number;
+  cost_usd: number;
+  cost_jpy: number;
+  avg_cost_per_conversation: number;
+}
+
 interface SimulationData {
   simulated_tokens: number;
   cost_breakdown: {
@@ -82,6 +111,9 @@ interface SimulationData {
 
 const BillingTab: React.FC = () => {
   const theme = useTheme();
+  const [pricingInfo, setPricingInfo] = useState<PricingInfo | null>(null);
+  const [memberUsage, setMemberUsage] = useState<MemberUsage[]>([]);
+  const [isPricingInfoLoading, setIsPricingInfoLoading] = useState(false);
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { user } = useAuth();
   
@@ -93,19 +125,8 @@ const BillingTab: React.FC = () => {
   const [isSimulating, setIsSimulating] = useState(false);
   const [currentCompanyId, setCurrentCompanyId] = useState<string | null>(null);
 
-  // 特定のcompany_id用の専用表示フラグ
-  // const isSpecialCompany = currentCompanyId === '77acc2e2-ce67-458d-bd38-7af0476b297a';
-
-  // テスト用：一時的に特別会社として扱う（デバッグ用）
-  const isSpecialCompany = true; // この行のコメントを外すとテスト可能
-
-  // デバッグログを追加
-  console.log('🏢 デバッグ情報:', {
-    currentCompanyId,
-    isSpecialCompany,
-    targetCompanyId: '77acc2e2-ce67-458d-bd38-7af0476b297a',
-    isLoading
-  });
+  // 旧ロジック（削除済み）
+  // 新しいpricingInfo.is_premium_planでPremium Plan判定を行う
 
   // トークン使用量データを取得（共有サービス使用）
   const fetchTokenUsage = async () => {
@@ -117,16 +138,20 @@ const BillingTab: React.FC = () => {
         try {
           const response = await api.get('/auth/user');
           const userData = response.data;
-          console.log('📋 ユーザーデータ全体:', userData);
           if (userData.company_id) {
             setCurrentCompanyId(userData.company_id);
-            console.log('🏢 Company ID設定:', userData.company_id);
-            console.log('🔍 特別会社判定:', userData.company_id === '77acc2e2-ce67-458d-bd38-7af0476b297a');
           } else {
-            console.log('⚠️ Company IDが見つかりません');
+            // authContextからもcompany_idを確認
+            if (user?.company_id) {
+              setCurrentCompanyId(user.company_id);
+            }
           }
         } catch (companyError) {
           console.error('Company ID取得エラー:', companyError);
+          // authContextからもcompany_idを確認
+          if (user?.company_id) {
+            setCurrentCompanyId(user.company_id);
+          }
         }
       }
 
@@ -137,6 +162,47 @@ const BillingTab: React.FC = () => {
       console.error('トークン使用量取得エラー:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchPricingInfo = async () => {
+    setIsPricingInfoLoading(true);
+    try {
+      const response = await api.get('/company-pricing-info');
+      setPricingInfo(response.data);
+    } catch (error) {
+      console.error('Error fetching pricing info:', error);
+      // エラー時でも最小限のデータを設定
+      setPricingInfo({
+        company_id: '',
+        company_name: 'Error Loading',
+        pricing_model: 'error',
+        pricing_description: 'エラーが発生しました',
+        pricing_table: {},
+        cost_examples: {},
+        is_premium_customer: false,
+        is_premium_plan: false
+      });
+    } finally {
+      setIsPricingInfoLoading(false);
+    }
+  };
+
+  const fetchMemberUsage = async () => {
+    try {
+      const response = await api.get('/company-member-usage');
+      setMemberUsage(response.data.members || []);
+      
+      // Premium Planでない場合の料金情報も設定
+      if (!response.data.is_premium_plan) {
+        setPricingInfo(prev => prev ? ({
+          ...prev,
+          is_premium_plan: false,
+          total_company_cost_jpy: response.data.total_company_cost_jpy || 0
+        }) : prev);
+      }
+    } catch (error) {
+      console.error('Error fetching member usage:', error);
     }
   };
 
@@ -168,6 +234,8 @@ const BillingTab: React.FC = () => {
 
   useEffect(() => {
     fetchTokenUsage();
+    fetchPricingInfo();
+    fetchMemberUsage();
   }, []);
 
   useEffect(() => {
@@ -418,12 +486,362 @@ const BillingTab: React.FC = () => {
     </Box>
   );
 
-  if (isSpecialCompany) {
-    console.log('✅ 特別料金画面を表示します');
-    return <SpecialPricingDisplay />;
-  }
+  // 旧SpecialPricingDisplay条件分岐は削除
+  // 新しいPremium Plan判定ロジックを使用
 
-  if (isLoading) {
+  const No1PremiumPricingDisplay = () => (
+    <Box sx={{ 
+      background: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)',
+      color: 'white',
+      py: 6,
+      px: 3,
+      borderRadius: 3,
+      mb: 4,
+      boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+    }}>
+      <Container maxWidth="lg">
+        <Box sx={{ textAlign: 'center', mb: 6 }}>
+          <Chip
+            icon={<StarIcon />}
+            label="Premium Plan"
+            sx={{
+              background: 'rgba(255, 255, 255, 0.2)',
+              color: 'white',
+              fontWeight: 'bold',
+              fontSize: '1rem',
+              mb: 3,
+              px: 2,
+              py: 1
+            }}
+          />
+          <Typography variant="h3" sx={{ fontWeight: 'bold', mb: 2 }}>
+            株式会社No.1 専用プラン
+          </Typography>
+          <Typography variant="h4" sx={{ fontWeight: 'bold', mb: 1 }}>
+            ¥30,000
+          </Typography>
+          <Typography variant="h6" sx={{ opacity: 0.9, mb: 2 }}>
+            / 月
+          </Typography>
+          <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 1 }}>
+            3ヶ月契約
+          </Typography>
+          <Typography variant="h4" sx={{ fontWeight: 'bold', opacity: 0.9 }}>
+            ¥90,000
+          </Typography>
+          <Typography variant="body1" sx={{ opacity: 0.8, mt: 1 }}>
+            税込・固定料金
+          </Typography>
+        </Box>
+
+        {/* プラン特典 */}
+        <Grid container spacing={4} sx={{ mb: 6 }}>
+          <Grid item xs={12}>
+            <Card sx={{ 
+              background: 'rgba(255, 255, 255, 0.95)', 
+              color: '#1e293b',
+              backdropFilter: 'blur(10px)',
+              borderRadius: 3
+            }}>
+              <CardContent sx={{ p: 4 }}>
+                <Typography variant="h5" sx={{ mb: 4, fontWeight: 'bold', textAlign: 'center' }}>
+                  プラン特典
+                </Typography>
+                <Grid container spacing={3}>
+                  {pricingInfo?.plan_details?.features?.map((feature: string, index: number) => (
+                    <Grid item xs={12} sm={6} key={index}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                        <CheckIcon sx={{ color: '#4caf50', mr: 2, fontSize: '1.5rem' }} />
+                        <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                          {feature}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                  ))}
+                </Grid>
+                
+                <Divider sx={{ my: 3 }} />
+                
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h6" sx={{ color: '#1976d2', fontWeight: 'bold' }}>
+                    継続利用でさらなる特典をご用意
+                  </Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+
+        {/* 料金体系の説明 */}
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={4}>
+            <Card sx={{ 
+              background: 'rgba(255, 255, 255, 0.95)', 
+              color: '#1e293b',
+              height: '100%',
+              borderRadius: 2
+            }}>
+              <CardContent sx={{ textAlign: 'center', p: 3 }}>
+                <MoneyIcon sx={{ fontSize: '3rem', color: '#4caf50', mb: 2 }} />
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
+                  AI質問・回答 無制限
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  使用量に関係なく追加料金は発生しません
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <Card sx={{ 
+              background: 'rgba(255, 255, 255, 0.95)', 
+              color: '#1e293b',
+              height: '100%',
+              borderRadius: 2
+            }}>
+              <CardContent sx={{ textAlign: 'center', p: 3 }}>
+                <InfoIcon sx={{ fontSize: '3rem', color: '#2196f3', mb: 2 }} />
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
+                  専用サポート対応
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  優先サポートでお困りごとを迅速に解決
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <Card sx={{ 
+              background: 'rgba(255, 255, 255, 0.95)', 
+              color: '#1e293b',
+              height: '100%',
+              borderRadius: 2
+            }}>
+              <CardContent sx={{ textAlign: 'center', p: 3 }}>
+                <DiamondIcon sx={{ fontSize: '3rem', color: '#9c27b0', mb: 2 }} />
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
+                  プレミアム機能フルアクセス
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  全ての機能を制限なくご利用いただけます
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+
+        {/* Premium Plan vs 従量課金制の比較 */}
+        {pricingInfo?.cost_examples?.comparison_with_pay_per_use && (
+          <Container maxWidth="lg" sx={{ mt: 4 }}>
+            <Card sx={{ 
+              background: 'rgba(255, 255, 255, 0.95)', 
+              color: '#1e293b',
+              borderRadius: 3
+            }}>
+              <CardContent sx={{ p: 4 }}>
+                <Typography variant="h5" sx={{ mb: 3, fontWeight: 'bold', textAlign: 'center' }}>
+                  💰 従量課金制との比較
+                </Typography>
+                
+                <Grid container spacing={2}>
+                  {pricingInfo.cost_examples.comparison_with_pay_per_use.scenarios.map((scenario: any, index: number) => (
+                    <Grid item xs={12} sm={6} md={4} key={index}>
+                      <Card sx={{ 
+                        height: '100%', 
+                        border: scenario.difference > 0 ? '2px solid #4caf50' : '1px solid rgba(0, 0, 0, 0.12)',
+                        position: 'relative'
+                      }}>
+                        {scenario.difference > 0 && (
+                          <Box sx={{ 
+                            position: 'absolute', 
+                            top: -8, 
+                            right: 8, 
+                            backgroundColor: '#4caf50', 
+                            color: 'white', 
+                            px: 1, 
+                            py: 0.5, 
+                            borderRadius: 1,
+                            fontSize: '0.75rem',
+                            fontWeight: 600
+                          }}>
+                            お得！
+                          </Box>
+                        )}
+                        <CardContent sx={{ textAlign: 'center' }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                            月{scenario.monthly_questions}回利用
+                          </Typography>
+                          <Box sx={{ mb: 2 }}>
+                            <Typography variant="body2" color="text.secondary" sx={{ textDecoration: 'line-through' }}>
+                              従量課金: ¥{scenario.pay_per_use_cost.toLocaleString()}
+                            </Typography>
+                            <Typography variant="h6" sx={{ fontWeight: 700, color: '#1976d2' }}>
+                              Premium: ¥30,000
+                            </Typography>
+                          </Box>
+                          <Chip 
+                            label={scenario.difference > 0 ? `¥${scenario.difference.toLocaleString()}お得` : scenario.recommendation}
+                            color={scenario.difference > 0 ? 'success' : 'default'}
+                            size="small"
+                            sx={{ fontWeight: 600 }}
+                          />
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  ))}
+                </Grid>
+
+                <Box sx={{ mt: 3, p: 2, backgroundColor: 'rgba(76, 175, 80, 0.05)', borderRadius: 1 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+                    💡 <strong>月1,000回以上のご利用でPremium Planがお得になります！</strong>
+                  </Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          </Container>
+        )}
+      </Container>
+    </Box>
+  );
+
+  const PayPerUseSummary = () => (
+    <Card sx={{ mb: 3 }}>
+      <CardContent>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+            従量課金制 - 料金サマリー
+          </Typography>
+          <Chip
+            label="Pay Per Use"
+            color="primary"
+            sx={{ fontWeight: 'bold' }}
+          />
+        </Box>
+        
+        <Grid container spacing={3}>
+          <Grid item xs={12} sm={6} md={3}>
+            <Box sx={{ textAlign: 'center', p: 2 }}>
+              <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#1976d2' }}>
+                {memberUsage.length}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                アクティブメンバー
+              </Typography>
+            </Box>
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <Box sx={{ textAlign: 'center', p: 2 }}>
+              <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#ff9800' }}>
+                {memberUsage.reduce((sum, member) => sum + member.conversations, 0)}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                総会話数
+              </Typography>
+            </Box>
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <Box sx={{ textAlign: 'center', p: 2 }}>
+              <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#4caf50' }}>
+                {memberUsage.reduce((sum, member) => sum + member.total_tokens, 0).toLocaleString()}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                総使用トークン
+              </Typography>
+            </Box>
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <Box sx={{ textAlign: 'center', p: 2 }}>
+              <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#f44336' }}>
+                ¥{memberUsage.reduce((sum, member) => sum + member.cost_jpy, 0).toFixed(2)}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                総課金額
+              </Typography>
+            </Box>
+          </Grid>
+        </Grid>
+        
+        <Box sx={{ mt: 3, p: 2, backgroundColor: 'rgba(25, 118, 210, 0.05)', borderRadius: 1 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center' }}>
+            <InfoIcon sx={{ color: '#1976d2', mr: 1, fontSize: '1.2rem' }} />
+            <strong>従量課金制</strong>: 使用したトークン数に応じて料金が発生します
+          </Typography>
+        </Box>
+      </CardContent>
+    </Card>
+  );
+
+  const MemberUsageDisplay = () => (
+    <Card sx={{ mb: 3 }}>
+      <CardContent>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+            メンバー別使用状況
+          </Typography>
+          {pricingInfo?.is_premium_plan && (
+            <Chip
+              label="Premium Plan - 追加料金なし"
+              color="success"
+              sx={{ fontWeight: 'bold' }}
+            />
+          )}
+        </Box>
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>メンバー名</TableCell>
+                <TableCell>メールアドレス</TableCell>
+                <TableCell align="right">会話数</TableCell>
+                <TableCell align="right">総トークン</TableCell>
+                <TableCell align="right">
+                  {pricingInfo?.is_premium_plan ? '追加コスト' : 'コスト (JPY)'}
+                </TableCell>
+                <TableCell align="right">
+                  {pricingInfo?.is_premium_plan ? '1会話あたり' : '1会話あたり平均'}
+                </TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {memberUsage.map((member) => (
+                <TableRow key={member.member_id}>
+                  <TableCell>{member.member_name}</TableCell>
+                  <TableCell>{member.member_email}</TableCell>
+                  <TableCell align="right">{member.conversations}</TableCell>
+                  <TableCell align="right">{member.total_tokens.toLocaleString()}</TableCell>
+                  <TableCell align="right">
+                    {pricingInfo?.is_premium_plan ? (
+                      <Chip label="¥0" color="success" size="small" />
+                    ) : (
+                      `¥${member.cost_jpy.toFixed(2)}`
+                    )}
+                  </TableCell>
+                  <TableCell align="right">
+                    {pricingInfo?.is_premium_plan ? (
+                      <Chip label="¥0" color="success" size="small" />
+                    ) : (
+                      `¥${member.avg_cost_per_conversation.toFixed(2)}`
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        
+        {pricingInfo?.is_premium_plan && (
+          <Box sx={{ mt: 3, p: 2, backgroundColor: 'rgba(76, 175, 80, 0.05)', borderRadius: 1 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center' }}>
+              <CheckIcon sx={{ color: '#4caf50', mr: 1, fontSize: '1.2rem' }} />
+              <strong>Premium Plan</strong>: 月額固定¥30,000で全メンバーの利用が無制限です
+            </Typography>
+          </Box>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  if (isLoading || isPricingInfoLoading) {
     return (
       <Box sx={{ p: 3, textAlign: 'center' }}>
         <Typography>料金情報を読み込み中...</Typography>
@@ -434,7 +852,21 @@ const BillingTab: React.FC = () => {
   return (
     <Fade in={true} timeout={400}>
       <Box>
-        {/* ヘッダー */}
+        
+        
+        {/* no1株式会社専用表示 */}
+        {pricingInfo?.is_premium_plan === true ? (
+          <>
+            <No1PremiumPricingDisplay />
+            <MemberUsageDisplay />
+          </>
+        ) : (
+          // no1以外の会社：従量課金制の詳細表示
+          <>
+            <PayPerUseSummary />
+            <MemberUsageDisplay />
+            
+            {/* 従量課金制用のヘッダー */}
         <Box
           sx={{
             mb: 3,
@@ -761,17 +1193,17 @@ const BillingTab: React.FC = () => {
                       <TableBody>
                         <TableRow>
                           <TableCell>Input トークン</TableCell>
-                          <TableCell>¥0.045/1,000tokens</TableCell>
+                          <TableCell>¥0.100/1,000tokens</TableCell>
                           <TableCell>ユーザーからの質問</TableCell>
                         </TableRow>
                         <TableRow>
                           <TableCell>Output トークン</TableCell>
-                          <TableCell>¥0.375/1,000tokens</TableCell>
+                          <TableCell>¥0.900/1,000tokens</TableCell>
                           <TableCell>AIからの回答</TableCell>
                         </TableRow>
                         <TableRow>
                           <TableCell>プロンプト参照</TableCell>
-                          <TableCell>¥0.15/回</TableCell>
+                          <TableCell>¥0.50/回</TableCell>
                           <TableCell>知識ベース参照</TableCell>
                         </TableRow>
                       </TableBody>
@@ -783,19 +1215,75 @@ const BillingTab: React.FC = () => {
                       💡 <strong>新料金体系の特徴:</strong>
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                      • Input $0.30、Output $2.5 per 1M tokens
+                      • Input ¥0.100、Output ¥0.900 per 1,000 tokens
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                      • プロンプト参照ごとに追加料金
+                      • プロンプト参照（知識ベース）¥0.50/回で追加料金
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       • 使った分だけの従量課金制
                     </Typography>
                   </Box>
+
+                  {/* 詳細な料金例 */}
+                  {pricingInfo?.cost_examples?.detailed_scenarios && (
+                    <Box sx={{ mt: 3 }}>
+                      <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                        📊 利用例と料金
+                      </Typography>
+                      
+                      {pricingInfo.cost_examples.detailed_scenarios.map((scenario: any, index: number) => (
+                        <Card key={index} sx={{ mb: 2, border: '1px solid rgba(0, 0, 0, 0.12)' }}>
+                          <CardContent sx={{ pb: 2 }}>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1, color: 'primary.main' }}>
+                              {scenario.category}
+                            </Typography>
+                            
+                            {scenario.examples.map((example: any, exIndex: number) => (
+                              <Box key={exIndex} sx={{ 
+                                mb: 1.5, 
+                                p: 2, 
+                                backgroundColor: 'rgba(0, 0, 0, 0.02)', 
+                                borderRadius: 1,
+                                border: '1px solid rgba(0, 0, 0, 0.05)'
+                              }}>
+                                <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
+                                  {example.question}
+                                </Typography>
+                                <Grid container spacing={2} alignItems="center">
+                                  <Grid item xs={12} sm={6}>
+                                    <Typography variant="caption" color="text.secondary">
+                                      入力: {example.input_tokens}トークン / 出力: {example.output_tokens}トークン
+                                      {example.prompt_references && ` / 知識ベース: ${example.prompt_references}回`}
+                                    </Typography>
+                                  </Grid>
+                                  <Grid item xs={12} sm={6} sx={{ textAlign: { sm: 'right' } }}>
+                                    <Chip 
+                                      label={`¥${example.cost_jpy.toFixed(3)}`}
+                                      color="primary" 
+                                      size="small" 
+                                      sx={{ fontWeight: 600 }}
+                                    />
+                                  </Grid>
+                                </Grid>
+                                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                                  内訳: {example.cost_breakdown}
+                                </Typography>
+                              </Box>
+                            ))}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </Box>
+                  )}
+
+
                 </CardContent>
               </Card>
             </Grid>
           </Grid>
+        )}
+            </>
         )}
       </Box>
     </Fade>

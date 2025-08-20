@@ -3089,8 +3089,11 @@ async def get_company_token_usage_with_prompts(current_user = Depends(get_curren
                                                 # トークンから基本コストを逆算
                         if total_tokens_used > 0:
                             if total_cost_usd > 0:
-                                # 既存のコストデータを使用
-                                estimated_prompt_cost = estimated_prompt_refs * 0.001
+                                # 既存のコストデータを使用（新料金体系でプロンプト参照コスト計算）
+                                from modules.token_counter import TokenCounter
+                                counter = TokenCounter()
+                                # JPYからUSDへ変換 (¥0.50 / 150 = $0.00333)
+                                estimated_prompt_cost = estimated_prompt_refs * (counter.prompt_reference_cost / 150)
                                 base_cost_total = max(0, total_cost_usd - estimated_prompt_cost)
                                 prompt_cost_total = estimated_prompt_cost
                             else:
@@ -3098,7 +3101,7 @@ async def get_company_token_usage_with_prompts(current_user = Depends(get_curren
                                 print("💰 コストが0のため新料金体系で再計算中...")
                                 from modules.token_counter import TokenCounter
                                 counter = TokenCounter()
-                                pricing = counter.pricing["gemini-pro"]
+                                pricing = counter.pricing["gemini-2.5-flash"]
                                 
                                 # 30%がinput、70%がoutputと仮定
                                 estimated_input = total_input_tokens if total_input_tokens > 0 else int(total_tokens_used * 0.3)
@@ -3107,7 +3110,8 @@ async def get_company_token_usage_with_prompts(current_user = Depends(get_curren
                                 input_cost = (estimated_input / 1000) * pricing["input"]
                                 output_cost = (estimated_output / 1000) * pricing["output"]
                                 base_cost_total = input_cost + output_cost
-                                prompt_cost_total = estimated_prompt_refs * counter.prompt_reference_cost
+                                # JPYからUSDへ変換 (¥0.50 / 150 = $0.00333)
+                                prompt_cost_total = estimated_prompt_refs * (counter.prompt_reference_cost / 150)
                                 total_cost_usd = base_cost_total + prompt_cost_total
                                 
                                 print(f"再計算結果 - 基本: ${base_cost_total:.6f}, プロンプト: ${prompt_cost_total:.6f}, 総計: ${total_cost_usd:.6f}")
@@ -3213,13 +3217,13 @@ async def simulate_token_cost_with_prompts(request: dict, current_user = Depends
         output_tokens = int(tokens * 0.7)  # 70%がoutput
         
         # 新料金体系で計算
-        pricing = counter.pricing["workmate-standard"]
+        pricing = counter.pricing["gemini-2.5-flash"]
         input_cost = (input_tokens / 1000) * pricing["input"]
         output_cost = (output_tokens / 1000) * pricing["output"]
         base_cost = input_cost + output_cost
         
-        # プロンプト参照コスト
-        prompt_cost = prompt_references * counter.prompt_reference_cost
+        # プロンプト参照コスト（JPYからUSDへ変換）
+        prompt_cost = prompt_references * (counter.prompt_reference_cost / 150)
         total_cost = base_cost + prompt_cost
         
         # USD → JPY変換
@@ -3255,6 +3259,361 @@ async def simulate_token_cost_with_prompts(request: dict, current_user = Depends
         import traceback
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"料金シミュレーション中にエラーが発生しました: {str(e)}")
+
+# no1株式会社専用料金情報を取得するエンドポイント
+@app.get("/chatbot/api/company-pricing-info", response_model=dict)
+async def get_company_pricing_info(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """会社別の料金体系情報と具体例を取得する"""
+    try:
+        print(f"company-pricing-infoエンドポイントが呼び出されました - ユーザー: {current_user['email']}")
+        
+        # ユーザーの会社IDを取得
+        from supabase_adapter import select_data
+        user_result = select_data("users", columns="company_id", filters={"id": current_user["id"]})
+        company_id = None
+        if user_result and user_result.data:
+            company_id = user_result.data[0].get("company_id")
+        
+        if not company_id:
+            raise HTTPException(status_code=400, detail="会社IDが見つかりません")
+        
+        # 会社名を取得
+        company_result = select_data("companies", columns="name", filters={"id": company_id})
+        company_name = "Unknown Company"
+        if company_result and company_result.data:
+            company_name = company_result.data[0].get("name", "Unknown Company")
+        
+        # TokenCounterを使用して料金体系を判定
+        from modules.token_counter import TokenCounter
+        counter = TokenCounter()
+        pricing_model = counter.get_pricing_model_for_company(company_id)
+
+        # Premium Plan判定
+        is_premium_plan = counter.is_premium_plan_company(company_id)
+
+
+        
+                # 料金体系情報を構築
+        if is_premium_plan:
+            # no1株式会社の場合：Premium Plan（月額固定）
+            pricing_info = {
+                "company_id": company_id,
+                "company_name": company_name,
+                "pricing_model": "premium_fixed",
+                "pricing_description": "Premium Plan - 株式会社No.1 専用プラン",
+                "plan_details": {
+                    "monthly_price_jpy": 30000,
+                    "contract_period": "3ヶ月契約",
+                    "total_price_jpy": 90000,
+                    "features": [
+                        "AI質問・回答 無制限",
+                        "専用サポート対応",
+                        "プレミアム機能フルアクセス",
+                        "3ヶ月間継続利用保証",
+                        "明朗会計・追加料金なし"
+                    ]
+                },
+                "cost_examples": {
+                    "daily_usage": {
+                        "description": "1日あたりの利用例",
+                        "scenarios": [
+                            {
+                                "usage": "軽度利用（10回質問/日）",
+                                "monthly_questions": 300,
+                                "cost_jpy": 30000,
+                                "per_question_cost": 0,
+                                "note": "固定料金のため質問数に関係なく¥30,000"
+                            },
+                            {
+                                "usage": "中程度利用（50回質問/日）",
+                                "monthly_questions": 1500,
+                                "cost_jpy": 30000,
+                                "per_question_cost": 0,
+                                "note": "固定料金のため質問数に関係なく¥30,000"
+                            },
+                            {
+                                "usage": "重度利用（200回質問/日）",
+                                "monthly_questions": 6000,
+                                "cost_jpy": 30000,
+                                "per_question_cost": 0,
+                                "note": "従量課金なら¥180,000程度 → ¥150,000お得！"
+                            }
+                        ]
+                    },
+                    "comparison_with_pay_per_use": {
+                        "description": "従量課金制との比較",
+                        "scenarios": [
+                            {
+                                "monthly_questions": 100,
+                                "pay_per_use_cost": 3000,
+                                "premium_cost": 30000,
+                                "difference": -27000,
+                                "recommendation": "従量課金制がお得"
+                            },
+                            {
+                                "monthly_questions": 500,
+                                "pay_per_use_cost": 15000,
+                                "premium_cost": 30000,
+                                "difference": -15000,
+                                "recommendation": "従量課金制がお得"
+                            },
+                            {
+                                "monthly_questions": 1000,
+                                "pay_per_use_cost": 30000,
+                                "premium_cost": 30000,
+                                "difference": 0,
+                                "recommendation": "同額（Premium Planは無制限でお得）"
+                            },
+                            {
+                                "monthly_questions": 2000,
+                                "pay_per_use_cost": 60000,
+                                "premium_cost": 30000,
+                                "difference": 30000,
+                                "recommendation": "Premium Planが¥30,000お得！"
+                            },
+                            {
+                                "monthly_questions": 5000,
+                                "pay_per_use_cost": 150000,
+                                "premium_cost": 30000,
+                                "difference": 120000,
+                                "recommendation": "Premium Planが¥120,000お得！"
+                            }
+                        ]
+                    }
+                },
+                "is_premium_customer": True,
+                "is_premium_plan": True
+            }
+        else:
+            # その他の会社：従来の料金体系
+            pricing_info = {
+                "company_id": company_id,
+                "company_name": company_name,
+                "pricing_model": "standard",
+                "pricing_description": "標準料金体系（従量課金制）",
+                "pricing_table": {
+                    "input": {"price_jpy": 0.100, "price_per_unit": "¥0.100 / 1,000 tokens", "description": "ユーザーからの質問"},
+                    "output": {"price_jpy": 0.900, "price_per_unit": "¥0.900 / 1,000 tokens", "description": "AIからの回答"},
+                    "prompt_reference": {"price_jpy": 0.50, "price_per_unit": "¥0.50 / 回", "description": "知識ベース参照"}
+                },
+                "cost_examples": {
+                    "detailed_scenarios": [
+                        {
+                            "category": "短い質問（100-300トークン）",
+                            "examples": [
+                                {
+                                    "question": "「今日の予定を教えて」",
+                                    "input_tokens": 50,
+                                    "output_tokens": 150,
+                                    "cost_jpy": 0.140,
+                                    "cost_breakdown": "入力¥0.005 + 出力¥0.135"
+                                },
+                                {
+                                    "question": "「会議の資料はどこ？」",
+                                    "input_tokens": 40,
+                                    "output_tokens": 200,
+                                    "cost_jpy": 0.184,
+                                    "cost_breakdown": "入力¥0.004 + 出力¥0.180"
+                                }
+                            ]
+                        },
+                        {
+                            "category": "標準的な質問（300-800トークン）",
+                            "examples": [
+                                {
+                                    "question": "「プロジェクトの進捗状況を詳しく教えて」",
+                                    "input_tokens": 100,
+                                    "output_tokens": 500,
+                                    "cost_jpy": 0.460,
+                                    "cost_breakdown": "入力¥0.010 + 出力¥0.450"
+                                },
+                                {
+                                    "question": "「予算計画について説明して（知識ベース参照1回）」",
+                                    "input_tokens": 120,
+                                    "output_tokens": 600,
+                                    "prompt_references": 1,
+                                    "cost_jpy": 1.052,
+                                    "cost_breakdown": "入力¥0.012 + 出力¥0.540 + 知識ベース¥0.50"
+                                }
+                            ]
+                        },
+                        {
+                            "category": "詳細な質問（800-2000トークン）",
+                            "examples": [
+                                {
+                                    "question": "「今四半期の売上分析とマーケティング戦略を詳しく（知識ベース参照2回）」",
+                                    "input_tokens": 200,
+                                    "output_tokens": 1500,
+                                    "prompt_references": 2,
+                                    "cost_jpy": 2.370,
+                                    "cost_breakdown": "入力¥0.020 + 出力¥1.350 + 知識ベース¥1.00"
+                                },
+                                {
+                                    "question": "「システム仕様書の内容を要約して改善点も提案して（知識ベース参照3回）」",
+                                    "input_tokens": 300,
+                                    "output_tokens": 2000,
+                                    "prompt_references": 3,
+                                    "cost_jpy": 3.330,
+                                    "cost_breakdown": "入力¥0.030 + 出力¥1.800 + 知識ベース¥1.50"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "is_premium_customer": False,
+                "is_premium_plan": False
+            }
+        
+        print(f"料金体系情報を返却: {pricing_model} for company {company_name}")
+        return pricing_info
+        
+    except Exception as e:
+        print(f"料金体系情報取得エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"料金体系情報の取得中にエラーが発生しました: {str(e)}")
+
+# デバッグ用：会社情報確認エンドポイント
+@app.get("/chatbot/api/debug-company-info", response_model=dict)
+async def debug_company_info(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """デバッグ用：現在のユーザーの会社情報を確認する"""
+    try:
+        print(f"🔍 デバッグ - ユーザー情報: {current_user}")
+        
+        # ユーザーの会社IDを取得
+        from supabase_adapter import select_data
+        user_result = select_data("users", columns="company_id,name,email", filters={"id": current_user["id"]})
+        
+        if not user_result or not user_result.data:
+            return {"error": "ユーザー情報が見つかりません"}
+        
+        user_data = user_result.data[0]
+        company_id = user_data.get("company_id")
+        
+        # 会社情報を取得
+        company_result = select_data("companies", columns="*", filters={"id": company_id})
+        company_data = company_result.data[0] if company_result and company_result.data else {}
+        
+        # Premium Plan判定
+        from modules.token_counter import TokenCounter
+        counter = TokenCounter()
+        is_premium = counter.is_premium_plan_company(company_id)
+        
+        return {
+            "user_info": user_data,
+            "company_info": company_data,
+            "company_id": company_id,
+            "is_premium_plan": is_premium,
+            "no1_target_id": "77acc2e2-ce67-458d-bd38-7af0476b297a",
+            "expected_vs_actual": {
+                "old_target_id": "d1e6dde9-e117-44b9-83c7-355fb258e15f",
+                "new_target_id": "77acc2e2-ce67-458d-bd38-7af0476b297a"
+            }
+        }
+        
+    except Exception as e:
+        print(f"デバッグエラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return {"error": str(e)}
+
+# 会社別メンバーごとの料金使用状況を取得するエンドポイント
+@app.get("/chatbot/api/company-member-usage", response_model=dict)
+async def get_company_member_usage(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """会社のメンバーごとの料金使用状況を取得する"""
+    try:
+        print(f"company-member-usageエンドポイントが呼び出されました - ユーザー: {current_user['email']}")
+        
+        # ユーザーの会社IDを取得
+        from supabase_adapter import select_data
+        user_result = select_data("users", columns="company_id", filters={"id": current_user["id"]})
+        company_id = None
+        if user_result and user_result.data:
+            company_id = user_result.data[0].get("company_id")
+        
+        if not company_id:
+            raise HTTPException(status_code=400, detail="会社IDが見つかりません")
+        
+        # 会社の全メンバーを取得
+        members_result = select_data("users", columns="id,name,email", filters={"company_id": company_id})
+        if not members_result or not members_result.data:
+            return {"members": [], "total_members": 0}
+        
+        # TokenCounterを初期化
+        from modules.token_counter import TokenCounter
+        counter = TokenCounter()
+        pricing_model = counter.get_pricing_model_for_company(company_id)
+        
+        members_usage = []
+        total_company_cost = 0.0
+        
+        for member in members_result.data:
+            member_id = member["id"]
+            member_name = member["name"]
+            member_email = member["email"]
+            
+            # メンバーのチャット履歴を取得
+            chat_result = select_data(
+                "chat_history", 
+                columns="input_tokens,output_tokens,total_tokens,cost_usd,user_message,bot_response",
+                filters={"user_id": member_id}
+            )
+            
+            member_total_tokens = 0
+            member_conversations = 0
+            member_cost_usd = 0.0
+            
+            if chat_result and chat_result.data:
+                for chat in chat_result.data:
+                    member_total_tokens += chat.get("total_tokens", 0) or 0
+                    member_conversations += 1
+                    
+                    # 料金を再計算（会社の料金体系に基づく）
+                    if counter.is_premium_plan_company(company_id):
+                        # Premium Plan（月額固定）の場合は個別チャットの料金は¥0
+                        member_cost_usd += 0.0
+                    elif pricing_model == "no1-premium":
+                        # no1株式会社の場合は新料金体系で再計算（従量課金用・現在は使用しない）
+                        user_msg = chat.get("user_message", "")
+                        bot_resp = chat.get("bot_response", "")
+                        if user_msg and bot_resp:
+                            recalc_result = counter.calculate_no1_premium_cost(user_msg, bot_resp)
+                            member_cost_usd += recalc_result["total_cost_usd"]
+                        else:
+                            member_cost_usd += float(chat.get("cost_usd", 0) or 0)
+                    else:
+                        # 従来の料金体系
+                        member_cost_usd += float(chat.get("cost_usd", 0) or 0)
+            
+            member_cost_jpy = member_cost_usd * 150  # USD to JPY
+            total_company_cost += member_cost_usd
+            
+            members_usage.append({
+                "member_id": member_id,
+                "member_name": member_name,
+                "member_email": member_email,
+                "total_tokens": member_total_tokens,
+                "conversations": member_conversations,
+                "cost_usd": round(member_cost_usd, 6),
+                "cost_jpy": round(member_cost_jpy, 2),
+                "avg_cost_per_conversation": round(member_cost_jpy / member_conversations, 2) if member_conversations > 0 else 0
+            })
+        
+        return {
+            "company_id": company_id,
+            "pricing_model": pricing_model,
+            "is_premium_plan": counter.is_premium_plan_company(company_id),
+            "members": members_usage,
+            "total_members": len(members_usage),
+            "total_company_cost_usd": round(total_company_cost, 6),
+            "total_company_cost_jpy": round(total_company_cost * 150, 2)
+        }
+        
+    except Exception as e:
+        print(f"メンバー使用状況取得エラー: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"メンバー使用状況の取得中にエラーが発生しました: {str(e)}")
 
 # プラン履歴を取得するエンドポイント
 @app.get("/chatbot/api/plan-history", response_model=dict)

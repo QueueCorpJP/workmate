@@ -39,6 +39,8 @@ import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import BusinessIcon from "@mui/icons-material/Business";
 import PeopleIcon from "@mui/icons-material/People";
 import AnalyticsIcon from "@mui/icons-material/Analytics";
+import LockIcon from "@mui/icons-material/Lock";
+import ErrorIcon from "@mui/icons-material/Error";
 import api from "../../api";
 import { formatDate } from "./utils";
 import LoadingIndicator from "./LoadingIndicator";
@@ -181,9 +183,14 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
         setUserPlanHistories([]);
         setAnalyticsData(null);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("プラン履歴の取得に失敗しました:", error);
-      setError("プラン履歴の取得に失敗しました");
+      
+      if (error.response?.status === 403 || error.response?.status === 500) {
+        setError("この画面にアクセスする権限がありません");
+      } else {
+        setError("プラン履歴の取得に失敗しました");
+      }
       setUserPlanHistories([]);
       setAnalyticsData(null);
     } finally {
@@ -650,18 +657,46 @@ const PlanHistoryTab: React.FC<PlanHistoryTabProps> = () => {
   }
 
   if (error) {
+    const isPermissionError = error === "この画面にアクセスする権限がありません";
+    
     return (
-      <Box sx={{ p: 3 }}>
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-        <Button
-          variant="outlined"
-          startIcon={<RefreshIcon />}
-          onClick={fetchPlanHistory}
-        >
-          再試行
-        </Button>
+      <Box 
+        sx={{ 
+          p: 4, 
+          textAlign: 'center',
+          maxWidth: '500px',
+          margin: '0 auto',
+          mt: 4
+        }}
+      >
+        <Box sx={{ mb: 3 }}>
+          {isPermissionError ? (
+            <LockIcon sx={{ fontSize: 48, color: 'warning.main', mb: 2 }} />
+          ) : (
+            <ErrorIcon sx={{ fontSize: 48, color: 'error.main', mb: 2 }} />
+          )}
+        </Box>
+        
+        <Typography variant="h6" gutterBottom color={isPermissionError ? 'warning.main' : 'error.main'}>
+          {isPermissionError ? 'アクセス権限がありません' : 'エラーが発生しました'}
+        </Typography>
+        
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          {isPermissionError 
+            ? 'この機能を利用するには管理者権限が必要です。管理者にお問い合わせください。'
+            : error
+          }
+        </Typography>
+        
+        {!isPermissionError && (
+          <Button
+            variant="outlined"
+            startIcon={<RefreshIcon />}
+            onClick={fetchPlanHistory}
+          >
+            再試行
+          </Button>
+        )}
       </Box>
     );
   }

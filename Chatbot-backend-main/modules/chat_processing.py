@@ -113,6 +113,29 @@ async def save_chat_history(
             else:
                 safe_print(f"[DB SAVE] No company_id found for user {user_id}")
 
+        # 会社別料金体系に基づいて正確なコストを計算
+        if company_id and user_message and bot_response:
+            try:
+                from modules.token_counter import TokenCounter
+                counter = TokenCounter()
+                
+                # 会社別料金計算（RAG処理の場合はプロンプト参照1回をカウント）
+                prompt_refs = 1 if use_context and search_results else 0
+                cost_result = counter.calculate_cost_by_company(
+                    user_message, bot_response, company_id, prompt_refs
+                )
+                
+                # 計算結果でパラメータを上書き
+                input_tokens = cost_result["input_tokens"]
+                output_tokens = cost_result["output_tokens"]
+                cost_usd = cost_result["total_cost_usd"]
+                
+                safe_print(f"[DB SAVE] Company-specific cost calculated: ${cost_usd:.6f} for company {company_id}")
+                
+            except Exception as calc_error:
+                safe_print(f"[DB SAVE] Error calculating company-specific cost: {calc_error}")
+                # エラーの場合は元の値を使用
+
         # employee_id が明示的に渡されていない場合は user_id を利用する
         effective_employee_id = employee_id or user_id
 
@@ -185,9 +208,27 @@ async def process_chat_message(
             # 使用量を記録
             record_usage(user_id, len(response))
             
-            # チャット履歴を保存
+            # チャット履歴を保存（トークン数・コスト計算含む）
             safe_print(f"[PROCESS] Saving casual chat history for user {user_id}")
-            await save_chat_history(user_id, message, response, category=intent_info.get('category'))
+            
+            # company_idを取得
+            company_id = None
+            if user_id != "anonymous":
+                user_data_result = select_data("users", filters={"id": user_id}, columns="company_id")
+                if user_data_result and user_data_result.data:
+                    company_id = user_data_result.data[0].get("company_id")
+            
+            # トークン・コスト計算（基本応答の場合はプロンプト参照なし）
+            from modules.token_counter import TokenCounter
+            counter = TokenCounter()
+            cost_result = counter.calculate_cost_by_company(message, response, company_id, 0)
+            
+            await save_chat_history(user_id, message, response, 
+                                  category=intent_info.get('category'),
+                                  company_id=company_id,
+                                  input_tokens=cost_result.get("input_tokens", 0),
+                                  output_tokens=cost_result.get("output_tokens", 0),
+                                  cost_usd=cost_result.get("total_cost_usd", 0.0))
             
             return {
                 'response': response,
@@ -276,11 +317,29 @@ async def process_chat_message(
                     source_page = first_result['metadata'].get('source_page')
 
             safe_print(f"[PROCESS] Saving RAG chat history for user {user_id}. Source: {source_document}, Page: {source_page}")
+            
+            # company_idを取得
+            company_id = None
+            if user_id != "anonymous":
+                user_data_result = select_data("users", filters={"id": user_id}, columns="company_id")
+                if user_data_result and user_data_result.data:
+                    company_id = user_data_result.data[0].get("company_id")
+            
+            # トークン・コスト計算（RAG検索を使用した場合はプロンプト参照1回）
+            from modules.token_counter import TokenCounter
+            counter = TokenCounter()
+            prompt_refs = 1  # RAG検索を使用したのでプロンプト参照1回
+            cost_result = counter.calculate_cost_by_company(message, response, company_id, prompt_refs)
+            
             await save_chat_history(
                 user_id, message, response,
                 category=intent_info.get('category'),
                 source_document=source_document,
-                source_page=source_page
+                source_page=source_page,
+                company_id=company_id,
+                input_tokens=cost_result.get("input_tokens", 0),
+                output_tokens=cost_result.get("output_tokens", 0),
+                cost_usd=cost_result.get("total_cost_usd", 0.0)
             )
             
             return {
@@ -299,7 +358,26 @@ async def process_chat_message(
         
         # チャット履歴を保存
         safe_print(f"[PROCESS] Saving basic chat history for user {user_id}")
-        await save_chat_history(user_id, message, response, category=intent_info.get('category'))
+        
+        # company_idを取得
+        company_id = None
+        if user_id != "anonymous":
+            user_data_result = select_data("users", filters={"id": user_id}, columns="company_id")
+            if user_data_result and user_data_result.data:
+                company_id = user_data_result.data[0].get("company_id")
+        
+        # トークン・コスト計算（RAG処理の場合はプロンプト参照1回をカウント）
+        from modules.token_counter import TokenCounter
+        counter = TokenCounter()
+        prompt_refs = 1  # RAG検索を使用したのでプロンプト参照1回
+        cost_result = counter.calculate_cost_by_company(message, response, company_id, prompt_refs)
+        
+        await save_chat_history(user_id, message, response, 
+                              category=intent_info.get('category'),
+                              company_id=company_id,
+                              input_tokens=cost_result.get("input_tokens", 0),
+                              output_tokens=cost_result.get("output_tokens", 0),
+                              cost_usd=cost_result.get("total_cost_usd", 0.0))
         
         return {
             'response': response,

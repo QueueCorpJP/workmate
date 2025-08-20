@@ -26,8 +26,8 @@ class TokenCounter:
                 "output": 0.01     # $10.00 per 1M tokens
             },
             "gemini-2.5-flash": {
-                "input": 0.00015,  # $0.15 per 1M tokens
-                "output": 0.0006   # $0.60 per 1M tokens
+                "input": 0.000667,  # ¥0.100 per 1K tokens (0.100/150 USD)
+                "output": 0.006     # ¥0.900 per 1K tokens (0.900/150 USD)
             },
             "gpt-4": {
                 "input": 0.03,     # $30.00 per 1M tokens
@@ -42,19 +42,27 @@ class TokenCounter:
                 "input": 0.0003,   # $0.30 per 1M tokens
                 "output": 0.0025   # $2.50 per 1M tokens
             },
-            # Gemini料金設定
+            # Gemini料金設定（新料金体系）
             "gemini-pro": {
-                "input": 0.0003,   # $0.30 per 1M tokens  
-                "output": 0.0025   # $2.50 per 1M tokens
+                "input": 0.000667,  # ¥0.100 per 1K tokens (0.100/150 USD)
+                "output": 0.006     # ¥0.900 per 1K tokens (0.900/150 USD)
             },
             "gemini-1.5-pro": {
                 "input": 0.0003,   # $0.30 per 1M tokens
                 "output": 0.0025   # $2.50 per 1M tokens
+            },
+            # 8倍販売価格料金体系（no1株式会社専用）
+            "no1-premium": {
+                "input_low": 0.01,      # $10.00 per 1M tokens (～200,000トークン)
+                "output_low": 0.08,     # $80.00 per 1M tokens (～200,000トークン) 
+                "input_high": 0.02,     # $20.00 per 1M tokens (200,000トークン超)
+                "output_high": 0.12,    # $120.00 per 1M tokens (200,000トークン超)
+                "threshold": 200000     # トークン閾値
             }
         }
         
-        # プロンプト参照による追加料金（USD per reference）
-        self.prompt_reference_cost = 0.001  # $0.001 per prompt reference
+        # プロンプト参照による追加料金（JPY per reference）- 新料金体系
+        self.prompt_reference_cost = 0.50  # ¥0.50 per prompt reference
     
     def count_tokens(self, text: str, model: str = "gemini-2.5-flash") -> int:
         """指定されたモデルでテキストのトークン数を計算"""
@@ -112,7 +120,7 @@ class TokenCounter:
         input_text: str, 
         output_text: str, 
         prompt_references: int = 0,
-        model: str = "workmate-standard"
+        model: str = "gemini-2.5-flash"
     ) -> Dict:
         """入力と出力テキスト、参照プロンプト数からトークン数とコストを計算"""
         
@@ -121,13 +129,13 @@ class TokenCounter:
         total_tokens = input_tokens + output_tokens
         
         # 基本コスト計算
-        pricing = self.pricing.get(model, self.pricing["workmate-standard"])
+        pricing = self.pricing.get(model, self.pricing["gemini-2.5-flash"])
         input_cost = (input_tokens / 1000) * pricing["input"]
         output_cost = (output_tokens / 1000) * pricing["output"]
         base_cost = input_cost + output_cost
         
-        # プロンプト参照による追加コスト
-        prompt_cost = prompt_references * self.prompt_reference_cost
+        # プロンプト参照による追加コスト（JPYからUSDに変換）
+        prompt_cost = prompt_references * (self.prompt_reference_cost / 150)
         total_cost = base_cost + prompt_cost
         
         return {
@@ -142,6 +150,225 @@ class TokenCounter:
             "total_cost_usd": round(total_cost, 6),
             "model_name": model
         }
+    
+    def calculate_no1_premium_cost(
+        self,
+        input_text: str,
+        output_text: str,
+        model: str = "no1-premium"
+    ) -> Dict:
+        """no1株式会社専用：8倍販売価格料金体系での計算"""
+        
+        input_tokens = self.count_tokens(input_text, model)
+        output_tokens = self.count_tokens(output_text, model)
+        total_tokens = input_tokens + output_tokens
+        
+        # no1-premium料金設定を取得
+        pricing = self.pricing["no1-premium"]
+        threshold = pricing["threshold"]
+        
+        # 入力トークンの料金計算
+        if input_tokens <= threshold:
+            input_cost = (input_tokens / 1000) * pricing["input_low"]
+        else:
+            # 閾値以下の部分
+            low_input_cost = (threshold / 1000) * pricing["input_low"]
+            # 閾値超過の部分
+            high_input_tokens = input_tokens - threshold
+            high_input_cost = (high_input_tokens / 1000) * pricing["input_high"]
+            input_cost = low_input_cost + high_input_cost
+        
+        # 出力トークンの料金計算
+        if output_tokens <= threshold:
+            output_cost = (output_tokens / 1000) * pricing["output_low"]
+        else:
+            # 閾値以下の部分
+            low_output_cost = (threshold / 1000) * pricing["output_low"]
+            # 閾値超過の部分
+            high_output_tokens = output_tokens - threshold
+            high_output_cost = (high_output_tokens / 1000) * pricing["output_high"]
+            output_cost = low_output_cost + high_output_cost
+        
+        total_cost = input_cost + output_cost
+        
+        # 具体例の計算
+        example_cost_per_chat = self._calculate_typical_chat_cost()
+        
+        return {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            "input_cost_usd": round(input_cost, 6),
+            "output_cost_usd": round(output_cost, 6),
+            "total_cost_usd": round(total_cost, 6),
+            "model_name": model,
+            "pricing_tier": "no1-premium",
+            "example_cost_per_chat": example_cost_per_chat,
+            "cost_breakdown": {
+                "input_low_tier": min(input_tokens, threshold),
+                "input_high_tier": max(0, input_tokens - threshold),
+                "output_low_tier": min(output_tokens, threshold),
+                "output_high_tier": max(0, output_tokens - threshold)
+            }
+        }
+    
+    def _calculate_typical_chat_cost(self) -> Dict:
+        """典型的なチャットの料金例を計算"""
+        
+        # 典型的なチャットのパターン
+        examples = {
+            "short_chat": {
+                "description": "短い質問（～100トークン入力、～300トークン出力）",
+                "input_tokens": 100,
+                "output_tokens": 300
+            },
+            "medium_chat": {
+                "description": "標準的な質問（～500トークン入力、～1500トークン出力）", 
+                "input_tokens": 500,
+                "output_tokens": 1500
+            },
+            "long_chat": {
+                "description": "長い質問（～2000トークン入力、～5000トークン出力）",
+                "input_tokens": 2000,
+                "output_tokens": 5000
+            }
+        }
+        
+        pricing = self.pricing["no1-premium"]
+        results = {}
+        
+        for key, example in examples.items():
+            input_tokens = example["input_tokens"]
+            output_tokens = example["output_tokens"]
+            
+            # 入力コスト計算
+            input_cost = (input_tokens / 1000) * pricing["input_low"]
+            
+            # 出力コスト計算  
+            output_cost = (output_tokens / 1000) * pricing["output_low"]
+            
+            total_cost = input_cost + output_cost
+            
+            results[key] = {
+                "description": example["description"],
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost_usd": round(total_cost, 4),
+                "cost_jpy": round(total_cost * 150, 2)  # 1USD=150円で計算
+            }
+        
+        return results
+    
+    def get_pricing_model_for_company(self, company_id: str) -> str:
+        """会社IDに基づいて適用する料金モデルを決定"""
+        
+        # no1株式会社の実際のcompany_ID
+        NO1_COMPANY_ID = "77acc2e2-ce67-458d-bd38-7af0476b297a"
+        
+        if company_id == NO1_COMPANY_ID:
+            return "no1-premium"
+        else:
+            return "gemini-2.5-flash"  # その他の会社は新料金体系
+    
+    def calculate_cost_by_company(
+        self,
+        input_text: str,
+        output_text: str,
+        company_id: str = None,
+        prompt_references: int = 0
+    ) -> Dict:
+        """会社IDに基づいて適切な料金体系で計算"""
+        
+        if not company_id:
+            # company_idが提供されない場合は従来の料金体系
+            return self.calculate_tokens_and_cost_with_prompts(
+                input_text, output_text, prompt_references, "gemini-2.5-flash"
+            )
+        
+        # Premium Plan（月額固定）の場合は料金0で記録
+        if self.is_premium_plan_company(company_id):
+            input_tokens = self.count_tokens(input_text)
+            output_tokens = self.count_tokens(output_text)
+            total_tokens = input_tokens + output_tokens
+            
+            return {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
+                "prompt_references": prompt_references,
+                "input_cost_usd": 0.0,
+                "output_cost_usd": 0.0,
+                "base_cost_usd": 0.0,
+                "prompt_cost_usd": 0.0,
+                "total_cost_usd": 0.0,
+                "model_name": "premium-plan",
+                "pricing_tier": "premium_fixed",
+                "is_premium_plan": True,
+                "monthly_fixed_cost_jpy": 30000
+            }
+        
+        pricing_model = self.get_pricing_model_for_company(company_id)
+        
+        if pricing_model == "no1-premium":
+            # no1株式会社は新料金体系（従量課金用・現在は使用しない）
+            result = self.calculate_no1_premium_cost(input_text, output_text, pricing_model)
+            
+            # プロンプト参照コストを追加
+            if prompt_references > 0:
+                prompt_cost = prompt_references * (self.prompt_reference_cost / 150)
+                result["prompt_references"] = prompt_references
+                result["prompt_cost_usd"] = round(prompt_cost, 6)
+                result["total_cost_usd"] = round(result["total_cost_usd"] + prompt_cost, 6)
+            
+            return result
+        else:
+            # その他の会社は従来の料金体系（直接計算）
+            input_tokens = self.count_tokens(input_text)
+            output_tokens = self.count_tokens(output_text)
+            total_tokens = input_tokens + output_tokens
+            
+            # gemini-2.5-flashの料金設定を使用
+            model_pricing = self.pricing.get("gemini-2.5-flash", {})
+            input_rate = model_pricing.get("input", 0.000667)
+            output_rate = model_pricing.get("output", 0.006)
+            
+            input_cost = (input_tokens / 1000) * input_rate
+            output_cost = (output_tokens / 1000) * output_rate
+            base_cost = input_cost + output_cost
+            
+            # プロンプト参照コスト
+            prompt_cost = prompt_references * (self.prompt_reference_cost / 150)
+            total_cost = base_cost + prompt_cost
+            
+            return {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
+                "prompt_references": prompt_references,
+                "input_cost_usd": round(input_cost, 6),
+                "output_cost_usd": round(output_cost, 6),
+                "base_cost_usd": round(base_cost, 6),
+                "prompt_cost_usd": round(prompt_cost, 6),
+                "total_cost_usd": round(total_cost, 6),
+                "model_name": "gemini-2.5-flash",
+                "pricing_tier": "standard",
+                "is_premium_plan": False
+            }
+    
+    def is_premium_plan_company(self, company_id: str) -> bool:
+        """会社がPremium Plan（月額固定）かどうか判定"""
+        
+        # no1株式会社の実際のcompany_ID（実際のデータに基づく）
+        NO1_COMPANY_ID = "77acc2e2-ce67-458d-bd38-7af0476b297a"
+        
+        print(f"🔍 Premium Plan判定:")
+        print(f"   入力company_id: '{company_id}'")
+        print(f"   NO1_COMPANY_ID: '{NO1_COMPANY_ID}'")
+        print(f"   判定結果: {company_id == NO1_COMPANY_ID}")
+        print(f"   company_id type: {type(company_id)}")
+        print(f"   NO1_COMPANY_ID type: {type(NO1_COMPANY_ID)}")
+        
+        return company_id == NO1_COMPANY_ID
 
 class TokenUsageTracker:
     """トークン使用量をデータベースに保存・追跡するクラス"""
@@ -222,7 +449,7 @@ class TokenUsageTracker:
         sentiment: Optional[str] = None,
         source_document: Optional[str] = None,
         source_page: Optional[str] = None,
-        model: str = "workmate-standard"
+        model: str = "gemini-2.5-flash"
     ) -> str:
         """プロンプト参照数を含むチャット履歴をデータベースに保存"""
         

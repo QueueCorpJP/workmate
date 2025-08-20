@@ -329,8 +329,17 @@ Workmateは、アップロードしたPDF・ドキュメント・FAQなどを自
 | warning_threshold_percentage | integer | DEFAULT 80 | 警告閾値（%） |
 | critical_threshold_percentage | integer | DEFAULT 95 | 重要閾値（%） |
 | pricing_tier | varchar | DEFAULT 'basic' | 料金プラン |
+| plan_type | varchar | DEFAULT 'pay_per_use' | プランタイプ |
+| monthly_fixed_price_jpy | integer | DEFAULT 0 | 月額固定料金（円） |
+| plan_start_date | date | - | プラン開始日 |
+| plan_end_date | date | - | プラン終了日 |
+| is_unlimited | boolean | DEFAULT false | 無制限利用フラグ |
+| plan_description | text | - | プラン説明 |
 | created_at | timestamp | DEFAULT CURRENT_TIMESTAMP | 作成日時 |
 | updated_at | timestamp | DEFAULT CURRENT_TIMESTAMP | 更新日時 |
+
+**特別設定**:
+- 株式会社No.1 (ID: `d1e6dde9-e117-44b9-83c7-355fb258e15f`): Premium Plan（月額¥30,000固定）
 
 #### `public.plan_history`
 **用途**: プラン変更履歴  
@@ -534,9 +543,65 @@ SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 - **テンプレート制限**: 50件/ユーザー
 
 ### 料金プラン
-- **basic**: 基本プラン
-- **production**: プロダクションプラン
+- **basic**: 基本プラン（従量課金制）
+- **production**: プロダクションプラン（従量課金制）
+- **premium**: Premium Plan（月額固定制）
 - **unlimited**: 無制限プラン
+
+### プランタイプ
+- **pay_per_use**: 従量課金制（使用量に応じた料金）
+- **premium_fixed**: Premium Plan（月額固定料金）
+
+### 特別料金設定
+- **株式会社No.1**: Premium Plan - 月額¥30,000固定、3ヶ月契約¥90,000、無制限利用
+
+---
+
+## 💰 新料金体系
+
+### 📑 料金表
+| 項目              | 単価                    | 説明        |
+| --------------- | --------------------- | --------- |
+| Input トークン  | ¥0.100 / 1,000 tokens | ユーザーからの質問 |
+| Output トークン | ¥0.900 / 1,000 tokens | AIからの回答   |
+| プロンプト参照     | ¥0.50 / 回             | 知識ベース参照   |
+
+### 💡 特徴
+- Input ¥0.100 / Output ¥0.900 per 1,000 tokens
+- 知識ベース参照ごとに ¥0.50 の追加料金
+- 使った分だけ課金される「従量課金制」
+
+### 📊 利用例と料金シミュレーション
+
+#### 🔹 短い質問（100〜300トークン程度）
+
+**「今日の予定を教えて」**
+- 入力 50t / 出力 150t → **¥0.140**
+  - （入力 ¥0.005 + 出力 ¥0.135）
+
+**「会議の資料はどこ？」**
+- 入力 40t / 出力 200t → **¥0.184**
+  - （入力 ¥0.004 + 出力 ¥0.180）
+
+#### 🔹 標準的な質問（300〜800トークン程度）
+
+**「プロジェクトの進捗状況を詳しく教えて」**
+- 入力 100t / 出力 500t → **¥0.460**
+  - （入力 ¥0.010 + 出力 ¥0.450）
+
+**「予算計画について説明して（知識ベース参照1回）」**
+- 入力 120t / 出力 600t / 参照1回 → **¥1.052**
+  - （入力 ¥0.012 + 出力 ¥0.540 + 参照 ¥0.500）
+
+#### 🔹 詳細な質問（800〜2000トークン程度）
+
+**「今四半期の売上分析とマーケティング戦略を詳しく（知識ベース参照2回）」**
+- 入力 200t / 出力 1500t / 参照2回 → **¥2.370**
+  - （入力 ¥0.020 + 出力 ¥1.350 + 参照 ¥1.000）
+
+**「システム仕様書の内容を要約して改善点も提案して（知識ベース参照3回）」**
+- 入力 300t / 出力 2000t / 参照3回 → **¥3.330**
+  - （入力 ¥0.030 + 出力 ¥1.800 + 参照 ¥1.500）
 
 ---
 

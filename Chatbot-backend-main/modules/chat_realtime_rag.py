@@ -137,7 +137,14 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
             # チャット履歴を保存
             try:
                 from modules.chat_processing import save_chat_history
+                from modules.token_counter import TokenCounter
+                
                 category = intent_info.get('intent_type', 'casual_chat')
+                
+                # トークン・コスト計算
+                counter = TokenCounter()
+                cost_result = counter.calculate_cost_by_company(message_text, casual_response, company_id, 0)
+                
                 await save_chat_history(
                     user_id=user_id or "anonymous",
                     user_message=message_text,
@@ -147,7 +154,10 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                     employee_name=current_user.get("name") if current_user else None,
                     category=category,
                     sentiment="neutral",
-                    model_name="casual"
+                    model_name="casual",
+                    input_tokens=cost_result.get("input_tokens", 0),
+                    output_tokens=cost_result.get("output_tokens", 0),
+                    cost_usd=cost_result.get("total_cost_usd", 0.0)
                 )
             except Exception as e:
                 safe_print(f"⚠️ Casual chat history save error: {e}")
@@ -294,6 +304,13 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                             elif source_info_list and len(source_info_list) > 0:
                                 primary_source_document = source_info_list[0].get('name')
                             
+                            # トークン・コスト計算
+                            from modules.token_counter import TokenCounter
+                            counter = TokenCounter()
+                            # RAG処理でベクトル検索を使用した場合はプロンプト参照1回
+                            prompt_refs = 1 if search_results else 0
+                            cost_result = counter.calculate_cost_by_company(message_text, ai_response, company_id, prompt_refs)
+                            
                             await save_chat_history(
                                 user_id=user_id or "anonymous",
                                 user_message=message_text,
@@ -304,7 +321,10 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                                 category=category,
                                 sentiment="neutral",
                                 model_name="realtime-rag",
-                                source_document=primary_source_document
+                                source_document=primary_source_document,
+                                input_tokens=cost_result.get("input_tokens", 0),
+                                output_tokens=cost_result.get("output_tokens", 0),
+                                cost_usd=cost_result.get("total_cost_usd", 0.0)
                             )
                         except Exception as e:
                             safe_print(f"⚠️ Supabase へのチャット履歴保存エラー: {e}")
@@ -510,6 +530,23 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
             elif resource_names and len(resource_names) > 0:
                 primary_source_document = resource_names[0]
             
+            # トークン数とコストを計算
+            from modules.token_counter import TokenCounter
+            counter = TokenCounter()
+            
+            safe_print(f"💰 【コスト計算開始】user_id: {user_id}, company_id: {company_id}")
+            safe_print(f"💰 【コスト計算開始】message_text: {message_text[:100]}...")
+            safe_print(f"💰 【コスト計算開始】ai_response: {ai_response[:100]}...")
+            
+            # 会社別料金計算（Premium Planの場合は¥0、従量課金の場合は実際の料金）
+            # RAG処理でベクトル検索を使用した場合はプロンプト参照1回をカウント
+            prompt_refs = 1 if search_results else 0
+            cost_result = counter.calculate_cost_by_company(
+                message_text, ai_response, company_id, prompt_refs
+            )
+            
+            safe_print(f"💰 【料金計算結果】: {cost_result}")
+            
             await save_chat_history(
                 user_id=user_id or "anonymous",
                 user_message=message_text,
@@ -520,7 +557,10 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                 category=category,
                 sentiment="neutral",
                 model_name="realtime-rag-fallback",
-                source_document=primary_source_document
+                source_document=primary_source_document,
+                input_tokens=cost_result.get("input_tokens", 0),
+                output_tokens=cost_result.get("output_tokens", 0),
+                cost_usd=cost_result.get("total_cost_usd", 0.0)
             )
         except Exception as e:
             safe_print(f"⚠️ Supabase へのチャット履歴保存エラー: {e}")
