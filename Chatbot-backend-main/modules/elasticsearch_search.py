@@ -241,6 +241,7 @@ class ElasticsearchManager:
                     FROM chunks c
                     LEFT JOIN document_sources ds ON c.doc_id = ds.id
                     WHERE c.content IS NOT NULL
+                    AND ds.active = true
                     """
                     
                     params = []

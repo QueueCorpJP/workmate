@@ -212,6 +212,7 @@ class VectorSearchSystem:
                     FROM chunks c
                     LEFT JOIN document_sources ds ON ds.id = c.doc_id
                     WHERE c.embedding IS NOT NULL
+                    AND ds.active = true
                     """
                     
                     # 会社IDフィルタ

@@ -178,6 +178,7 @@ class AdvancedFuzzySearchSystem:
                         LEFT JOIN document_sources ds ON c.doc_id = ds.id
                         WHERE c.content IS NOT NULL
                           AND length(c.content) > 10
+                          AND ds.active = true
                     """
                     
                     params = [query]

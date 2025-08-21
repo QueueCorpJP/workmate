@@ -319,6 +319,7 @@ class UnifiedSearchSystem:
                 FROM chunks c
                 LEFT JOIN document_sources ds ON c.doc_id = ds.id
                 WHERE c.content ILIKE %s
+                AND ds.active = true
             """
             params = [f"%{query}%"]
             
@@ -356,6 +357,7 @@ class UnifiedSearchSystem:
                 FROM chunks c
                 LEFT JOIN document_sources ds ON c.doc_id = ds.id
                 WHERE similarity(c.content, %s) > 0.1
+                AND ds.active = true
             """
             params = [query, query]
             

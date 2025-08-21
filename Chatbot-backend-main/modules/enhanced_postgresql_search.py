@@ -258,6 +258,7 @@ class EnhancedPostgreSQLSearch:
                 LEFT JOIN document_sources ds ON c.doc_id = ds.id
                 WHERE c.content IS NOT NULL 
                   AND c.content ILIKE '%' || ${param_idx-5} || '%'
+                  AND ds.active = true
                   {company_filter}
                 
                 UNION ALL
@@ -274,6 +275,7 @@ class EnhancedPostgreSQLSearch:
                 LEFT JOIN document_sources ds ON c.doc_id = ds.id
                 WHERE c.content IS NOT NULL 
                   AND similarity(c.content, ${param_idx-4}) > ${param_idx-1}
+                  AND ds.active = true
                   {company_filter}
                 
                 UNION ALL
@@ -290,6 +292,7 @@ class EnhancedPostgreSQLSearch:
                 LEFT JOIN document_sources ds ON c.doc_id = ds.id
                 WHERE c.content IS NOT NULL 
                   AND to_tsvector('japanese', c.content) @@ plainto_tsquery('japanese', ${param_idx-3})
+                  AND ds.active = true
                   {company_filter}
                 
                 UNION ALL
@@ -306,6 +309,7 @@ class EnhancedPostgreSQLSearch:
                 LEFT JOIN document_sources ds ON c.doc_id = ds.id
                 WHERE c.content IS NOT NULL 
                   AND c.content ILIKE '%' || ${param_idx-2} || '%'
+                  AND ds.active = true
                   {company_filter}
             )
             SELECT DISTINCT

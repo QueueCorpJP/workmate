@@ -378,6 +378,7 @@ async def database_search_fallback(query: str, limit: int = 10) -> List[Dict[str
         LEFT JOIN document_sources ds ON c.doc_id = ds.id
         WHERE c.content IS NOT NULL 
           AND LENGTH(c.content) > 10
+          AND ds.active = true
               AND ({' OR '.join(keyword_conditions)})
         ORDER BY rank DESC, LENGTH(c.content) DESC
         LIMIT %s

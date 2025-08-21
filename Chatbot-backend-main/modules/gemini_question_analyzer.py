@@ -503,6 +503,7 @@ JSON形式のみで回答してください：
                         WHERE c.content IS NOT NULL
                           AND LENGTH(c.content) > 10
                           AND c.content LIKE '%故障受付シート%'
+                          AND ds.active = true
                         ORDER BY score DESC
                         LIMIT 5
                         """
@@ -762,6 +763,7 @@ JSON形式のみで回答してください：
         LEFT JOIN document_sources ds ON ds.id = c.doc_id
         WHERE c.content IS NOT NULL
           AND LENGTH(c.content) > 10
+          AND ds.active = true
           AND {final_where}
         ORDER BY score DESC LIMIT %s
         """
@@ -814,6 +816,7 @@ JSON形式のみで回答してください：
         LEFT JOIN document_sources ds ON ds.id = c.doc_id
         WHERE c.content IS NOT NULL
           AND LENGTH(c.content) > 10
+          AND ds.active = true
           AND ({final_where})
         ORDER BY score DESC LIMIT %s
         """
@@ -881,6 +884,7 @@ JSON形式のみで回答してください：
                     WHERE c.content IS NOT NULL
                       AND c.embedding IS NOT NULL
                       AND LENGTH(c.content) > 10
+                      AND ds.active = true
                     """
                     
                     params = []

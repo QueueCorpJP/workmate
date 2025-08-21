@@ -138,6 +138,7 @@ class RealtimeRAGProcessor:
                     FROM chunks c
                     LEFT JOIN document_sources ds ON ds.id = c.doc_id
                     WHERE c.content ILIKE %s
+                    AND ds.active = true
                     """
                     params_keyword = [f"%{search_term}%"]
 
@@ -260,6 +261,7 @@ class RealtimeRAGProcessor:
                     WHERE c.embedding IS NOT NULL
                       AND c.content IS NOT NULL
                       AND LENGTH(c.content) > 10
+                      AND ds.active = true
                     """
                     
                     params_vector = []
