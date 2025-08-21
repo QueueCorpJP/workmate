@@ -27,17 +27,33 @@ from modules.models import ChatResponse, ChatMessage
 import urllib.parse  # 追加
 import re # 追加
 from modules.config import setup_gemini
+from modules.multi_gemini_client import get_multi_gemini_client, multi_gemini_available
 import json
 
 # 環境変数の読み込み
 load_dotenv()
 
-# Geminiモデルの初期化
+# Geminiモデルの初期化（従来版）
 try:
     model = setup_gemini()
 except Exception as e:
     logging.error(f"Geminiモデルの初期化に失敗: {e}")
     model = None
+
+# Multi Gemini Clientの初期化（遅延初期化）
+multi_gemini_client = None
+
+def get_or_init_multi_gemini_client():
+    """Multi Gemini Clientの取得または初期化"""
+    global multi_gemini_client
+    if multi_gemini_client is None:
+        try:
+            multi_gemini_client = get_multi_gemini_client()
+            logger.info("✅ Multi Gemini Client初期化完了")
+        except Exception as e:
+            logger.error(f"Multi Gemini Client初期化に失敗: {e}")
+            multi_gemini_client = False  # 初期化失敗をマーク
+    return multi_gemini_client if multi_gemini_client is not False else None
 
 try:
     from modules.question_splitter import question_splitter
@@ -641,42 +657,47 @@ class RealtimeRAGProcessor:
             logger.info("🤖 Gemini Flash 2.5に回答生成を依頼中...")
             logger.info(f"📏 プロンプト長: {len(prompt):,}文字")
             
-            # Gemini API への直接リクエスト
-            api_url = f"{self.api_base_url}/models/{self.chat_model}:generateContent"
-            
-            headers = {
-                "Content-Type": "application/json",
-                "x-goog-api-key": self.api_key
-            }
-            
-            request_data = {
-                "contents": [
-                    {
-                        "parts": [
-                            {
-                                "text": prompt
-                            }
-                        ]
-                    }
-                ],
-                "generationConfig": {
-                    "temperature": 0.05 if (is_complex_query or is_table_query) else 0.1,  # 複雑な質問は更に確定的に
-                    "maxOutputTokens": 1048576,  # 1Mトークン（実質無制限）
-                    "topP": 0.7 if (is_complex_query or is_table_query) else 0.8,  # より集中的な応答
-                    "topK": 20 if (is_complex_query or is_table_query) else 40  # 選択肢を絞る
-                }
+            # Multi Gemini Client を使用した API 呼び出し（レート制限対応）
+            generation_config = {
+                "temperature": 0.05 if (is_complex_query or is_table_query) else 0.1,  # 複雑な質問は更に確定的に
+                "maxOutputTokens": 1048576,  # 1Mトークン（実質無制限）
+                "topP": 0.7 if (is_complex_query or is_table_query) else 0.8,  # より集中的な応答
+                "topK": 20 if (is_complex_query or is_table_query) else 40  # 選択肢を絞る
             }
             
             try:
-                # タイムアウトを無効化（ユーザー要求）
-                logger.info("⏱️ API呼び出し: タイムアウト無効化")
-                
-                response = requests.post(api_url, headers=headers, json=request_data, timeout=None)
-                response.raise_for_status()
-                
-                logger.info("📥 Geminiからのレスポンス受信完了")
-                
-                response_data = response.json()
+                # Multi Gemini Client を使用（複数APIキー対応）
+                client = get_or_init_multi_gemini_client()
+                if client and multi_gemini_available():
+                    logger.info("🔄 Multi Gemini Client使用でAPI呼び出し開始")
+                    response_data = await client.generate_content(prompt, generation_config)
+                    logger.info("📥 Multi Gemini Clientからのレスポンス受信完了")
+                else:
+                    # フォールバック: 従来の単一APIキー方式
+                    logger.warning("⚠️ Multi Gemini Client利用不可、従来方式でフォールバック")
+                    api_url = f"{self.api_base_url}/models/{self.chat_model}:generateContent"
+                    
+                    headers = {
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": self.api_key
+                    }
+                    
+                    request_data = {
+                        "contents": [
+                            {
+                                "parts": [
+                                    {
+                                        "text": prompt
+                                    }
+                                ]
+                            }
+                        ],
+                        "generationConfig": generation_config
+                    }
+                    
+                    response = requests.post(api_url, headers=headers, json=request_data, timeout=600)
+                    response.raise_for_status()
+                    response_data = response.json()
                 logger.info(f"🔍 Geminiレスポンス構造: {list(response_data.keys())}")
                 
                 answer = None
@@ -757,18 +778,26 @@ class RealtimeRAGProcessor:
                 else:
                     logger.warning("⚠️ 無効なレスポンスまたは候補なし")
                     
-            except requests.exceptions.Timeout as e:
-                logger.error(f"❌ API タイムアウトエラー: {e}")
-                answer = None
-                response = None  # responseを明示的にNoneに設定
-            except requests.exceptions.RequestException as e:
-                logger.error(f"❌ API リクエストエラー: {e}")
-                answer = None
-                response = None  # responseを明示的にNoneに設定
             except Exception as e:
-                logger.error(f"❌ 予期しないエラー: {e}")
-                answer = None
-                response = None  # responseを明示的にNoneに設定
+                logger.error(f"❌ LLM回答生成エラー: {e}")
+                
+                # Multi Gemini Clientの状態情報をログ出力
+                client = get_or_init_multi_gemini_client()
+                if client:
+                    try:
+                        status_info = client.get_status_info()
+                        logger.info("📊 Multi Gemini Client状態:")
+                        for client_name, info in status_info.items():
+                            logger.info(f"   {client_name}: {info['status']} (リトライ: {info['retry_count']}/{client.max_retries})")
+                    except Exception as status_error:
+                        logger.error(f"状態情報取得エラー: {status_error}")
+                
+                # HTTPExceptionとして再発生（FastAPIが適切に処理）
+                from fastapi import HTTPException
+                if "429" in str(e) or "rate limit" in str(e).lower() or "quota exceeded" in str(e).lower():
+                    raise HTTPException(status_code=429, detail="API制限のため、しばらく待ってから再度お試しください")
+                else:
+                    raise HTTPException(status_code=500, detail=f"LLM回答生成失敗: {str(e)}")
             
             # 回答の検証と処理
             if answer and len(answer.strip()) > 0:

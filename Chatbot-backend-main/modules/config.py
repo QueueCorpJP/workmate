@@ -30,7 +30,7 @@ def setup_logging():
 
 # Gemini APIの設定
 def setup_gemini():
-    """Gemini APIの設定を行います"""
+    """Gemini APIの設定を行います（従来版・単一APIキー）"""
     import google.generativeai as genai
     
     # GEMINI_API_KEY（推奨）またはGOOGLE_API_KEY（後方互換）をサポート
@@ -42,6 +42,28 @@ def setup_gemini():
     # 最新のGemini 2.5 Flashモデルを使用
     model = genai.GenerativeModel('gemini-2.5-flash')
     return model
+
+def setup_multi_gemini():
+    """複数Gemini APIキーの設定を行います（レート制限対応）"""
+    from modules.multi_gemini_client import get_multi_gemini_client, multi_gemini_available
+    
+    if not multi_gemini_available():
+        raise ValueError("複数Gemini APIキーが設定されていません (GEMINI_API_KEY, GEMINI_API_KEY_2～5)")
+    
+    return get_multi_gemini_client()
+
+def get_available_gemini_api_keys():
+    """利用可能なGemini APIキーの数を取得"""
+    api_keys = [
+        os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
+        os.getenv("GEMINI_API_KEY_2") or os.getenv("GOOGLE_API_KEY_2"),
+        os.getenv("GEMINI_API_KEY_3") or os.getenv("GOOGLE_API_KEY_3"),
+        os.getenv("GEMINI_API_KEY_4") or os.getenv("GOOGLE_API_KEY_4"),
+        os.getenv("GEMINI_API_KEY_5") or os.getenv("GOOGLE_API_KEY_5")
+    ]
+    
+    valid_keys = [key for key in api_keys if key]
+    return len(valid_keys), valid_keys
 
 def setup_gemini_with_cache():
     """コンテキストキャッシュ対応のGemini APIの設定"""

@@ -3,8 +3,10 @@
 """
 import json
 import logging
+import asyncio
 from typing import Dict, Any, Optional
 from modules.config import setup_gemini
+from modules.multi_gemini_client import get_multi_gemini_client, multi_gemini_available
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +15,20 @@ class QuestionCategorizer:
     
     def __init__(self):
         self.model = setup_gemini()
+        self.multi_client = None
+        self._init_multi_client()
+    
+    def _init_multi_client(self):
+        """Multi Gemini Clientの初期化"""
+        try:
+            if multi_gemini_available():
+                self.multi_client = get_multi_gemini_client()
+                logger.info("✅ QuestionCategorizer: Multi Gemini Client初期化完了")
+            else:
+                logger.warning("⚠️ QuestionCategorizer: Multi Gemini Client利用不可")
+        except Exception as e:
+            logger.error(f"❌ QuestionCategorizer: Multi Gemini Client初期化失敗: {e}")
+            self.multi_client = None
         self.categories = {
             "company_info": "🏢 会社情報",
             "product_service": "🛍️ 商品・サービス",
@@ -82,7 +98,45 @@ class QuestionCategorizer:
 }}
 """
             
-            response = self.model.generate_content(prompt)
+            # Multi Gemini Clientを優先使用
+            response = None
+            if self.multi_client:
+                try:
+                    logger.info("🔄 QuestionCategorizer: Multi Gemini Client使用")
+                    generation_config = {
+                        "temperature": 0.1,
+                        "maxOutputTokens": 1024,
+                        "topP": 0.8,
+                        "topK": 40
+                    }
+                    # 非同期呼び出しを同期的に実行
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        response_data = loop.run_until_complete(
+                            self.multi_client.generate_content(prompt, generation_config)
+                        )
+                        # レスポンスデータから text を抽出
+                        if response_data and "candidates" in response_data:
+                            candidate = response_data["candidates"][0]
+                            if "content" in candidate and "parts" in candidate["content"]:
+                                text = candidate["content"]["parts"][0]["text"]
+                                # 互換性のためのレスポンスオブジェクト作成
+                                class MockResponse:
+                                    def __init__(self, text):
+                                        self.text = text
+                                response = MockResponse(text)
+                                logger.info("✅ QuestionCategorizer: Multi Gemini Client成功")
+                    finally:
+                        loop.close()
+                except Exception as multi_error:
+                    logger.warning(f"⚠️ QuestionCategorizer: Multi Gemini Client失敗: {multi_error}")
+                    response = None
+            
+            # フォールバック: 従来の単一APIキー方式
+            if not response and self.model:
+                logger.info("🔄 QuestionCategorizer: 従来方式でフォールバック")
+                response = self.model.generate_content(prompt)
             
             if response and hasattr(response, 'text') and response.text:
                 # JSONを抽出してパース
