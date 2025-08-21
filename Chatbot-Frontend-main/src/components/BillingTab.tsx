@@ -1193,18 +1193,18 @@ const BillingTab: React.FC = () => {
                       <TableBody>
                         <TableRow>
                           <TableCell>Input トークン</TableCell>
-                          <TableCell>¥0.100/1,000tokens</TableCell>
-                          <TableCell>ユーザーからの質問</TableCell>
+                          <TableCell>¥1.32/1,000tokens</TableCell>
+                          <TableCell>ユーザーからの質問文など</TableCell>
                         </TableRow>
                         <TableRow>
                           <TableCell>Output トークン</TableCell>
-                          <TableCell>¥0.900/1,000tokens</TableCell>
-                          <TableCell>AIからの回答</TableCell>
+                          <TableCell>¥11.0/1,000tokens</TableCell>
+                          <TableCell>AIからの回答文</TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell>プロンプト参照</TableCell>
-                          <TableCell>¥0.50/回</TableCell>
                           <TableCell>知識ベース参照</TableCell>
+                          <TableCell>¥0.50/回</TableCell>
+                          <TableCell>社内資料などの参照ごとに加算</TableCell>
                         </TableRow>
                       </TableBody>
                     </Table>
@@ -1215,13 +1215,29 @@ const BillingTab: React.FC = () => {
                       💡 <strong>新料金体系の特徴:</strong>
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                      • Input ¥0.100、Output ¥0.900 per 1,000 tokens
+                      • Input ¥1.32、Output ¥11.0 per 1,000 tokens
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                      • プロンプト参照（知識ベース）¥0.50/回で追加料金
+                      • 知識ベース参照 ¥0.50/回で追加料金
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       • 使った分だけの従量課金制
+                    </Typography>
+                  </Box>
+
+                  {/* 日本語文字あたりの料金目安 */}
+                  <Box sx={{ mt: 2, p: 2, backgroundColor: 'rgba(33, 150, 243, 0.05)', borderRadius: 1, border: '1px solid rgba(33, 150, 243, 0.2)' }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      📝 <strong>1文字あたりの料金目安（日本語）:</strong>
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                      • 日本語は <strong>1文字 ≈ 0.5〜1トークン</strong>
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                      • Input: 約 <strong>¥0.66〜¥1.32/1,000文字</strong>
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      • Output: 約 <strong>¥5.5〜¥11.0/1,000文字</strong>
                     </Typography>
                   </Box>
 

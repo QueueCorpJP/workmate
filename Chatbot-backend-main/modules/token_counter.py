@@ -26,8 +26,8 @@ class TokenCounter:
                 "output": 0.01     # $10.00 per 1M tokens
             },
             "gemini-2.5-flash": {
-                "input": 0.000667,  # ¥0.100 per 1K tokens (0.100/150 USD)
-                "output": 0.006     # ¥0.900 per 1K tokens (0.900/150 USD)
+                "input": 0.0088,    # ¥1.32 per 1K tokens (1.32/150 USD)
+                "output": 0.0733    # ¥11.0 per 1K tokens (11.0/150 USD)
             },
             "gpt-4": {
                 "input": 0.03,     # $30.00 per 1M tokens
@@ -39,13 +39,13 @@ class TokenCounter:
             },
             # 新しい料金設定（基本料金）
             "workmate-standard": {
-                "input": 0.0003,   # $0.30 per 1M tokens
-                "output": 0.0025   # $2.50 per 1M tokens
+                "input": 0.0088,    # ¥1.32 per 1K tokens (1.32/150 USD)
+                "output": 0.0733    # ¥11.0 per 1K tokens (11.0/150 USD)
             },
             # Gemini料金設定（新料金体系）
             "gemini-pro": {
-                "input": 0.000667,  # ¥0.100 per 1K tokens (0.100/150 USD)
-                "output": 0.006     # ¥0.900 per 1K tokens (0.900/150 USD)
+                "input": 0.0088,    # ¥1.32 per 1K tokens (1.32/150 USD)
+                "output": 0.0733    # ¥11.0 per 1K tokens (11.0/150 USD)
             },
             "gemini-1.5-pro": {
                 "input": 0.0003,   # $0.30 per 1M tokens

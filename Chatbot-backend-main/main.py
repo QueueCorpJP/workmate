@@ -3392,9 +3392,9 @@ async def get_company_pricing_info(current_user = Depends(get_current_user), db:
                 "pricing_model": "standard",
                 "pricing_description": "標準料金体系（従量課金制）",
                 "pricing_table": {
-                    "input": {"price_jpy": 0.100, "price_per_unit": "¥0.100 / 1,000 tokens", "description": "ユーザーからの質問"},
-                    "output": {"price_jpy": 0.900, "price_per_unit": "¥0.900 / 1,000 tokens", "description": "AIからの回答"},
-                    "prompt_reference": {"price_jpy": 0.50, "price_per_unit": "¥0.50 / 回", "description": "知識ベース参照"}
+                    "input": {"price_jpy": 1.32, "price_per_unit": "¥1.32 / 1,000 tokens", "description": "ユーザーからの質問文など"},
+                    "output": {"price_jpy": 11.0, "price_per_unit": "¥11.0 / 1,000 tokens", "description": "AIからの回答文"},
+                    "prompt_reference": {"price_jpy": 0.50, "price_per_unit": "¥0.50 / 回", "description": "社内資料などの参照ごとに加算"}
                 },
                 "cost_examples": {
                     "detailed_scenarios": [
@@ -3405,15 +3405,15 @@ async def get_company_pricing_info(current_user = Depends(get_current_user), db:
                                     "question": "「今日の予定を教えて」",
                                     "input_tokens": 50,
                                     "output_tokens": 150,
-                                    "cost_jpy": 0.140,
-                                    "cost_breakdown": "入力¥0.005 + 出力¥0.135"
+                                    "cost_jpy": 1.716,
+                                    "cost_breakdown": "入力¥0.066 + 出力¥1.650"
                                 },
                                 {
                                     "question": "「会議の資料はどこ？」",
                                     "input_tokens": 40,
                                     "output_tokens": 200,
-                                    "cost_jpy": 0.184,
-                                    "cost_breakdown": "入力¥0.004 + 出力¥0.180"
+                                    "cost_jpy": 2.253,
+                                    "cost_breakdown": "入力¥0.053 + 出力¥2.200"
                                 }
                             ]
                         },
@@ -3424,16 +3424,16 @@ async def get_company_pricing_info(current_user = Depends(get_current_user), db:
                                     "question": "「プロジェクトの進捗状況を詳しく教えて」",
                                     "input_tokens": 100,
                                     "output_tokens": 500,
-                                    "cost_jpy": 0.460,
-                                    "cost_breakdown": "入力¥0.010 + 出力¥0.450"
+                                    "cost_jpy": 5.632,
+                                    "cost_breakdown": "入力¥0.132 + 出力¥5.500"
                                 },
                                 {
                                     "question": "「予算計画について説明して（知識ベース参照1回）」",
                                     "input_tokens": 120,
                                     "output_tokens": 600,
                                     "prompt_references": 1,
-                                    "cost_jpy": 1.052,
-                                    "cost_breakdown": "入力¥0.012 + 出力¥0.540 + 知識ベース¥0.50"
+                                    "cost_jpy": 7.258,
+                                    "cost_breakdown": "入力¥0.158 + 出力¥6.600 + 知識ベース¥0.50"
                                 }
                             ]
                         },
@@ -3445,16 +3445,16 @@ async def get_company_pricing_info(current_user = Depends(get_current_user), db:
                                     "input_tokens": 200,
                                     "output_tokens": 1500,
                                     "prompt_references": 2,
-                                    "cost_jpy": 2.370,
-                                    "cost_breakdown": "入力¥0.020 + 出力¥1.350 + 知識ベース¥1.00"
+                                    "cost_jpy": 17.764,
+                                    "cost_breakdown": "入力¥0.264 + 出力¥16.500 + 知識ベース¥1.00"
                                 },
                                 {
                                     "question": "「システム仕様書の内容を要約して改善点も提案して（知識ベース参照3回）」",
                                     "input_tokens": 300,
                                     "output_tokens": 2000,
                                     "prompt_references": 3,
-                                    "cost_jpy": 3.330,
-                                    "cost_breakdown": "入力¥0.030 + 出力¥1.800 + 知識ベース¥1.50"
+                                    "cost_jpy": 23.896,
+                                    "cost_breakdown": "入力¥0.396 + 出力¥22.000 + 知識ベース¥1.50"
                                 }
                             ]
                         }
