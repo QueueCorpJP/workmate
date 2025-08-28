@@ -17,11 +17,13 @@ import logging
 import asyncio
 import subprocess
 import sys
+import time
 from typing import List, Optional
 from PIL import Image
 
 # 🚀 Multi Gemini Clientのインポート
 from ..multi_gemini_client import get_multi_gemini_client, multi_gemini_available
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +126,7 @@ class GeminiOCRProcessor:
             return await self._call_single_api(images_b64, prompt)
     
     async def _call_with_multi_keys(self, images_b64: List[str], prompt: str) -> str:
-        """31個のAPIキーで順次リトライ"""
+        """33個のAPIキーを適切に循環使用してリトライ"""
         api_url = f"{self.api_base_url}/models/gemini-2.5-flash:generateContent"
         
         # コンテンツを構築
@@ -145,10 +147,30 @@ class GeminiOCRProcessor:
             }
         }
         
-        # 31個のAPIキーで順次試行
-        for attempt, api_key in enumerate(self.multi_gemini_client.api_keys):
+        # 使用済み/エラーになったAPIキーを追跡
+        excluded_clients = set()
+        max_attempts = len(self.multi_gemini_client.api_keys)
+        
+        for attempt in range(max_attempts):
             try:
-                logger.info(f"🤖 Vision API呼び出し (APIキー {attempt + 1}/{len(self.multi_gemini_client.api_keys)})")
+                # MultiGeminiClientから利用可能なAPIキーを取得
+                client_info = self.multi_gemini_client._get_active_client(excluded_clients)
+                
+                if not client_info:
+                    logger.error(f"❌ 利用可能なAPIキーがありません (試行 {attempt + 1}/{max_attempts})")
+                    # 除外リストをリセットして再試行
+                    if excluded_clients:
+                        excluded_clients.clear()
+                        logger.info("🔄 除外リストをリセットして全APIキーを再試行")
+                        await asyncio.sleep(2.0)  # 少し長めに待機
+                        continue
+                    else:
+                        break
+                
+                client_name, api_key = client_info
+                client_index = int(client_name.split('_')[2])  # gemini_client_X から X を取得
+                
+                logger.info(f"🤖 Vision API呼び出し (APIキー {client_index}/{len(self.multi_gemini_client.api_keys)})")
                 
                 headers = {
                     "Content-Type": "application/json",
@@ -168,24 +190,45 @@ class GeminiOCRProcessor:
                     if "content" in candidate and "parts" in candidate["content"]:
                         parts = candidate["content"]["parts"]
                         if parts and "text" in parts[0]:
-                            logger.info(f"✅ Vision API成功（APIキー {attempt + 1}）")
+                            logger.info(f"✅ Vision API成功（APIキー {client_index}） ({len(parts[0]['text'])}文字)")
                             return parts[0]["text"].strip()
                 
                 raise Exception("APIレスポンスが空です")
                 
             except requests.exceptions.RequestException as e:
-                logger.warning(f"⚠️ APIキー {attempt + 1} エラー: {e}")
-                if attempt < len(self.multi_gemini_client.api_keys) - 1:
-                    await asyncio.sleep(1.0)  # 短時間待機してから次のキーを試行
-                    continue
+                error_str = str(e)
+                logger.warning(f"⚠️ APIキー {client_index} エラー: {e}")
+                
+                # 429エラー（Too Many Requests）の場合はAPIキーを一時的に除外
+                if "429" in error_str or "Too Many Requests" in error_str:
+                    from ..multi_gemini_client import APIKeyStatus
+                    self.multi_gemini_client.api_status[client_name] = APIKeyStatus.RATE_LIMITED
+                    self.multi_gemini_client.api_rate_limit_reset[client_name] = time.time() + 60  # 60秒後にリセット
+                    logger.info(f"🚫 APIキー {client_index} をレート制限により60秒間除外")
+                    excluded_clients.add(client_name)
+                elif "quota" in error_str.lower() or "exceeded" in error_str.lower():
+                    from ..multi_gemini_client import APIKeyStatus
+                    self.multi_gemini_client.api_status[client_name] = APIKeyStatus.QUOTA_EXCEEDED
+                    logger.info(f"🚫 APIキー {client_index} をクォータ超過により除外")
+                    excluded_clients.add(client_name)
                 else:
-                    raise Exception(f"全{len(self.multi_gemini_client.api_keys)}個のAPIキーで失敗: {e}")
+                    # その他のエラーの場合は一時的に除外
+                    excluded_clients.add(client_name)
+                
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(0.5)  # 短時間待機してから次のキーを試行
+                    continue
+                    
             except Exception as e:
-                logger.warning(f"⚠️ APIキー {attempt + 1} 予期しないエラー: {e}")
-                if attempt < len(self.multi_gemini_client.api_keys) - 1:
+                logger.warning(f"⚠️ APIキー {client_index if 'client_index' in locals() else 'N/A'} 予期しないエラー: {e}")
+                if 'client_name' in locals():
+                    excluded_clients.add(client_name)
+                
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(0.5)
                     continue
-                else:
-                    raise Exception(f"全APIキーで失敗: {e}")
+        
+        raise Exception(f"全{max_attempts}回の試行でAPIキーが枯渇しました。除外されたキー: {len(excluded_clients)}個")
     
     async def _call_single_api(self, images_b64: List[str], prompt: str) -> str:
         """単一APIキーでフォールバック処理"""

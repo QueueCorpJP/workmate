@@ -262,9 +262,14 @@ async def remove_resource_by_id(resource_id: str, db: Connection):
         if chunks_count > 0:
             print(f"🗑️ 関連chunks分割削除開始: {chunks_count}件")
             
-            # バッチサイズを決定（チャンク数に応じて調整）
-            batch_size = 1000 if chunks_count > 1000 else min(chunks_count, 500)
-            print(f"📦 使用バッチサイズ: {batch_size}")
+            # バッチサイズを決定（URI Too Longエラーを避けるため保守的に設定）
+            if chunks_count > 1000:
+                batch_size = 100  # 大量の場合は100件ずつ
+            elif chunks_count > 100:
+                batch_size = 50   # 中規模の場合は50件ずつ
+            else:
+                batch_size = 25   # 小規模の場合は25件ずつ（安全性重視）
+            print(f"📦 使用バッチサイズ: {batch_size} (チャンク総数: {chunks_count})")
             
             # 分割削除を実行
             deletion_result = await _delete_chunks_in_batches(resource_id, supabase, batch_size)
@@ -301,7 +306,7 @@ async def remove_resource_by_id(resource_id: str, db: Connection):
             
             # 削除結果のメッセージを構築
             if chunks_count > 0:
-                if chunks_count > 1000:
+                if chunks_count > 100:
                     message = f"リソース '{resource_name}' と関連データ({chunks_count}件のchunks)を分割削除しました"
                 else:
                     message = f"リソース '{resource_name}' と関連データ({chunks_count}件のchunks)を削除しました"
@@ -312,7 +317,7 @@ async def remove_resource_by_id(resource_id: str, db: Connection):
                 "name": resource_name,
                 "message": message,
                 "chunks_deleted": chunks_count,
-                "deletion_method": "batch" if chunks_count > 1000 else "standard"
+                "deletion_method": "batch" if chunks_count > 100 else "standard"
             }
         else:
             print(f"❌ リソース削除失敗: {resource_name}")
@@ -527,10 +532,11 @@ async def _get_content_from_chunks(doc_id: str, supabase) -> str:
         return ""
 
 
-async def _delete_chunks_in_batches(resource_id: str, supabase, batch_size: int = 1000, max_retries: int = 3):
+async def _delete_chunks_in_batches(resource_id: str, supabase, batch_size: int = 100, max_retries: int = 3):
     """
     🗑️ チャンクを指定したバッチサイズずつ削除する
     大量のチャンクがある場合でも安全に削除できる
+    URI Too Longエラーを避けるため、バッチサイズは100件に設定
     """
     try:
         print(f"🗑️ バッチ削除開始: doc_id={resource_id}, バッチサイズ={batch_size}")
@@ -562,29 +568,73 @@ async def _delete_chunks_in_batches(resource_id: str, supabase, batch_size: int 
             
             # リトライ機能付きでチャンクを削除
             deletion_success = False
+            current_batch_size = len(chunk_ids)
+            
             for attempt in range(max_retries):
                 try:
-                    print(f"🔄 削除試行 {attempt + 1}/{max_retries}: {len(chunk_ids)}件のチャンク")
+                    print(f"🔄 削除試行 {attempt + 1}/{max_retries}: {current_batch_size}件のチャンク")
                     
-                    # IDリストで一括削除
-                    delete_query = supabase.table("chunks").delete().in_("id", chunk_ids)
-                    delete_result = delete_query.execute()
-                    
-                    # 削除結果の確認
-                    if delete_result.data is not None:
+                    # バッチサイズが大きすぎる場合は分割
+                    if current_batch_size > 50:
+                        # さらに小さいバッチに分割して削除
+                        mini_batch_size = 50
+                        mini_batches = [chunk_ids[i:i + mini_batch_size] for i in range(0, len(chunk_ids), mini_batch_size)]
+                        
+                        print(f"🔀 大きなバッチを{len(mini_batches)}個のミニバッチに分割（各{mini_batch_size}件）")
+                        
+                        for mini_idx, mini_chunk_ids in enumerate(mini_batches):
+                            print(f"  📦 ミニバッチ {mini_idx + 1}/{len(mini_batches)}: {len(mini_chunk_ids)}件")
+                            
+                            delete_query = supabase.table("chunks").delete().in_("id", mini_chunk_ids)
+                            mini_result = delete_query.execute()
+                            
+                            if mini_result.data is None:
+                                print(f"  ⚠️ ミニバッチ {mini_idx + 1} で警告")
+                            else:
+                                print(f"  ✅ ミニバッチ {mini_idx + 1} 削除完了")
+                            
+                            # 少し待機
+                            import asyncio
+                            await asyncio.sleep(0.1)
+                        
                         deleted_in_batch = len(chunk_ids)
                         total_deleted += deleted_in_batch
-                        print(f"✅ バッチ {batch_count} 削除完了: {deleted_in_batch}件 (総削除数: {total_deleted})")
+                        print(f"✅ バッチ {batch_count} 削除完了 (分割実行): {deleted_in_batch}件 (総削除数: {total_deleted})")
                         deletion_success = True
                         break
                     else:
-                        print(f"⚠️ バッチ {batch_count} 削除で警告 (試行 {attempt + 1})")
-                        if attempt < max_retries - 1:
-                            import asyncio
-                            await asyncio.sleep(1)  # 1秒待機してリトライ
+                        # 小さなバッチは普通に削除
+                        delete_query = supabase.table("chunks").delete().in_("id", chunk_ids)
+                        delete_result = delete_query.execute()
+                        
+                        # 削除結果の確認
+                        if delete_result.data is not None:
+                            deleted_in_batch = len(chunk_ids)
+                            total_deleted += deleted_in_batch
+                            print(f"✅ バッチ {batch_count} 削除完了: {deleted_in_batch}件 (総削除数: {total_deleted})")
+                            deletion_success = True
+                            break
+                        else:
+                            print(f"⚠️ バッチ {batch_count} 削除で警告 (試行 {attempt + 1})")
+                            if attempt < max_retries - 1:
+                                import asyncio
+                                await asyncio.sleep(1)  # 1秒待機してリトライ
                         
                 except Exception as batch_error:
-                    print(f"❌ バッチ {batch_count} 削除エラー (試行 {attempt + 1}): {str(batch_error)}")
+                    error_str = str(batch_error)
+                    print(f"❌ バッチ {batch_count} 削除エラー (試行 {attempt + 1}): {error_str}")
+                    
+                    # URI Too Long エラーの場合はバッチサイズを縮小して再試行
+                    if "414" in error_str or "Request-URI Too Large" in error_str:
+                        if current_batch_size > 20:
+                            current_batch_size = min(20, current_batch_size // 2)
+                            chunk_ids = chunk_ids[:current_batch_size]  # バッチサイズを縮小
+                            print(f"🔄 URI Too Longエラーのため、バッチサイズを{current_batch_size}に縮小して再試行")
+                            if attempt < max_retries - 1:
+                                import asyncio
+                                await asyncio.sleep(1)
+                            continue
+                    
                     if attempt < max_retries - 1:
                         import asyncio
                         await asyncio.sleep(2)  # 2秒待機してリトライ

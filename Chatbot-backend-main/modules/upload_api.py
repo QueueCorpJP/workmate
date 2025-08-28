@@ -272,7 +272,7 @@ async def delete_document(
         
         if chunks_deleted > 0:
             if deletion_method == "batch":
-                logger.info(f"🗑️ ドキュメント分割削除完了: {doc_id} ({chunks_deleted}件のチャンクを分割削除)")
+                logger.info(f"🗑️ ドキュメント分割削除完了: {doc_id} ({chunks_deleted}件のチャンクを安全に分割削除)")
             else:
                 logger.info(f"🗑️ ドキュメント削除完了: {doc_id} ({chunks_deleted}件のチャンクを削除)")
         else:
