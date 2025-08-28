@@ -258,16 +258,37 @@ async def remove_resource_by_id(resource_id: str, db: Connection):
         chunks_count = chunks_result.count if chunks_result.count is not None else 0
         print(f"削除対象のchunks数: {chunks_count}")
         
-        # まず関連するchunksを手動で削除
+        # まず関連するchunksを分割削除
         if chunks_count > 0:
-            print(f"🗑️ 関連chunks削除開始: {chunks_count}件")
-            chunks_delete_query = supabase.table("chunks").delete().eq("doc_id", resource_id)
-            chunks_delete_result = chunks_delete_query.execute()
+            print(f"🗑️ 関連chunks分割削除開始: {chunks_count}件")
             
-            if chunks_delete_result.data is not None:
-                print(f"✅ 関連chunks削除成功: {chunks_count}件")
+            # バッチサイズを決定（チャンク数に応じて調整）
+            batch_size = 1000 if chunks_count > 1000 else min(chunks_count, 500)
+            print(f"📦 使用バッチサイズ: {batch_size}")
+            
+            # 分割削除を実行
+            deletion_result = await _delete_chunks_in_batches(resource_id, supabase, batch_size)
+            
+            if deletion_result["success"]:
+                total_deleted = deletion_result["total_deleted"]
+                batches_processed = deletion_result["batches_processed"]
+                print(f"✅ 関連chunks分割削除成功: {total_deleted}件 ({batches_processed}バッチで処理)")
+                
+                # 削除完了確認
+                verify_query = supabase.table("chunks").select("id", count="exact").eq("doc_id", resource_id)
+                verify_result = verify_query.execute()
+                remaining_chunks = verify_result.count if verify_result.count is not None else 0
+                
+                if remaining_chunks > 0:
+                    print(f"⚠️ 削除後も {remaining_chunks} 件のチャンクが残っています")
+                else:
+                    print(f"✅ すべてのチャンクが正常に削除されました")
             else:
-                print(f"⚠️ 関連chunks削除で警告が発生しましたが、処理を継続します")
+                error_msg = deletion_result.get("error", "不明なエラー")
+                partial_deleted = deletion_result.get("total_deleted", 0)
+                print(f"❌ チャンク分割削除でエラー: {error_msg}")
+                print(f"🔍 部分削除数: {partial_deleted}件")
+                # エラーが発生してもドキュメント削除は継続（管理者が手動対応可能）
         else:
             print(f"ℹ️ 削除対象のchunksがありません")
         
@@ -277,15 +298,29 @@ async def remove_resource_by_id(resource_id: str, db: Connection):
         
         if delete_result.data is not None:
             print(f"✅ リソース削除成功: {resource_name}")
+            
+            # 削除結果のメッセージを構築
+            if chunks_count > 0:
+                if chunks_count > 1000:
+                    message = f"リソース '{resource_name}' と関連データ({chunks_count}件のchunks)を分割削除しました"
+                else:
+                    message = f"リソース '{resource_name}' と関連データ({chunks_count}件のchunks)を削除しました"
+            else:
+                message = f"リソース '{resource_name}' を削除しました（関連チャンクなし）"
+            
             return {
                 "name": resource_name,
-                "message": f"リソース '{resource_name}' と関連データ({chunks_count}件のchunks)を削除しました"
+                "message": message,
+                "chunks_deleted": chunks_count,
+                "deletion_method": "batch" if chunks_count > 1000 else "standard"
             }
         else:
             print(f"❌ リソース削除失敗: {resource_name}")
             return {
                 "name": resource_name,
-                "message": "リソースの削除に失敗しました"
+                "message": "リソースの削除に失敗しました",
+                "chunks_deleted": 0,
+                "deletion_method": "failed"
             }
     except Exception as e:
         print(f"リソース削除エラー: {e}")
@@ -490,3 +525,95 @@ async def _get_content_from_chunks(doc_id: str, supabase) -> str:
     except Exception as e:
         print(f"❌ chunksテーブルからのコンテンツ取得エラー: {str(e)}")
         return ""
+
+
+async def _delete_chunks_in_batches(resource_id: str, supabase, batch_size: int = 1000, max_retries: int = 3):
+    """
+    🗑️ チャンクを指定したバッチサイズずつ削除する
+    大量のチャンクがある場合でも安全に削除できる
+    """
+    try:
+        print(f"🗑️ バッチ削除開始: doc_id={resource_id}, バッチサイズ={batch_size}")
+        
+        total_deleted = 0
+        batch_count = 0
+        
+        while True:
+            batch_count += 1
+            print(f"📦 バッチ {batch_count} 開始...")
+            
+            # 現在残っているチャンク数を確認
+            remaining_query = supabase.table("chunks").select("id", count="exact").eq("doc_id", resource_id).limit(batch_size)
+            remaining_result = remaining_query.execute()
+            
+            if not remaining_result.data or len(remaining_result.data) == 0:
+                print(f"✅ すべてのチャンクが削除されました。総削除数: {total_deleted}")
+                break
+            
+            remaining_count = len(remaining_result.data)
+            print(f"📊 削除対象のチャンク数: {remaining_count}")
+            
+            # バッチサイズ分のチャンクIDを取得
+            chunk_ids = [chunk.get("id") for chunk in remaining_result.data if chunk.get("id")]
+            
+            if not chunk_ids:
+                print("⚠️ 削除対象のチャンクIDが取得できませんでした")
+                break
+            
+            # リトライ機能付きでチャンクを削除
+            deletion_success = False
+            for attempt in range(max_retries):
+                try:
+                    print(f"🔄 削除試行 {attempt + 1}/{max_retries}: {len(chunk_ids)}件のチャンク")
+                    
+                    # IDリストで一括削除
+                    delete_query = supabase.table("chunks").delete().in_("id", chunk_ids)
+                    delete_result = delete_query.execute()
+                    
+                    # 削除結果の確認
+                    if delete_result.data is not None:
+                        deleted_in_batch = len(chunk_ids)
+                        total_deleted += deleted_in_batch
+                        print(f"✅ バッチ {batch_count} 削除完了: {deleted_in_batch}件 (総削除数: {total_deleted})")
+                        deletion_success = True
+                        break
+                    else:
+                        print(f"⚠️ バッチ {batch_count} 削除で警告 (試行 {attempt + 1})")
+                        if attempt < max_retries - 1:
+                            import asyncio
+                            await asyncio.sleep(1)  # 1秒待機してリトライ
+                        
+                except Exception as batch_error:
+                    print(f"❌ バッチ {batch_count} 削除エラー (試行 {attempt + 1}): {str(batch_error)}")
+                    if attempt < max_retries - 1:
+                        import asyncio
+                        await asyncio.sleep(2)  # 2秒待機してリトライ
+                    else:
+                        raise batch_error
+            
+            if not deletion_success:
+                raise Exception(f"バッチ {batch_count} の削除が {max_retries} 回の試行後も失敗しました")
+            
+            # 進行状況の表示
+            print(f"📈 進行状況: {total_deleted} 件削除完了")
+            
+            # 少し待機して次のバッチへ
+            import asyncio
+            await asyncio.sleep(0.1)
+        
+        print(f"🎉 チャンク分割削除完了: 総削除数 {total_deleted} 件")
+        return {
+            "success": True,
+            "total_deleted": total_deleted,
+            "batches_processed": batch_count - 1
+        }
+        
+    except Exception as e:
+        print(f"❌ チャンク分割削除でエラー: {str(e)}")
+        import traceback
+        print(f"🔍 エラー詳細:\n{traceback.format_exc()}")
+        return {
+            "success": False,
+            "error": str(e),
+            "total_deleted": total_deleted
+        }

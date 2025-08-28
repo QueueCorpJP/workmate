@@ -250,7 +250,8 @@ async def delete_document(
 ):
     """
     🗑️ ドキュメント削除
-    document_sourcesとchnksテーブルから削除
+    document_sourcesとchnksテーブルから分割削除
+    大量のチャンクがある場合は1000件ずつ安全に削除
     """
     try:
         user_role = current_user.get("role", "user")
@@ -262,27 +263,27 @@ async def delete_document(
         if not (is_special_admin or user_role == "admin_user"):
             raise HTTPException(status_code=403, detail="ドキュメントの削除は管理者のみ可能です")
         
-        # ドキュメント削除実行
+        # ドキュメント削除実行（チャンクも分割削除される）
         result = await remove_resource_by_id(doc_id, db)
         
-        # chunksテーブルからも削除（CASCADE制約で自動削除されるはず）
-        try:
-            from supabase_adapter import get_supabase_client
-            supabase = get_supabase_client()
-            
-            # chunksテーブルから削除
-            chunks_delete = supabase.table("chunks").delete().eq("doc_id", doc_id)
-            chunks_result = chunks_delete.execute()
-            
-            logger.info(f"🗑️ チャンク削除完了: {doc_id}")
-            
-        except Exception as chunk_error:
-            logger.warning(f"チャンク削除エラー: {chunk_error}")
+        # 削除結果をログに記録
+        chunks_deleted = result.get("chunks_deleted", 0)
+        deletion_method = result.get("deletion_method", "unknown")
+        
+        if chunks_deleted > 0:
+            if deletion_method == "batch":
+                logger.info(f"🗑️ ドキュメント分割削除完了: {doc_id} ({chunks_deleted}件のチャンクを分割削除)")
+            else:
+                logger.info(f"🗑️ ドキュメント削除完了: {doc_id} ({chunks_deleted}件のチャンクを削除)")
+        else:
+            logger.info(f"🗑️ ドキュメント削除完了: {doc_id} (チャンクなし)")
         
         return {
             "success": True,
             "message": result["message"],
-            "deleted_document": result["name"]
+            "deleted_document": result["name"],
+            "chunks_deleted": chunks_deleted,
+            "deletion_method": deletion_method
         }
         
     except HTTPException:
