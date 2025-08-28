@@ -1,4 +1,4 @@
-"""
+﻿"""
 🚀 リアルタイムRAG処理フロー
 質問受付〜RAG処理フロー（リアルタイム回答）の実装
 
@@ -1238,7 +1238,7 @@ class RealtimeRAGProcessor:
         logger.info(f"🔍 質問分析: 文字数={len(question_text)}, 複数タスク検出={has_multi_tasks}")
         logger.info(f"🔧 デバッグ: is_long={is_long}, 分割判定={has_multi_tasks or is_long}")
         
-        if has_multi_tasks or is_long:  # 複数タスクまたは30文字以上で分割検討
+        if False:  # 質問分割を無効化（処理時間短縮・シンプル化のため）
             reason = "複数タスクキーワード検出" if has_multi_tasks else f"長文({len(question_text)}文字)"
             logger.info(f"📝 複数タスク分割を検討: {reason}")
             
