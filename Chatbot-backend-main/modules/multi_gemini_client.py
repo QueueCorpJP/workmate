@@ -235,7 +235,7 @@ class MultiGeminiClient:
                     api_url, 
                     headers=headers, 
                     json=request_data, 
-                    timeout=50  # 50秒タイムアウト
+                    timeout=120  # 120秒タイムアウト（長いプロンプトに対応）
                 )
                 
                 # 成功した場合
