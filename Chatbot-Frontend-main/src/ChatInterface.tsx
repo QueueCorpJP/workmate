@@ -138,6 +138,10 @@ function ChatInterface() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
+  
+  // モバイルキーボード対応
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
 
   // テンプレート機能の状態
   const [showTemplateModal, setShowTemplateModal] = useState(false);
@@ -389,11 +393,18 @@ function ChatInterface() {
     borderTopRightRadius: { xs: "20px", sm: "24px" },
     transition: "all 0.3s ease",
     WebkitTransform: 'translate3d(0,0,0)', // iOSでの表示問題を修正
-    // モバイルキーボード対応
+    // モバイルキーボード対応 - SafeArea対応
     paddingBottom: {
-      xs: 'max(env(safe-area-inset-bottom), 8px)',
-      sm: 'max(env(safe-area-inset-bottom), 10px)',
-      md: 'max(env(safe-area-inset-bottom), 12px)'
+      xs: 'calc(0.8rem + env(safe-area-inset-bottom, 0px))',
+      sm: 1.2,
+      md: 1.5
+    },
+    // キーボード表示時の位置調整
+    '@media screen and (max-width: 768px)': {
+      position: isKeyboardVisible ? 'absolute' : 'fixed',
+      bottom: isKeyboardVisible ? 'auto' : 0,
+      top: isKeyboardVisible ? 'auto' : 'unset',
+      transform: isKeyboardVisible ? `translateY(${viewportHeight - 120}px)` : 'none',
     },
     // タッチデバイス最適化（メッセージ部分は除外）
     WebkitTouchCallout: 'none',
@@ -520,6 +531,76 @@ function ChatInterface() {
       return () => clearInterval(notificationInterval);
     }
   }, [user?.id, fetchNotifications]);
+
+  // モバイルキーボード検出とスクロール処理
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+
+    const handleResize = () => {
+      const currentHeight = window.innerHeight;
+      const heightDifference = viewportHeight - currentHeight;
+      
+      // キーボードが表示されている可能性（高さが大きく減少）
+      const isKeyboardOpen = heightDifference > 150;
+      
+      setIsKeyboardVisible(isKeyboardOpen);
+      setViewportHeight(currentHeight);
+
+      // キーボード表示時のスクロール処理（遅延実行）
+      if (isKeyboardOpen) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          // メッセージリストの最下部にスクロール
+          if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ 
+              behavior: 'smooth',
+              block: 'end' 
+            });
+          }
+          
+          // 入力フィールドにフォーカスを維持
+          if (textAreaRef.current) {
+            textAreaRef.current.focus();
+          }
+        }, 300);
+      }
+    };
+
+    const handleFocusIn = (event: FocusEvent) => {
+      // 入力フィールドにフォーカス時の処理
+      if (event.target === textAreaRef.current) {
+        setTimeout(() => {
+          setIsKeyboardVisible(true);
+          // メッセージリストを最下部にスクロール
+          if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ 
+              behavior: 'smooth',
+              block: 'end' 
+            });
+          }
+        }, 100);
+      }
+    };
+
+    const handleFocusOut = () => {
+      // フォーカスアウト時の処理（少し遅延）
+      setTimeout(() => {
+        setIsKeyboardVisible(false);
+      }, 200);
+    };
+
+    // イベントリスナーの追加
+    window.addEventListener('resize', handleResize);
+    document.addEventListener('focusin', handleFocusIn);
+    document.addEventListener('focusout', handleFocusOut);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      document.removeEventListener('focusin', handleFocusIn);
+      document.removeEventListener('focusout', handleFocusOut);
+      clearTimeout(timeoutId);
+    };
+  }, [viewportHeight]);
 
 
 

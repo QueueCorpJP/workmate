@@ -33,7 +33,6 @@ python-docx>=0.8.11
 bm25s>=0.2.0
 scikit-learn>=1.0.0
 numpy>=1.21.0
-google-genai>=0.2.2
 pgvector>=0.2.0
 # Japanese text processing for better search
 janome>=0.4.2
@@ -42,4 +41,3 @@ elasticsearch>=8.0.0
 elasticsearch-dsl>=8.0.0
 # Rate limiting
 slowapi>=0.1.9
-# bcrypt>=4.0.0 # 🚨 AWS安定性のため削除 - hashlibに置き換え

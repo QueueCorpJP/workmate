@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   
   <!-- SEO最適化メタタグ -->
   <meta name="description" content="ワークメイトAI - 企業向け最先端AIチャットボット。業務効率化、知識管理、スマートな問題解決でビジネスをDXサポート。導入実績多数、セキュアな環境で安心してご利用いただけます。" />
@@ -130,6 +130,29 @@
       textarea {
         font-size: 16px !important;
         /* iOS でズームインを防止 */
+      }
+    }
+
+    /* iOS SafeArea対応 */
+    @supports (padding: max(0px)) {
+      body {
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+    }
+
+    /* モバイルキーボード対応 */
+    @media screen and (max-width: 768px) {
+      html, body {
+        height: 100vh;
+        height: -webkit-fill-available;
+        overflow: hidden;
+      }
+
+      #root {
+        height: 100vh;
+        height: -webkit-fill-available;
       }
     }
 
