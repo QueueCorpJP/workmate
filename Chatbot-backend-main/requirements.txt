@@ -42,4 +42,4 @@ elasticsearch>=8.0.0
 elasticsearch-dsl>=8.0.0
 # Rate limiting
 slowapi>=0.1.9
-bcrypt>=4.0.0
+# bcrypt>=4.0.0 # 🚨 AWS安定性のため削除 - hashlibに置き換え

@@ -8,7 +8,7 @@ import uuid
 import datetime
 import json
 import os
-import bcrypt
+import hashlib  # 🚨 bcryptの代わりにhashlibを使用（AWS安定性のため）
 from typing import Dict, List, Any, Optional
 from fastapi import Depends
 from .config import get_db_params
@@ -17,16 +17,26 @@ from supabase_adapter import get_supabase_client, insert_data, update_data, sele
 
 # データ型変換ユーティリティ関数
 
-# 🔒 パスワード暗号化関連ユーティリティ
+# 🔒 パスワード暗号化関連ユーティリティ（bcrypt → hashlib SHA256に変更）
 def hash_password(password: str) -> str:
-    """パスワードをbcryptでハッシュ化"""
-    salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
-    return hashed.decode('utf-8')
+    """パスワードをSHA256でハッシュ化（AWS安定性のため）"""
+    # 🚨 bcryptをSHA256に置き換え（AWS互換性向上）
+    salt = str(uuid.uuid4())[:8]  # 簡易的なsalt
+    salted_password = f"{password}{salt}"
+    hashed = hashlib.sha256(salted_password.encode('utf-8')).hexdigest()
+    return f"{hashed}${salt}"  # ハッシュとsaltを結合
 
 def verify_password(password: str, hashed_password: str) -> bool:
-    """パスワードを検証"""
-    return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
+    """パスワードを検証（SHA256）"""
+    try:
+        if '$' not in hashed_password:
+            return False
+        hash_part, salt = hashed_password.split('$', 1)
+        salted_password = f"{password}{salt}"
+        computed_hash = hashlib.sha256(salted_password.encode('utf-8')).hexdigest()
+        return computed_hash == hash_part
+    except Exception:
+        return False
 def ensure_string(value, for_db=False):
     """値を文字列に変換する（NaN値処理を強化）。
     
