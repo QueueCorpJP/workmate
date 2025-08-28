@@ -846,17 +846,21 @@ JSON形式のみで回答してください：
         logger.info(f"📘 Embedding検索開始（フォールバック）: '{question}'")
         
         try:
-            # Vertex AI Embeddingクライアントの取得
-            from .vertex_ai_embedding import get_vertex_ai_embedding_client, vertex_ai_embedding_available
+            # 🚨 Vertex AI Embeddingクライアントの取得（AWS安定性のため無効化）
+            # from .vertex_ai_embedding import get_vertex_ai_embedding_client, vertex_ai_embedding_available
             
-            if not vertex_ai_embedding_available():
-                logger.warning("⚠️ Vertex AI Embeddingが利用できません")
-                return []
+            # AWS安定性のためVertex AI Embeddingは無効化
+            logger.info("🔧 Vertex AI EmbeddingはAWS安定性のため無効化されています")
+            return []
             
-            vertex_client = get_vertex_ai_embedding_client()
-            if not vertex_client:
-                logger.warning("⚠️ Vertex AIクライアントが取得できません")
-                return []
+            # if not vertex_ai_embedding_available():
+            #     logger.warning("⚠️ Vertex AI Embeddingが利用できません")
+            #     return []
+            # 
+            # vertex_client = get_vertex_ai_embedding_client()
+            # if not vertex_client:
+            #     logger.warning("⚠️ Vertex AIクライアントが取得できません")
+            #     return []
             
             # クエリの埋め込み生成
             query_embedding = vertex_client.generate_embedding(question)

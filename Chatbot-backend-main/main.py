@@ -180,11 +180,12 @@ async def startup_event():
     except Exception as e:
         print(f"⚠️ Enhanced PostgreSQL Search初期化失敗: {e}")
     
-    # 包括的検索システム初期化（PDF後半情報取得対応）
+    # 🚨 包括的検索システム初期化（AWS安定性のため無効化）
+    # 削除されたcomprehensive_search_systemモジュールへの依存を無効化
     try:
-        from modules.comprehensive_search_system import initialize_comprehensive_search
-        await initialize_comprehensive_search()
-        print("✅ 包括的検索システム初期化成功")
+        # from modules.comprehensive_search_system import initialize_comprehensive_search
+        # await initialize_comprehensive_search()
+        print("🔧 包括的検索システムはAWS安定性のため無効化されています")
     except Exception as e:
         print(f"⚠️ 包括的検索システム初期化失敗: {e}")
     

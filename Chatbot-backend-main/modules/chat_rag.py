@@ -13,14 +13,17 @@ from .chat_search_systems import (
 )
 from .chat_utils import expand_query
 
-# 新しい超包括RAGシステムのインポート
+# 🚨 超包括RAGシステムのインポート（AWS安定性のため無効化）
+# 削除されたultra_comprehensive_ragモジュールへの依存を無効化
 try:
-    from .ultra_comprehensive_rag import (
-        ultra_comprehensive_rag_search, 
-        initialize_ultra_comprehensive_rag,
-        ultra_format_search_results
-    )
-    ULTRA_RAG_AVAILABLE = True
+    # from .ultra_comprehensive_rag import (
+    #     ultra_comprehensive_rag_search, 
+    #     initialize_ultra_comprehensive_rag,
+    #     ultra_format_search_results
+    # )
+    # ULTRA_RAG_AVAILABLE = True
+    ULTRA_RAG_AVAILABLE = False  # 🚨 AWS安定化のため強制無効
+    safe_print("🔧 超包括RAGシステムはAWS安定性のため無効化されています")
 except ImportError as e:
     safe_print(f"超包括RAGシステムが利用できません: {e}")
     ULTRA_RAG_AVAILABLE = False
