@@ -6,6 +6,7 @@ import os
 import os.path
 import datetime
 import traceback
+from contextlib import asynccontextmanager
 from typing import List, Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Request, Form, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -63,6 +64,42 @@ model = setup_gemini()
 set_chat_model(model)
 set_admin_model(model)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """アプリケーションのライフサイクル管理"""
+    # スタートアップ処理
+    print("🔄 アプリケーション起動時初期化開始...")
+    
+    # PostgreSQL Fuzzy Search初期化
+    try:
+        from modules.postgresql_fuzzy_search import initialize_postgresql_fuzzy
+        await initialize_postgresql_fuzzy()
+        print("✅ PostgreSQL Fuzzy Search初期化成功")
+    except Exception as e:
+        print(f"⚠️ PostgreSQL Fuzzy Search初期化失敗: {e}")
+    
+    # データベース整合性をチェック
+    try:
+        from modules.database import ensure_usage_limits_integrity, get_db
+        print("起動時データベース整合性チェックを実行中...")
+        db_connection = SupabaseConnection()
+        fixed_count = ensure_usage_limits_integrity(db_connection)
+        if fixed_count > 0:
+            print(f"起動時整合性チェック完了。{fixed_count}個のusage_limitsレコードを修正しました")
+        else:
+            print("起動時整合性チェック完了。修正が必要なレコードはありませんでした")
+        db_connection.close()
+    except Exception as e:
+        print(f"起動時整合性チェックでエラーが発生しましたが、アプリケーションは継続します。{str(e)}")
+    
+    print("✅ アプリケーション起動時初期化完了")
+    
+    yield  # アプリケーションの実行
+    
+    # シャットダウン処理（必要に応じて追加）
+    print("🔄 アプリケーション終了処理...")
+    print("✅ アプリケーション終了処理完了")
+
 # FastAPIアプリケーションの作成
 app = FastAPI(
     title="WorkMate Chatbot API",
@@ -70,7 +107,8 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/chatbot/api/docs",
     redoc_url="/chatbot/api/redoc",
-    openapi_url="/chatbot/api/openapi.json"
+    openapi_url="/chatbot/api/openapi.json",
+    lifespan=lifespan
 )
 
 # 🛡️ レート制限の設定
@@ -158,38 +196,7 @@ async def log_requests(request: Request, call_next):
 # アプリケーション起動時にデータベースを初期化
 init_db()
 
-# 起動時イベント：PostgreSQL Fuzzy Search初期化
-@app.on_event("startup")
-async def startup_event():
-    """アプリケーション起動時の初期化処理"""
-    print("🔄 アプリケーション起動時初期化開始...")
-    
-    # PostgreSQL Fuzzy Search初期化
-    try:
-        from modules.postgresql_fuzzy_search import initialize_postgresql_fuzzy
-        await initialize_postgresql_fuzzy()
-        print("✅ PostgreSQL Fuzzy Search初期化成功")
-    except Exception as e:
-        print(f"⚠️ PostgreSQL Fuzzy Search初期化失敗: {e}")
-    
-    # Enhanced PostgreSQL Search初期化（postgresql_fuzzy_searchを使用）
-    try:
-        from modules.postgresql_fuzzy_search import initialize_postgresql_fuzzy as initialize_enhanced_postgresql_search
-        await initialize_enhanced_postgresql_search()
-        print("✅ Enhanced PostgreSQL Search初期化成功")
-    except Exception as e:
-        print(f"⚠️ Enhanced PostgreSQL Search初期化失敗: {e}")
-    
-    # 🚨 包括的検索システム初期化（AWS安定性のため無効化）
-    # 削除されたcomprehensive_search_systemモジュールへの依存を無効化
-    try:
-        # from modules.comprehensive_search_system import initialize_comprehensive_search
-        # await initialize_comprehensive_search()
-        print("🔧 包括的検索システムはAWS安定性のため無効化されています")
-    except Exception as e:
-        print(f"⚠️ 包括的検索システム初期化失敗: {e}")
-    
-    print("✅ アプリケーション起動時初期化完了")
+# 削除: on_eventは非推奨のため、lifespanイベントハンドラーに移行済み
 
 # admin.pyのルーターを登録
 app.include_router(admin.router, prefix="/chatbot/api/admin", tags=["admin"])
@@ -197,19 +204,7 @@ app.include_router(admin.router, prefix="/chatbot/api/admin", tags=["admin"])
 # upload_api.pyのルーターを登録
 app.include_router(upload_api.router, prefix="/chatbot/api/v1", tags=["documents"])
 
-# データベース整合性をチェック
-try:
-    from modules.database import ensure_usage_limits_integrity, get_db
-    print("起動時データベース整合性チェックを実行中...")
-    db_connection = SupabaseConnection()
-    fixed_count = ensure_usage_limits_integrity(db_connection)
-    if fixed_count > 0:
-        print(f"起動時整合性チェック完了。{fixed_count}個のusage_limitsレコードを修正しました")
-    else:
-        print("起動時整合性チェック完了。修正が必要なレコードはありませんでした")
-    db_connection.close()
-except Exception as e:
-    print(f"起動時整合性チェックでエラーが発生しましたが、アプリケーションは継続します。{str(e)}")
+# データベース整合性チェックはlifespanイベントハンドラーに移動済み
 
 # 認証関連エンドポイント
 @app.post("/chatbot/api/auth/login", response_model=UserWithLimits)
