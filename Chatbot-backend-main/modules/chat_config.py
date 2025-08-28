@@ -41,53 +41,31 @@ def get_db_cursor():
         safe_print(f"データベースカーソル取得エラー: {e}")
         return None
 
-# 🔍 直接検索システム（存在しないため無効化）
+# 🔍 直接検索システム（削除済み）
 DIRECT_SEARCH_AVAILABLE = False
 async def direct_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
-    safe_print("直接検索システムが利用できません")
+    safe_print("直接検索システムは削除されました")
     return []
-safe_print("⚠️ 直接検索システムが利用できません: No module named 'modules.direct_search'")
 
-# ⚡ 並列検索システム（存在しないため無効化）
+# ⚡ 並列検索システム（削除済み）
 PARALLEL_SEARCH_AVAILABLE = False
 async def parallel_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
-    safe_print("並列検索システムが利用できません")
+    safe_print("並列検索システムは削除されました")
     return []
-safe_print("⚠️ 並列検索システムが利用できません: No module named 'modules.parallel_search'")
 
-# 🎯 完璧な検索システムのインポートを追加（最優先）
-try:
-    from .perfect_search_system import perfect_search, perfect_search_available
-    PERFECT_SEARCH_AVAILABLE = perfect_search_available()
-    if PERFECT_SEARCH_AVAILABLE:
-        safe_print("🎯 完璧な検索システムが利用可能です（最優先）")
-    else:
-        safe_print("⚠️ 完璧な検索システムの設定が不完全です")
-except ImportError as e:
-    PERFECT_SEARCH_AVAILABLE = False
-    safe_print(f"⚠️ 完璧な検索システムが利用できません: {e}")
+# 🎯 完璧な検索システム（削除済み）
+PERFECT_SEARCH_AVAILABLE = False
 
-# 🇯🇵 日本語特化型検索システムのインポートを追加（フォールバック）
-try:
-    from .enhanced_japanese_search import enhanced_japanese_search, enhanced_japanese_search_available
-    ENHANCED_JAPANESE_SEARCH_AVAILABLE = enhanced_japanese_search_available()
-    if ENHANCED_JAPANESE_SEARCH_AVAILABLE:
-        safe_print("🇯🇵 日本語特化型検索システムが利用可能です（フォールバック）")
-    else:
-        safe_print("⚠️ 日本語特化型検索システムの設定が不完全です")
-except ImportError as e:
-    ENHANCED_JAPANESE_SEARCH_AVAILABLE = False
-    async def enhanced_japanese_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        safe_print("日本語特化型検索システムが利用できません")
-        return []
-    safe_print(f"⚠️ 日本語特化型検索システムが利用できません: {e}")
+# 🇯🇵 日本語特化型検索システム（削除済み）
+ENHANCED_JAPANESE_SEARCH_AVAILABLE = False
+async def enhanced_japanese_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    safe_print("日本語特化型検索システムは削除されました")
+    return []
 
-# 🎯 超高精度検索システムのインポートを追加（フォールバック用）
+# 🎯 超高精度検索システムは削除されました
+ULTRA_ACCURATE_AVAILABLE = False
 try:
-    from .ultra_accurate_search import get_ultra_accurate_search_instance
-    from .ultra_accurate_rag import get_ultra_accurate_rag_instance
-    ULTRA_ACCURATE_AVAILABLE = True
-    safe_print("🎯 超高精度検索システムが利用可能です（フォールバック用）")
+    pass
 except ImportError as e:
     ULTRA_ACCURATE_AVAILABLE = False
     safe_print(f"⚠️ 超高精度検索システムが利用できません: {e}")
@@ -145,26 +123,11 @@ except ImportError as e:
         return []
     safe_print(f"⚠️ ベクトル検索システムが利用できません: {e}")
 
-# 🎯 直接ベクトル検索システムのインポートを追加（embedding生成なし）
-try:
-    from .direct_vector_search import get_direct_vector_search_instance, direct_vector_search_available
-    DIRECT_VECTOR_SEARCH_AVAILABLE = direct_vector_search_available()
-    if DIRECT_VECTOR_SEARCH_AVAILABLE:
-        safe_print("🎯 直接ベクトル検索システムが利用可能です（embedding生成なし）")
-    else:
-        safe_print("⚠️ 直接ベクトル検索システムの設定が不完全です")
-except ImportError as e:
-    DIRECT_VECTOR_SEARCH_AVAILABLE = False
-    safe_print(f"⚠️ 直接ベクトル検索システムが利用できません: {e}")
+# 🎯 直接ベクトル検索システム（削除済み）
+DIRECT_VECTOR_SEARCH_AVAILABLE = False
 
-# 並列ベクトル検索システムのインポートを追加（フォールバック用）
-try:
-    from .parallel_vector_search import get_parallel_vector_search_instance_sync, ParallelVectorSearchSystem
-    PARALLEL_VECTOR_SEARCH_AVAILABLE = True
-    safe_print("✅ 並列ベクトル検索システムが利用可能です")
-except ImportError as e:
-    PARALLEL_VECTOR_SEARCH_AVAILABLE = False
-    safe_print(f"⚠️ 並列ベクトル検索システムが利用できません: {e}")
+# 並列ベクトル検索システム（削除済み）
+PARALLEL_VECTOR_SEARCH_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 

@@ -167,7 +167,7 @@ class VectorSearchSystem:
             )
             """
     
-    async def vector_similarity_search(self, query: str, company_id: str = None, limit: int = 250) -> List[Dict]:
+    async def vector_similarity_search(self, query: str, company_id: str = None, limit: int = 50) -> List[Dict]:
         """ベクトル類似検索を実行（pgvector対応版）"""
         try:
             # クエリの埋め込み生成
@@ -336,8 +336,8 @@ class VectorSearchSystem:
                 print(f"  {i+1:2d}. 📄 {doc_name} [チャンク#{chunk_idx}]")
                 print(f"      🎯 類似度: {similarity:.4f}")
                 
-                # 類似度閾値（超高精度検索のため大幅に下げる）
-                threshold = 0.05  # より多くの関連結果を取得（大幅緩和）
+                # 類似度閾値（情報抜け防止のためさらに緩和）
+                threshold = 0.02  # 🎯 抜け漏れ完全防止（最大緩和）
                 if similarity < threshold:
                     print(f"      ❌ 除外理由: 類似度が閾値未満 ({similarity:.4f} < {threshold})")
                     print()

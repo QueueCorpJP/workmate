@@ -45,9 +45,11 @@ class DocumentProcessor:
         if not self.embedding_model.startswith("models/"):
             self.embedding_model = f"models/{self.embedding_model}"
             
-        self.chunk_size_tokens = 400  # 300-500トークンの中間値
-        self.chunk_overlap_tokens = 50  # チャンク間のオーバーラップ
-        self.max_chunk_size_chars = 2000  # 文字数での上限
+        self.min_chunk_size_chars = 600  # 🎯 最小チャンクサイズ（FAQなど短いコンテンツ用）
+        self.max_chunk_size_chars = 800  # 🎯 最大チャンクサイズ（詳細説明など長いコンテンツ用）
+        self.target_chunk_size_chars = 700  # 🎯 目標チャンクサイズ（600-800文字範囲の中央値）
+        self.chunk_size_tokens = 250  # 参考トークン数（動的調整されます）
+        self.chunk_overlap_chars = 50  # 🎯 固定50文字オーバーラップ（サイズ制御）
         
         # トークンカウンター初期化
         try:
@@ -59,8 +61,11 @@ class DocumentProcessor:
         # 複数API対応を最優先、次にGemini API
         if multi_api_embedding_available():
             self.multi_api_client = get_multi_api_embedding_client()
-            logger.info("✅ 複数API対応エンベディングクライアント使用")
+            # 🎯 APIキー数に応じた最大リトライ回数を設定
+            self.max_retries = len(self.multi_api_client.api_keys) if self.multi_api_client else 10
+            logger.info(f"✅ 複数API対応エンベディングクライアント使用 (最大リトライ: {self.max_retries}回)")
         else:
+            self.max_retries = 3  # フォールバック時のデフォルト値
             self._init_gemini_client()
     
     
@@ -93,120 +98,57 @@ class DocumentProcessor:
     def _split_text_into_chunks(self, text: str, doc_name: str = "") -> List[Dict[str, Any]]:
         """
         テキストを意味単位でチャンクに分割
-        300-500トークンの範囲で調整
+        600-800文字の範囲で厳密に制御
         """
         if not text or not text.strip():
             logger.warning(f"空のテキストが渡されました: {doc_name}")
             return []
         
-        # テキストを段落単位で分割
-        paragraphs = re.split(r'\n\s*\n', text.strip())
+        # 🎯 目標チャンクサイズ（700文字）での分割を使用
+        from .chat_utils import chunk_knowledge_base
+        chunk_texts = chunk_knowledge_base(
+            text,
+            chunk_size=self.target_chunk_size_chars  # 目標値（700文字）を使用
+        )
+        
+        # チャンクデータに変換とサイズ検証
         chunks = []
-        current_chunk = ""
-        current_tokens = 0
-        chunk_index = 0
+        oversized_chunks = 0
+        undersized_chunks = 0
         
-        for paragraph in paragraphs:
-            paragraph = paragraph.strip()
-            if not paragraph:
-                continue
-            
-            paragraph_tokens = self._count_tokens(paragraph)
-            
-            # 段落が単体で大きすぎる場合は文単位で分割
-            if paragraph_tokens > self.chunk_size_tokens:
-                # 現在のチャンクを保存
-                if current_chunk:
-                    chunks.append({
-                        "chunk_index": chunk_index,
-                        "content": current_chunk.strip(),
-                        "token_count": current_tokens
-                    })
-                    chunk_index += 1
-                    current_chunk = ""
-                    current_tokens = 0
+        for i, chunk_text in enumerate(chunk_texts):
+            if chunk_text.strip():
+                chunk_content = chunk_text.strip()
+                char_count = len(chunk_content)
+                token_count = self._count_tokens(chunk_content)
                 
-                # 大きな段落を文単位で分割
-                sentences = re.split(r'[。！？\.\!\?]\s*', paragraph)
-                for sentence in sentences:
-                    sentence = sentence.strip()
-                    if not sentence:
-                        continue
-                    
-                    sentence_tokens = self._count_tokens(sentence)
-                    
-                    # 文が単体で大きすぎる場合は強制分割
-                    if sentence_tokens > self.chunk_size_tokens:
-                        if current_chunk:
-                            chunks.append({
-                                "chunk_index": chunk_index,
-                                "content": current_chunk.strip(),
-                                "token_count": current_tokens
-                            })
-                            chunk_index += 1
-                            current_chunk = ""
-                            current_tokens = 0
-                        
-                        # 長い文を文字数で強制分割
-                        for i in range(0, len(sentence), self.max_chunk_size_chars):
-                            chunk_part = sentence[i:i + self.max_chunk_size_chars]
-                            chunks.append({
-                                "chunk_index": chunk_index,
-                                "content": chunk_part,
-                                "token_count": self._count_tokens(chunk_part)
-                            })
-                            chunk_index += 1
-                    else:
-                        # 通常の文処理
-                        if current_tokens + sentence_tokens > self.chunk_size_tokens:
-                            if current_chunk:
-                                chunks.append({
-                                    "chunk_index": chunk_index,
-                                    "content": current_chunk.strip(),
-                                    "token_count": current_tokens
-                                })
-                                chunk_index += 1
-                            current_chunk = sentence
-                            current_tokens = sentence_tokens
-                        else:
-                            current_chunk += ("。" if current_chunk else "") + sentence
-                            current_tokens += sentence_tokens
-            else:
-                # 通常の段落処理
-                if current_tokens + paragraph_tokens > self.chunk_size_tokens:
-                    if current_chunk:
-                        chunks.append({
-                            "chunk_index": chunk_index,
-                            "content": current_chunk.strip(),
-                            "token_count": current_tokens
-                        })
-                        chunk_index += 1
-                    current_chunk = paragraph
-                    current_tokens = paragraph_tokens
-                else:
-                    current_chunk += ("\n\n" if current_chunk else "") + paragraph
-                    current_tokens += paragraph_tokens
+                # 🎯 サイズ範囲チェック
+                if char_count > self.max_chunk_size_chars:
+                    oversized_chunks += 1
+                    logger.warning(f"⚠️ チャンク {i} がサイズ超過: {char_count}文字 (最大{self.max_chunk_size_chars}文字)")
+                elif char_count < self.min_chunk_size_chars:
+                    undersized_chunks += 1
+                    logger.debug(f"📏 チャンク {i} が小サイズ: {char_count}文字 (最小{self.min_chunk_size_chars}文字)")
+                
+                chunks.append({
+                    "chunk_index": i,
+                    "content": chunk_content,
+                    "token_count": token_count,
+                    "char_count": char_count
+                })
         
-        # 最後のチャンクを追加
-        if current_chunk and current_chunk.strip():
-            chunks.append({
-                "chunk_index": chunk_index,
-                "content": current_chunk.strip(),
-                "token_count": current_tokens
-            })
+        # 統計情報をログ出力
+        total_chunks = len(chunks)
+        valid_chunks = total_chunks - oversized_chunks
+        logger.info(f"✅ {doc_name}: {total_chunks}個のチャンクに分割完了")
+        logger.info(f"📊 サイズ統計 - 適正: {valid_chunks}, 超過: {oversized_chunks}, 小サイズ: {undersized_chunks}")
         
-        logger.info(f"📄 {doc_name}: {len(text)}文字 → {len(chunks)}チャンク")
-        
-        # チャンクサイズの統計を出力
-        if chunks:
-            token_counts = [chunk["token_count"] for chunk in chunks]
-            avg_tokens = sum(token_counts) / len(token_counts)
-            min_tokens = min(token_counts)
-            max_tokens = max(token_counts)
-            logger.info(f"📊 トークン統計 - 平均: {avg_tokens:.1f}, 最小: {min_tokens}, 最大: {max_tokens}")
+        if oversized_chunks > 0:
+            logger.warning(f"⚠️ {oversized_chunks}個のチャンクが800文字を超過しています")
         
         return chunks
     
+
     async def _generate_embeddings_multi_api(self, texts: List[str], failed_indices: List[int] = None) -> List[Optional[List[float]]]:
         """複数API対応クライアントでテキストのembeddingを生成"""
         if not self.multi_api_client:
@@ -248,9 +190,9 @@ class DocumentProcessor:
                     failed_embeddings.append(i)
                     logger.warning(f"⚠️ 複数API embedding生成失敗: インデックス {i}")
                 
-                # API制限対策：少し待機
+                # API制限対策：最小限の待機
                 if idx < len(process_indices) - 1:
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.01)  # 0.1→0.01秒に短縮
                     
             except Exception as e:
                 logger.error(f"❌ 複数API embedding生成エラー: インデックス {i} - {e}")
@@ -326,8 +268,8 @@ class DocumentProcessor:
                     all_embeddings[i] = None
                     failed_embeddings.append(i)
                 
-                # API制限対策
-                await asyncio.sleep(0.1)
+                # API制限対策（最小限）
+                await asyncio.sleep(0.01)  # 0.1→0.01秒に短縮
                 
             except Exception as e:
                 logger.error(f"❌ embedding生成エラー (インデックス {i}): {e}")
@@ -387,8 +329,8 @@ class DocumentProcessor:
                     all_embeddings[i] = None
                     failed_embeddings.append(i)
                 
-                # API制限対策
-                await asyncio.sleep(0.2)
+                # API制限対策（最小限）
+                await asyncio.sleep(0.01)  # 0.2→0.01秒に短縮
                 
             except Exception as e:
                 logger.error(f"❌ embedding生成エラー (インデックス {i}): {e}")
@@ -531,8 +473,12 @@ class DocumentProcessor:
                 raise main_error
     
     async def _save_chunks_to_database(self, doc_id: str, chunks: List[Dict[str, Any]],
-                                     company_id: str, doc_name: str, max_retries: int = 10) -> Dict[str, Any]:
+                                     company_id: str, doc_name: str, max_retries: int = None) -> Dict[str, Any]:
         """chunksテーブルにチャンクデータとembeddingを50個単位でリアルタイム保存"""
+        # 🎯 APIキー数に応じたリトライ回数を使用
+        if max_retries is None:
+            max_retries = self.max_retries
+            
         try:
             from supabase_adapter import get_supabase_client
             supabase = get_supabase_client()
@@ -1083,18 +1029,56 @@ class DocumentProcessor:
             return f"PyPDF2フォールバック処理エラー: {str(e)}"
     
     async def _extract_text_from_excel(self, content: bytes) -> str:
-        """Excelファイルからテキストを抽出（ExcelDataCleanerを使用）"""
+        """Excelファイルからテキストを抽出（クリーニングなし・生データ保持）"""
         try:
-            from modules.excel_data_cleaner import ExcelDataCleaner
+            import pandas as pd
+            from io import BytesIO
             
-            cleaner = ExcelDataCleaner()
-            cleaned_text = cleaner.clean_excel_data(content)
+            # ExcelファイルをBytesIOオブジェクトに変換
+            excel_buffer = BytesIO(content)
             
-            logger.info(f"✅ Excel処理完了（ExcelDataCleaner使用）: {len(cleaned_text)} 文字")
-            return cleaned_text
+            # 全シートを読み込み
+            excel_file = pd.ExcelFile(excel_buffer)
+            extracted_text = ""
+            
+            for sheet_name in excel_file.sheet_names:
+                try:
+                    # シートをそのまま読み込み（クリーニング一切なし）
+                    df = pd.read_excel(excel_buffer, sheet_name=sheet_name, header=None)
+                    
+                    extracted_text += f"\n=== シート: {sheet_name} ===\n"
+                    
+                    # 全セルの内容をそのまま保持
+                    for index, row in df.iterrows():
+                        row_content = []
+                        for col_idx, raw_value in enumerate(row):
+                            try:
+                                # pandas Series エラー対策: 安全に値を取得
+                                if hasattr(raw_value, 'item'):
+                                    value = raw_value.item() if not pd.isna(raw_value.item()) else None
+                                else:
+                                    value = raw_value if not pd.isna(raw_value) else None
+                                
+                                if value is not None:
+                                    row_content.append(str(value))
+                            except Exception as col_error:
+                                logger.debug(f"Excel列処理エラー (行 {index}, 列 {col_idx}): {col_error}")
+                                continue
+                        if row_content:
+                            extracted_text += " | ".join(row_content) + "\n"
+                    
+                    logger.info(f"📄 シート '{sheet_name}' 処理完了: {len(df)} 行 x {len(df.columns)} 列")
+                    
+                except Exception as sheet_error:
+                    logger.warning(f"⚠️ シート '{sheet_name}' 読み込みエラー: {sheet_error}")
+                    extracted_text += f"\n=== シート: {sheet_name} (エラー) ===\nエラー: {str(sheet_error)}\n"
+                    continue
+            
+            logger.info(f"✅ Excel処理完了（生データ保持）: {len(extracted_text)} 文字")
+            return extracted_text
             
         except Exception as e:
-            logger.error(f"❌ Excel処理エラー（ExcelDataCleaner）: {e}")
+            logger.error(f"❌ Excel処理エラー（生データ保持）: {e}")
             # エラー発生時は、データ抽出を断念し、空文字列を返すか、適切なエラーメッセージを返す
             # ここではエラーを再raiseして、上位でハンドリングさせることを推奨
             raise

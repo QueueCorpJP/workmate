@@ -1,6 +1,5 @@
 """
 🔄 複数API対応エンベディング生成モジュール
-3つのAPIキーを使用してレート制限に対応
 gemini-embedding-001モデルのみ使用（3072次元）
 """
 
@@ -33,12 +32,26 @@ class MultiAPIEmbeddingClient:
         self.embedding_model = "models/gemini-embedding-001"
         self.expected_dimensions = 3072
         
-        # 3個のAPIキーのみ設定（レート制限対応）
-        self.api_keys = [
-            os.getenv("GOOGLE_API_KEY_1") or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"),
-            os.getenv("GOOGLE_API_KEY_2"),
-            os.getenv("GOOGLE_API_KEY_3")
+        # 環境変数から全てのGemini APIキーを取得
+        self.api_keys = []
+        
+        # 主要なAPIキーを追加
+        primary_keys = [
+            os.getenv("GEMINI_API_KEY"),
+            os.getenv("GOOGLE_API_KEY"),
+            os.getenv("GOOGLE_API_KEY_1")
         ]
+        
+        # 番号付きAPIキーを追加（1-33まで）
+        for i in range(1, 34):
+            key = os.getenv(f"GOOGLE_API_KEY_{i}")
+            if key:
+                self.api_keys.append(key)
+        
+        # 主要キーで重複していないものを先頭に追加
+        for key in primary_keys:
+            if key and key not in self.api_keys:
+                self.api_keys.insert(0, key)
         
         # 有効なAPIキーのみ保持
         self.api_keys = [key for key in self.api_keys if key]
@@ -154,17 +167,22 @@ class MultiAPIEmbeddingClient:
         next_client_name = f"client_{self.current_client_index + 1}"
         logger.info(f"🔄 {next_client_name} に切り替え")
     
-    async def generate_embedding(self, text: str, max_retries: int = 3) -> Optional[List[float]]:
+    async def generate_embedding(self, text: str, max_retries: int = 3, raise_on_failure: bool = False) -> Optional[List[float]]:
         """単一テキストのエンベディング生成（全APIキーでリトライ）"""
         if not text or not text.strip():
             logger.warning("⚠️ 空のテキストをスキップ")
+            if raise_on_failure:
+                raise ValueError("空のテキストが提供されました")
             return None
         
         # 全クライアントを試行
         for attempt in range(len(self.api_clients)):
             client_info = self._get_active_client()
             if not client_info:
-                logger.error("❌ 利用可能なAPIクライアントがありません")
+                error_msg = "利用可能なAPIクライアントがありません"
+                logger.error(f"❌ {error_msg}")
+                if raise_on_failure:
+                    raise RuntimeError(error_msg)
                 break
             
             client_name, api_key = client_info
@@ -215,8 +233,8 @@ class MultiAPIEmbeddingClient:
                     self._handle_api_error(client_name, e)
                     
                     if retry < max_retries - 1:
-                        wait_time = 2 ** retry  # 指数バックオフ
-                        logger.info(f"⏳ {client_name} {wait_time}秒待機後リトライ...")
+                        wait_time = min(1.0, 2 ** (retry * 0.5))  # 短縮された指数バックオフ
+                        logger.info(f"⏳ {client_name} {wait_time:.1f}秒待機後リトライ...")
                         await asyncio.sleep(wait_time)
                     else:
                         logger.error(f"❌ {client_name} 最大リトライ回数に達しました")
@@ -225,23 +243,159 @@ class MultiAPIEmbeddingClient:
             # 次のクライアントに切り替え
             self._switch_to_next_client()
         
-        logger.error("❌ 全APIクライアントでembedding生成に失敗しました")
+        error_msg = f"全APIクライアント({len(self.api_clients)}個)でembedding生成に失敗しました"
+        logger.error(f"❌ {error_msg}")
+        
+        if raise_on_failure:
+            raise RuntimeError(error_msg)
+        
         return None
     
-    async def generate_embeddings_batch(self, texts: List[str], max_retries: int = 3) -> List[Optional[List[float]]]:
+    async def generate_embeddings_batch(self, texts: List[str], max_retries: int = 3, fail_fast: bool = False) -> List[Optional[List[float]]]:
         """複数テキストのエンベディング生成（個別処理）"""
         results = []
+        failed_indices = []
         
         for i, text in enumerate(texts):
             logger.debug(f"📦 バッチ処理 {i+1}/{len(texts)}")
-            embedding = await self.generate_embedding(text, max_retries)
-            results.append(embedding)
             
-            # API制限対策：少し待機
+            try:
+                embedding = await self.generate_embedding(text, max_retries, raise_on_failure=fail_fast)
+                
+                if embedding is None and fail_fast:
+                    error_msg = f"バッチ処理中にembedding生成に失敗しました (インデックス: {i})"
+                    logger.error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg)
+                
+                results.append(embedding)
+                
+                if embedding is None:
+                    failed_indices.append(i)
+                    logger.warning(f"⚠️ インデックス {i} のembedding生成に失敗しました")
+                
+            except Exception as e:
+                if fail_fast:
+                    logger.error(f"❌ バッチ処理中断: {e}")
+                    raise
+                else:
+                    logger.error(f"❌ インデックス {i} でエラー: {e}")
+                    results.append(None)
+                    failed_indices.append(i)
+            
+            # API制限対策：最小限の待機
             if i < len(texts) - 1:
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.01)  # 0.1→0.01秒に大幅短縮
+        
+        # 失敗した項目の統計を出力
+        if failed_indices:
+            success_count = len(texts) - len(failed_indices)
+            logger.warning(f"📊 バッチ処理完了: 成功 {success_count}/{len(texts)}, 失敗 {len(failed_indices)} 件")
+            logger.warning(f"🔍 失敗したインデックス: {failed_indices}")
+        else:
+            logger.info(f"✅ バッチ処理完了: 全 {len(texts)} 件成功")
         
         return results
+    
+    async def generate_embeddings_batch_safe(self, texts: List[str], max_retries: int = 3,
+                                           allow_partial_failure: bool = False) -> tuple[List[Optional[List[float]]], List[int]]:
+        """
+        安全なバッチ処理：失敗した項目を明確に追跡し、部分的失敗を制御
+        
+        Returns:
+            tuple: (embeddings_list, failed_indices)
+        """
+        results = []
+        failed_indices = []
+        
+        logger.info(f"🚀 安全バッチ処理開始: {len(texts)} 件のテキスト処理")
+        
+        for i, text in enumerate(texts):
+            logger.debug(f"📦 処理中 {i+1}/{len(texts)}: {text[:50]}...")
+            
+            try:
+                embedding = await self.generate_embedding(text, max_retries, raise_on_failure=not allow_partial_failure)
+                
+                if embedding is None:
+                    failed_indices.append(i)
+                    if not allow_partial_failure:
+                        error_msg = f"必須embedding生成に失敗 (インデックス: {i})"
+                        logger.error(f"❌ {error_msg}")
+                        raise RuntimeError(error_msg)
+                    else:
+                        logger.warning(f"⚠️ インデックス {i} のembedding生成に失敗（部分的失敗許可）")
+                
+                results.append(embedding)
+                
+            except Exception as e:
+                failed_indices.append(i)
+                if not allow_partial_failure:
+                    logger.error(f"❌ バッチ処理中断 (インデックス {i}): {e}")
+                    raise RuntimeError(f"バッチ処理失敗: {e}")
+                else:
+                    logger.error(f"❌ インデックス {i} でエラー（続行）: {e}")
+                    results.append(None)
+            
+            # API制限対策：最小限の待機
+            if i < len(texts) - 1:
+                await asyncio.sleep(0.01)  # 0.1→0.01秒に大幅短縮
+        
+        # 結果統計
+        success_count = len(texts) - len(failed_indices)
+        if failed_indices:
+            logger.warning(f"📊 バッチ処理完了: 成功 {success_count}/{len(texts)}, 失敗 {len(failed_indices)} 件")
+            logger.warning(f"🔍 失敗インデックス: {failed_indices}")
+            
+            if not allow_partial_failure and failed_indices:
+                raise RuntimeError(f"部分的失敗が許可されていないため処理を中断: {len(failed_indices)} 件失敗")
+        else:
+            logger.info(f"✅ バッチ処理完了: 全 {len(texts)} 件成功")
+        
+        return results, failed_indices
+    
+    def validate_embeddings_for_save(self, embeddings: List[Optional[List[float]]],
+                                   texts: List[str], strict_mode: bool = True) -> tuple[bool, List[int]]:
+        """
+        保存前のembedding検証
+        
+        Args:
+            embeddings: 生成されたembeddingリスト
+            texts: 元のテキストリスト
+            strict_mode: True=失敗があれば保存拒否, False=成功分のみ保存許可
+            
+        Returns:
+            tuple: (is_valid_for_save, invalid_indices)
+        """
+        if len(embeddings) != len(texts):
+            logger.error(f"❌ embeddingとテキストの数が不一致: {len(embeddings)} vs {len(texts)}")
+            return False, list(range(len(texts)))
+        
+        invalid_indices = []
+        
+        for i, (embedding, text) in enumerate(zip(embeddings, texts)):
+            if embedding is None:
+                invalid_indices.append(i)
+                logger.warning(f"⚠️ インデックス {i} のembeddingがNULL")
+            elif len(embedding) != self.expected_dimensions:
+                invalid_indices.append(i)
+                logger.warning(f"⚠️ インデックス {i} のembedding次元数が不正: {len(embedding)}")
+            elif not text or not text.strip():
+                invalid_indices.append(i)
+                logger.warning(f"⚠️ インデックス {i} のテキストが空")
+        
+        valid_count = len(embeddings) - len(invalid_indices)
+        
+        if invalid_indices:
+            logger.warning(f"📊 検証結果: 有効 {valid_count}/{len(embeddings)}, 無効 {len(invalid_indices)} 件")
+            
+            if strict_mode:
+                logger.error(f"❌ 厳密モード: 無効なembeddingがあるため保存を拒否")
+                return False, invalid_indices
+            else:
+                logger.warning(f"⚠️ 寛容モード: 有効な {valid_count} 件のみ保存許可")
+                return valid_count > 0, invalid_indices
+        else:
+            logger.info(f"✅ 検証完了: 全 {len(embeddings)} 件が有効")
+            return True, []
     
     def get_api_status(self) -> Dict[str, Any]:
         """APIクライアントの状態を取得"""
@@ -288,3 +442,57 @@ def multi_api_embedding_available() -> bool:
     """複数API対応エンベディングが利用可能かチェック"""
     client = get_multi_api_embedding_client()
     return client is not None and len(client.api_clients) > 0
+
+# 新しい安全なAPI関数
+async def generate_embeddings_safe(texts: List[str], max_retries: int = 3, 
+                                 allow_partial_failure: bool = False) -> tuple[List[Optional[List[float]]], List[int]]:
+    """
+    安全なembedding生成（推奨）
+    
+    Args:
+        texts: 処理するテキストリスト
+        max_retries: 最大リトライ回数
+        allow_partial_failure: 部分的失敗を許可するか
+        
+    Returns:
+        tuple: (embeddings, failed_indices)
+        
+    Raises:
+        RuntimeError: allow_partial_failure=Falseで失敗があった場合
+    """
+    client = get_multi_api_embedding_client()
+    if not client:
+        raise RuntimeError("複数API対応エンベディングクライアントが利用できません")
+    
+    return await client.generate_embeddings_batch_safe(texts, max_retries, allow_partial_failure)
+
+def validate_embeddings_before_save(embeddings: List[Optional[List[float]]], 
+                                  texts: List[str], strict_mode: bool = True) -> tuple[bool, List[int]]:
+    """
+    保存前のembedding検証（推奨）
+    
+    Args:
+        embeddings: 検証するembeddingリスト
+        texts: 対応するテキストリスト
+        strict_mode: 厳密モード（失敗があれば保存拒否）
+        
+    Returns:
+        tuple: (is_valid_for_save, invalid_indices)
+    """
+    client = get_multi_api_embedding_client()
+    if not client:
+        raise RuntimeError("複数API対応エンベディングクライアントが利用できません")
+    
+    return client.validate_embeddings_for_save(embeddings, texts, strict_mode)
+
+# 後方互換性のための既存API（非推奨）
+async def generate_embeddings_batch_legacy(texts: List[str], max_retries: int = 3) -> List[Optional[List[float]]]:
+    """
+    レガシーバッチ処理（非推奨：generate_embeddings_safeを使用してください）
+    """
+    client = get_multi_api_embedding_client()
+    if not client:
+        return [None] * len(texts)
+    
+    logger.warning("⚠️ レガシーAPI使用中。generate_embeddings_safeへの移行を推奨します")
+    return await client.generate_embeddings_batch(texts, max_retries, fail_fast=False)

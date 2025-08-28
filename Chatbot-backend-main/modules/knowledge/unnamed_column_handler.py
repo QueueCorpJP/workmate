@@ -413,7 +413,7 @@ class UnnamedColumnHandler:
                 elif top:
                     col_name = top
                 else:
-                    col_name = f'列_{i+1}'
+                    col_name = f'C{i+1}'  # 🚀 超短形式：C1, C2, C3...
                 combined_columns.append(col_name)
 
             # 重複カラム名解消
@@ -602,9 +602,21 @@ class UnnamedColumnHandler:
             # 各行をセクションとして追加
             for index, row in df.iterrows():
                 content_parts = []
-                for col, value in row.items():
-                    if pd.notna(value) and str(value).strip():
-                        content_parts.append(f"{col}: {ensure_string(value)}")
+                for col, raw_value in row.items():
+                    try:
+                        # pandas Series エラー対策: 安全に値を取得
+                        if hasattr(raw_value, 'item'):
+                            value = raw_value.item() if not pd.isna(raw_value.item()) else None
+                        else:
+                            value = raw_value if not pd.isna(raw_value) else None
+                        
+                        if value is not None:
+                            value_str = str(value).strip()
+                            if value_str:
+                                content_parts.append(f"{col}: {ensure_string(value_str)}")
+                    except Exception as col_error:
+                        logger.debug(f"Unnamed列処理エラー ({col}, 行 {index}): {col_error}")
+                        continue
                 
                 if content_parts:
                     content = " | ".join(content_parts)

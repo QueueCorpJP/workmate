@@ -49,7 +49,7 @@ class PostgreSQLFuzzySearch:
             # エラーでも継続（既に拡張が有効な場合など）
             return None
             
-    async def fuzzy_search(self, query: str, limit: int = 10, threshold: float = 0.3) -> List[Dict[str, Any]]:
+    async def fuzzy_search(self, query: str, limit: int = 25, threshold: float = 0.2) -> List[Dict[str, Any]]:
         """
         Fuzzy Search実行
         
@@ -151,6 +151,6 @@ async def initialize_postgresql_fuzzy():
     """PostgreSQL Fuzzy Search初期化"""
     return await postgresql_fuzzy.initialize()
 
-async def fuzzy_search_chunks(query: str, limit: int = 10, threshold: float = 0.3) -> List[Dict[str, Any]]:
+async def fuzzy_search_chunks(query: str, limit: int = 25, threshold: float = 0.2) -> List[Dict[str, Any]]:
     """Fuzzy Search実行"""
     return await postgresql_fuzzy.fuzzy_search(query, limit, threshold) 

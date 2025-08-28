@@ -236,7 +236,7 @@ def execute_query(query: str, params: Optional[List[Any]] = None) -> SupabaseRes
         client = get_supabase_client()
         
         # Supabase PostgREST APIを使用してSQLを実行
-        logger.warning("⚠️ execute_query: 生のSQL実行は推奨されません。基本的なCRUD操作を使用してください。")
+        # logger.warning("⚠️ execute_query: 生のSQL実行は推奨されません。基本的なCRUD操作を使用してください。")
         
         # SupabaseのrpcまたはPostgREST機能を使用してSQLを実行
         # この実装では基本的なSELECTクエリのみサポート

@@ -105,38 +105,129 @@ class QuestionCategorizer:
                     logger.info("🔄 QuestionCategorizer: Multi Gemini Client使用")
                     generation_config = {
                         "temperature": 0.1,
-                        "maxOutputTokens": 1024,
+                        "maxOutputTokens": 4096,  # 🔧 MAX_TOKENSエラー回避（1024→4096）
                         "topP": 0.8,
                         "topK": 40
                     }
-                    # 非同期呼び出しを同期的に実行
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
+                    
+                    # 既存のイベントループをチェック
                     try:
-                        response_data = loop.run_until_complete(
-                            self.multi_client.generate_content(prompt, generation_config)
-                        )
+                        # 既存のループがある場合は新しいスレッドで実行
+                        import concurrent.futures
+                        import threading
+                        
+                        def run_async_in_thread():
+                            new_loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(new_loop)
+                            try:
+                                return new_loop.run_until_complete(
+                                    self.multi_client.generate_content(prompt, generation_config)
+                                )
+                            finally:
+                                new_loop.close()
+                        
+                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                            future = executor.submit(run_async_in_thread)
+                            response_data = future.result(timeout=30)  # 30秒タイムアウト
+                        
                         # レスポンスデータから text を抽出
-                        if response_data and "candidates" in response_data:
-                            candidate = response_data["candidates"][0]
-                            if "content" in candidate and "parts" in candidate["content"]:
-                                text = candidate["content"]["parts"][0]["text"]
+                        if response_data:
+                            text = None
+                            
+                            # 複数のレスポンス形式に対応
+                            if isinstance(response_data, dict):
+                                if "candidates" in response_data:
+                                    candidate = response_data["candidates"][0]
+                                    if "content" in candidate and "parts" in candidate["content"]:
+                                        text = candidate["content"]["parts"][0]["text"]
+                                elif "text" in response_data:
+                                    text = response_data["text"]
+                                elif "content" in response_data:
+                                    text = response_data["content"]
+                            elif isinstance(response_data, str):
+                                text = response_data
+                            elif hasattr(response_data, 'text'):
+                                text = response_data.text
+                            
+                            if text:
                                 # 互換性のためのレスポンスオブジェクト作成
                                 class MockResponse:
                                     def __init__(self, text):
                                         self.text = text
                                 response = MockResponse(text)
                                 logger.info("✅ QuestionCategorizer: Multi Gemini Client成功")
-                    finally:
-                        loop.close()
+                            else:
+                                logger.warning("⚠️ QuestionCategorizer: レスポンスからテキストを抽出できませんでした")
+                                logger.info(f"🔍 レスポンス形式詳細分析: {type(response_data)}")
+                                if isinstance(response_data, dict):
+                                    logger.info(f"🔍 辞書キー: {list(response_data.keys())}")
+                                    if 'candidates' in response_data and response_data['candidates']:
+                                        logger.info(f"🔍 候補構造: {response_data['candidates'][0] if response_data['candidates'] else 'なし'}")
+                                logger.info(f"🔍 レスポンス内容: {str(response_data)[:500]}...")
+                                
+                                # 追加のフォールバック処理
+                                if isinstance(response_data, dict):
+                                    # よりディープな検索
+                                    def extract_text_recursive(obj):
+                                        if isinstance(obj, str):
+                                            return obj
+                                        elif isinstance(obj, dict):
+                                            for key, value in obj.items():
+                                                if key == 'text' and isinstance(value, str):
+                                                    return value
+                                                result = extract_text_recursive(value)
+                                                if result:
+                                                    return result
+                                        elif isinstance(obj, list):
+                                            for item in obj:
+                                                result = extract_text_recursive(item)
+                                                if result:
+                                                    return result
+                                        return None
+                                    
+                                    extracted_text = extract_text_recursive(response_data)
+                                    if extracted_text:
+                                        class MockResponse:
+                                            def __init__(self, text):
+                                                self.text = text
+                                        response = MockResponse(extracted_text)
+                                        logger.info("✅ QuestionCategorizer: 再帰的テキスト抽出成功")
+                                    else:
+                                        logger.error("❌ QuestionCategorizer: 再帰的抽出も失敗")
+                                        # MAX_TOKENSエラーの場合はデフォルトカテゴリを使用
+                                        if 'finishReason' in str(response_data) and 'MAX_TOKENS' in str(response_data):
+                                            logger.info("🎯 MAX_TOKENSエラー検出 - デフォルトカテゴリで継続")
+                                            class MockResponse:
+                                                def __init__(self, text):
+                                                    self.text = text
+                                            response = MockResponse("general")
+                                        else:
+                                            response = None
+                    
+                    except Exception as async_error:
+                        logger.warning(f"⚠️ QuestionCategorizer: 非同期実行エラー: {async_error}")
+                        logger.debug(f"詳細エラー: {type(async_error).__name__}: {str(async_error)}")
+                        response = None
+                        
                 except Exception as multi_error:
                     logger.warning(f"⚠️ QuestionCategorizer: Multi Gemini Client失敗: {multi_error}")
+                    logger.debug(f"詳細エラー: {type(multi_error).__name__}: {str(multi_error)}")
                     response = None
             
-            # フォールバック: 従来の単一APIキー方式
+            # フォールバック: 従来の単一APIキー方式（ただし、レート制限の場合はスキップ）
             if not response and self.model:
                 logger.info("🔄 QuestionCategorizer: 従来方式でフォールバック")
-                response = self.model.generate_content(prompt)
+                logger.debug(f"フォールバック理由: Multi Gemini Client response = {response}")
+                try:
+                    response = self.model.generate_content(prompt)
+                    logger.info("✅ QuestionCategorizer: 従来方式成功")
+                except Exception as fallback_error:
+                    logger.error(f"❌ QuestionCategorizer: 従来方式エラー: {fallback_error}")
+                    if "429" in str(fallback_error) or "rate limit" in str(fallback_error).lower():
+                        logger.warning("⚠️ QuestionCategorizer: フォールバックもレート制限、キーワードベース分類に切り替え")
+                        return self._fallback_categorization(question)
+                    else:
+                        raise fallback_error
             
             if response and hasattr(response, 'text') and response.text:
                 # JSONを抽出してパース

@@ -1,6 +1,8 @@
 """
 RAG (Retrieval-Augmented Generation) 検索実装
 RAG検索の各種バリエーションを管理します
+
+更新: 超包括RAGシステムを統合して抜け漏れを最小限に抑制
 """
 import asyncio
 from typing import List, Dict, Any, Optional, Tuple
@@ -11,50 +13,86 @@ from .chat_search_systems import (
 )
 from .chat_utils import expand_query
 
-async def rag_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+# 新しい超包括RAGシステムのインポート
+try:
+    from .ultra_comprehensive_rag import (
+        ultra_comprehensive_rag_search, 
+        initialize_ultra_comprehensive_rag,
+        ultra_format_search_results
+    )
+    ULTRA_RAG_AVAILABLE = True
+except ImportError as e:
+    safe_print(f"超包括RAGシステムが利用できません: {e}")
+    ULTRA_RAG_AVAILABLE = False
+
+async def rag_search(query: str, limit: int = 20, context: str = "") -> List[Dict[str, Any]]:
     """
-    基本的なRAG検索
+    基本的なRAG検索 - 超包括RAGシステム優先
     """
     try:
         safe_print(f"Starting RAG search for query: {query}")
         
-        # 🎯 まずEnhanced PostgreSQL検索を試行（日本語形態素解析対応）
-        safe_print("Trying Enhanced PostgreSQL search first...")
-        results = await enhanced_postgresql_search_system(query, None, limit)
+        # 🚀 最優先: 超包括RAGシステム（抜け漏れ最小化）
+        if ULTRA_RAG_AVAILABLE:
+            safe_print("Trying Ultra Comprehensive RAG system first...")
+            try:
+                results = await ultra_comprehensive_rag_search(query, context, None, limit * 2)
+                if results:
+                    safe_print(f"Ultra Comprehensive RAG succeeded with {len(results)} results")
+                    return results[:limit]  # 指定数に制限
+            except Exception as e:
+                safe_print(f"Ultra Comprehensive RAG error: {e}")
+        
+        # フォールバック: 従来のEnhanced PostgreSQL検索
+        safe_print("Falling back to Enhanced PostgreSQL search...")
+        results = await enhanced_postgresql_search_system(query, None, limit * 3)  # より多く取得
         
         if results:
             safe_print(f"Enhanced PostgreSQL search succeeded with {len(results)} results")
-            return results
+            return results[:limit]
         
         safe_print("SQL search returned no results, trying smart search system")
         # スマート検索システムを使用
-        results = await smart_search_system(query, limit)
+        results = await smart_search_system(query, limit * 2)
         
         if not results:
             safe_print("Smart search returned no results, trying fallback")
             results = await fallback_search_system(query, limit)
         
         safe_print(f"RAG search completed with {len(results)} results")
-        return results
+        return results[:limit]
         
     except Exception as e:
         safe_print(f"Error in RAG search: {e}")
         raise HTTPException(status_code=500, detail=f"RAG search failed: {str(e)}")
 
-async def enhanced_rag_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+async def enhanced_rag_search(query: str, limit: int = 30, context: str = "") -> List[Dict[str, Any]]:
     """
-    拡張RAG検索 - クエリ拡張と複数検索戦略を組み合わせ
+    拡張RAG検索 - 超包括システム優先、クエリ拡張と複数検索戦略を組み合わせ
     """
     try:
         safe_print(f"Starting enhanced RAG search for query: {query}")
         
-        # 🎯 まずEnhanced PostgreSQL検索を試行（日本語形態素解析対応）
-        safe_print("Trying Enhanced PostgreSQL search first...")
-        enhanced_results = await enhanced_postgresql_search_system(query, None, limit)
+        # 🚀 最優先: 超包括RAGシステム（最高の網羅性）
+        if ULTRA_RAG_AVAILABLE:
+            safe_print("Trying Ultra Comprehensive RAG system first...")
+            try:
+                results = await ultra_comprehensive_rag_search(
+                    query, context, None, limit * 2  # より多くの結果を取得
+                )
+                if results:
+                    safe_print(f"Ultra Comprehensive RAG succeeded with {len(results)} results")
+                    return results[:limit]
+            except Exception as e:
+                safe_print(f"Ultra Comprehensive RAG error: {e}")
+        
+        # フォールバック: 従来の拡張検索
+        safe_print("Falling back to traditional enhanced search...")
+        enhanced_results = await enhanced_postgresql_search_system(query, None, limit * 2)
         
         if enhanced_results:
             safe_print(f"Enhanced PostgreSQL search succeeded with {len(enhanced_results)} results")
-            return enhanced_results
+            return enhanced_results[:limit]
         
         safe_print("Enhanced PostgreSQL search returned no results, trying expanded search")
         
@@ -104,20 +142,33 @@ async def enhanced_rag_search(query: str, limit: int = 10) -> List[Dict[str, Any
         # フォールバックとして基本RAG検索を実行
         return await rag_search(query, limit)
 
-async def parallel_rag_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+async def parallel_rag_search(query: str, limit: int = 35, context: str = "") -> List[Dict[str, Any]]:
     """
-    並列RAG検索 - 複数の検索戦略を並列実行
+    並列RAG検索 - 超包括システム優先、複数の検索戦略を並列実行
     """
     try:
         safe_print(f"Starting parallel RAG search for query: {query}")
         
-        # 🎯 まずEnhanced PostgreSQL検索を試行（日本語形態素解析対応）
-        safe_print("Trying Enhanced PostgreSQL search first...")
-        enhanced_results = await enhanced_postgresql_search_system(query, None, limit)
+        # 🚀 最優先: 超包括RAGシステム（最高の並列処理と網羅性）
+        if ULTRA_RAG_AVAILABLE:
+            safe_print("Trying Ultra Comprehensive RAG system first...")
+            try:
+                results = await ultra_comprehensive_rag_search(
+                    query, context, None, limit * 2
+                )
+                if results:
+                    safe_print(f"Ultra Comprehensive RAG succeeded with {len(results)} results")
+                    return results[:limit]
+            except Exception as e:
+                safe_print(f"Ultra Comprehensive RAG error: {e}")
+        
+        # フォールバック: 従来の並列検索
+        safe_print("Falling back to traditional parallel search...")
+        enhanced_results = await enhanced_postgresql_search_system(query, None, limit * 2)
         
         if enhanced_results:
             safe_print(f"Enhanced PostgreSQL search succeeded with {len(enhanced_results)} results")
-            return enhanced_results
+            return enhanced_results[:limit]
         
         safe_print("Enhanced PostgreSQL search returned no results, trying parallel search")
         
@@ -170,7 +221,7 @@ async def parallel_rag_search(query: str, limit: int = 10) -> List[Dict[str, Any
         # フォールバックとして基本RAG検索を実行
         return await rag_search(query, limit)
 
-async def adaptive_rag_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+async def adaptive_rag_search(query: str, limit: int = 25) -> List[Dict[str, Any]]:
     """
     適応的RAG検索 - クエリの特性に応じて検索戦略を動的に選択
     """
@@ -203,7 +254,7 @@ async def adaptive_rag_search(query: str, limit: int = 10) -> List[Dict[str, Any
         # フォールバックとして基本RAG検索を実行
         return await rag_search(query, limit)
 
-async def contextual_rag_search(query: str, context: str = "", limit: int = 10) -> List[Dict[str, Any]]:
+async def contextual_rag_search(query: str, context: str = "", limit: int = 30) -> List[Dict[str, Any]]:
     """
     コンテキスト考慮RAG検索 - 会話履歴を考慮した検索
     """
@@ -222,8 +273,15 @@ async def contextual_rag_search(query: str, context: str = "", limit: int = 10) 
                 enhanced_query = f"{query} {' '.join(context_keywords[:5])}"
                 safe_print(f"Enhanced query with context: {enhanced_query}")
         
-        # 拡張クエリで検索
-        results = await adaptive_rag_search(enhanced_query, limit)
+        # 超包括RAGシステム優先でコンテキスト考慮検索
+        if ULTRA_RAG_AVAILABLE:
+            try:
+                results = await ultra_comprehensive_rag_search(enhanced_query, context, None, limit)
+            except Exception as e:
+                safe_print(f"Ultra Comprehensive RAG error in contextual search: {e}")
+                results = await adaptive_rag_search(enhanced_query, limit)
+        else:
+            results = await adaptive_rag_search(enhanced_query, limit)
         
         # コンテキストとの関連性でスコア調整
         if context and results:
@@ -247,7 +305,7 @@ async def contextual_rag_search(query: str, context: str = "", limit: int = 10) 
         # フォールバックとして基本RAG検索を実行
         return await rag_search(query, limit)
 
-def format_search_results(results: List[Dict[str, Any]], max_length: int = 2000) -> str:
+def format_search_results(results: List[Dict[str, Any]], max_length: int = 15000) -> str:
     """
     検索結果をフォーマットしてプロンプト用のテキストに変換
     """
@@ -269,7 +327,9 @@ def format_search_results(results: List[Dict[str, Any]], max_length: int = 2000)
         formatted_result += f"タイトル: {title}\n"
         if url:
             formatted_result += f"URL: {url}\n"
-        formatted_result += f"内容: {content[:500]}{'...' if len(content) > 500 else ''}\n"
+        # 効率的な内容抽出（🎯 5000文字対応で最適化）
+        content_preview_length = min(2000, (max_length - current_length) // (len(results) - i + 1))
+        formatted_result += f"内容: {content[:content_preview_length]}{'...' if len(content) > content_preview_length else ''}\n"
         if score > 0:
             formatted_result += f"関連度: {score:.3f}\n"
         formatted_result += "\n"

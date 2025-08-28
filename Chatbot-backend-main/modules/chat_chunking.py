@@ -10,10 +10,10 @@ from .chat_rag import adaptive_rag_search, format_search_results
 from .chat_processing import generate_response_with_context
 
 async def process_chunked_chat(
-    message: str, 
+    message: str,
     user_id: str = "anonymous",
-    chunk_size: int = 1200,
-    max_chunks: int = 70  # 70個に増加
+    chunk_size: int = 700,  # 🎯 600-800文字範囲の中央値（ユーザー要求準拠）
+    max_chunks: int = 140  # チャンクサイズに応じた個数
 ) -> Dict[str, Any]:
     """
     チャンク化されたチャット処理
@@ -40,8 +40,8 @@ async def process_chunked_chat(
             for i, chunk in enumerate(message_chunks[:max_chunks]):
                 safe_print(f"Processing chunk {i+1}/{len(message_chunks)}")
                 
-                # RAG検索を実行
-                search_results = await adaptive_rag_search(chunk, limit=5)
+                # RAG検索を実行（細粒度化に合わせて件数増加）
+                search_results = await adaptive_rag_search(chunk, limit=20)
                 
                 # 結果を保存
                 chunk_results.append({
@@ -124,8 +124,8 @@ async def generate_chunked_response(
         if not model:
             raise Exception("Gemini model is not available")
         
-        # 検索結果をフォーマット
-        formatted_results = format_search_results(merged_results, max_length=3000)
+        # 検索結果をフォーマット（🎯 5000文字対応最適化）
+        formatted_results = format_search_results(merged_results, max_length=15000)
         
         # チャンク化処理用のプロンプト
         prompt = f"""
@@ -160,9 +160,9 @@ async def generate_chunked_response(
         return "申し訳ございませんが、長いメッセージの処理中にエラーが発生しました。メッセージを短く分けて再度お試しください。"
 
 async def process_knowledge_base_chunking(
-    text: str, 
-    chunk_size: int = 1200,
-    overlap_ratio: float = 0.5
+    text: str,
+    chunk_size: int = 700,  # 🎯 600-800文字範囲の中央値（ユーザー要求準拠）
+    overlap_ratio: float = 0.1  # 🎯 10%オーバーラップ（サイズ制御重視）
 ) -> List[Dict[str, Any]]:
     """
     知識ベースのチャンク化処理
@@ -313,30 +313,30 @@ async def retrieve_chunked_knowledge(
 
 def calculate_optimal_chunk_size(text: str, target_chunks: int = 5) -> int:
     """
-    最適なチャンクサイズを計算
+    最適なチャンクサイズを計算（600-800文字範囲厳守）
     
     Args:
         text: 対象テキスト
         target_chunks: 目標チャンク数
         
     Returns:
-        最適なチャンクサイズ
+        最適なチャンクサイズ（600-800文字範囲）
     """
     text_length = len(text)
     
-    if text_length <= 1200:
+    if text_length <= 600:  # 🎯 最小サイズ以下の場合
         return text_length
     
     # 目標チャンク数に基づいて計算
     optimal_size = text_length // target_chunks
     
-    # 最小・最大サイズの制限
-    min_size = 500
-    max_size = 2000
+    # 🎯 600-800文字の範囲に制限
+    min_size = 600
+    max_size = 800
     
     optimal_size = max(min_size, min(max_size, optimal_size))
     
-    safe_print(f"Calculated optimal chunk size: {optimal_size} for text length {text_length}")
+    safe_print(f"Calculated optimal chunk size: {optimal_size} for text length {text_length} (range: 600-800)")
     return optimal_size
 
 async def analyze_chunk_quality(chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -370,7 +370,7 @@ async def analyze_chunk_quality(chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
     # 品質スコア計算（0-1の範囲）
     # 長さの一貫性、適切なサイズ範囲、オーバーラップ品質を考慮
     length_consistency = 1.0 - (analysis['length_variance'] / analysis['average_length'])
-    size_appropriateness = 1.0 if 800 <= analysis['average_length'] <= 1500 else 0.5
+    size_appropriateness = 1.0 if 600 <= analysis['average_length'] <= 800 else 0.5  # 🎯 600-800文字範囲に調整
     
     analysis['quality_score'] = (length_consistency + size_appropriateness) / 2
     

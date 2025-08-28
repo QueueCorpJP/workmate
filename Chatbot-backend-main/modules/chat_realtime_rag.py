@@ -294,8 +294,12 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                             from modules.question_categorizer import categorize_question
                             
                             # 質問内容を分析してカテゴリーを決定
-                            category_result = categorize_question(message_text)
-                            category = category_result.get("category", "general")
+                            try:
+                                category_result = categorize_question(message_text)
+                                category = category_result.get("category", "general") if isinstance(category_result, dict) else "general"
+                            except Exception as cat_error:
+                                safe_print(f"⚠️ カテゴリ分析エラー: {cat_error}")
+                                category = "general"
                             
                             # ソース文書の情報を抽出
                             primary_source_document = None
@@ -308,7 +312,7 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
                             from modules.token_counter import TokenCounter
                             counter = TokenCounter()
                             # RAG処理でベクトル検索を使用した場合はプロンプト参照1回
-                            prompt_refs = 1 if search_results else 0
+                            prompt_refs = 1 if source_documents else 0
                             cost_result = counter.calculate_cost_by_company(message_text, ai_response, company_id, prompt_refs)
                             
                             await save_chat_history(
@@ -517,8 +521,13 @@ async def process_chat_with_realtime_rag(message: ChatMessage, db = Depends(get_
             from modules.question_categorizer import categorize_question
             
             # 質問内容を分析してカテゴリーを決定
-            category_result = categorize_question(message_text)
-            category = category_result.get("category", "general")
+            category = "general"  # デフォルト値を設定
+            try:
+                category_result = categorize_question(message_text)
+                category = category_result.get("category", "general") if isinstance(category_result, dict) else "general"
+            except Exception as cat_error:
+                safe_print(f"⚠️ カテゴリ分析エラー: {cat_error}")
+                # categoryはすでにデフォルト値が設定されている
             
             # フォールバック処理でのソース文書情報を抽出
             primary_source_document = None

@@ -358,8 +358,8 @@ async def extract_text_from_google_sheets(spreadsheet_id: str, access_token: str
             # ヘッダーのみの場合
             df = pd.DataFrame(columns=values[0])
         
-        # 空の行を削除
-        df = df.dropna(how='all')
+        # 空の行削除を無効化 - 生データ保持
+        # df = df.dropna(how='all')
         
         # カラム名を文字列に変換
         df.columns = [ensure_string(col) for col in df.columns]
@@ -596,7 +596,7 @@ def parse_gemini_csv_output(gemini_text: str, filename: str) -> Optional[pd.Data
             return df
         else:
             # フォールバック: 単純にCSVとして解析
-            csv_reader = csv.reader(io.StringIO(gemini_text))
+            csv_reader = csv.reader(StringIO(gemini_text))
             rows = list(csv_reader)
             if len(rows) > 1:
                 df = pd.DataFrame(rows[1:], columns=rows[0])
@@ -741,9 +741,9 @@ def process_csv_file(contents: bytes, filename: str):
             df = pd.read_csv(csv_file, delimiter=delimiter, encoding=None)
             logger.info(f"pandas読み込み成功: 初期行数={len(df)}, 列数={len(df.columns)}")
             
-            # 空の行を削除
-            df = df.dropna(how='all')
-            logger.info(f"空行削除後: {len(df)} 行")
+            # 空の行削除を無効化 - 生データ保持
+            # df = df.dropna(how='all')
+            logger.info(f"生データ保持: {len(df)} 行")
             
             # カラム名を文字列に変換
             df.columns = [ensure_string(col) for col in df.columns]
@@ -770,8 +770,8 @@ def process_csv_file(contents: bytes, filename: str):
                 
                 if rows:
                     df = pd.DataFrame(rows)
-                    # 空の行を削除
-                    df = df.dropna(how='all')
+                    # 空の行削除を無効化 - 生データ保持
+                    # df = df.dropna(how='all')
                     
                     # カラム名を文字列に変換
                     df.columns = [ensure_string(col) for col in df.columns]

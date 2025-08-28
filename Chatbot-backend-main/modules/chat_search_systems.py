@@ -22,7 +22,8 @@ except ImportError as e:
     def elasticsearch_available():
         return False
 from .postgresql_fuzzy_search import fuzzy_search_chunks
-from .enhanced_postgresql_search import enhanced_search_chunks, initialize_enhanced_postgresql_search
+# enhanced_postgresql_search module does not exist, using postgresql_fuzzy_search instead
+from .postgresql_fuzzy_search import fuzzy_search_chunks as enhanced_search_chunks, initialize_postgresql_fuzzy as initialize_enhanced_postgresql_search
 
 # 検索関数の条件付きインポート
 if DIRECT_SEARCH_AVAILABLE:
@@ -206,10 +207,11 @@ async def enhanced_postgresql_search_system(query: str,
                                           company_id: int = None,
                                           limit: int = 10) -> List[Dict[str, Any]]:
     """
-    Enhanced PostgreSQL検索システム（日本語形態素解析対応）
+    Enhanced PostgreSQL検索システム（postgresql_fuzzy_searchを使用）
     """
     try:
-        results = await enhanced_search_chunks(query, company_id, limit)
+        # Use fuzzy_search_chunks instead (company_id is not supported in fuzzy search)
+        results = await enhanced_search_chunks(query, limit)
         formatted_results = []
         
         for result in results:
@@ -220,11 +222,10 @@ async def enhanced_postgresql_search_system(query: str,
                 'url': '',
                 'similarity': result['score'],
                 'metadata': {
-                    'source': 'enhanced_postgresql_search',
-                    'match_types': result.get('match_types', []),
-                    'search_type': result.get('search_type', ''),
+                    'source': 'postgresql_fuzzy_search',
+                    'search_types': result.get('search_types', []),
                     'highlight': result.get('highlight', ''),
-                    'company_id': result.get('company_id')
+                    'company_id': company_id  # Pass through for compatibility
                 }
             })
             

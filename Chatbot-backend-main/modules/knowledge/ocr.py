@@ -20,6 +20,9 @@ import sys
 from typing import List, Optional
 from PIL import Image
 
+# 🚀 Multi Gemini Clientのインポート
+from ..multi_gemini_client import get_multi_gemini_client, multi_gemini_available
+
 logger = logging.getLogger(__name__)
 
 # pdf2imageとpopplerの可用性チェック
@@ -69,15 +72,25 @@ except ImportError:
     logger.error("❌ requests library not available. Please install: pip install requests")
 
 class GeminiOCRProcessor:
-    """新しいGoogle GenAI SDKを使用したOCRプロセッサ"""
+    """新しいGoogle GenAI SDKを使用したOCRプロセッサ（31API対応版）"""
     
     def __init__(self):
         if not GENAI_AVAILABLE:
             raise ValueError("requests library is not available. Please install it with: pip install requests")
         
-        self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        if not self.api_key:
-            raise ValueError("GEMINI_API_KEY または GOOGLE_API_KEY 環境変数が設定されていません")
+        # 🚀 Multi Gemini Clientを優先使用
+        if multi_gemini_available():
+            self.multi_gemini_client = get_multi_gemini_client()
+            self.max_retries = len(self.multi_gemini_client.api_keys) if self.multi_gemini_client else 31
+            logger.info(f"✅ Multi Gemini Client使用: {self.max_retries}個のAPIキー利用可能")
+        else:
+            # フォールバック：単一APIキー
+            self.multi_gemini_client = None
+            self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+            if not self.api_key:
+                raise ValueError("GEMINI_API_KEY または GOOGLE_API_KEY 環境変数が設定されていません")
+            self.max_retries = 3
+            logger.warning("⚠️ 単一APIキーでフォールバック動作")
         
         # Gemini API の直接呼び出し用URL
         self.api_base_url = "https://generativelanguage.googleapis.com/v1beta"
@@ -91,9 +104,92 @@ class GeminiOCRProcessor:
         return base64.b64encode(img_data).decode('utf-8')
     
     async def _call_gemini_api(self, images_b64: List[str], prompt: str) -> str:
-        """Gemini APIを直接呼び出し"""
+        """Gemini APIを直接呼び出し（31API対応版）"""
+        
+        # 🚀 Multi Gemini Client使用（31個APIキー全て試行）
+        if self.multi_gemini_client:
+            try:
+                # Vision APIではMulti Gemini Clientで各APIキーを個別に試行
+                return await self._call_with_multi_keys(images_b64, prompt)
+            except Exception as e:
+                logger.error(f"❌ Multi API処理失敗: {e}")
+                # フォールバック: 単一APIキーで処理
+                if hasattr(self, 'api_key') and self.api_key:
+                    logger.warning("🔄 単一APIキーでフォールバック試行")
+                    return await self._call_single_api(images_b64, prompt)
+                else:
+                    raise Exception(f"全てのAPIキーで失敗しました: {e}")
+        else:
+            # フォールバック: 単一APIキーで処理
+            return await self._call_single_api(images_b64, prompt)
+    
+    async def _call_with_multi_keys(self, images_b64: List[str], prompt: str) -> str:
+        """31個のAPIキーで順次リトライ"""
+        api_url = f"{self.api_base_url}/models/gemini-2.5-flash:generateContent"
+        
+        # コンテンツを構築
+        parts = [{"text": prompt}]
+        for img_b64 in images_b64:
+            parts.append({
+                "inline_data": {
+                    "mime_type": "image/png",
+                    "data": img_b64
+                }
+            })
+        
+        request_data = {
+            "contents": [{"parts": parts}],
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": 1048576
+            }
+        }
+        
+        # 31個のAPIキーで順次試行
+        for attempt, api_key in enumerate(self.multi_gemini_client.api_keys):
+            try:
+                logger.info(f"🤖 Vision API呼び出し (APIキー {attempt + 1}/{len(self.multi_gemini_client.api_keys)})")
+                
+                headers = {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": api_key
+                }
+                
+                def make_request():
+                    return requests.post(api_url, headers=headers, json=request_data, timeout=120)
+                
+                response = await asyncio.to_thread(make_request)
+                response.raise_for_status()
+                
+                response_data = response.json()
+                
+                if "candidates" in response_data and response_data["candidates"]:
+                    candidate = response_data["candidates"][0]
+                    if "content" in candidate and "parts" in candidate["content"]:
+                        parts = candidate["content"]["parts"]
+                        if parts and "text" in parts[0]:
+                            logger.info(f"✅ Vision API成功（APIキー {attempt + 1}）")
+                            return parts[0]["text"].strip()
+                
+                raise Exception("APIレスポンスが空です")
+                
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"⚠️ APIキー {attempt + 1} エラー: {e}")
+                if attempt < len(self.multi_gemini_client.api_keys) - 1:
+                    await asyncio.sleep(1.0)  # 短時間待機してから次のキーを試行
+                    continue
+                else:
+                    raise Exception(f"全{len(self.multi_gemini_client.api_keys)}個のAPIキーで失敗: {e}")
+            except Exception as e:
+                logger.warning(f"⚠️ APIキー {attempt + 1} 予期しないエラー: {e}")
+                if attempt < len(self.multi_gemini_client.api_keys) - 1:
+                    continue
+                else:
+                    raise Exception(f"全APIキーで失敗: {e}")
+    
+    async def _call_single_api(self, images_b64: List[str], prompt: str) -> str:
+        """単一APIキーでフォールバック処理"""
         try:
-            # API URL
             api_url = f"{self.api_base_url}/models/gemini-2.5-flash:generateContent"
             
             headers = {
@@ -101,10 +197,7 @@ class GeminiOCRProcessor:
                 "x-goog-api-key": self.api_key
             }
             
-            # コンテンツを構築
             parts = [{"text": prompt}]
-            
-            # 画像を追加
             for img_b64 in images_b64:
                 parts.append({
                     "inline_data": {
@@ -114,18 +207,13 @@ class GeminiOCRProcessor:
                 })
             
             request_data = {
-                "contents": [
-                    {
-                        "parts": parts
-                    }
-                ],
+                "contents": [{"parts": parts}],
                 "generationConfig": {
                     "temperature": 0.3,
-                    "maxOutputTokens": 1048576  # 1Mトークン（実質無制限）
+                    "maxOutputTokens": 1048576
                 }
             }
             
-            # 非同期でAPIを呼び出し
             def make_request():
                 return requests.post(api_url, headers=headers, json=request_data, timeout=120)
             
@@ -141,14 +229,10 @@ class GeminiOCRProcessor:
                     if parts and "text" in parts[0]:
                         return parts[0]["text"].strip()
             
-            logger.error("❌ Gemini API レスポンスが空です")
             raise Exception("Empty response from Gemini API")
         
-        except requests.exceptions.RequestException as e:
-            logger.error(f"❌ API リクエストエラー: {e}")
-            raise
         except Exception as e:
-            logger.error(f"❌ Gemini API呼び出しエラー: {e}")
+            logger.error(f"❌ 単一API呼び出しエラー: {e}")
             raise
 
 async def ocr_with_gemini(images, instruction, chunk_size=8):

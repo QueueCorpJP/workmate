@@ -472,7 +472,7 @@ JSON形式のみで回答してください：
         # 実際のSQL構築は execute_sql_search で行う
         return keywords
     
-    async def execute_sql_search(self, analysis: QueryAnalysisResult, company_id: str = None, limit: int = 20) -> List[SearchResult]:
+    async def execute_sql_search(self, analysis: QueryAnalysisResult, company_id: str = None, limit: int = 40) -> List[SearchResult]:
         """
         🔍 SQLベースの構造的検索（スコアリング強化版）
         Gemini分析結果に基づいて最適な検索クエリを実行し、より正確なスコアリングを適用
@@ -831,7 +831,7 @@ JSON形式のみで回答してください：
             logger.warning(f"⚠️ 部分マッチ検索エラー: {e}")
             return []
     
-    async def execute_embedding_search(self, question: str, company_id: str = None, limit: int = 10) -> List[SearchResult]:
+    async def execute_embedding_search(self, question: str, company_id: str = None, limit: int = 20) -> List[SearchResult]:
         """
         📘 Embedding検索の実行（フォールバック）
         
@@ -918,7 +918,7 @@ JSON形式のみで回答してください：
             logger.error(f"❌ Embedding検索エラー: {e}")
             return []
     
-    async def intelligent_search(self, question: str, company_id: str = None, limit: int = 20) -> Tuple[List[SearchResult], QueryAnalysisResult]:
+    async def intelligent_search(self, question: str, company_id: str = None, limit: int = 40) -> Tuple[List[SearchResult], QueryAnalysisResult]:
         """
         🚀 インテリジェント検索の実行
         1. Gemini 2.5 Flashで質問分解・分類
@@ -1095,7 +1095,7 @@ def get_gemini_question_analyzer() -> Optional[GeminiQuestionAnalyzer]:
     
     return _gemini_analyzer_instance
 
-async def gemini_intelligent_search(question: str, company_id: str = None, limit: int = 20) -> Tuple[List[SearchResult], QueryAnalysisResult]:
+async def gemini_intelligent_search(question: str, company_id: str = None, limit: int = 40) -> Tuple[List[SearchResult], QueryAnalysisResult]:
     """Geminiインテリジェント検索の外部呼び出し用関数"""
     analyzer = get_gemini_question_analyzer()
     if not analyzer:

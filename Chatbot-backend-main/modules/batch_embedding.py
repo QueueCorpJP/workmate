@@ -32,7 +32,6 @@ class BatchEmbeddingGenerator:
         
         # バッチ処理設定
         self.batch_size = 10  # 10件ずつ処理
-        self.max_retries = 3  # 最大リトライ回数
         self.retry_delay = 2  # リトライ間隔（秒）
         self.api_delay = 1    # API呼び出し間隔（秒）
         
@@ -53,7 +52,9 @@ class BatchEmbeddingGenerator:
             # 複数API対応エンベディングクライアント初期化
             if multi_api_embedding_available():
                 self.multi_api_client = get_multi_api_embedding_client()
-                logger.info("✅ 複数API対応エンベディングクライアント使用")
+                # 🎯 APIキー数に応じた最大リトライ回数を設定
+                self.max_retries = len(self.multi_api_client.api_keys) if self.multi_api_client else 3
+                logger.info(f"✅ 複数API対応エンベディングクライアント使用 (最大リトライ: {self.max_retries}回)")
             else:
                 logger.error("❌ 複数API対応エンベディングクライアントが利用できません")
                 return False
@@ -164,9 +165,9 @@ class BatchEmbeddingGenerator:
                 
                 self.stats["processed_chunks"] += 1
                 
-                # API制限対策：チャンク間で少し待機
+                # API制限対策：最小限の待機
                 if i < len(chunks) - 1:
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.01)  # 0.5→0.01秒に大幅短縮
                 
             except Exception as e:
                 failed_chunks.append(chunk['id'])

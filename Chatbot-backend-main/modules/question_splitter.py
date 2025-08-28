@@ -42,15 +42,39 @@ class QuestionSplitter:
     
     def should_split_question(self, question: str) -> bool:
         """質問を分割すべきかどうかを判定"""
-        # 文字数による判定
-        if len(question) < 1000:
-            return False
+        # 複数タスクキーワードによる判定（優先）
+        multi_task_keywords = [
+            'WPD', 'WPN',  # 物件番号が複数ある場合
+            'について', 'に関して', 'と', 'および', 'ならびに',
+            'また', 'さらに', '次に', '他に', 'あと', 'それから', 'そして',
+            '1.', '2.', '3.', '①', '②', '③', '・', '•',
+            'まず', '最初に', '続いて', '最後に'
+        ]
         
-        # 複数の疑問符や接続詞の存在
+        # 複数の質問があるかチェック
         question_marks = question.count('？') + question.count('?')
-        connectives = len(re.findall(r'(また|さらに|加えて|次に|それから)', question))
         
-        return question_marks > 1 or connectives > 2 or len(question) > 3000
+        # 複数タスクキーワードの数をカウント
+        keyword_count = sum(question.count(keyword) for keyword in multi_task_keywords)
+        
+        # 物件番号が複数ある場合（WPDxxxxxx、WPNxxxxxxが複数）
+        import re
+        property_numbers = re.findall(r'WP[DN]\d{7}', question)
+        
+        # 分割条件を緩和（より多くの複数タスクを検出）
+        split_conditions = [
+            question_marks >= 2,  # 2つ以上の疑問符
+            keyword_count >= 3,   # 3つ以上のマルチタスクキーワード
+            len(property_numbers) >= 2,  # 複数の物件番号
+            len(question) > 1500,  # 長い質問（3000から1500に緩和）
+            '、' in question and len(question) > 200  # 読点があり200文字以上
+        ]
+        
+        should_split = any(split_conditions)
+        if should_split:
+            logger.info(f"🎯 複数タスク検出: 疑問符{question_marks}個, キーワード{keyword_count}個, 物件{len(property_numbers)}個")
+        
+        return should_split
     
     def split_question(self, question: str) -> List[QuestionSegment]:
         """質問を複数のセグメントに分割"""
@@ -67,13 +91,48 @@ class QuestionSplitter:
         
         segments = []
         
-        # パターンマッチングによる分割
-        current_text = question
-        for pattern in self.split_patterns:
-            if re.search(pattern, current_text):
-                parts = re.split(pattern, current_text)
-                segments.extend(self._process_split_parts(parts))
+        # 汎用的な複数タスク分割（優先順位順）
+        import re
+        
+        # 1. 明確な区切り文字による分割
+        clear_separators = [
+            r'(。\s*また)',  # 「。また」
+            r'(。\s*さらに)',  # 「。さらに」  
+            r'(。\s*次に)',  # 「。次に」
+            r'(。\s*あと)',  # 「。あと」
+            r'(\d+\.\s*)',  # 1. 2. 3. の番号付きリスト
+            r'([①②③④⑤⑥⑦⑧⑨⑩])',  # 丸数字
+            r'(・\s*)',  # 箇条書き
+        ]
+        
+        for pattern in clear_separators:
+            if re.search(pattern, question):
+                parts = re.split(pattern, question)
+                segments.extend(self._process_enhanced_split_parts(parts, pattern))
                 break
+        
+        # 2. 接続詞による分割（明確な区切りがない場合）
+        if not segments:
+            connector_patterns = [
+                r'(また、)',  # 「また、」
+                r'(さらに、)',  # 「さらに、」
+                r'(それから、)',  # 「それから、」
+                r'(あと、)',  # 「あと、」
+                r'(加えて、)',  # 「加えて、」
+                r'(続いて、)',  # 「続いて、」
+            ]
+            
+            for pattern in connector_patterns:
+                if re.search(pattern, question):
+                    parts = re.split(pattern, question)
+                    segments.extend(self._process_enhanced_split_parts(parts, pattern))
+                    break
+        
+        # 3. 物件番号による分割（特殊ケース）
+        if not segments:
+            property_numbers = re.findall(r'WP[DN]\d{7}', question)
+            if len(property_numbers) >= 2:
+                segments = self._split_by_property_numbers(question, property_numbers)
         
         # パターンマッチしない場合は長さベースで分割
         if not segments:
@@ -85,8 +144,51 @@ class QuestionSplitter:
         logger.info(f"質問分割完了: {len(segments)}個のセグメントに分割")
         return segments
     
+    def _process_enhanced_split_parts(self, parts: List[str], pattern: str) -> List[QuestionSegment]:
+        """強化された分割処理（接続詞を考慮）"""
+        segments = []
+        current_text = ""
+        
+        for i, part in enumerate(parts):
+            part = part.strip()
+            if not part:
+                continue
+                
+            # 接続詞やパターンを除去
+            import re
+            if re.match(r'^(また|さらに|次に|あと|それから|加えて|続いて)[、。]?$', part):
+                continue
+            if re.match(r'^[\d①②③④⑤⑥⑦⑧⑨⑩・]\s*$', part):
+                continue
+                
+            # 短すぎるパーツは前のセグメントに結合
+            if len(part) < 10 and current_text:
+                current_text += part
+            else:
+                # 前のセグメントを保存
+                if current_text:
+                    segments.append(QuestionSegment(
+                        text=current_text.strip(),
+                        priority=len(segments) + 1,
+                        category='main',
+                        keywords=self._extract_keywords(current_text)
+                    ))
+                current_text = part
+        
+        # 最後のセグメントを保存
+        if current_text:
+            segments.append(QuestionSegment(
+                text=current_text.strip(),
+                priority=len(segments) + 1,
+                category='main',
+                keywords=self._extract_keywords(current_text)
+            ))
+            
+        logger.info(f"🔄 強化分割処理: {len(segments)}個のセグメント作成")
+        return segments
+    
     def _process_split_parts(self, parts: List[str]) -> List[QuestionSegment]:
-        """分割された部分を処理"""
+        """分割された部分を処理（旧版・フォールバック用）"""
         segments = []
         for i, part in enumerate(parts):
             if part.strip():
@@ -96,6 +198,59 @@ class QuestionSplitter:
                     category='main' if i == 0 else 'detail',
                     keywords=self._extract_keywords(part)
                 ))
+        return segments
+    
+    def _split_by_property_numbers(self, question: str, property_numbers: List[str]) -> List[QuestionSegment]:
+        """物件番号による分割（各物件に対して完全な質問を生成）"""
+        segments = []
+        
+        # 共通の質問パターンを抽出
+        common_patterns = [
+            r'について.*教えて',
+            r'の.*価格',
+            r'の.*情報',
+            r'の.*詳細',
+            r'は.*どう',
+            r'を.*知りたい'
+        ]
+        
+        # 各物件番号に対して個別の質問を作成
+        for i, prop_num in enumerate(property_numbers):
+            # 基本的な質問: "物件番号について教えて"
+            base_question = f"{prop_num}について教えて"
+            
+            # 元の質問から追加の要求を抽出
+            additional_requests = []
+            
+            # 価格に関する質問
+            if any(word in question for word in ['価格', '値段', '金額', 'コスト', '費用']):
+                additional_requests.append(f"{prop_num}の価格")
+            
+            # 詳細に関する質問
+            if any(word in question for word in ['詳細', '仕様', 'スペック', '情報']):
+                additional_requests.append(f"{prop_num}の詳細情報")
+            
+            # 状況に関する質問
+            if any(word in question for word in ['状況', '状態', 'ステータス', '進捗']):
+                additional_requests.append(f"{prop_num}の状況")
+            
+            # 完全な質問を構築
+            if additional_requests:
+                full_question = f"{base_question}。また、{', '.join(additional_requests)}も知りたいです。"
+            else:
+                full_question = base_question
+            
+            segments.append(QuestionSegment(
+                text=full_question,
+                priority=i + 1,
+                category='main',
+                keywords=self._extract_keywords(full_question) + [prop_num]
+            ))
+        
+        logger.info(f"物件番号による分割: {len(segments)}個の完全な質問を作成")
+        for i, seg in enumerate(segments):
+            logger.info(f"  セグメント{i+1}: {seg.text}")
+        
         return segments
     
     def _split_by_length(self, question: str, max_length: int = 1500) -> List[QuestionSegment]:

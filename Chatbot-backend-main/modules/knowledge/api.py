@@ -310,18 +310,20 @@ async def _save_content_to_chunks(doc_id: str, content: str, doc_name: str, comp
     try:
         from supabase_adapter import insert_data
         
-        # チャンクサイズ設定（300-500トークン ≈ 1200-2000文字）
-        chunk_size = 1500  # 約400トークン相当
+        # 🎯 可変チャンクサイズ設定（600-800文字の適応型）
+        from ..chat_utils import chunk_knowledge_base
+
+        # コンテンツ特性に応じた最適チャンク分割（700文字目標）
+        chunk_texts = chunk_knowledge_base(content, chunk_size=700)
         chunks_list = []
         
-        # コンテンツを分割
-        for i in range(0, len(content), chunk_size):
-            chunk_content = content[i:i + chunk_size]
-            if chunk_content.strip():  # 空のチャンクは除外
+        # 分割されたチャンクをデータベース形式に変換
+        for i, chunk_content in enumerate(chunk_texts):
+            if chunk_content.strip():  # 空チャンク除外
                 chunks_list.append({
                     "doc_id": doc_id,
-                    "chunk_index": i // chunk_size,
-                    "content": chunk_content,
+                    "chunk_index": i,
+                    "content": chunk_content.strip(),
                     "company_id": company_id
                 })
         

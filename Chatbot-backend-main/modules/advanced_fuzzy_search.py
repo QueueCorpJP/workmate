@@ -137,9 +137,9 @@ class AdvancedFuzzySearchSystem:
     async def advanced_fuzzy_search(self, 
                                   query: str, 
                                   company_id: str = None,
-                                  threshold: float = 0.45,
+                                  threshold: float = 0.4,
                                   length_penalty: float = 0.012,
-                                  limit: int = 50) -> List[AdvancedFuzzyResult]:
+                                  limit: int = 40) -> List[AdvancedFuzzyResult]:
         """
         高度ファジー検索を実行
         
@@ -326,9 +326,9 @@ def get_advanced_fuzzy_search_instance() -> Optional[AdvancedFuzzySearchSystem]:
 
 async def advanced_fuzzy_search(query: str, 
                               company_id: str = None,
-                              threshold: float = 0.45,
+                              threshold: float = 0.4,
                               length_penalty: float = 0.012,
-                              limit: int = 50) -> List[Dict[str, Any]]:
+                              limit: int = 40) -> List[Dict[str, Any]]:
     """
     高度ファジー検索のエントリーポイント
     

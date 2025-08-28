@@ -13,6 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.exceptions import RequestValidationError
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 # モジュールのインポート
 from modules.config import setup_logging, setup_gemini, get_cors_origins, get_environment
 from modules.company import DEFAULT_COMPANY_NAME
@@ -69,6 +72,11 @@ app = FastAPI(
     redoc_url="/chatbot/api/redoc",
     openapi_url="/chatbot/api/openapi.json"
 )
+
+# 🛡️ レート制限の設定
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # グローバル例外ハンドラー
 @app.exception_handler(Exception)
@@ -164,9 +172,9 @@ async def startup_event():
     except Exception as e:
         print(f"⚠️ PostgreSQL Fuzzy Search初期化失敗: {e}")
     
-    # Enhanced PostgreSQL Search初期化（日本語形態素解析対応）
+    # Enhanced PostgreSQL Search初期化（postgresql_fuzzy_searchを使用）
     try:
-        from modules.enhanced_postgresql_search import initialize_enhanced_postgresql_search
+        from modules.postgresql_fuzzy_search import initialize_postgresql_fuzzy as initialize_enhanced_postgresql_search
         await initialize_enhanced_postgresql_search()
         print("✅ Enhanced PostgreSQL Search初期化成功")
     except Exception as e:
@@ -204,7 +212,8 @@ except Exception as e:
 
 # 認証関連エンドポイント
 @app.post("/chatbot/api/auth/login", response_model=UserWithLimits)
-async def login(credentials: UserLogin, db: SupabaseConnection = Depends(get_db)):
+@limiter.limit("10/minute")  # 🛡️ ブルートフォース攻撃対策：1分間に10回のログイン試行制限
+async def login(request: Request, credentials: UserLogin, db: SupabaseConnection = Depends(get_db)):
     """ユーザーログイン"""
     # 入力値バリデーション
     is_valid, errors = validate_login_input(credentials.email, credentials.password)
@@ -1000,7 +1009,8 @@ async def admin_get_demo_stats(current_user = Depends(get_admin_or_user), db: Su
     return get_demo_usage_stats(db)
 
 @app.post("/chatbot/api/submit-url")
-async def submit_url(submission: UrlSubmission, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+@limiter.limit("10/minute")  # 🛡️ 外部リソース保護：1分間に10回のURL送信制限
+async def submit_url(request: Request, submission: UrlSubmission, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
     """URLを送信して知識ベースを更新"""
     try:
         # URLが空でないことを確認
@@ -1016,8 +1026,7 @@ async def submit_url(submission: UrlSubmission, current_user = Depends(get_curre
             
         # URL処理実施
         company_id = current_user.get("company_id")
-        print(f"🔍 [UPLOAD DEBUG] URL処理時のcompany_id: {company_id}")
-        print(f"🔍 [UPLOAD DEBUG] current_user: {current_user}")
+        logger.debug(f"URL処理: company_id={company_id}, user={current_user.get('id', 'unknown') if current_user else 'None'}")
         result = await process_url(submission.url, current_user["id"], company_id, db)
         return result
     except Exception as e:
@@ -1227,7 +1236,7 @@ async def upload_multiple_knowledge(
                 
                 # ファイル処理実行
                 company_id = current_user.get("company_id")
-                print(f"🔍 [UPLOAD DEBUG] 複数ファイルアップロード時のcompany_id: {company_id} (ファイル: {file.filename})")
+                logger.debug(f"ファイル処理: {file.filename}, company_id={company_id}")
                 result = await process_file(file, request=None, user_id=current_user["id"], company_id=company_id, db=db)
                 processed_count += 1
                 
@@ -1280,7 +1289,8 @@ async def get_knowledge_base(current_user = Depends(get_current_user)):
 
 # チャットエンドポイント
 @app.post("/chatbot/api/chat", response_model=ChatResponse)
-async def chat(message: ChatMessage, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+@limiter.limit("20/minute")  # 🛡️ 1分間に20回のチャット制限（最重要）
+async def chat(request: Request, message: ChatMessage, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
     """チャットメッセージを処理してGeminiからの応答を返す（Enhanced RAG統合版）"""
     # デバッグ用：現在のユーザー情報と利用制限を出力
     print(f"=== 🚀 Enhanced RAG チャット処理開始 ===")
@@ -1296,29 +1306,34 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
     message.user_id = current_user["id"]
     message.employee_name = current_user["name"]
     
+    # 会社名を取得
+    company_name = current_user.get("company_name", "")
+    if not company_name and current_user.get("company_id"):
+        # company_nameが空の場合、company_idから取得
+        from supabase_adapter import select_data
+        company_result = select_data("companies", columns="name", filters={"id": current_user["company_id"]})
+        if company_result and company_result.data:
+            company_name = company_result.data[0].get("name", "")
+    
+    print(f"🏢 会社名取得: '{company_name}' (company_id: {current_user.get('company_id')})")
+    
     # 🚀 新しいEnhanced RAGシステムを優先使用
     try:
-        from modules.enhanced_chat_integration import EnhancedChatIntegration
+        # enhanced_chat_integrationは削除済み、リアルタイムRAGを直接使用
+        pass
         from modules.chat_processing import save_chat_history
         from modules.question_categorizer import categorize_question
-        print("🚀 Enhanced RAG統合システムを使用開始")
+        print("🚀 リアルタイムRAGシステムを使用開始")
         
-        # Enhanced Chat Integrationを初期化
-        enhanced_chat = EnhancedChatIntegration()
-        print("✅ EnhancedChatIntegration初期化完了")
+        # リアルタイムRAGシステムを直接使用
+        from modules.realtime_rag import process_question_realtime
         
-        # システム状態をチェック
-        system_status = enhanced_chat.get_system_status()
-        print(f"📊 システム状態: {system_status}")
-        
-        # Enhanced RAGでチャット処理
-        result = await enhanced_chat.process_chat_with_enhanced_rag(
-            question=message,
-            db=db,
-            current_user=current_user,
-            company_id=current_user.get("company_id"),
-            company_name=current_user.get("company_name", "お客様の会社"),
-            user_id=current_user["id"]
+        # リアルタイムRAGでチャット処理
+        result = await process_question_realtime(
+            question=message.text,
+            company_id=current_user.get("company_id") if current_user.get("company_id") else None,
+            company_name=company_name,
+            user_id=message.user_id
         )
         
         # 結果の安全性チェック
@@ -1349,25 +1364,61 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
                 source_names = []
                 for source in sources[:3]:  # 最大3つのソースを表示
                     if isinstance(source, dict):
-                        source_name = source.get('name', source.get('filename', ''))
+                        source_name = source.get('name', source.get('filename', source.get('document_name', '')))
                     else:
                         source_name = str(source)
                     
-                    if source_name and source_name not in ['システム回答', 'unknown', 'Unknown']:
+                    if source_name and source_name not in ['システム回答', 'unknown', 'Unknown', '']:
                         source_names.append(source_name.strip())
+                
                 source_text = ', '.join(source_names) if source_names else ""
+                logger.debug(f"ソース情報構築完了: {len(source_names)}件")
+                    
+                # フロントエンド連携
+                
+                # 利用制限チェックを先に実行
+                from modules.database import get_usage_limits, update_usage_count
+                current_limits = get_usage_limits(current_user["id"], db)
+                remaining_questions = None
+                conversation_id = None  # 実際の値を設定する必要がある場合は適切に修正
+                
+                if not current_limits.get("is_unlimited", False):
+                    updated_limits = update_usage_count(current_user["id"], "questions_used", db)
+                    if updated_limits:
+                        remaining_questions = updated_limits["questions_limit"] - updated_limits["questions_used"]
+                
+                response_data = {
+                    "response": answer,
+                    "source": source_text,  # フロントエンドが期待するフィールド名
+                    "remaining_questions": remaining_questions,
+                    "conversation_id": conversation_id
+                }
+                logger.debug(f"レスポンス構築完了: source_count={len(source_text) if source_text else 0}")
+            else:
+                logger.debug("ソース情報なしでレスポンス構築")
+                
+                # 利用制限チェックを先に実行
+                from modules.database import get_usage_limits, update_usage_count
+                current_limits = get_usage_limits(current_user["id"], db)
+                remaining_questions = None
+                conversation_id = None
+                
+                if not current_limits.get("is_unlimited", False):
+                    updated_limits = update_usage_count(current_user["id"], "questions_used", db)
+                    if updated_limits:
+                        remaining_questions = updated_limits["questions_limit"] - updated_limits["questions_used"]
+                
+                # 空の場合のresponse_data作成
+                response_data = {
+                    "response": answer,
+                    "source": "",  # 空の場合
+                    "remaining_questions": remaining_questions,
+                    "conversation_id": conversation_id
+                }
+                logger.debug("空ソース情報でレスポンス構築")
         
-                    # 利用制限チェック
-            from modules.database import get_usage_limits, update_usage_count
-            current_limits = get_usage_limits(current_user["id"], db)
-            remaining_questions = None
-            limit_reached = False  # デフォルト値を設定
-            
-            if not current_limits.get("is_unlimited", False):
-                updated_limits = update_usage_count(current_user["id"], "questions_used", db)
-                if updated_limits:
-                    remaining_questions = updated_limits["questions_limit"] - updated_limits["questions_used"]
-                    limit_reached = remaining_questions <= 0
+            # limit_reachedを計算
+            limit_reached = remaining_questions <= 0 if remaining_questions is not None else False
         
                     # ChatResponseオブジェクト作成
             # 文字列の安全化処理
@@ -1388,7 +1439,16 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
             
             # 安全化された値を使用
             safe_response = safe_string(answer) if answer else "申し訳ございませんが、回答を生成できませんでした。"
-            safe_source = safe_string(source_text) if source_text else ""
+            # response_dataからsourceを取得（両方のケースに対応）
+            final_source_text = response_data.get("source", "") if 'response_data' in locals() else source_text
+            safe_source = safe_string(final_source_text) if final_source_text else ""
+            
+            # フロントエンド連携最終確認
+            print(f"🔗 FINAL CHECK: safe_source = '{safe_source}'")
+            print(f"🔗 FINAL CHECK: response_data存在? {'response_data' in locals()}")
+            if 'response_data' in locals():
+                print(f"🔗 FINAL CHECK: response_data['source'] = '{response_data.get('source', 'N/A')}'")
+            print("=" * 60)
             
             # チャット履歴を保存
             try:
@@ -1418,9 +1478,9 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
                     model_name="enhanced-rag",
                     source_document=primary_source_document
                 )
-                print(f"✅ チャット履歴保存完了 (Enhanced RAG)")
+                logger.debug("チャット履歴保存完了")
             except Exception as save_error:
-                print(f"⚠️ チャット履歴保存エラー (Enhanced RAG): {save_error}")
+                logger.warning(f"チャット履歴保存エラー: {save_error}")
             
             return ChatResponse(
                 response=safe_response,
@@ -1430,6 +1490,10 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
             )
     except Exception as e:
         print(f"⚠️ Enhanced RAGエラー: {e}")
+        print(f"⚠️ Enhanced RAGエラー詳細: {repr(e)}")
+        import traceback
+        print(f"⚠️ Enhanced RAGスタックトレース:")
+        print(traceback.format_exc())
         print("🔄 フォールバック: 従来のGemini質問分析RAGシステムを使用")
         
         # フォールバック: 従来のGemini質問分析RAGシステムを使用
@@ -1442,6 +1506,9 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
                 answer = result.get("response", "")
                 source_text = result.get("source", "")
                 final_answer = answer if answer else "申し訳ございませんが、回答を生成できませんでした。"
+                
+                # フォールバックシステム処理
+                logger.debug(f"フォールバック処理: {len(list(result.keys()))}個のキー, source_text={bool(source_text)}")
                 
                 # チャット履歴を保存
                 try:
@@ -1461,9 +1528,11 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
                         model_name="realtime-rag-fallback",
                         source_document=source_text if source_text else None
                     )
-                    print(f"✅ チャット履歴保存完了 (Realtime RAG Fallback)")
+                    logger.debug("チャット履歴保存完了")
                 except Exception as save_error:
-                    print(f"⚠️ チャット履歴保存エラー (Realtime RAG Fallback): {save_error}")
+                    logger.warning(f"チャット履歴保存エラー: {save_error}")
+                
+                # フォールバック処理完了
                 
                 return ChatResponse(
                     response=final_answer,
@@ -1491,9 +1560,9 @@ async def chat(message: ChatMessage, current_user = Depends(get_current_user), d
                             model_name="realtime-rag-fallback-object",
                             source_document=result.source if hasattr(result, 'source') and result.source else None
                         )
-                        print(f"✅ チャット履歴保存完了 (Realtime RAG Fallback Object)")
+                        logger.debug("チャット履歴保存完了")
                     except Exception as save_error:
-                        print(f"⚠️ チャット履歴保存エラー (Realtime RAG Fallback Object): {save_error}")
+                        logger.warning(f"チャット履歴保存エラー: {save_error}")
                     return result
                 else:
                     error_response = "システムエラーが発生しました。"
@@ -1643,8 +1712,8 @@ async def chat_with_chunk_visibility(message: ChatMessage, current_user = Depend
         current_limits = get_usage_limits(current_user["id"], db)
         logger.info(f"現在の利用制限: {current_limits}")
         
-        # 超高精度RAG検索をチャンク可視化付きで実行
-        from modules.chat import ultra_accurate_rag_search
+        # 標準RAG検索をチャンク可視化付きで実行
+        from modules.chat_rag import adaptive_rag_search
         
         # 会社IDを取得
         company_id = None
@@ -1658,13 +1727,33 @@ async def chat_with_chunk_visibility(message: ChatMessage, current_user = Depend
                 company_id = user_result.data[0].get('company_id')
         
         # チャンク可視化付きでRAG検索を実行
-        rag_result = await ultra_accurate_rag_search(
+        rag_result = await adaptive_rag_search(
             query=message.text,
-            company_id=company_id,
-            company_name="お客様の会社",
-            max_results=15,
-            include_chunk_visibility=True
+            limit=20
         )
+        
+        # ソース情報を抽出 - デバッグ強化版
+        source_text = ""
+        print(f"🔍 DEBUG (chunk_visibility): rag_result keys: {list(rag_result.keys()) if isinstance(rag_result, dict) else 'Not dict'}")
+        if rag_result.get('sources'):
+            sources = rag_result.get('sources', [])
+            print(f"🔍 DEBUG (chunk_visibility): sources: {sources}")
+            source_names = []
+            for i, source in enumerate(sources[:3]):  # 最大3つのソースを表示
+                print(f"🔍 DEBUG (chunk_visibility): source[{i}]: {source}")
+                if isinstance(source, dict):
+                    source_name = source.get('name', source.get('filename', source.get('title', source.get('document_name', ''))))
+                    print(f"🔍 DEBUG (chunk_visibility): 抽出したsource_name: '{source_name}'")
+                else:
+                    source_name = str(source)
+                    print(f"🔍 DEBUG (chunk_visibility): 文字列変換したsource_name: '{source_name}'")
+                
+                if source_name and source_name not in ['システム回答', 'unknown', 'Unknown', '']:
+                    source_names.append(source_name.strip())
+            source_text = ', '.join(source_names) if source_names else ""
+            print(f"🔍 DEBUG (chunk_visibility): 最終的なsource_text: '{source_text}'")
+        else:
+            print("🔍 DEBUG (chunk_visibility): sourcesが空またはNone")
         
         # 利用制限の更新
         remaining_questions = None
@@ -1697,7 +1786,7 @@ async def chat_with_chunk_visibility(message: ChatMessage, current_user = Depend
         # レスポンスを構築
         response_data = {
             "response": rag_result.get('final_answer', '申し訳ございませんが、回答を生成できませんでした。'),
-            "source": "ultra_accurate_rag",
+            "source": source_text if 'source_text' in locals() and source_text else "",
             "remaining_questions": remaining_questions,
             "limit_reached": limit_reached,
             "chunk_visibility": rag_result.get('chunk_visibility'),

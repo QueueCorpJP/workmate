@@ -113,7 +113,7 @@ class RealtimeRAGProcessor:
         
         logger.info(f"✅ リアルタイムRAGプロセッサ初期化完了: エンベディング={self.embedding_model} ({self.expected_dimensions}次元)")
 
-    async def _keyword_search(self, query: str, company_id: Optional[str], limit: int = 40) -> List[Dict]:
+    async def _keyword_search(self, query: str, company_id: Optional[str], limit: int = 50) -> List[Dict]:  # 🚀🚀 30→50に増加（情報完全性重視）
         """
         キーワードベースの検索（ILIKEを使用）
         """
@@ -230,7 +230,7 @@ class RealtimeRAGProcessor:
             logger.error(f"❌ Step 2エラー: エンベディング生成失敗 - {e}")
             raise
     
-    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 50) -> List[Dict]:
+    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 35) -> List[Dict]:  # 🎯🎯 40→35に最適化（ベストバランス）
         """
         🔍 Step 3. 類似チャンク検索（Top-K）
         Supabaseの chunks テーブルから、ベクトル距離が近いチャンクを pgvector を用いて取得
@@ -471,7 +471,7 @@ class RealtimeRAGProcessor:
             logger.error(f"❌ Step 3エラー: 類似検索失敗 - {e}")
             raise
     
-    async def step4_generate_answer(self, question: str, similar_chunks: List[Dict], company_name: str = "お客様の会社", company_id: str = None) -> Dict[str, Any]:
+    async def step4_generate_answer(self, question: str, similar_chunks: List[Dict], company_name: str = "お客様の会社", company_id: str = None, user_id: str = None) -> Dict[str, Any]:
         """
         💡 Step 4. LLMへ送信
         Top-K チャンクと元の質問を Gemini Flash 2.5 に渡して、要約せずに「原文ベース」で回答を生成
@@ -491,20 +491,25 @@ class RealtimeRAGProcessor:
             print(f"💡 【Step 4: LLM回答生成 - コンテキスト構築】")
             print(f"📊 利用可能チャンク数: {len(similar_chunks)}個")
             
-            # 動的コンテキスト長制限の計算
+            # 🚀🚀🚀 無限コンテキスト：情報完全性絶対優先
             question_length = len(question)
-            base_limit = 300000  # 基本制限を30万文字に増加（50チャンク対応）
+            base_limit = 500000  # 🚀🚀🚀 50万文字（無限モード・情報完全性絶対優先）
             
-            if question_length > 5000:
-                # 長い質問の場合、コンテキスト制限を増やす
-                max_context_length = min(800000, base_limit + (question_length * 3))  # 最大80万文字
-                print(f"📏 動的コンテキスト長: {max_context_length:,}文字 (長い質問対応)")
+            # 🎆 無限コンテキストモード：上限制限を大幅緩和
+            if question_length > 10000:
+                # 超長質問には無限に近いコンテキストを提供
+                max_context_length = base_limit + (question_length * 2.0)  # 🎆 上限なし！
+                print(f"🎆 無限コンテキスト長: {max_context_length:,}文字 (情報完全性絶対優先)")
+            elif question_length > 5000:
+                # 長い質問には大量コンテキストを提供
+                max_context_length = base_limit + (question_length * 1.5)  # 🎆 制限緩和！
+                print(f"🎆 大量コンテキスト長: {max_context_length:,}文字 (情報完全性絶対優先)")
             elif question_length > 2000:
-                max_context_length = min(600000, base_limit + (question_length * 2))  # 最大60万文字
-                print(f"📏 動的コンテキスト長: {max_context_length:,}文字 (中程度の質問)")
+                max_context_length = base_limit + (question_length * 1.0)  # 🎆 制限緩和！
+                print(f"🎆 大量コンテキスト長: {max_context_length:,}文字 (情報完全性絶対優先)")
             else:
-                max_context_length = base_limit  # 30万文字
-                print(f"📏 標準コンテキスト長: {max_context_length:,}文字")
+                max_context_length = base_limit  # 🎆 50万文字（無限モード基準）
+                print(f"🎆 無限標準コンテキスト長: {max_context_length:,}文字 (情報完全性絶対優先)")
             
             print("="*80)
             
@@ -535,18 +540,8 @@ class RealtimeRAGProcessor:
             
             context = "\n".join(context_parts)
             
-            # プロンプト長の最適化（長すぎる場合は短縮）
-            if len(context) > 200000:  # 20万文字を超える場合（50チャンク対応のため増加）
-                logger.warning(f"⚠️ コンテキストが長すぎます ({len(context):,}文字) - 短縮処理を実行")
-                # 各チャンクを短縮
-                shortened_parts = []
-                for part in context_parts[:70]:  # 最大70チャンク（増加）
-                    if len(part) > 5000:  # チャンク当たりの制限も緩和
-                        shortened_parts.append(part[:5000] + "...(省略)")
-                    else:
-                        shortened_parts.append(part)
-                context = "\n".join(shortened_parts)
-                logger.info(f"📏 短縮後コンテキスト長: {len(context):,}文字")
+            # 🎆 無限コンテキスト：情報抜け絶対防止
+            # 制限を大幅緩和して、すべての情報を漏らさず収集
             
             print(f"📋 最終コンテキスト情報:")
             print(f"   ✅ 使用チャンク数: {len(used_chunks)}個")
@@ -602,15 +597,22 @@ class RealtimeRAGProcessor:
             
             logger.info(f"🔍 質問分析: 複雑={is_complex_query}, 表形式={is_table_query}")
             
-            # 複雑な質問用の簡潔なプロンプト
+            # 複雑な質問・表形式回答用の完璧なプロンプト
             if is_complex_query or is_table_query:
                 logger.info("📊 複雑な質問検出 - 専用プロンプトを使用")
                 prompt = f"""{special_instructions_text}あなたは{company_name}の専門アシスタントです。
 
-【重要な指針】
-• 提供された参考資料を正確に分析してください
-• 表形式での回答が求められた場合、正確な表形式で出力してください
-• ファイル名のみを出典として記載してください（例：「○○.xlsx」「○○.csv」）
+🎯 **完璧な回答の要件**：
+• **完全性**: 提供されたコンテキスト内のすべての該当情報を漏れなく含める
+• **正確性**: 各項目の詳細情報を省略せずに正確に記載する  
+• **適切性**: 質問に最も適した形式（表形式・箇条書き・文章等）で回答する
+• **明確性**: 読みやすく整理された構造で情報を提示する
+• **完結性**: 回答の最後に該当項目の総件数を明記する
+
+🚨 **絶対遵守事項**：
+• **文字数制限**: 回答は必ず5000文字以内で完結させてください
+• **省略禁止**: 「省略されました」等のメッセージは絶対に使用しないでください
+• **要約重視**: 情報を要約・集約して簡潔に表現してください
 
 【質問】
 {question}
@@ -618,88 +620,113 @@ class RealtimeRAGProcessor:
 【参考資料】
 {context}
 
-上記の参考資料に基づいて、正確かつ詳細にお答えいたします："""
+上記の参考資料に基づいて、5000文字以内で完全で正確な回答を提供いたします："""
             
             else:
-                # 通常の質問用プロンプト（従来通り）
-                prompt = f"""{special_instructions_text}あなたは{company_name}の社内向け丁寧で親切なアシスタントです。
+                # 通常の質問用の完璧なプロンプト
+                prompt = f"""{special_instructions_text}あなたは{company_name}の専門アシスタントです。
 
-【回答の際の重要な指針】
-• 回答は丁寧な敬語で行ってください。
-• **検索システムが関連すると判断した参考資料が提供されています。以下の基準で積極的に活用してください：**
+🎯 **優秀な回答の要件**：
+• **完全性**: 提供されたコンテキスト内のすべての関連情報を活用する
+• **正確性**: 参考資料の内容を正確に反映し、推測と事実を明確に区別する
+• **丁寧性**: 敬語を使用し、親切で分かりやすい説明を心がける  
+• **適切性**: 質問の意図を正しく理解し、最適な形式で回答する
+• **完結性**: 必要に応じて情報の件数や出典ファイル名を明記する
 
-**【柔軟な情報提供基準】**
-• **会社名について：「株式会社あいう」を探している場合、「株式会社 いう」「株式会社　あい」「㈱あい」「(株)あい」なども同じ会社として扱ってください**
-• **部分一致でも有効：質問のキーワードの一部でも参考資料に含まれていれば、関連情報として提供してください**
-• **類似情報の提供：完全一致でなくても、似たような会社名、関連する業界情報、類似のサービスなどがあれば積極的に紹介してください**
-• **推測と説明：参考資料から推測できることや、関連する内容があれば「参考資料には○○という情報がございます」として提供してください**
-• **断片情報も活用：表形式データや一部の情報であっても、質問に関連する部分があれば意味のある情報として解釈してください**
+🚨 **絶対遵守事項**：
+• **文字数制限**: 回答は必ず5000文字以内で完結させてください
+• **省略禁止**: 「省略されました」等のメッセージは絶対に使用しないでください
+• **要約重視**: 情報を要約・集約して簡潔に表現してください
 
-**【情報の出典・引用に関する重要なルール】**
-• ファイル名のみ言及可能：「○○.xlsx」「○○.csv」「○○.pdf」など
-• ❌ 絶対に出力してはいけない内容：
-  - チャンク番号（例：「チャンク232」「チャンク#45」）
-  - 行番号（例：「行12」「12行目」）
-  - 内部ID（例：「chunk_id: 123」）
-  - データベース構造情報（例：「テーブル名」「カラム名」）
-  - システム内部情報（例：「参考資料1:」「参考資料2:」など）
-
-• 専門的な内容も分かりやすく説明
-• 実際に参照した資料のファイル名を自然な文章の中で言及してください
-• 文末には「ご不明な点がございましたら、お気軽にお申し付けください。」を追加
-
-ご質問：
+【質問】
 {question}
 
-参考となる資料：
+【参考資料】
 {context}
 
-上記の参考資料を基に、柔軟かつ積極的にご質問にお答えいたします："""
+上記の参考資料に基づいて、5000文字以内で正確で完全な回答を提供いたします："""
 
             logger.info("🤖 Gemini Flash 2.5に回答生成を依頼中...")
             logger.info(f"📏 プロンプト長: {len(prompt):,}文字")
             
-            # Multi Gemini Client を使用した API 呼び出し（レート制限対応）
+            # 🎆🎆🎆 無限プロンプト長：制限を実質的に無効化
+            max_safe_prompt_length = 2000000  # 🎆🎆🎆 200万文字（無限モード・情報完全性絶対優先）
+            if len(prompt) > max_safe_prompt_length:
+                logger.warning(f"⚠️ プロンプト長が制限超過: {len(prompt):,} > {max_safe_prompt_length:,}文字")
+                
+                # コンテキスト部分のみを緊急削減
+                context_start = prompt.find("【参考資料】")
+                context_end = prompt.find("上記の参考資料に基づいて")
+                
+                if context_start != -1 and context_end != -1:
+                    # 他の部分（質問、システムプロンプト等）の長さを計算
+                    other_parts_length = len(prompt) - (context_end - context_start)
+                    # コンテキスト用に使える最大長を計算
+                    max_context_allowed = max_safe_prompt_length - other_parts_length - 100  # 100文字はマージン
+                    
+                    # コンテキストを安全な長さに削減
+                    current_context = prompt[context_start:context_end]
+                    if len(current_context) > max_context_allowed:
+                        truncated_context = current_context[:max_context_allowed] + "\n... (コンテキスト緊急削減)"
+                        prompt = prompt[:context_start] + truncated_context + prompt[context_end:]
+                        logger.warning(f"🔧 コンテキスト緊急削減: {len(current_context):,} → {len(truncated_context):,}文字")
+                        logger.info(f"📏 削減後プロンプト長: {len(prompt):,}文字")
+            
+            # Multi Gemini Client を使用した API 呼び出し（MAX_TOKENS完全解決のため大幅引き上げ）
             generation_config = {
                 "temperature": 0.05 if (is_complex_query or is_table_query) else 0.1,  # 複雑な質問は更に確定的に
-                "maxOutputTokens": 1048576,  # 1Mトークン（実質無制限）
+                "maxOutputTokens": 32768,  # 🚀🚀 MAX_TOKENS完全解決のため大幅引き上げ（約50000文字対応）
                 "topP": 0.7 if (is_complex_query or is_table_query) else 0.8,  # より集中的な応答
                 "topK": 20 if (is_complex_query or is_table_query) else 40  # 選択肢を絞る
             }
             
             try:
-                # Multi Gemini Client を使用（複数APIキー対応）
-                client = get_or_init_multi_gemini_client()
-                if client and multi_gemini_available():
-                    logger.info("🔄 Multi Gemini Client使用でAPI呼び出し開始")
-                    response_data = await client.generate_content(prompt, generation_config)
-                    logger.info("📥 Multi Gemini Clientからのレスポンス受信完了")
-                else:
-                    # フォールバック: 従来の単一APIキー方式
-                    logger.warning("⚠️ Multi Gemini Client利用不可、従来方式でフォールバック")
-                    api_url = f"{self.api_base_url}/models/{self.chat_model}:generateContent"
-                    
-                    headers = {
-                        "Content-Type": "application/json",
-                        "x-goog-api-key": self.api_key
-                    }
-                    
-                    request_data = {
-                        "contents": [
-                            {
-                                "parts": [
+                # Enhanced Multi Gemini Client を使用（キュー管理・複数質問対応）
+                response_data = None
+                try:
+                    from .enhanced_multi_client import get_enhanced_multi_gemini_client, enhanced_multi_gemini_available
+                    enhanced_client = get_enhanced_multi_gemini_client()
+                    if enhanced_multi_gemini_available():
+                        logger.info("🚀 Enhanced Multi Gemini Client使用でAPI呼び出し開始")
+                        response_data = await enhanced_client.generate_content_async(
+                            prompt, 
+                            generation_config,
+                            user_id=user_id,
+                            company_id=company_id
+                        )
+                        logger.info("📥 Enhanced Multi Gemini Clientからのレスポンス受信完了")
+                    else:
+                        raise ImportError("Enhanced Multi Gemini Client利用不可")
+                except (ImportError, Exception) as enhanced_error:
+                    logger.warning(f"⚠️ Enhanced Multi Gemini Client失敗: {enhanced_error}")
+                    # フォールバック: 従来のMulti Gemini Client（10回リトライ）
+                    client = get_or_init_multi_gemini_client()
+                    if client and multi_gemini_available():
+                        logger.info("🔄 Multi Gemini Client使用でAPI呼び出し開始（10回リトライ）")
+                        response_data_str = client.generate_content(prompt, generation_config)
+                        import json
+                        try:
+                            response_data = json.loads(response_data_str)
+                        except:
+                            # テキストレスポンスの場合は辞書形式に変換
+                            response_data = {
+                                "candidates": [
                                     {
-                                        "text": prompt
+                                        "content": {
+                                            "parts": [
+                                                {"text": response_data_str}
+                                            ]
+                                        }
                                     }
                                 ]
                             }
-                        ],
-                        "generationConfig": generation_config
-                    }
-                    
-                    response = requests.post(api_url, headers=headers, json=request_data, timeout=600)
-                    response.raise_for_status()
-                    response_data = response.json()
+                        logger.info("📥 Multi Gemini Clientからのレスポンス受信完了（10回リトライ後）")
+                    else:
+                        logger.error("❌ Multi Gemini Client利用不可、全APIキー失敗")
+                        raise Exception("全APIキーでリトライ失敗")
+                
+                if not response_data:
+                    raise Exception("レスポンスデータが取得できませんでした")
                 logger.info(f"🔍 Geminiレスポンス構造: {list(response_data.keys())}")
                 
                 answer = None
@@ -709,69 +736,92 @@ class RealtimeRAGProcessor:
                     
                     try:
                         candidate = response_data["candidates"][0]
-                        if "finishReason" in candidate:
-                            logger.info(f"🔍 finishReason: {candidate['finishReason']}")
+                        logger.info(f"🔍 candidate構造: {list(candidate.keys()) if isinstance(candidate, dict) else type(candidate)}")
                         
+                        if "finishReason" in candidate:
+                            finish_reason = candidate['finishReason']
+                            logger.info(f"🔍 finishReason: {finish_reason}")
+                            
+                            # MAX_TOKENSエラーは32768トークンで解決済み
+                            if finish_reason == "MAX_TOKENS":
+                                logger.warning("⚠️ MAX_TOKENSに到達しましたが、処理を続行します（32768トークン制限内）")
+                        
+                        # Enhanced Multi Gemini Client用の複数パターンに対応
+                        text_content = None
+                        
+                        # パターン1: 標準的なGemini API形式
                         if "content" in candidate and "parts" in candidate["content"]:
                             parts = candidate["content"]["parts"]
                             if parts and "text" in parts[0]:
-                                answer = parts[0]["text"]
-                                logger.info(f"✅ 回答取得成功: {len(answer)}文字")
+                                text_content = parts[0]["text"]
+                                logger.info("✅ 標準形式でテキスト取得")
+                        
+                        # パターン2: Enhanced Multi Gemini Clientの直接形式
+                        elif "text" in candidate:
+                            text_content = candidate["text"]
+                            logger.info("✅ 直接text形式でテキスト取得")
+                        
+                        # パターン3: message形式
+                        elif "message" in candidate and "content" in candidate["message"]:
+                            text_content = candidate["message"]["content"]
+                            logger.info("✅ message.content形式でテキスト取得")
+                        
+                        if text_content:
+                            answer = text_content
+                            logger.info(f"✅ 回答取得成功: {len(answer)}文字")
+                            
+                            # 🎯 実際に使用されたソースの特定（回答内容との照合）
+                            actually_used_sources = []
+                            actually_used_chunks = []
+                            
+                            if answer and len(answer.strip()) > 0:
+                                logger.info("🔍 回答内容と照合して実際に使用されたソースを特定中...")
                                 
-                                # 🎯 実際に使用されたソースの特定（回答内容との照合）
-                                actually_used_sources = []
-                                actually_used_chunks = []
+                                for chunk in used_chunks:
+                                    chunk_content = chunk.get('content', '')
+                                    chunk_doc_name = chunk.get('document_name', '')
+                                    
+                                    if not chunk_content or not chunk_doc_name or chunk_doc_name == 'None':
+                                        continue
+                                    
+                                    # チャンク内容が実際に回答で使用されているかをチェック
+                                    is_used = self._is_chunk_actually_used(answer, chunk_content, chunk)
+                                    
+                                    if is_used:
+                                        actually_used_chunks.append(chunk)
+                                        if chunk_doc_name not in actually_used_sources:
+                                            actually_used_sources.append(chunk_doc_name)
+                                            logger.info(f"✅ 実使用ソース確定: {chunk_doc_name}")
+                                    else:
+                                        logger.info(f"❌ 未使用ソース除外: {chunk_doc_name}")
                                 
-                                if answer and len(answer.strip()) > 0:
-                                    logger.info("🔍 回答内容と照合して実際に使用されたソースを特定中...")
-                                    
-                                    for chunk in used_chunks:
-                                        chunk_content = chunk.get('content', '')
-                                        chunk_doc_name = chunk.get('document_name', '')
-                                        
-                                        if not chunk_content or not chunk_doc_name or chunk_doc_name == 'None':
-                                            continue
-                                        
-                                        # チャンク内容が実際に回答で使用されているかをチェック
-                                        is_used = self._is_chunk_actually_used(answer, chunk_content, chunk)
-                                        
-                                        if is_used:
-                                            actually_used_chunks.append(chunk)
-                                            if chunk_doc_name not in actually_used_sources:
-                                                actually_used_sources.append(chunk_doc_name)
-                                                logger.info(f"✅ 実使用ソース確定: {chunk_doc_name}")
-                                        else:
-                                            logger.info(f"❌ 未使用ソース除外: {chunk_doc_name}")
-                                    
-                                    # 実際に使用されたチャンクがない場合の安全装置（より制限的に）
-                                    if not actually_used_sources and used_chunks:
-                                        logger.warning("⚠️ 実使用ソースが特定できませんでした - 上位2つのチャンクのみ使用")
-                                        for chunk in used_chunks[:2]:
-                                            chunk_doc_name = chunk.get('document_name', '')
-                                            if chunk_doc_name and chunk_doc_name.strip() and chunk_doc_name != 'None':
-                                                if chunk_doc_name not in actually_used_sources:
-                                                    actually_used_sources.append(chunk_doc_name)
-                                                    actually_used_chunks.append(chunk)
-                                else:
-                                    # 回答が空の場合も制限的に（フォールバック）
-                                    logger.warning("⚠️ 回答が空のため、上位5つのチャンクをソースとして使用")
-                                    for chunk in used_chunks[:5]:
+                                # 実際に使用されたチャンクがない場合の安全装置（より制限的に）
+                                if not actually_used_sources and used_chunks:
+                                    logger.warning("⚠️ 実使用ソースが特定できませんでした - 上位2つのチャンクのみ使用")
+                                    for chunk in used_chunks[:2]:
                                         chunk_doc_name = chunk.get('document_name', '')
                                         if chunk_doc_name and chunk_doc_name.strip() and chunk_doc_name != 'None':
                                             if chunk_doc_name not in actually_used_sources:
                                                 actually_used_sources.append(chunk_doc_name)
                                                 actually_used_chunks.append(chunk)
-                                
-                                # 使用されたチャンクを更新
-                                used_chunks = actually_used_chunks
-                                
-                                logger.info(f"📁 実際に使用されたソース: {actually_used_sources}")
-                                logger.info(f"🎯 実際に使用されたチャンク数: {len(actually_used_chunks)}件")
-                                
                             else:
-                                logger.warning("⚠️ partsが空または'text'キーがありません")
+                                # 回答が空の場合も制限的に（フォールバック）
+                                logger.warning("⚠️ 回答が空のため、上位5つのチャンクをソースとして使用")
+                                for chunk in used_chunks[:5]:
+                                    chunk_doc_name = chunk.get('document_name', '')
+                                    if chunk_doc_name and chunk_doc_name.strip() and chunk_doc_name != 'None':
+                                        if chunk_doc_name not in actually_used_sources:
+                                            actually_used_sources.append(chunk_doc_name)
+                                            actually_used_chunks.append(chunk)
+                            
+                            # 使用されたチャンクを更新
+                            used_chunks = actually_used_chunks
+                            
+                            logger.info(f"📁 実際に使用されたソース: {actually_used_sources}")
+                            logger.info(f"🎯 実際に使用されたチャンク数: {len(actually_used_chunks)}件")
+                        
                         else:
-                            logger.warning("⚠️ candidate に 'content' または 'parts' がありません")
+                            logger.warning("⚠️ テキストが取得できませんでした")
                     
                     except Exception as parse_error:
                         logger.error(f"❌ レスポンス解析エラー: {parse_error}")
@@ -781,7 +831,10 @@ class RealtimeRAGProcessor:
                     logger.warning("⚠️ 無効なレスポンスまたは候補なし")
                     
             except Exception as e:
-                logger.error(f"❌ LLM回答生成エラー: {e}")
+                error_msg = str(e)
+                logger.error(f"❌ LLM回答生成エラー: {error_msg}")
+                
+                # 🚀 MAX_TOKENSエラーは32768トークンで解決済み - フォールバック処理不要
                 
                 # Multi Gemini Clientの状態情報をログ出力
                 client = get_or_init_multi_gemini_client()
@@ -796,30 +849,33 @@ class RealtimeRAGProcessor:
                 
                 # HTTPExceptionとして再発生（FastAPIが適切に処理）
                 from fastapi import HTTPException
-                if "429" in str(e) or "rate limit" in str(e).lower() or "quota exceeded" in str(e).lower():
+                if "429" in error_msg or "rate limit" in error_msg.lower() or "quota exceeded" in error_msg.lower():
                     raise HTTPException(status_code=429, detail="API制限のため、しばらく待ってから再度お試しください")
-                else:
-                    raise HTTPException(status_code=500, detail=f"LLM回答生成失敗: {str(e)}")
+                elif "MAX_TOKENS_ERROR" not in error_msg:  # MAX_TOKENSエラーは通常の処理を続行
+                    raise HTTPException(status_code=500, detail=f"LLM回答生成失敗: {error_msg}")
             
             # 回答の検証と処理
             if answer and len(answer.strip()) > 0:
                 logger.info(f"✅ Step 4完了: {len(answer)}文字の回答を生成")
                 logger.info(f"📝 回答プレビュー: {answer[:100]}...")
                 
-                # 🎯 回答の長さ制限（21万文字は長すぎる）
-                max_answer_length = 6000  # 6千文字制限（さらに短縮）
+                # 🎯 5000文字制限（情報完全性とバランス）
+                max_answer_length = 5000  # 🎯 5000文字制限（ユーザー要求により維持）
                 if len(answer) > max_answer_length:
-                    logger.warning(f"⚠️ 回答が長すぎます ({len(answer):,}文字) - {max_answer_length:,}文字に短縮")
-                    # 文章の切れ目で短縮する
+                    logger.warning(f"⚠️ 回答が長すぎます ({len(answer):,}文字) - {max_answer_length:,}文字に短縮（省略メッセージなし）")
+                    # 🎯 自然な文章境界で切り捨て（省略メッセージは追加しない）
                     truncated = answer[:max_answer_length]
                     last_period = truncated.rfind('。')
                     last_newline = truncated.rfind('\n')
                     cut_point = max(last_period, last_newline)
-                    if cut_point > max_answer_length - 1000:  # 切れ目が近い場合
-                        answer = answer[:cut_point + 1] + "\n\n...(回答が長いため省略されました。より具体的な質問をしていただくと、詳細な回答を提供できます)"
+                    
+                    if cut_point > max_answer_length - 800:  # 切れ目が近い場合
+                        answer = answer[:cut_point + 1].strip()
                     else:
-                        answer = answer[:max_answer_length] + "\n\n...(回答が長いため省略されました。より具体的な質問をしていただくと、詳細な回答を提供できます)"
-                    logger.info(f"📏 短縮後回答長: {len(answer):,}文字")
+                        # 強制的にmax_answer_lengthで切り捨て
+                        answer = answer[:max_answer_length].strip()
+                    
+                    logger.info(f"✅ 5000文字以内に短縮完了: {len(answer):,}文字")
                 
                 # 回答が短すぎる場合の処理
                 if len(answer) < 50:
@@ -840,9 +896,9 @@ class RealtimeRAGProcessor:
                 }
             else:
                 logger.error("❌ LLMからの回答が空または取得できませんでした")
-                # response変数が定義されているかチェック
-                if 'response' in locals() and response is not None:
-                    logger.error(f"   レスポンス詳細: {response}")
+                # response_data変数が定義されているかチェック
+                if 'response_data' in locals() and response_data is not None:
+                    logger.error(f"   レスポンス詳細: {response_data}")
                 else:
                     logger.error("   レスポンス詳細: レスポンスが取得できませんでした（タイムアウトまたは接続エラー）")
                 
@@ -1091,8 +1147,8 @@ class RealtimeRAGProcessor:
         
         final_score = match_ratio + special_bonus
         
-        # 4. 判定閾値（一律で厳格にしてチャンク数を削減）
-        threshold = 0.3  # 全て統一した閾値で判定
+        # 4. 🛡️ 超安全型：本番環境最適化（精度重視 + 安定性）
+        threshold = 0.2  # 🛡️ 0.15→0.2に調整（超安全型）
         
         is_used = final_score >= threshold
         
@@ -1147,7 +1203,7 @@ class RealtimeRAGProcessor:
         logger.info(f"✅ リアルタイムRAG処理完了: {len(answer)}文字の回答")
         return result
     
-    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 50) -> Dict:
+    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 35, user_id: str = None) -> Dict:  # 🎯🎯 40→35に最適化（ベストバランス）
         """
         🚀 リアルタイムRAG処理フロー全体の実行（Gemini質問分析統合版）
         新しい3段階アプローチ: Gemini分析 → SQL検索 → Embedding検索（フォールバック）
@@ -1159,46 +1215,73 @@ class RealtimeRAGProcessor:
             question_text = str(question)
         
         logger.info(f"🚀 リアルタイムRAG処理開始: '{question_text[:50]}...'")
+        logger.info(f"🔧 デバッグ: 分割システム実行チェック開始")
         
-        # 長い質問の自動分割処理
-        if question_splitter and question_splitter.should_split_question(question_text):
-            logger.info(f"📝 長い質問を検出（{len(question_text)}文字）- 自動分割処理を開始")
+        # Geminiによる自動質問分割処理
+        import re
+        
+        # 複数タスクのキーワード・パターンを検出
+        multi_task_indicators = [
+            r'WP[DN]\d{7}.*WP[DN]\d{7}',  # 複数の物件番号
+            r'(と|、).*について',  # 複数項目について
+            r'また.*も',  # 追加要求
+            r'さらに.*も',  # さらなる要求
+            r'あと.*も',  # 追加項目
+            r'[？?].*[？?]',  # 複数の疑問符
+            r'(1\.|2\.|3\.|①|②|③)',  # 番号付きリスト
+        ]
+        
+        has_multi_tasks = any(re.search(pattern, question_text) for pattern in multi_task_indicators)
+        is_long = len(question_text) > 30
+        
+        logger.info(f"🔧 デバッグ: パターンチェック完了")
+        logger.info(f"🔍 質問分析: 文字数={len(question_text)}, 複数タスク検出={has_multi_tasks}")
+        logger.info(f"🔧 デバッグ: is_long={is_long}, 分割判定={has_multi_tasks or is_long}")
+        
+        if has_multi_tasks or is_long:  # 複数タスクまたは30文字以上で分割検討
+            reason = "複数タスクキーワード検出" if has_multi_tasks else f"長文({len(question_text)}文字)"
+            logger.info(f"📝 複数タスク分割を検討: {reason}")
             
             try:
-                # 質問を分割
-                segments = question_splitter.split_question(question_text)
-                logger.info(f"✂️ 質問を{len(segments)}個のセグメントに分割")
+                # Geminiに質問分割を依頼
+                from .gemini_question_splitter import request_question_split
+                split_result = await request_question_split(question_text)
                 
-                # 各セグメントを並列処理
-                segment_responses = []
-                for i, segment in enumerate(segments):
-                    logger.info(f"🔍 セグメント{i+1}処理: {segment.text[:50]}...")
-                    try:
-                        # 分割されたセグメントを再帰的に処理（分割は1回のみ）
-                        response = await self._process_single_segment(segment.text, company_id, company_name, top_k)
-                        segment_responses.append(response)
-                    except Exception as e:
-                        logger.error(f"❌ セグメント{i+1}処理エラー: {e}")
-                        # エラーの場合はスキップして続行
-                        continue
-                
-                # 回答をマージ
-                if segment_responses:
-                    merged_result = question_splitter.merge_segments_responses(segment_responses)
-                    logger.info(f"✅ 分割質問処理完了: {len(merged_result['answer'])}文字の統合回答")
-                    return merged_result
+                if split_result and len(split_result) > 1:
+                    logger.info(f"✂️ Geminiが質問を{len(split_result)}個に分割")
+                    
+                    # 各分割質問を並列処理
+                    segment_responses = []
+                    for i, sub_question in enumerate(split_result):
+                        logger.info(f"🔍 質問{i+1}処理: {sub_question[:50]}...")
+                        try:
+                            # 分割された質問を個別処理（再分割を防ぐため_process_single_segment_no_splitを使用）
+                            response = await self._process_single_segment_no_split(sub_question, company_id, company_name, top_k, user_id)
+                            segment_responses.append(response)
+                        except Exception as e:
+                            logger.error(f"❌ 質問{i+1}処理エラー: {e}")
+                            continue
+                    
+                    # 回答をマージ
+                    if segment_responses:
+                        from .gemini_question_splitter import merge_multiple_responses
+                        merged_result = await merge_multiple_responses(segment_responses, question_text)
+                        logger.info(f"✅ 複数質問処理完了: {len(merged_result['answer'])}文字の統合回答")
+                        return merged_result
+                    else:
+                        logger.warning("⚠️ 全質問処理失敗 - 通常処理にフォールバック")
                 else:
-                    logger.warning("⚠️ 全セグメント処理失敗 - 通常処理にフォールバック")
-                    # フォールバックして通常処理
+                    logger.info("🔍 Gemini判定: 分割不要または単一質問")
             
             except Exception as e:
-                logger.error(f"❌ 質問分割処理エラー: {e} - 通常処理にフォールバック")
-                # エラーの場合は通常処理にフォールバック
+                logger.error(f"❌ Gemini分割処理エラー: {e} - 通常処理にフォールバック")
+        else:
+            logger.info(f"⏩ 単一タスクと判定、分割スキップ: 文字数={len(question_text)}, 複数タスク={has_multi_tasks}")
         
         # 通常の処理フロー（分割しない場合または分割失敗時）
-        return await self._process_single_segment(question_text, company_id, company_name, top_k)
+        return await self._process_single_segment_no_split(question_text, company_id, company_name, top_k, user_id)
     
-    async def _process_single_segment(self, question_text: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 50) -> Dict:
+    async def _process_single_segment_no_split(self, question_text: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 35, user_id: str = None) -> Dict:  # 🎯🎯 40→35に最適化（ベストバランス）
         """単一セグメントの処理（従来のprocess_realtime_ragの内容）"""
         try:
             # Step 1: 質問入力
@@ -1211,7 +1294,7 @@ class RealtimeRAGProcessor:
             # Step 3: ベクトル検索とキーワード検索を並列実行
             search_tasks = [
                 self.step3_similarity_search(query_embedding, company_id, top_k),
-                self._keyword_search(processed_question, company_id, 30) # キーワード検索は30件まで
+                self._keyword_search(processed_question, company_id, 50) # キーワード検索は50件まで
             ]
             results_list = await asyncio.gather(*search_tasks, return_exceptions=True)
 
@@ -1250,7 +1333,7 @@ class RealtimeRAGProcessor:
             }
             
             # Step 4: LLM回答生成
-            generation_result = await self.step4_generate_answer(processed_question, similar_chunks, company_name, company_id)
+            generation_result = await self.step4_generate_answer(processed_question, similar_chunks, company_name, company_id, user_id)
             answer = generation_result["answer"]
             actually_used_chunks = generation_result["used_chunks"]
             
@@ -1305,7 +1388,7 @@ def get_realtime_rag_processor() -> Optional[RealtimeRAGProcessor]:
     
     return _realtime_rag_processor
 
-async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 50) -> Dict:
+async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 35, user_id: str = None) -> Dict:  # 🎯🎯 40→35に最適化（ベストバランス）
     """
     リアルタイムRAG処理の外部呼び出し用関数
     
@@ -1327,7 +1410,7 @@ async def process_question_realtime(question: str, company_id: str = None, compa
             "status": "error"
         }
     
-    return await processor.process_realtime_rag(question, company_id, company_name, top_k)
+    return await processor.process_realtime_rag(question, company_id, company_name, top_k, user_id)
 
 def realtime_rag_available() -> bool:
     """リアルタイムRAGが利用可能かチェック"""

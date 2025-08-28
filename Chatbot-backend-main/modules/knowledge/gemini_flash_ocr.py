@@ -22,16 +22,29 @@ from PIL import Image
 import requests
 import json
 
+# 🚀 Multi Gemini Clientのインポート
+from ..multi_gemini_client import get_multi_gemini_client, multi_gemini_available
+
 logger = logging.getLogger(__name__)
 
 class GeminiFlashOCRProcessor:
-    """Gemini 2.5 Flash APIを使用した高性能OCRプロセッサ"""
+    """Gemini 2.5 Flash APIを使用した高性能OCRプロセッサ（31API対応版）"""
     
     def __init__(self):
         """初期化"""
-        self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        if not self.api_key:
-            raise ValueError("GEMINI_API_KEY または GOOGLE_API_KEY 環境変数が設定されていません")
+        # 🚀 Multi Gemini Clientを優先使用
+        if multi_gemini_available():
+            self.multi_gemini_client = get_multi_gemini_client()
+            self.max_retries = len(self.multi_gemini_client.api_keys) if self.multi_gemini_client else 31
+            logger.info(f"✅ Multi Gemini Client使用: {self.max_retries}個のAPIキー利用可能")
+        else:
+            # フォールバック：単一APIキー
+            self.multi_gemini_client = None
+            self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+            if not self.api_key:
+                raise ValueError("GEMINI_API_KEY または GOOGLE_API_KEY 環境変数が設定されていません")
+            self.max_retries = 3
+            logger.warning("⚠️ 単一APIキーでフォールバック動作")
         
         # Gemini 2.5 Flash Vision API設定
         self.model_name = "gemini-2.5-flash"
@@ -39,10 +52,9 @@ class GeminiFlashOCRProcessor:
         
         # OCR設定
         self.max_batch_size = 4  # バッチサイズ（API制限に合わせて調整）
-        self.max_retries = 3     # リトライ回数
         self.retry_delay = 2.0   # リトライ間隔
         
-        logger.info(f"✅ Gemini 2.5 Flash OCRプロセッサ初期化完了")
+        logger.info(f"✅ Gemini 2.5 Flash OCRプロセッサ初期化完了（最大リトライ: {self.max_retries}回）")
     
     def _check_pymupdf_availability(self) -> bool:
         """PyMuPDFの可用性をチェック"""
@@ -123,7 +135,102 @@ class GeminiFlashOCRProcessor:
         return base64.b64encode(img_data).decode('utf-8')
     
     async def _call_gemini_vision_api(self, images_b64: List[str], prompt: str) -> str:
-        """Gemini 2.5 Flash Vision APIを呼び出し"""
+        """Gemini 2.5 Flash Vision APIを呼び出し（31API対応版）"""
+        
+        # 🚀 Multi Gemini Client使用（31個APIキー全て試行）
+        if self.multi_gemini_client:
+            try:
+                logger.info(f"🤖 Multi Gemini Vision API呼び出し開始（{len(self.multi_gemini_client.api_keys)}個のAPIキー利用可能）")
+                
+                # Vision APIはMulti Gemini Clientでは直接処理できないため、
+                # 各APIキーを個別に試行する
+                return await self._call_with_all_api_keys(images_b64, prompt)
+                
+            except Exception as e:
+                logger.error(f"❌ Multi API Vision処理失敗: {e}")
+                # フォールバックで単一APIキーを試行
+                if hasattr(self, 'api_key') and self.api_key:
+                    logger.warning("🔄 単一APIキーでフォールバック試行")
+                    return await self._call_single_api_vision(images_b64, prompt)
+                else:
+                    raise Exception(f"全てのAPIキーで失敗しました: {e}")
+        else:
+            # 単一APIキーでの処理
+            return await self._call_single_api_vision(images_b64, prompt)
+    
+    async def _call_with_all_api_keys(self, images_b64: List[str], prompt: str) -> str:
+        """31個のAPIキーで順次Vision API試行"""
+        api_url = f"{self.api_base_url}/models/{self.model_name}:generateContent"
+        
+        # コンテンツを構築
+        parts = [{"text": prompt}]
+        for img_b64 in images_b64:
+            parts.append({
+                "inline_data": {
+                    "mime_type": "image/png",
+                    "data": img_b64
+                }
+            })
+        
+        request_data = {
+            "contents": [{"parts": parts}],
+            "generationConfig": {
+                "temperature": 0.1,
+                "maxOutputTokens": 1048576,
+                "topP": 0.8,
+                "topK": 40
+            },
+            "safetySettings": [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+            ]
+        }
+        
+        # 31個のAPIキーで順次試行
+        for attempt, api_key in enumerate(self.multi_gemini_client.api_keys):
+            try:
+                logger.info(f"🤖 Vision API呼び出し (APIキー {attempt + 1}/{len(self.multi_gemini_client.api_keys)})")
+                
+                headers = {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": api_key
+                }
+                
+                def make_request():
+                    return requests.post(api_url, headers=headers, json=request_data, timeout=120)
+                
+                response = await asyncio.to_thread(make_request)
+                response.raise_for_status()
+                
+                result = response.json()
+                
+                if "candidates" in result and len(result["candidates"]) > 0:
+                    text_content = result["candidates"][0]["content"]["parts"][0]["text"]
+                    logger.info(f"✅ Vision API成功（APIキー {attempt + 1}） ({len(text_content)}文字)")
+                    return text_content
+                else:
+                    raise Exception("APIレスポンスにテキストコンテンツが含まれていません")
+                    
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"⚠️ APIキー {attempt + 1} エラー: {e}")
+                if attempt < len(self.multi_gemini_client.api_keys) - 1:
+                    await asyncio.sleep(1.0)  # 短時間待機してから次のキーを試行
+                    continue
+                else:
+                    raise Exception(f"全{len(self.multi_gemini_client.api_keys)}個のAPIキーで失敗: {e}")
+            except Exception as e:
+                logger.warning(f"⚠️ APIキー {attempt + 1} 予期しないエラー: {e}")
+                if attempt < len(self.multi_gemini_client.api_keys) - 1:
+                    continue
+                else:
+                    raise Exception(f"全APIキーで失敗: {e}")
+    
+
+    
+    async def _call_single_api_vision(self, images_b64: List[str], prompt: str) -> str:
+        """単一APIキーでVision APIを呼び出し（フォールバック用）"""
         api_url = f"{self.api_base_url}/models/{self.model_name}:generateContent"
         
         headers = {
@@ -144,8 +251,8 @@ class GeminiFlashOCRProcessor:
         request_data = {
             "contents": [{"parts": parts}],
             "generationConfig": {
-                "temperature": 0.1,  # 精度重視で低温度
-                "maxOutputTokens": 1048576,  # 1Mトークン（実質無制限）
+                "temperature": 0.1,
+                "maxOutputTokens": 1048576,
                 "topP": 0.8,
                 "topK": 40
             },
@@ -169,34 +276,32 @@ class GeminiFlashOCRProcessor:
             ]
         }
         
-        # リトライ機能付きでAPI呼び出し
-        for attempt in range(self.max_retries):
+        # フォールバックは最大3回
+        for attempt in range(min(3, self.max_retries)):
             try:
-                logger.info(f"🤖 Gemini 2.5 Flash Vision API呼び出し (試行 {attempt + 1}/{self.max_retries})")
+                logger.info(f"🤖 単一API Vision呼び出し (試行 {attempt + 1}/3)")
                 
-                response = requests.post(
-                    api_url, 
-                    headers=headers, 
-                    json=request_data, 
-                    timeout=120  # 2分のタイムアウト
-                )
+                def make_request():
+                    return requests.post(api_url, headers=headers, json=request_data, timeout=120)
+                
+                response = await asyncio.to_thread(make_request)
                 response.raise_for_status()
                 
                 result = response.json()
                 
                 if "candidates" in result and len(result["candidates"]) > 0:
                     text_content = result["candidates"][0]["content"]["parts"][0]["text"]
-                    logger.info(f"✅ Gemini Vision API成功 ({len(text_content)}文字)")
+                    logger.info(f"✅ 単一API Vision成功 ({len(text_content)}文字)")
                     return text_content
                 else:
                     raise Exception("APIレスポンスにテキストコンテンツが含まれていません")
                     
             except requests.exceptions.RequestException as e:
-                logger.warning(f"⚠️ API呼び出しエラー (試行 {attempt + 1}): {e}")
-                if attempt < self.max_retries - 1:
+                logger.warning(f"⚠️ 単一API呼び出しエラー (試行 {attempt + 1}): {e}")
+                if attempt < 2:
                     await asyncio.sleep(self.retry_delay * (attempt + 1))
                 else:
-                    raise Exception(f"API呼び出しが{self.max_retries}回失敗しました: {e}")
+                    raise Exception(f"単一API呼び出しが3回失敗しました: {e}")
             except Exception as e:
                 logger.error(f"❌ 予期しないエラー: {e}")
                 raise

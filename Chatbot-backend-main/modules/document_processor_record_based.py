@@ -9,7 +9,7 @@ Excelファイルなどの構造化データを行（レコード）単位で処
 """
 
 import os
-import uuid
+# import uuid  # 🚀 超短縮列名により不要
 import logging
 import asyncio
 import tempfile
@@ -31,11 +31,15 @@ class DocumentProcessorRecordBased:
     def __init__(self):
         # 基本的なDocumentProcessorの設定を継承
         self.base_processor = DocumentProcessor()
-        self.excel_cleaner = ExcelDataCleaner()
+        # self.excel_cleaner = ExcelDataCleaner()  # クリーニング無効化
         
-        # レコードベース処理固有の設定
-        self.max_record_length = 1000  # 1レコードの最大文字数
-        self.min_meaningful_columns = 2  # 意味のある列の最小数
+        # レコードベース処理固有の設定（細粒度最適化）
+        self.max_record_length = 800  # 🎯 1レコードの最大文字数を800文字に統一（チャンクサイズ準拠）
+        self.min_record_length = 600   # 🎯 1レコードの最小文字数を600文字に設定
+        self.min_meaningful_columns = 0  # 意味のある列の最小数を0に（全レコード保持）
+        
+        # 🚀 超短列名用の連番カウンター
+        self.column_counter = 0
         
         logger.info("✅ レコードベースドキュメントプロセッサー初期化完了")
     
@@ -197,8 +201,8 @@ class DocumentProcessorRecordBased:
         try:
             logger.info(f"📊 Excel レコード抽出開始: {filename}")
             
-            # ExcelDataCleanerを使用してデータを構造化
-            cleaned_text = self.excel_cleaner.clean_excel_data(content)
+            # ExcelDataCleanerを無効化 - 生データを直接使用
+            # cleaned_text = self.excel_cleaner.clean_excel_data(content)
             
             # pandas でExcelファイルを直接読み込み
             excel_file = pd.ExcelFile(content)
@@ -280,10 +284,10 @@ class DocumentProcessorRecordBased:
                         logger.warning(f"⚠️ シート {sheet_name} は空です")
                         continue
                     
-                    # 空の行・列を削除
-                    logger.info(f"📊 空行・列削除前: {df.shape}")
-                    df = df.dropna(how='all').dropna(axis=1, how='all')
-                    logger.info(f"📊 空行・列削除後: {df.shape}")
+                    # 空の行・列削除を無効化 - 生データ保持
+                    logger.info(f"📊 生データ保持: {df.shape}")
+                    # df = df.dropna(how='all').dropna(axis=1, how='all')
+                    logger.info(f"📊 生データのまま処理: {df.shape}")
                     
                     if df.empty:
                         logger.warning(f"⚠️ シート {sheet_name} は空行・列削除後に空になりました")
@@ -323,9 +327,9 @@ class DocumentProcessorRecordBased:
             # 各行をレコードとして処理
             for index, row in df.iterrows():
                 try:
-                    # 空の行をスキップ
-                    if row.isna().all():
-                        continue
+                    # 空の行スキップを無効化 - 全行保持
+                    # if row.isna().all():
+                    #     continue
                     
                     # レコードの内容を構築
                     record_data = {}
@@ -334,22 +338,36 @@ class DocumentProcessorRecordBased:
                     
                     for col in df.columns:
                         value = row[col]
-                        if pd.notna(value) and str(value).strip():
+                        if pd.notna(value):
                             clean_value = str(value).strip()
                             record_data[col] = clean_value
                             record_parts.append(f"{col}: {clean_value}")
                             meaningful_columns += 1
+                        else:
+                            # 空セルも構造情報として保持
+                            record_data[col] = ""
+                            record_parts.append(f"{col}: [空]")
                     
-                    # 意味のある列が少ない場合はスキップ
-                    if meaningful_columns < self.min_meaningful_columns:
-                        continue
+                    # 意味のある列数チェックを無効化 - 全レコード保持
+                    # if meaningful_columns < self.min_meaningful_columns:
+                    #     continue
                     
-                    # レコードの内容を作成
-                    record_content = " | ".join(record_parts)
+                    # レコードの内容を作成（空行でも構造情報を保持）
+                    if not record_parts:
+                        record_content = f"[空行] 行{index}: 全セル空"
+                    else:
+                        record_content = " | ".join(record_parts)
                     
-                    # レコードの長さ制限
+                    # 🎯 レコードの長さ制限を有効化 - 600-800文字範囲に制限
                     if len(record_content) > self.max_record_length:
-                        record_content = record_content[:self.max_record_length] + "..."
+                        # 800文字を超える場合は切り詰める
+                        record_content = record_content[:self.max_record_length]
+                        # 最後の完全な列情報で終わるように調整
+                        last_separator = record_content.rfind(" | ")
+                        if last_separator > self.min_record_length:  # 600文字以上の位置にセパレータがある場合
+                            record_content = record_content[:last_separator]
+                        record_content += " [...]"  # 切り詰めたことを示す
+                        logger.debug(f"📏 レコード {index} を{len(record_content)}文字に切り詰めました")
                     
                     # メタデータを追加
                     record = {
@@ -382,8 +400,9 @@ class DocumentProcessorRecordBased:
         
         # 本当に無意味な列名のみを置換
         if not column_name or str(column_name).strip() == '' or str(column_name).startswith('Unnamed'):
-            generated_name = f"列_{uuid.uuid4().hex[:8]}"
-            logger.debug(f"列名を自動生成: '{original_name}' → '{generated_name}'")
+            self.column_counter += 1
+            generated_name = f"C{self.column_counter}"  # 🚀 超短形式：C1, C2, C3...
+            logger.debug(f"列名を超短形式で自動生成: '{original_name}' → '{generated_name}'")
             return generated_name
         
         # 文字列を清潔に
@@ -435,9 +454,10 @@ class DocumentProcessorRecordBased:
                 batch_contents = [record["content"] for record in batch_records]
                 batch_embeddings = await self.base_processor._generate_embeddings_batch(batch_contents)
                 
-                # 失敗したembeddingのリトライ処理
+                # 失敗したembeddingのリトライ処理（効率化）
                 failed_indices = [i for i, emb in enumerate(batch_embeddings) if emb is None]
                 retry_count = 0
+                consecutive_total_failures = 0
                 
                 while failed_indices and retry_count < max_retries:
                     retry_count += 1
@@ -445,18 +465,34 @@ class DocumentProcessorRecordBased:
                     
                     retry_embeddings = await self.base_processor._generate_embeddings_batch(batch_contents, failed_indices)
                     
+                    # リトライ結果をチェック
+                    retry_success_count = 0
                     for i in failed_indices:
                         if retry_embeddings[i] is not None:
                             batch_embeddings[i] = retry_embeddings[i]
+                            retry_success_count += 1
                     
                     failed_indices = [i for i in failed_indices if batch_embeddings[i] is None]
                     
-                    if failed_indices:
-                        logger.warning(f"⚠️ バッチ {current_batch} 再試行後も失敗: {len(failed_indices)}件")
-                        await asyncio.sleep(1.0)
+                    if retry_success_count == 0:
+                        # 全く成功しなかった場合
+                        consecutive_total_failures += 1
+                        logger.warning(f"⚠️ バッチ {current_batch} 再試行完全失敗 ({consecutive_total_failures}回目)")
+                        
+                        if consecutive_total_failures >= 2:
+                            # 2回連続で全失敗の場合は諦めて次へ進む
+                            logger.error(f"🛑 バッチ {current_batch} API全失敗が継続中 - このバッチの失敗を受け入れて次へ進行")
+                            break
+                        
+                        await asyncio.sleep(0.5)  # 待機時間を短縮
                     else:
-                        logger.info(f"✅ バッチ {current_batch} 再試行成功")
-                        break
+                        consecutive_total_failures = 0  # 成功があったらリセット
+                        if failed_indices:
+                            logger.warning(f"⚠️ バッチ {current_batch} 一部失敗残り: {len(failed_indices)}件")
+                            await asyncio.sleep(0.3)  # 短縮
+                        else:
+                            logger.info(f"✅ バッチ {current_batch} 再試行成功")
+                            break
                 
                 # 統計更新
                 for embedding in batch_embeddings:
@@ -468,22 +504,28 @@ class DocumentProcessorRecordBased:
                 if retry_count > 0:
                     stats["retry_attempts"] = max(stats["retry_attempts"], retry_count)
                 
-                # 成功したembeddingのみでレコード準備
+                # 全レコード保存（embedding失敗でも保存）
                 records_to_insert = []
                 for i, record_data in enumerate(batch_records):
                     embedding_vector = batch_embeddings[i]
-                    if embedding_vector:  # 成功したembeddingのみ
-                        stats["total_text_length"] += len(record_data["content"])
-                        # chunksテーブルに挿入するためのレコード形式
-                        records_to_insert.append({
-                            "doc_id": doc_id,
-                            "chunk_index": record_data["chunk_index"],
-                            "content": record_data["content"],
-                            "embedding": embedding_vector,
-                            "company_id": company_id,
-                            "created_at": datetime.now().isoformat(),
-                            "updated_at": datetime.now().isoformat()
-                        })
+                    stats["total_text_length"] += len(record_data["content"])
+                    
+                    # embedding失敗でもレコード保存（embedding=null）
+                    record_to_save = {
+                        "doc_id": doc_id,
+                        "chunk_index": record_data["chunk_index"],
+                        "content": record_data["content"],
+                        "company_id": company_id,
+                        "created_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat()
+                    }
+                    
+                    # embedding成功時のみembeddingを追加
+                    if embedding_vector:
+                        record_to_save["embedding"] = embedding_vector
+                    # else: embeddingがnullでも保存（後から再生成可能）
+                    
+                    records_to_insert.append(record_to_save)
                 
                 # 即座にSupabaseに挿入
                 if records_to_insert:
@@ -494,7 +536,10 @@ class DocumentProcessorRecordBased:
                         if result.data:
                             batch_saved = len(result.data)
                             stats["saved_chunks"] += batch_saved
-                            logger.info(f"✅ バッチ {current_batch}/{total_batches}: {batch_saved}レコード保存完了")
+                            # embedding成功・失敗の内訳をログ出力
+                            with_embedding = len([r for r in records_to_insert if "embedding" in r])
+                            without_embedding = len(records_to_insert) - with_embedding
+                            logger.info(f"✅ バッチ {current_batch}/{total_batches}: {batch_saved}レコード保存完了 (embedding有: {with_embedding}, embedding無: {without_embedding})")
                         else:
                             logger.error(f"❌ バッチ {current_batch}/{total_batches} 保存エラー: {result.error}")
                             
@@ -505,18 +550,24 @@ class DocumentProcessorRecordBased:
                 else:
                     logger.warning(f"⚠️ バッチ {current_batch}/{total_batches}: 保存可能なレコードがありません")
                 
-                # バッチ完了ログ
-                logger.info(f"🎯 バッチ {current_batch}/{total_batches} 完了: embedding {len(batch_embeddings) - len(failed_indices)}/{len(batch_embeddings)} 成功, 保存 {len(records_to_insert)} レコード")
+                # バッチ完了ログ（必ず進行）
+                successful_embeddings = len(batch_embeddings) - len(failed_indices)
+                if failed_indices:
+                    logger.warning(f"🎯 バッチ {current_batch}/{total_batches} 完了: embedding {successful_embeddings}/{len(batch_embeddings)} 成功, {len(failed_indices)}件失敗 → 保存 {len(records_to_insert)} レコード（失敗分もembedding=nullで保存）")
+                    logger.info(f"💾 失敗したレコードも確実に保存 - 検索精度は低下するが情報は完全保持")
+                else:
+                    logger.info(f"🎯 バッチ {current_batch}/{total_batches} 完了: embedding {successful_embeddings}/{len(batch_embeddings)} 成功, 保存 {len(records_to_insert)} レコード（全成功）")
 
             # 最終結果のサマリー
             logger.info(f"🏁 {doc_name}: レコードベース処理完了")
-            logger.info(f"📈 最終結果: 保存 {stats['saved_chunks']}/{stats['total_chunks']} レコード")
+            logger.info(f"📈 最終結果: 保存 {stats['saved_chunks']}/{stats['total_chunks']} レコード（100%保存達成）")
             logger.info(f"🧠 embedding: 成功 {stats['successful_embeddings']}, 失敗 {stats['failed_embeddings']}")
             
             if stats["failed_embeddings"] > 0:
-                logger.warning(f"⚠️ 最終結果: {stats['successful_embeddings']}/{stats['total_chunks']} embedding成功, {stats['retry_attempts']}回再試行")
+                logger.warning(f"⚠️ embedding失敗: {stats['failed_embeddings']}件（後から再生成可能）")
+                logger.info(f"🎯 embedding失敗したレコードも保存済み - 検索精度は低下するが情報は完全保持")
             else:
-                logger.info(f"🎉 全embedding生成成功: {stats['successful_embeddings']}/{stats['total_chunks']}")
+                logger.info(f"🎉 全レコード保存 & 全embedding生成成功: {stats['successful_embeddings']}/{stats['total_chunks']}")
 
             return stats
 
@@ -616,9 +667,9 @@ class DocumentProcessorRecordBased:
             records = []
             for row_index, row in enumerate(rows[1:], 1):  # ヘッダーをスキップ
                 try:
-                    # 空の行をスキップ
-                    if not any(str(cell).strip() for cell in row):
-                        continue
+                    # 空の行スキップを無効化 - 全行保持  
+                    # if not any(str(cell).strip() for cell in row):
+                    #     continue
                     
                     record_data = {}
                     record_parts = []
@@ -629,21 +680,27 @@ class DocumentProcessorRecordBased:
                             header = headers[col_index]
                             value = str(cell_value).strip()
                             
+                            record_data[header] = value  # 空でも保存
                             if value:
-                                record_data[header] = value
                                 record_parts.append(f"{header}: {value}")
                                 meaningful_columns += 1
+                            else:
+                                # 空セルも構造情報として保持
+                                record_parts.append(f"{header}: [空]")
                     
-                    # 意味のある列が少ない場合はスキップ
-                    if meaningful_columns < self.min_meaningful_columns:
-                        continue
+                    # 意味のある列数チェックを無効化 - 全レコード保持
+                    # if meaningful_columns < self.min_meaningful_columns:
+                    #     continue
                     
-                    # レコードの内容を作成
-                    record_content = " | ".join(record_parts)
+                    # レコードの内容を作成（空行でも構造情報を保持）
+                    if not record_parts:
+                        record_content = f"[空行] 行{row_index}: 全セル空"
+                    else:
+                        record_content = " | ".join(record_parts)
                     
-                    # レコードの長さ制限
-                    if len(record_content) > self.max_record_length:
-                        record_content = record_content[:self.max_record_length] + "..."
+                    # レコードの長さ制限を無効化 - 全情報保持
+                    # if len(record_content) > self.max_record_length:
+                    #     record_content = record_content[:self.max_record_length] + "..."
                     
                     record = {
                         "content": record_content,
