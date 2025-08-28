@@ -9,7 +9,12 @@ from .multi_gemini_client import get_multi_gemini_client, multi_gemini_available
 logger = logging.getLogger(__name__)
 
 async def request_question_split(question: str) -> List[str]:
-    """Geminiに質問分割を依頼"""
+    """Geminiに質問分割を依頼（無効化済み - 常に元の質問を返す）"""
+    # 質問分割を無効化：常に元の質問をそのまま返す
+    logger.info("🚫 質問分割機能は無効化されています")
+    return [question]
+    
+    # 以下は無効化されたコード
     try:
         split_prompt = f"""
 以下の質問に複数のタスクや要求が含まれている場合は、それぞれを独立した質問に分割してください。
