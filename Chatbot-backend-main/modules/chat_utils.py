@@ -2,6 +2,7 @@
 チャットユーティリティ関数
 チャット機能で使用する共通のユーティリティ関数を管理します
 """
+import re
 from .utils import safe_print, safe_safe_print
 
 def safe_print(text):
@@ -24,6 +25,7 @@ def safe_safe_print(text):
 def chunk_knowledge_base(text: str, chunk_size: int = 700) -> list[str]:  # 🎯 デフォルト700文字（600-800文字範囲の中央値）
     """
     知識ベースを指定されたサイズでチャンク化する（600-800文字厳守）
+    CSV構造を検出して顧客境界を保護する高精度分割
     
     Args:
         text: チャンク化するテキスト
@@ -35,6 +37,90 @@ def chunk_knowledge_base(text: str, chunk_size: int = 700) -> list[str]:  # 🎯
     if not text or len(text) <= chunk_size:
         return [text] if text else []
     
+    # 🎯 CSV構造検出と分割戦略の選択
+    if _is_csv_structure(text):
+        return _csv_aware_chunking(text, chunk_size)
+    else:
+        return _traditional_chunking(text, chunk_size)
+
+
+def _is_csv_structure(text: str) -> bool:
+    """CSV構造を検出（顧客番号、物件番号、区切り文字の存在）"""
+    # CSV構造の特徴を検出
+    customer_pattern = r'SS\d{7}'  # 顧客番号パターン
+    property_pattern = r'WP[DN]\d{7}'  # 物件番号パターン
+    separator_pattern = r'\s*\|\s*'  # CSV区切り文字
+    
+    has_customer_numbers = len(re.findall(customer_pattern, text)) >= 2
+    has_property_numbers = len(re.findall(property_pattern, text)) >= 2
+    has_separators = len(re.findall(separator_pattern, text)) >= 5
+    
+    return has_customer_numbers and has_property_numbers and has_separators
+
+
+def _csv_aware_chunking(text: str, chunk_size: int) -> list[str]:
+    """CSV構造認識分割 - 顧客境界を絶対保護"""
+    chunks = []
+    lines = text.split('\n')
+    current_chunk = ""
+    current_customer = None
+    max_chunk_size = 800  # 絶対最大サイズ
+    min_chunk_size = 400  # CSV用最小サイズ（顧客境界優先）
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # 🎯 顧客番号検出
+        customer_match = re.search(r'SS\d{7}', line)
+        line_customer = customer_match.group() if customer_match else None
+        
+        # 顧客境界での分割判定
+        should_split_for_customer = False
+        if (current_customer and line_customer and 
+            current_customer != line_customer and 
+            len(current_chunk) >= min_chunk_size):
+            should_split_for_customer = True
+        
+        # サイズ制限での分割判定
+        potential_chunk = current_chunk + ('\n' + line if current_chunk else line)
+        should_split_for_size = len(potential_chunk) > chunk_size
+        
+        # 🎯 分割決定（顧客境界優先）
+        if should_split_for_customer:
+            # 顧客境界で分割（最優先）
+            if current_chunk.strip():
+                chunks.append(current_chunk.strip())
+            current_chunk = line
+            current_customer = line_customer
+        elif should_split_for_size and len(current_chunk) >= min_chunk_size:
+            # サイズ制限で分割
+            if current_chunk.strip():
+                chunks.append(current_chunk.strip())
+            current_chunk = line
+            current_customer = line_customer or current_customer
+        elif len(potential_chunk) > max_chunk_size:
+            # 絶対最大サイズで強制分割
+            if current_chunk.strip():
+                chunks.append(current_chunk.strip())
+            current_chunk = line
+            current_customer = line_customer or current_customer
+        else:
+            # 継続
+            current_chunk = potential_chunk
+            if line_customer:
+                current_customer = line_customer
+    
+    # 最後のチャンクを追加
+    if current_chunk.strip():
+        chunks.append(current_chunk.strip())
+    
+    return chunks if chunks else [text]
+
+
+def _traditional_chunking(text: str, chunk_size: int) -> list[str]:
+    """従来の分割方式（PDF、Word等の非構造化テキスト用）"""
     chunks = []
     start = 0
     max_chunk_size = 800  # 🎯 絶対最大サイズ
