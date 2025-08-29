@@ -21,11 +21,37 @@ def transcribe_youtube_video(url: str) -> str:
         url: YouTube動画のURL
         
     Returns:
-        文字起こしされたテキスト
+        文字起こしされたテキストまたは対応状況メッセージ
     """
-    # 現在は簡単な実装のみ
-    # 実際のYouTube API実装が必要な場合は後で追加
-    return f"YouTube動画の処理は現在対応していません: {url}"
+    return f"🎥 YouTube動画の処理は現在対応していません\n• 動画の音声文字起こし機能は開発中です\n• 代わりに動画の説明文やタイトルをテキストで提供してください\n• または、文字起こしされたテキストファイルをアップロードしてください\n• URL: {url}"
+
+def _get_user_friendly_pdf_error(error: Exception, url: str) -> str:
+    """PDFエラーをユーザーフレンドリーなメッセージに変換"""
+    error_str = str(error).lower()
+    
+    # HTTP ステータスコードエラー
+    if hasattr(error, 'response') and error.response is not None:
+        status_code = error.response.status_code
+        if status_code == 404:
+            return f"❌ このPDFファイルは見つかりません（404エラー）\n• URLが正しいか確認してください\n• ファイルが削除されている可能性があります\n• URL: {url}"
+        elif status_code == 403:
+            return f"❌ このPDFファイルへのアクセスが拒否されました（403エラー）\n• ファイルがアクセス制限されています\n• ログインが必要な場合があります\n• URL: {url}"
+    
+    # PDFファイル固有のエラー
+    if 'pdf' in error_str and ('corrupt' in error_str or 'damaged' in error_str):
+        return f"📄 PDFファイルが破損しています\n• ファイルが正しくダウンロードされていない可能性があります\n• 元のファイルが破損している可能性があります\n• URL: {url}"
+    
+    if 'password' in error_str or 'encrypted' in error_str:
+        return f"🔒 このPDFファイルはパスワード保護されています\n• パスワードが必要なPDFファイルは処理できません\n• パスワードを解除してからアップロードしてください\n• URL: {url}"
+    
+    if 'timeout' in error_str:
+        return f"⏰ PDFファイルのダウンロードがタイムアウトしました\n• ファイルサイズが大きすぎる可能性があります\n• ネットワーク接続を確認してください\n• URL: {url}"
+    
+    # ファイル形式エラー
+    if 'not a pdf' in error_str or 'invalid pdf' in error_str:
+        return f"📄 このファイルは有効なPDFファイルではありません\n• URLが正しいPDFファイルを指しているか確認してください\n• ファイル拡張子が.pdfでも実際は別の形式の可能性があります\n• URL: {url}"
+    
+    return f"❌ PDFファイル処理中にエラーが発生しました\n• 詳細: {str(error)}\n• ファイルが正しいPDFか確認してください\n• 別のPDFファイルで試してみてください\n• URL: {url}"
 
 async def extract_text_from_pdf(url: str) -> str:
     """URLからPDFファイルを取得し、テキストを抽出する
@@ -34,24 +60,49 @@ async def extract_text_from_pdf(url: str) -> str:
         url: PDFファイルのURL
         
     Returns:
-        抽出されたテキスト
+        抽出されたテキストまたはユーザーフレンドリーなエラーメッセージ
     """
     try:
         # URLからPDFファイルを取得
-        response = requests.get(url, timeout=30)
+        response = requests.get(url, timeout=60, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
         response.raise_for_status()
+        
+        # レスポンスが空でないか確認
+        if not response.content:
+            return f"❌ PDFファイルのダウンロードに失敗しました\n• ファイルが空です\n• URLを確認してください\n• URL: {url}"
+        
+        # Content-Typeの確認
+        content_type = response.headers.get('content-type', '').lower()
+        if 'pdf' not in content_type and len(response.content) < 1000:
+            return f"❌ このURLは有効なPDFファイルを指していません\n• Content-Type: {content_type}\n• PDFファイルの直接リンクを使用してください\n• URL: {url}"
         
         # PyMuPDFを使用してPDFからテキストを抽出
         pdf_document = fitz.open(stream=response.content, filetype="pdf")
+        
+        # PDFが空でないか確認
+        if len(pdf_document) == 0:
+            pdf_document.close()
+            return f"❌ このPDFファイルにはページがありません\n• 空のPDFファイルです\n• URL: {url}"
+        
         text = ""
         for page_num in range(len(pdf_document)):
             page = pdf_document[page_num]
-            text += page.get_text()
+            page_text = page.get_text()
+            text += page_text
+        
         pdf_document.close()
+        
+        # 抽出されたテキストが空でないか確認
+        if not text or len(text.strip()) < 10:
+            return f"❌ PDFからテキストを抽出できませんでした\n• 画像のみのPDFファイルの可能性があります\n• スキャンされたPDFは現在対応していません\n• URL: {url}"
+        
         return text
     except Exception as e:
+        error_message = _get_user_friendly_pdf_error(e, url)
         print(f"PDF抽出エラー: {e}")
-        return f"PDF抽出エラー: {e}"
+        return error_message
 
 def extract_text_from_pdf_bytes(content: bytes) -> str:
     """PDFファイルのバイト内容からテキストを抽出する
@@ -75,6 +126,45 @@ def extract_text_from_pdf_bytes(content: bytes) -> str:
         print(f"PDF抽出エラー: {e}")
         return ""
 
+def _get_user_friendly_url_error(error: Exception, url: str) -> str:
+    """URLエラーをユーザーフレンドリーなメッセージに変換"""
+    import requests
+    
+    error_str = str(error).lower()
+    
+    # HTTP ステータスコードエラー
+    if hasattr(error, 'response') and error.response is not None:
+        status_code = error.response.status_code
+        if status_code == 404:
+            return f"❌ このURLは存在しません（404エラー）\n• URLが正しいか確認してください\n• ページが削除されている可能性があります\n• URL: {url}"
+        elif status_code == 403:
+            return f"❌ このURLへのアクセスが拒否されました（403エラー）\n• サイトがアクセス制限を設けています\n• ログインが必要なページの可能性があります\n• URL: {url}"
+        elif status_code == 401:
+            return f"❌ このURLは認証が必要です（401エラー）\n• ログインが必要なページです\n• 認証情報を確認してください\n• URL: {url}"
+        elif status_code == 500:
+            return f"❌ サーバーでエラーが発生しています（500エラー）\n• サイト側の問題です\n• 時間をおいて再試行してください\n• URL: {url}"
+        else:
+            return f"❌ HTTPエラーが発生しました（{status_code}エラー）\n• サーバーから予期しない応答が返されました\n• URL: {url}"
+    
+    # タイムアウトエラー
+    if 'timeout' in error_str or 'timed out' in error_str:
+        return f"⏰ URLの読み込みがタイムアウトしました\n• サイトの応答が遅すぎます\n• ネットワーク接続を確認してください\n• 大きなファイルの場合は時間がかかることがあります\n• URL: {url}"
+    
+    # SSL証明書エラー
+    if 'ssl' in error_str or 'certificate' in error_str:
+        return f"🔒 SSL証明書エラーが発生しました\n• サイトのセキュリティ証明書に問題があります\n• HTTPSではなくHTTPでアクセスできるか確認してください\n• URL: {url}"
+    
+    # 接続エラー
+    if 'connection' in error_str or 'resolve' in error_str or 'network' in error_str:
+        return f"🌐 ネットワーク接続エラーが発生しました\n• インターネット接続を確認してください\n• URLが正しいか確認してください\n• サイトが一時的にダウンしている可能性があります\n• URL: {url}"
+    
+    # 文字エンコーディングエラー
+    if 'encoding' in error_str or 'decode' in error_str:
+        return f"📝 文字エンコーディングエラーが発生しました\n• ページの文字コードに問題があります\n• 一部の文字が正しく読み取れない可能性があります\n• URL: {url}"
+    
+    # その他の一般的なエラー
+    return f"❌ URL処理中にエラーが発生しました\n• 詳細: {str(error)}\n• URLが正しいか確認してください\n• 別のURLで試してみてください\n• URL: {url}"
+
 async def extract_text_from_html(url: str) -> str:
     """URLからHTMLコンテンツを取得し、テキストを抽出する
     
@@ -82,12 +172,18 @@ async def extract_text_from_html(url: str) -> str:
         url: 抽出対象のURL
         
     Returns:
-        抽出されたテキスト
+        抽出されたテキストまたはユーザーフレンドリーなエラーメッセージ
     """
     try:
         # URLからHTMLコンテンツを取得
-        response = requests.get(url, timeout=30)
+        response = requests.get(url, timeout=30, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
         response.raise_for_status()
+        
+        # レスポンスが空でないか確認
+        if not response.content:
+            return f"❌ このURLには内容がありません\n• ページが空白です\n• 別のURLで試してみてください\n• URL: {url}"
         
         # BeautifulSoupでHTMLを解析
         soup = BeautifulSoup(response.content, 'html.parser')
@@ -104,10 +200,15 @@ async def extract_text_from_html(url: str) -> str:
         chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
         text = '\n'.join(chunk for chunk in chunks if chunk)
         
+        # 抽出されたテキストが空でないか確認
+        if not text or len(text.strip()) < 10:
+            return f"❌ このURLから有効なテキストを抽出できませんでした\n• ページがJavaScriptで動的に生成されている可能性があります\n• 画像やメディアファイルのみのページの可能性があります\n• URL: {url}"
+        
         return text
     except Exception as e:
+        error_message = _get_user_friendly_url_error(e, url)
         print(f"HTML抽出エラー: {e}")
-        return f"HTML抽出エラー: {e}"
+        return error_message
 
 def safe_print(text):
     """安全な出力関数"""
