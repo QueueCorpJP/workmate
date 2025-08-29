@@ -270,7 +270,7 @@ class RealtimeRAGProcessor:
             logger.error(f"❌ Step 2エラー: エンベディング生成失敗 - {e}")
             raise
     
-    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 35) -> List[Dict]:  # 🎯🎯 40→35に最適化（ベストバランス）
+    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 40) -> List[Dict]:  # 🎯🎯 40チャンク取得（情報完全性重視）
         """
         🔍 Step 3. 類似チャンク検索（Top-K）
         Supabaseの chunks テーブルから、ベクトル距離が近いチャンクを pgvector を用いて取得
@@ -1243,7 +1243,7 @@ class RealtimeRAGProcessor:
         logger.info(f"✅ リアルタイムRAG処理完了: {len(answer)}文字の回答")
         return result
     
-    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 35, user_id: str = None) -> Dict:  # 🎯🎯 40→35に最適化（ベストバランス）
+    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 40, user_id: str = None) -> Dict:  # 🎯🎯 40チャンク取得（情報完全性重視）
         """
         🚀 リアルタイムRAG処理フロー全体の実行（Gemini質問分析統合版）
         新しい3段階アプローチ: Gemini分析 → SQL検索 → Embedding検索（フォールバック）
@@ -1322,7 +1322,7 @@ class RealtimeRAGProcessor:
         # 通常の処理フロー（分割しない場合または分割失敗時）
         return await self._process_single_segment_no_split(question_text, company_id, company_name, top_k, user_id)
     
-    async def _process_single_segment_no_split(self, question_text: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 35, user_id: str = None) -> Dict:  # 🎯🎯 40→35に最適化（ベストバランス）
+    async def _process_single_segment_no_split(self, question_text: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 40, user_id: str = None) -> Dict:  # 🎯🎯 40チャンク取得（情報完全性重視）
         """単一セグメントの処理（従来のprocess_realtime_ragの内容）"""
         try:
             # Step 1: 質問入力
@@ -1429,7 +1429,7 @@ def get_realtime_rag_processor() -> Optional[RealtimeRAGProcessor]:
     
     return _realtime_rag_processor
 
-async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 35, user_id: str = None) -> Dict:  # 🎯🎯 40→35に最適化（ベストバランス）
+async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 40, user_id: str = None) -> Dict:  # 🎯🎯 40チャンク取得（情報完全性重視）
     """
     リアルタイムRAG処理の外部呼び出し用関数
     

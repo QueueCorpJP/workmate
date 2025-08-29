@@ -339,19 +339,15 @@ async def _save_content_to_chunks(doc_id: str, content: str, doc_name: str, comp
         try:
             from ..batch_embedding import batch_generate_embeddings_for_document
             
-            # AUTO_GENERATE_EMBEDDINGS設定をチェック
-            auto_embed_enabled = os.getenv("AUTO_GENERATE_EMBEDDINGS", "false").lower() == "true"
+            # URL処理では常にembedding生成を実行（検索精度確保）
+            logger.info(f"🧠 バッチエンベディング生成開始: {doc_name}")
+            embedding_success = await batch_generate_embeddings_for_document(doc_id, len(chunks_list))
             
-            if auto_embed_enabled:
-                logger.info(f"🧠 バッチエンベディング生成開始: {doc_name}")
-                embedding_success = await batch_generate_embeddings_for_document(doc_id, len(chunks_list))
-                
-                if embedding_success:
-                    logger.info(f"🎉 バッチエンベディング生成完了: {doc_name}")
-                else:
-                    logger.warning(f"⚠️ バッチエンベディング生成で一部エラーが発生: {doc_name}")
+            if embedding_success:
+                logger.info(f"🎉 バッチエンベディング生成完了: {doc_name}")
             else:
-                logger.info(f"🔄 AUTO_GENERATE_EMBEDDINGS=false のため、エンベディング生成をスキップ: {doc_name}")
+                logger.warning(f"⚠️ バッチエンベディング生成で一部エラーが発生: {doc_name}")
+                # embedding生成失敗でもチャンクは保存済み（後で再生成可能）
                 
         except Exception as embedding_error:
             # エンベディング生成エラーは警告として記録し、メイン処理は継続
