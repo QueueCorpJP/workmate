@@ -115,46 +115,86 @@ class RealtimeRAGProcessor:
 
     async def _keyword_search(self, query: str, company_id: Optional[str], limit: int = 50) -> List[Dict]:  # 🚀🚀 30→50に増加（情報完全性重視）
         """
-        キーワードベースの検索（ILIKEを使用）
+        複数キーワード対応検索（ILIKEを使用）
+        すべての物件番号とキーワードで個別検索してマージ
         """
-        logger.info(f"🔑 Step 3-Keyword: キーワード検索開始 (Top-{limit})")
+        logger.info(f"🔑 Step 3-Keyword: 複数キーワード検索開始 (Top-{limit})")
+        
         # クエリからキーワードを抽出（例：WPD4100389）
         keywords = re.findall(r'[A-Z]+\d+', query)
         if not keywords:
             logger.info("キーワードが見つからないため、キーワード検索をスキップします。")
             return []
         
-        search_term = keywords[0] # 簡単のため最初のキーワードを使用
+        # 🎯 物件番号とその他キーワードを分離検出
+        property_numbers = [k for k in keywords if re.match(r'WP[DN]\d{7}', k)]
+        other_keywords = [k for k in keywords if k not in property_numbers]
+        all_keywords = property_numbers + other_keywords
+        
+        logger.info(f"🔍 検出キーワード: 物件番号={len(property_numbers)}個, その他={len(other_keywords)}個")
+        
+        # 大量キーワードは制限
+        if len(all_keywords) > 10:
+            logger.info(f"⚡ 大量キーワード検索: {len(all_keywords)}個 → 上位10個に制限")
+            all_keywords = all_keywords[:10]
         
         try:
+            all_results = []
+            seen_chunk_ids = set()  # 重複除去用
+            
             with psycopg2.connect(self.db_url, cursor_factory=RealDictCursor) as conn:
                 with conn.cursor() as cur:
-                    sql_keyword = """
-                    SELECT
-                        c.id, c.doc_id, c.chunk_index, c.content,
-                        ds.name as document_name, ds.type as document_type,
-                        0.9 as similarity_score, -- キーワード検索は高スコア
-                        'keyword' as search_method
-                    FROM chunks c
-                    LEFT JOIN document_sources ds ON ds.id = c.doc_id
-                    WHERE c.content ILIKE %s
-                    AND ds.active = true
-                    """
-                    params_keyword = [f"%{search_term}%"]
+                    
+                    # 🚀 各キーワードで個別検索
+                    for i, keyword in enumerate(all_keywords):
+                        logger.info(f"🔍 キーワード{i+1}/{len(all_keywords)}: '{keyword}' で検索中...")
+                        
+                        sql_keyword = """
+                        SELECT
+                            c.id, c.doc_id, c.chunk_index, c.content,
+                            ds.name as document_name, ds.type as document_type,
+                            0.95 as similarity_score, -- 複数キーワード検索は最高スコア
+                            'multi_keyword' as search_method
+                        FROM chunks c
+                        LEFT JOIN document_sources ds ON ds.id = c.doc_id
+                        WHERE c.content ILIKE %s
+                        AND ds.active = true
+                        """
+                        params_keyword = [f"%{keyword}%"]
 
-                    if company_id:
-                        sql_keyword += " AND c.company_id = %s"
-                        params_keyword.append(company_id)
+                        if company_id:
+                            sql_keyword += " AND c.company_id = %s"
+                            params_keyword.append(company_id)
+                        
+                        # 各キーワードで最大8件取得
+                        sql_keyword += " LIMIT 8"
+                        
+                        cur.execute(sql_keyword, params_keyword)
+                        keyword_results = cur.fetchall()
+                        
+                        # 重複除去して追加
+                        new_results = []
+                        for row in keyword_results:
+                            if row['id'] not in seen_chunk_ids:
+                                seen_chunk_ids.add(row['id'])
+                                new_results.append(dict(row))
+                        
+                        all_results.extend(new_results)
+                        logger.info(f"   ✅ '{keyword}': {len(keyword_results)}件ヒット, 新規{len(new_results)}件追加")
                     
-                    sql_keyword += " LIMIT %s"
-                    params_keyword.append(limit)
+                    # 類似度でソート
+                    all_results.sort(key=lambda x: x['similarity_score'], reverse=True)
                     
-                    cur.execute(sql_keyword, params_keyword)
-                    results = cur.fetchall()
-                    logger.info(f"キーワード '{search_term}' で {len(results)} 件ヒットしました。")
-                    return [dict(row) for row in results]
+                    # 制限数に調整
+                    final_results = all_results[:limit]
+                    
+                    logger.info(f"🎯 複数キーワード検索完了: 総計{len(final_results)}件取得")
+                    logger.info(f"   📊 物件番号: {len(property_numbers)}個, その他: {len(other_keywords)}個")
+                    
+                    return final_results
+                    
         except Exception as e:
-            logger.error(f"❌ キーワード検索エラー: {e}")
+            logger.error(f"❌ 複数キーワード検索エラー: {e}")
             return []
 
     def _get_db_url(self) -> str:
