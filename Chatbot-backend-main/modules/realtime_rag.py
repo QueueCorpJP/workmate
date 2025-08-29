@@ -120,16 +120,22 @@ class RealtimeRAGProcessor:
         """
         logger.info(f"🔑 Step 3-Keyword: 複数キーワード検索開始 (Top-{limit})")
         
-        # クエリからキーワードを抽出（例：WPD4100389）
-        keywords = re.findall(r'[A-Z]+\d+', query)
-        if not keywords:
+        # クエリからキーワードを抽出（物件番号、会社名など）
+        property_keywords = re.findall(r'[A-Z]+\d+', query)  # WPD4100389など
+        company_keywords = re.findall(r'[a-zA-Z]{3,}(?:株式会社|会社)', query)  # queue株式会社など
+        text_keywords = re.findall(r'[a-zA-Zあ-んア-ン一-龥]{3,}', query)  # 3文字以上の単語
+        
+        all_keywords = list(set(property_keywords + company_keywords + text_keywords))
+        
+        if not all_keywords:
             logger.info("キーワードが見つからないため、キーワード検索をスキップします。")
             return []
         
-        # 🎯 物件番号とその他キーワードを分離検出
-        property_numbers = [k for k in keywords if re.match(r'WP[DN]\d{7}', k)]
-        other_keywords = [k for k in keywords if k not in property_numbers]
-        all_keywords = property_numbers + other_keywords
+        logger.info(f"🔍 抽出キーワード: 物件={len(property_keywords)}個, 会社={len(company_keywords)}個, テキスト={len(text_keywords)}個")
+        
+        # 🎯 キーワードを種類別に分類
+        property_numbers = [k for k in all_keywords if re.match(r'WP[DN]\d{7}', k)]
+        other_keywords = [k for k in all_keywords if k not in property_numbers]
         
         logger.info(f"🔍 検出キーワード: 物件番号={len(property_numbers)}個, その他={len(other_keywords)}個")
         
@@ -162,9 +168,14 @@ class RealtimeRAGProcessor:
                         """
                         params_keyword = [f"%{keyword}%"]
 
-                        if company_id:
+                        # 会社IDフィルタ（デバッグモードで無効化可能）
+                        debug_mode_no_company_filter = os.getenv("DEBUG_NO_COMPANY_FILTER", "false").lower() == "true"
+                        
+                        if company_id and not debug_mode_no_company_filter:
                             sql_keyword += " AND c.company_id = %s"
                             params_keyword.append(company_id)
+                        elif debug_mode_no_company_filter:
+                            logger.warning(f"🚫 デバッグモード: キーワード検索で会社IDフィルタ無効化")
                         
                         # 各キーワードで最大8件取得
                         sql_keyword += " LIMIT 8"
@@ -270,7 +281,7 @@ class RealtimeRAGProcessor:
             logger.error(f"❌ Step 2エラー: エンベディング生成失敗 - {e}")
             raise
     
-    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 40) -> List[Dict]:  # 🎯🎯 40チャンク取得（情報完全性重視）
+    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 35) -> List[Dict]:  # 🎯🎯 40→35に最適化（ベストバランス）
         """
         🔍 Step 3. 類似チャンク検索（Top-K）
         Supabaseの chunks テーブルから、ベクトル距離が近いチャンクを pgvector を用いて取得
@@ -306,10 +317,15 @@ class RealtimeRAGProcessor:
                     
                     params_vector = []
                     
-                    # 会社IDフィルタ（オプション）
-                    if company_id:
+                    # 会社IDフィルタ（オプション）- デバッグモードで一時的に無効化可能
+                    debug_mode_no_company_filter = os.getenv("DEBUG_NO_COMPANY_FILTER", "false").lower() == "true"
+                    
+                    if company_id and not debug_mode_no_company_filter:
                         sql_vector += " AND c.company_id = %s"
                         params_vector.append(company_id)
+                        logger.info(f"🏢 会社IDフィルタ適用: {company_id}")
+                    elif debug_mode_no_company_filter:
+                        logger.warning(f"🚫 デバッグモード: 会社IDフィルタを無効化して全データを検索")
                     
                     # ベクトル距離順でソート
                     sql_vector += f" ORDER BY c.embedding <=> '{vector_str}'::vector LIMIT %s"
@@ -364,8 +380,10 @@ class RealtimeRAGProcessor:
                         
                         params_text = []
                         
-                        # 会社IDフィルタ（オプション）
-                        if company_id:
+                        # 会社IDフィルタ（デバッグモードで無効化可能）
+                        debug_mode_no_company_filter = os.getenv("DEBUG_NO_COMPANY_FILTER", "false").lower() == "true"
+                        
+                        if company_id and not debug_mode_no_company_filter:
                             sql_text += " AND c.company_id = %s"
                             params_text.append(company_id)
                         
@@ -423,8 +441,10 @@ class RealtimeRAGProcessor:
                         
                         params_pdf_supplement = []
                         
-                        # 会社IDフィルタ（オプション）
-                        if company_id:
+                        # 会社IDフィルタ（デバッグモードで無効化可能）
+                        debug_mode_no_company_filter = os.getenv("DEBUG_NO_COMPANY_FILTER", "false").lower() == "true"
+                        
+                        if company_id and not debug_mode_no_company_filter:
                             sql_pdf_supplement += " AND c.company_id = %s"
                             params_pdf_supplement.append(company_id)
                         
@@ -1243,7 +1263,7 @@ class RealtimeRAGProcessor:
         logger.info(f"✅ リアルタイムRAG処理完了: {len(answer)}文字の回答")
         return result
     
-    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 40, user_id: str = None) -> Dict:  # 🎯🎯 40チャンク取得（情報完全性重視）
+    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 35, user_id: str = None) -> Dict:  # 🎯🎯 40→35に最適化（ベストバランス）
         """
         🚀 リアルタイムRAG処理フロー全体の実行（Gemini質問分析統合版）
         新しい3段階アプローチ: Gemini分析 → SQL検索 → Embedding検索（フォールバック）
@@ -1322,7 +1342,7 @@ class RealtimeRAGProcessor:
         # 通常の処理フロー（分割しない場合または分割失敗時）
         return await self._process_single_segment_no_split(question_text, company_id, company_name, top_k, user_id)
     
-    async def _process_single_segment_no_split(self, question_text: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 40, user_id: str = None) -> Dict:  # 🎯🎯 40チャンク取得（情報完全性重視）
+    async def _process_single_segment_no_split(self, question_text: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 35, user_id: str = None) -> Dict:  # 🎯🎯 40→35に最適化（ベストバランス）
         """単一セグメントの処理（従来のprocess_realtime_ragの内容）"""
         try:
             # Step 1: 質問入力
@@ -1429,7 +1449,7 @@ def get_realtime_rag_processor() -> Optional[RealtimeRAGProcessor]:
     
     return _realtime_rag_processor
 
-async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 40, user_id: str = None) -> Dict:  # 🎯🎯 40チャンク取得（情報完全性重視）
+async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 35, user_id: str = None) -> Dict:  # 🎯🎯 40→35に最適化（ベストバランス）
     """
     リアルタイムRAG処理の外部呼び出し用関数
     
