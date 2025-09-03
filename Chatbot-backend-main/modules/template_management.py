@@ -47,6 +47,13 @@ class TemplateCategoryCreate(BaseModel):
     display_order: int = 0
     category_type: str = "company"  # system, company
 
+class TemplateCategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    display_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
 class TemplateUsageCreate(BaseModel):
     template_id: str
     variable_values: Dict[str, Any]
@@ -131,6 +138,95 @@ class TemplateManager:
             print(f"カテゴリ作成エラー: {e}")
             raise
     
+    async def update_category(self, category_id: str, category_data: TemplateCategoryUpdate, company_id: Optional[str] = None) -> Optional[Dict]:
+        """カテゴリを更新"""
+        try:
+            # 既存カテゴリの取得と権限チェック
+            existing_result = select_data(
+                "template_categories",
+                filters={"id": category_id}
+            )
+            
+            if not existing_result.success or not existing_result.data:
+                return None
+            
+            existing_category = existing_result.data[0]
+            
+            # 会社カテゴリの場合、権限チェック
+            if existing_category.get("category_type") == "company":
+                if not company_id or existing_category.get("company_id") != company_id:
+                    return None
+            
+            # 更新データの準備
+            update_dict = {"updated_at": datetime.datetime.now().isoformat()}
+            
+            if category_data.name is not None:
+                update_dict["name"] = category_data.name
+            if category_data.description is not None:
+                update_dict["description"] = category_data.description
+            if category_data.icon is not None:
+                update_dict["icon"] = category_data.icon
+            if category_data.display_order is not None:
+                update_dict["display_order"] = category_data.display_order
+            if category_data.is_active is not None:
+                update_dict["is_active"] = category_data.is_active
+            
+            # カテゴリ更新
+            result = update_data("template_categories", "id", category_id, update_dict)
+            
+            if result.success:
+                # 更新されたカテゴリを取得して返す
+                updated_result = select_data(
+                    "template_categories",
+                    filters={"id": category_id}
+                )
+                if updated_result.success and updated_result.data:
+                    return updated_result.data[0]
+            
+            return None
+        except Exception as e:
+            print(f"カテゴリ更新エラー: {e}")
+            raise
+    
+    async def delete_category(self, category_id: str, company_id: Optional[str] = None) -> bool:
+        """カテゴリを削除（論理削除）"""
+        try:
+            # 既存カテゴリの取得と権限チェック
+            existing_result = select_data(
+                "template_categories",
+                filters={"id": category_id}
+            )
+            
+            if not existing_result.success or not existing_result.data:
+                return False
+            
+            existing_category = existing_result.data[0]
+            
+            # 会社カテゴリの場合、権限チェック
+            if existing_category.get("category_type") == "company":
+                if not company_id or existing_category.get("company_id") != company_id:
+                    return False
+            
+            # システムカテゴリは削除不可
+            if existing_category.get("category_type") == "system":
+                raise Exception("システムカテゴリは削除できません")
+            
+            # 論理削除
+            result = update_data(
+                "template_categories",
+                "id",
+                category_id,
+                {
+                    "is_active": False,
+                    "updated_at": datetime.datetime.now().isoformat()
+                }
+            )
+            
+            return result.success
+        except Exception as e:
+            print(f"カテゴリ削除エラー: {e}")
+            raise
+    
     # テンプレート管理
     async def get_templates(self, company_id: Optional[str] = None, category_id: Optional[str] = None,
                           template_type: Optional[str] = None, user_id: Optional[str] = None) -> List[Dict]:
@@ -167,23 +263,6 @@ class TemplateManager:
                 for template in result.data:
                     template_with_vars = await self._get_template_with_variables(template)
                     templates.append(template_with_vars)
-                
-                # カスタムテンプレート（user）を一番上に表示するようにソート
-                def template_sort_key(template):
-                    # template_typeの優先度を逆順に設定（reverseでソートするため）
-                    type_priority = {
-                        'user': 3,      # 一番上に来るように最大値
-                        'company': 2,
-                        'system': 1     # 一番下に来るように最小値
-                    }
-                    
-                    return (
-                        type_priority.get(template.get('template_type'), 0),
-                        template.get('usage_count', 0),     # 使用回数は多い順
-                        template.get('created_at', '')      # 作成日時は新しい順
-                    )
-                
-                templates.sort(key=template_sort_key, reverse=True)
                 return templates
             return []
         except Exception as e:

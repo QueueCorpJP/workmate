@@ -46,7 +46,7 @@ from modules import admin
 from modules import upload_api  # upload_apiをインポート
 from modules.template_management import (
     TemplateManager, CompanyTemplateSettingsManager,
-    TemplateCreate, TemplateUpdate, TemplateCategoryCreate,
+    TemplateCreate, TemplateUpdate, TemplateCategoryCreate, TemplateCategoryUpdate,
     TemplateUsageCreate, TemplateVariable
 )
 import json
@@ -4372,6 +4372,44 @@ async def create_template_category(category_data: TemplateCategoryCreate, curren
     except Exception as e:
         logger.error(f"Error creating template category: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to create template category: {str(e)}")
+
+@app.put("/chatbot/api/templates/categories/{category_id}")
+async def update_template_category(category_id: str, category_data: TemplateCategoryUpdate, current_user = Depends(get_company_admin), db: SupabaseConnection = Depends(get_db)):
+    """Update a template category (company admin only)"""
+    try:
+        template_manager = TemplateManager(db)
+        company_id = current_user.get("company_id")
+        
+        category = await template_manager.update_category(category_id, category_data, company_id)
+        
+        if not category:
+            raise HTTPException(status_code=404, detail="Category not found or access denied")
+        
+        return {"message": "Template category updated successfully", "category": category}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating template category: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update template category: {str(e)}")
+
+@app.delete("/chatbot/api/templates/categories/{category_id}")
+async def delete_template_category(category_id: str, current_user = Depends(get_company_admin), db: SupabaseConnection = Depends(get_db)):
+    """Delete a template category (company admin only)"""
+    try:
+        template_manager = TemplateManager(db)
+        company_id = current_user.get("company_id")
+        
+        success = await template_manager.delete_category(category_id, company_id)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Category not found or access denied")
+        
+        return {"message": "Template category deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting template category: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete template category: {str(e)}")
 
 # Template Management Endpoints
 @app.get("/chatbot/api/templates")
