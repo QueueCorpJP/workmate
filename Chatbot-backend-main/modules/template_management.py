@@ -167,6 +167,23 @@ class TemplateManager:
                 for template in result.data:
                     template_with_vars = await self._get_template_with_variables(template)
                     templates.append(template_with_vars)
+                
+                # カスタムテンプレート（user）を一番上に表示するようにソート
+                def template_sort_key(template):
+                    # template_typeの優先度を逆順に設定（reverseでソートするため）
+                    type_priority = {
+                        'user': 3,      # 一番上に来るように最大値
+                        'company': 2,
+                        'system': 1     # 一番下に来るように最小値
+                    }
+                    
+                    return (
+                        type_priority.get(template.get('template_type'), 0),
+                        template.get('usage_count', 0),     # 使用回数は多い順
+                        template.get('created_at', '')      # 作成日時は新しい順
+                    )
+                
+                templates.sort(key=template_sort_key, reverse=True)
                 return templates
             return []
         except Exception as e:
