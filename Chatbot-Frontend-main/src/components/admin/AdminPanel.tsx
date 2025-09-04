@@ -932,15 +932,25 @@ const AdminPanel: React.FC = () => {
         },
       ]
       : []),
-    ...((user?.email === "taichi.taniguchi@queue-tech.jp" || user?.email === "queue@queue-tech.jp")
-      ? [
-        {
-          icon: <ConstructionIcon sx={{ color: "#ff9800" }} />,
-          label: "メンテナンス管理",
-          ariaLabel: "メンテナンス管理タブ",
-        },
-      ]
-      : []),
+    ...(() => {
+      const isMaintenanceAdmin = user?.email === "taichi.taniguchi@queue-tech.jp" || user?.email === "queue@queue-tech.jp";
+      console.log('メンテナンス管理権限チェック:', {
+        userEmail: user?.email,
+        isMaintenanceAdmin,
+        expectedEmail1: "taichi.taniguchi@queue-tech.jp",
+        expectedEmail2: "queue@queue-tech.jp"
+      });
+      
+      return isMaintenanceAdmin
+        ? [
+            {
+              icon: <ConstructionIcon sx={{ color: "#ff9800" }} />,
+              label: "メンテナンス管理",
+              ariaLabel: "メンテナンス管理タブ",
+            },
+          ]
+        : [];
+    })(),
     {
       icon: <PersonAddIcon sx={{ color: "#3b82f6" }} />,
       label: "ユーザー管理",
@@ -1477,24 +1487,28 @@ const AdminPanel: React.FC = () => {
               )}
 
               {/* メンテナンス管理タブ - メンテナンス管理者のみ表示 */}
-              {(user?.email === "taichi.taniguchi@queue-tech.jp" || user?.email === "queue@queue-tech.jp") &&
-                (() => {
-                  // メンテナンスタブのインデックス計算をデバッグ
-                  const actualIndex = getActualTabIndex(tabValue);
-                  console.log('メンテナンスタブチェック:', {
-                    tabValue,
-                    actualIndex,
-                    userEmail: user?.email,
-                    isMaintenanceAdmin: user?.email === "taichi.taniguchi@queue-tech.jp" || user?.email === "queue@queue-tech.jp",
-                    tabDefinitionsLength: tabDefinitions.length
-                  });
-                  
-                  // メンテナンスタブは特定条件下で表示
-                  const maintenanceTabIndex = tabDefinitions.findIndex(tab => tab.label === 'メンテナンス管理');
-                  console.log('メンテナンスタブのインデックス:', maintenanceTabIndex);
-                  
-                  return tabValue === maintenanceTabIndex;
-                })() && (
+              {(() => {
+                const isMaintenanceAdmin = user?.email === "taichi.taniguchi@queue-tech.jp" || user?.email === "queue@queue-tech.jp";
+                
+                if (!isMaintenanceAdmin) {
+                  console.log('メンテナンス管理権限なし:', user?.email);
+                  return false;
+                }
+                
+                // メンテナンスタブのインデックスを特定
+                const maintenanceTabIndex = tabDefinitions.findIndex(tab => tab.label === 'メンテナンス管理');
+                const isMaintenanceTab = tabValue === maintenanceTabIndex;
+                
+                console.log('メンテナンスタブチェック:', {
+                  tabValue,
+                  maintenanceTabIndex,
+                  isMaintenanceTab,
+                  userEmail: user?.email,
+                  tabDefinitions: tabDefinitions.map(t => t.label)
+                });
+                
+                return isMaintenanceTab;
+              })() && (
                 <MaintenanceManagementTab user={user} />
               )}
 

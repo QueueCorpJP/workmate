@@ -40,7 +40,7 @@ from modules.admin import (
     get_chat_history_by_company_paginated, get_chat_history_by_company
 )
 from modules.company import get_company_name, set_company_name
-from modules.auth import get_current_user, get_current_admin, register_new_user, get_admin_or_user, get_company_admin, get_user_with_delete_permission, get_user_creation_permission
+from modules.auth import get_current_user, get_current_user_with_maintenance_check, get_current_admin, register_new_user, get_admin_or_user, get_company_admin, get_user_with_delete_permission, get_user_creation_permission
 from modules.resource import get_uploaded_resources_by_company_id, toggle_resource_active_by_id, remove_resource_by_id
 from modules import admin
 from modules import upload_api  # upload_apiをインポート
@@ -272,7 +272,7 @@ async def login(request: Request, credentials: UserLogin, db: SupabaseConnection
     }
 
 @app.get("/chatbot/api/auth/user", response_model=UserWithLimits)
-async def get_current_user_info(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def get_current_user_info(current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """現在のユーザー情報を取得"""
     try:
         # 利用制限情報を取得
@@ -407,7 +407,7 @@ async def reset_password(request: PasswordResetRequest, db: SupabaseConnection =
         )
 
 @app.put("/chatbot/api/auth/profile", response_model=UserWithLimits)
-async def update_profile(request: ProfileUpdateRequest, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def update_profile(request: ProfileUpdateRequest, current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """プロフィール更新（名前とメールアドレス）"""
     from modules.database import get_usage_limits
     from modules.validation import validate_email_input
@@ -1010,7 +1010,7 @@ async def admin_get_demo_stats(current_user = Depends(get_admin_or_user), db: Su
 
 @app.post("/chatbot/api/submit-url")
 @limiter.limit("10/minute")  # 🛡️ 外部リソース保護：1分間に10回のURL送信制限
-async def submit_url(request: Request, submission: UrlSubmission, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def submit_url(request: Request, submission: UrlSubmission, current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """URLを送信して知識ベースを更新"""
     try:
         # URLが空でないことを確認
@@ -1049,7 +1049,7 @@ async def submit_url(request: Request, submission: UrlSubmission, current_user =
 @app.post("/chatbot/api/upload-knowledge")
 async def upload_knowledge(
     file: UploadFile = File(..., description="アップロードするファイル（最大100MB）"),
-    current_user = Depends(get_current_user),
+    current_user = Depends(get_current_user_with_maintenance_check),
     db: SupabaseConnection = Depends(get_db)
 ):
     """ファイルをアップロードして知識ベースを更新（embedding生成対応）"""
@@ -1180,7 +1180,7 @@ async def upload_knowledge(
 @app.post("/chatbot/api/upload-multiple-knowledge")
 async def upload_multiple_knowledge(
     files: List[UploadFile] = File(...), 
-    current_user = Depends(get_current_user), 
+    current_user = Depends(get_current_user_with_maintenance_check), 
     db: SupabaseConnection = Depends(get_db)
 ):
     """複数ファイルを順次アップロードして知識ベースを更新（サーバー負荷軽減）"""
@@ -1283,14 +1283,14 @@ async def upload_multiple_knowledge(
 
 # 知識ベース情報を取得するエンドポイント
 @app.get("/chatbot/api/knowledge-base")
-async def get_knowledge_base(current_user = Depends(get_current_user)):
+async def get_knowledge_base(current_user = Depends(get_current_user_with_maintenance_check)):
     """現在の知識ベースの情報を取得"""
     return get_knowledge_base_info()
 
 # チャットエンドポイント
 @app.post("/chatbot/api/chat", response_model=ChatResponse)
 @limiter.limit("20/minute")  # 🛡️ 1分間に20回のチャット制限（最重要）
-async def chat(request: Request, message: ChatMessage, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def chat(request: Request, message: ChatMessage, current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """チャットメッセージを処理してGeminiからの応答を返す（Enhanced RAG統合版）"""
     # デバッグ用：現在のユーザー情報と利用制限を出力
     print(f"=== 🚀 Enhanced RAG チャット処理開始 ===")
@@ -1668,7 +1668,7 @@ async def chat(request: Request, message: ChatMessage, current_user = Depends(ge
                 )
 
 @app.post("/chatbot/api/chat-chunked-info", response_model=dict)
-async def chat_chunked_info(message: ChatMessage, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def chat_chunked_info(message: ChatMessage, current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """チャンク化処理の詳細情報を取得する（デバッグ用）"""
     try:
         # ユーザーIDを設定
@@ -1700,7 +1700,7 @@ async def chat_chunked_info(message: ChatMessage, current_user = Depends(get_cur
             "error": str(e)
         }
 @app.post("/chatbot/api/chat-with-chunks", response_model=dict)
-async def chat_with_chunk_visibility(message: ChatMessage, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def chat_with_chunk_visibility(message: ChatMessage, current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """チャンク可視化機能付きチャット処理"""
     try:
         # ユーザーIDを設定
@@ -2916,7 +2916,7 @@ async def admin_update_application_status(
 
 # 会社全体のトークン使用量と料金情報を取得するエンドポイント
 @app.get("/chatbot/api/company-token-usage", response_model=dict)
-async def get_company_token_usage(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def get_company_token_usage(current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """会社全体のトークン使用量と料金情報を取得する"""
     try:
         print(f"company-token-usageエンド�Eイントが呼び出されました - ユーザー: {current_user['email']}")
@@ -3042,7 +3042,7 @@ async def get_company_token_usage(current_user = Depends(get_current_user), db: 
 
 # 料金シミュレーションエンドポイント
 @app.post("/chatbot/api/simulate-cost", response_model=dict)
-async def simulate_token_cost(request: dict, current_user = Depends(get_current_user)):
+async def simulate_token_cost(request: dict, current_user = Depends(get_current_user_with_maintenance_check)):
     """指定されたトークン数での料金をシミュレーション"""
     try:
         print(f"simulate-costエンドポイントが呼び出されました - ユーザー: {current_user['email']}")
@@ -3107,7 +3107,7 @@ async def simulate_token_cost(request: dict, current_user = Depends(get_current_
 
 # プロンプト参照を含む会社全体のトークン使用量と料金情報を取得するエンドポイント
 @app.get("/chatbot/api/company-token-usage-with-prompts", response_model=dict)
-async def get_company_token_usage_with_prompts(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def get_company_token_usage_with_prompts(current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """プロンプト参照を含む会社全体のトークン使用量と料金情報を取得する"""
     try:
         print(f"company-token-usage-with-promptsエンドポイントが呼び出されました - ユーザー: {current_user['email']}")
@@ -3280,7 +3280,7 @@ async def get_company_token_usage_with_prompts(current_user = Depends(get_curren
 
 # プロンプト参照を含む料金シミュレーションエンドポイント
 @app.post("/chatbot/api/simulate-cost-with-prompts", response_model=dict)
-async def simulate_token_cost_with_prompts(request: dict, current_user = Depends(get_current_user)):
+async def simulate_token_cost_with_prompts(request: dict, current_user = Depends(get_current_user_with_maintenance_check)):
     """プロンプト参照を含む指定されたトークン数での料金をシミュレーション"""
     try:
         print(f"simulate-cost-with-promptsエンドポイントが呼び出されました - ユーザー: {current_user['email']}")
@@ -3351,7 +3351,7 @@ async def simulate_token_cost_with_prompts(request: dict, current_user = Depends
 
 # no1株式会社専用料金情報を取得するエンドポイント
 @app.get("/chatbot/api/company-pricing-info", response_model=dict)
-async def get_company_pricing_info(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def get_company_pricing_info(current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """会社別の料金体系情報と具体例を取得する"""
     try:
         print(f"company-pricing-infoエンドポイントが呼び出されました - ユーザー: {current_user['email']}")
@@ -3564,7 +3564,7 @@ async def get_company_pricing_info(current_user = Depends(get_current_user), db:
 
 # デバッグ用：会社情報確認エンドポイント
 @app.get("/chatbot/api/debug-company-info", response_model=dict)
-async def debug_company_info(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def debug_company_info(current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """デバッグ用：現在のユーザーの会社情報を確認する"""
     try:
         print(f"🔍 デバッグ - ユーザー情報: {current_user}")
@@ -3608,7 +3608,7 @@ async def debug_company_info(current_user = Depends(get_current_user), db: Supab
 
 # 会社別メンバーごとの料金使用状況を取得するエンドポイント
 @app.get("/chatbot/api/company-member-usage", response_model=dict)
-async def get_company_member_usage(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def get_company_member_usage(current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """会社のメンバーごとの料金使用状況を取得する"""
     try:
         print(f"company-member-usageエンドポイントが呼び出されました - ユーザー: {current_user['email']}")
@@ -3991,7 +3991,7 @@ async def admin_get_plan_history(current_user = Depends(get_admin_or_user), db: 
 
 # 会社名関連エンドポイント
 @app.get("/chatbot/api/company-name", response_model=dict)
-async def get_company_name_endpoint(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def get_company_name_endpoint(current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """現在のユーザーの会社名を取得する"""
     try:
         print(f"会社名取得要求 - ユーザー: {current_user['email']}")
@@ -4008,7 +4008,7 @@ async def get_company_name_endpoint(current_user = Depends(get_current_user), db
         )
 
 @app.post("/chatbot/api/company-name", response_model=dict)
-async def set_company_name_endpoint(request: dict, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def set_company_name_endpoint(request: dict, current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """現在のユーザーの会社名を設定する"""
     try:
         print(f"会社名設定要求 - ユーザー: {current_user['email']}, 新会社名: {request.get('company_name')}")
@@ -4035,7 +4035,7 @@ async def upload_from_google_drive(
     access_token: str = Form(...),
     file_name: str = Form(...),
     mime_type: str = Form(...),
-    current_user = Depends(get_current_user),
+    current_user = Depends(get_current_user_with_maintenance_check),
     db: SupabaseConnection = Depends(get_db)
 ):
     """Google Driveからファイルをアップロード"""
@@ -4129,7 +4129,7 @@ async def list_drive_files(
     access_token: str,
     folder_id: str = 'root',
     search_query: str = None,
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user_with_maintenance_check)
 ):
     """Google Driveファイル一覧取得"""
     try:
@@ -4173,7 +4173,7 @@ class NotificationResponse(PydanticBaseModel):
     created_by: Optional[str] = None
 
 @app.get("/chatbot/api/notifications", response_model=List[NotificationResponse])
-async def get_notifications(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def get_notifications(current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """全ての通知を取得（全ユーザー共通）"""
     try:
         print(f"通知取得開始 - ユーザー: {current_user.get('email')}")
@@ -4343,7 +4343,7 @@ async def delete_notification(notification_id: str, current_user = Depends(get_a
 
 # Template Categories Endpoints
 @app.get("/chatbot/api/templates/categories")
-async def get_template_categories(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def get_template_categories(current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """Get template categories (system + company specific)"""
     try:
         template_manager = TemplateManager(db)
@@ -4417,7 +4417,7 @@ async def delete_template_category(category_id: str, current_user = Depends(get_
 
 # Template Management Endpoints
 @app.get("/chatbot/api/templates")
-async def get_templates(category_id: str = None, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def get_templates(category_id: str = None, current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """Get templates for the user's company, optionally filtered by category"""
     try:
         template_manager = TemplateManager(db)
@@ -4435,7 +4435,7 @@ async def get_templates(category_id: str = None, current_user = Depends(get_curr
         raise HTTPException(status_code=500, detail=f"Failed to get templates: {str(e)}")
 
 @app.get("/chatbot/api/templates/category/{category_id}")
-async def get_templates_by_category(category_id: str, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def get_templates_by_category(category_id: str, current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """Get templates for a specific category"""
     try:
         template_manager = TemplateManager(db)
@@ -4453,7 +4453,7 @@ async def get_templates_by_category(category_id: str, current_user = Depends(get
         raise HTTPException(status_code=500, detail=f"Failed to get templates by category: {str(e)}")
 
 @app.get("/chatbot/api/templates/{template_id}")
-async def get_template(template_id: str, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def get_template(template_id: str, current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """Get a specific template by ID"""
     try:
         template_manager = TemplateManager(db)
@@ -4530,7 +4530,7 @@ async def delete_template(template_id: str, current_user = Depends(get_company_a
 
 # Template Usage and Favorites Endpoints
 @app.post("/chatbot/api/templates/{template_id}/use")
-async def use_template(template_id: str, usage_data: TemplateUsageCreate, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def use_template(template_id: str, usage_data: TemplateUsageCreate, current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """Record template usage"""
     try:
         company_id = current_user.get("company_id")
@@ -4563,7 +4563,7 @@ async def use_template(template_id: str, usage_data: TemplateUsageCreate, curren
         raise HTTPException(status_code=500, detail=f"Failed to record template usage: {str(e)}")
 
 @app.post("/chatbot/api/templates/{template_id}/favorite")
-async def toggle_template_favorite(template_id: str, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def toggle_template_favorite(template_id: str, current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """Toggle template favorite status"""
     try:
         company_id = current_user.get("company_id")
@@ -4589,7 +4589,7 @@ async def toggle_template_favorite(template_id: str, current_user = Depends(get_
         raise HTTPException(status_code=500, detail=f"Failed to toggle template favorite: {str(e)}")
 
 @app.get("/chatbot/api/templates/favorites")
-async def get_favorite_templates(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def get_favorite_templates(current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """Get user's favorite templates"""
     try:
         template_manager = TemplateManager(db)
@@ -4611,7 +4611,7 @@ async def get_favorite_templates(current_user = Depends(get_current_user), db: S
         raise HTTPException(status_code=500, detail=f"Failed to get favorite templates: {str(e)}")
 
 @app.get("/chatbot/api/templates/{template_id}/variables")
-async def get_template_variables(template_id: str, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def get_template_variables(template_id: str, current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """Get variables for a specific template"""
     try:
         template_manager = TemplateManager(db)
@@ -4641,7 +4641,7 @@ async def get_template_variables(template_id: str, current_user = Depends(get_cu
         raise HTTPException(status_code=500, detail=f"Failed to get template variables: {str(e)}")
 
 @app.post("/chatbot/api/templates/usage")
-async def record_template_usage(usage_data: dict, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def record_template_usage(usage_data: dict, current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """Record template usage"""
     try:
         template_manager = TemplateManager(db)
@@ -4682,7 +4682,7 @@ async def record_template_usage(usage_data: dict, current_user = Depends(get_cur
         raise HTTPException(status_code=500, detail=f"Failed to record template usage: {str(e)}")
 
 @app.post("/chatbot/api/templates/favorites")
-async def add_template_favorite(favorite_data: dict, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def add_template_favorite(favorite_data: dict, current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """Add template to favorites"""
     try:
         template_manager = TemplateManager(db)
@@ -4713,7 +4713,7 @@ async def add_template_favorite(favorite_data: dict, current_user = Depends(get_
         raise HTTPException(status_code=500, detail=f"Failed to add template favorite: {str(e)}")
 
 @app.delete("/chatbot/api/templates/favorites/{template_id}")
-async def remove_template_favorite(template_id: str, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def remove_template_favorite(template_id: str, current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """Remove template from favorites"""
     try:
         template_manager = TemplateManager(db)
@@ -4740,7 +4740,7 @@ async def remove_template_favorite(template_id: str, current_user = Depends(get_
 
 # Template Variable Processing Endpoint
 @app.post("/chatbot/api/templates/{template_id}/process")
-async def process_template_variables(template_id: str, variables: dict, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+async def process_template_variables(template_id: str, variables: dict, current_user = Depends(get_current_user_with_maintenance_check), db: SupabaseConnection = Depends(get_db)):
     """Process template with variable substitution"""
     try:
         company_id = current_user.get("company_id")
