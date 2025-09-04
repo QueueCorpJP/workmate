@@ -178,11 +178,20 @@ def get_chat_history(user_id: str = None, db = None):
         
         formatted_history = []
         for chat in chat_history:
+            # Supabaseの時刻をそのまま表示（フロントでのUTC変換を防ぐ）
+            original_timestamp = chat.get("timestamp", "")
+            display_timestamp = original_timestamp
+            
+            # +00タイムゾーン情報を削除（JSの自動UTC変換を防ぐ）
+            if original_timestamp and "+00" in original_timestamp:
+                display_timestamp = original_timestamp.replace("+00", "")
+                print(f"[時刻修正] {original_timestamp} → {display_timestamp}")
+            
             item = {
                 "id": chat.get("id", ""),
                 "user_message": chat.get("user_message", ""),
                 "bot_response": chat.get("bot_response", ""),
-                "timestamp": chat.get("timestamp", ""),
+                "timestamp": display_timestamp,  # +00を削除した時刻
                 "category": chat.get("category", ""),
                 "sentiment": chat.get("sentiment", ""),
                 "employee_id": chat.get("employee_id", ""),
@@ -233,11 +242,20 @@ def get_chat_history_paginated(user_id: str = None, db = None, limit: int = 30, 
         # データ形式を統一
         formatted_history = []
         for chat in chat_history:
+            # Supabaseの時刻をそのまま表示（フロントでのUTC変換を防ぐ）
+            original_timestamp = chat.get("timestamp", "")
+            display_timestamp = original_timestamp
+            
+            # +00タイムゾーン情報を削除（JSの自動UTC変換を防ぐ）
+            if original_timestamp and "+00" in original_timestamp:
+                display_timestamp = original_timestamp.replace("+00", "")
+                print(f"[時刻修正ページ分け] {original_timestamp} → {display_timestamp}")
+            
             item = {
                 "id": chat.get("id", ""),
                 "user_message": chat.get("user_message", ""),
                 "bot_response": chat.get("bot_response", ""),
-                "timestamp": chat.get("timestamp", ""),
+                "timestamp": display_timestamp,  # +00を削除した時刻
                 "category": chat.get("category", ""),
                 "sentiment": chat.get("sentiment", ""),
                 "employee_id": chat.get("employee_id", ""),
@@ -1128,11 +1146,21 @@ def get_chat_history_by_company(company_id: str, db = None):
         formatted_history = []
         for chat in chat_history:
             emp_id = chat.get("employee_id", "")
+            
+            # Supabaseの時刻をそのまま表示（フロントでのUTC変換を防ぐ）
+            original_timestamp = chat.get("timestamp", "")
+            display_timestamp = original_timestamp
+            
+            # +00タイムゾーン情報を削除（JSの自動UTC変換を防ぐ）
+            if original_timestamp and "+00" in original_timestamp:
+                display_timestamp = original_timestamp.replace("+00", "")
+                print(f"[時刻修正会社別] {original_timestamp} → {display_timestamp}")
+            
             formatted_history.append({
                 "id": chat.get("id", ""),
                 "user_message": chat.get("user_message", ""),
                 "bot_response": chat.get("bot_response", ""),
-                "timestamp": chat.get("timestamp", ""),
+                "timestamp": display_timestamp,  # +00を削除した時刻
                 "category": chat.get("category", ""),
                 "sentiment": chat.get("sentiment", ""),
                 "employee_id": emp_id,
