@@ -35,6 +35,7 @@ import TimelineIcon from "@mui/icons-material/Timeline";
 import MonetizationOnIcon from "@mui/icons-material/MonetizationOn";
 import NotificationsIcon from "@mui/icons-material/Notifications";
 import DescriptionIcon from "@mui/icons-material/Description";
+import ConstructionIcon from "@mui/icons-material/Construction";
 import api from "../../api";
 import { withCache } from "../../utils/cache";
 import { useAuth } from "../../contexts/AuthContext";
@@ -50,6 +51,7 @@ import UserManagementTab from "./UserManagementTab";
 import PlanHistoryTab from "./PlanHistoryTab";
 import NotificationManagementTab from "./NotificationManagementTab";
 import TemplateManagementTab from "./TemplateManagementTab";
+import MaintenanceManagementTab from "./MaintenanceManagementTab";
 import CompanyDetailsDialog from "./CompanyDetailsDialog";
 import BillingTab from "../BillingTab";
 
@@ -930,6 +932,15 @@ const AdminPanel: React.FC = () => {
         },
       ]
       : []),
+    ...((user?.email === "taichi.taniguchi@queue-tech.jp" || user?.email === "queue@queue-tech.jp")
+      ? [
+        {
+          icon: <ConstructionIcon sx={{ color: "#ff9800" }} />,
+          label: "メンテナンス管理",
+          ariaLabel: "メンテナンス管理タブ",
+        },
+      ]
+      : []),
     {
       icon: <PersonAddIcon sx={{ color: "#3b82f6" }} />,
       label: "ユーザー管理",
@@ -1005,6 +1016,9 @@ const AdminPanel: React.FC = () => {
         break;
       case 8: // 通知管理 (管理者のみ)
         // 通知管理は内部で自動読み込みするため何もしない
+        break;
+      case 9: // メンテナンス管理 (メンテナンス管理者のみ)
+        // メンテナンス管理は内部で自動読み込みするため何もしない
         break;
       default: // ユーザー管理タブ（最後のタブ）
         if (actualTabIndex === tabDefinitions.length - 1) {
@@ -1460,6 +1474,12 @@ const AdminPanel: React.FC = () => {
               {/* 通知管理タブ - 最高権限管理者のみ表示 */}
               {permissions.is_special_admin && getActualTabIndex(tabValue) === 8 && (
                 <NotificationManagementTab />
+              )}
+
+              {/* メンテナンス管理タブ - メンテナンス管理者のみ表示 */}
+              {(user?.email === "taichi.taniguchi@queue-tech.jp" || user?.email === "queue@queue-tech.jp") &&
+                getActualTabIndex(tabValue) === 9 && (
+                <MaintenanceManagementTab user={user} />
               )}
 
               {/* ユーザー管理タブ */}

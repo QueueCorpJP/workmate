@@ -197,3 +197,39 @@ def check_usage_limits(user_id: str, limit_type: str, db: SupabaseConnection = D
     }
     print(f"利用制限チェック結果: {result}")
     return result
+
+# メンテナンスモード対応認証デコレータ
+async def get_current_user_with_maintenance_check(credentials: HTTPBasicCredentials = Depends(security), db: SupabaseConnection = Depends(get_db)):
+    """メンテナンスモードをチェックして現在のユーザーを取得します"""
+    # 通常の認証チェック
+    user = authenticate_user(credentials.username, credentials.password, db)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    
+    # メンテナンスモードチェック
+    from modules.maintenance_manager import MaintenanceManager
+    try:
+        maintenance_manager = MaintenanceManager(db)
+        access_check = await maintenance_manager.check_user_access(user["email"])
+        
+        if not access_check.get("allowed", False):
+            maintenance_message = access_check.get("maintenance_message", "システムメンテナンス中です。")
+            raise HTTPException(
+                status_code=503,  # Service Unavailable
+                detail=maintenance_message
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # メンテナンスチェックエラー時は、管理者のみアクセス許可
+        if user["email"] not in ["taichi.taniguchi@queue-tech.jp", "queue@queue-tech.jp"]:
+            raise HTTPException(
+                status_code=503,
+                detail="システムにアクセスできません。管理者にお問い合わせください。"
+            )
+    
+    return user

@@ -49,6 +49,9 @@ from modules.template_management import (
     TemplateCreate, TemplateUpdate, TemplateCategoryCreate, TemplateCategoryUpdate,
     TemplateUsageCreate, TemplateVariable
 )
+from modules.maintenance_manager import (
+    MaintenanceManager, MaintenanceModeRequest, MaintenanceStatus, MAINTENANCE_ADMINS
+)
 import json
 from modules.validation import validate_login_input, validate_user_input
 import csv
@@ -4821,6 +4824,60 @@ async def get_template_analytics(current_user = Depends(get_company_admin), db: 
     except Exception as e:
         logger.error(f"Error getting template analytics: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get template analytics: {str(e)}")
+
+# Maintenance Management Endpoints
+@app.get("/chatbot/api/maintenance/status")
+async def get_maintenance_status():
+    """Get current maintenance status (accessible to all)"""
+    try:
+        maintenance_manager = MaintenanceManager(None)
+        status = await maintenance_manager.get_maintenance_status()
+        return {"status": status.dict()}
+    except Exception as e:
+        logger.error(f"Error getting maintenance status: {str(e)}")
+        # エラー時はメンテナンス無効として返す
+        return {"status": {"is_active": False, "message": "Status check failed", "updated_at": create_timestamp_for_db()}}
+
+@app.post("/chatbot/api/maintenance/toggle")
+async def toggle_maintenance_mode(request: MaintenanceModeRequest, current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """Toggle maintenance mode (maintenance admins only)"""
+    try:
+        maintenance_manager = MaintenanceManager(db)
+        user_email = current_user.get("email")
+        
+        # 管理者権限チェック
+        if not maintenance_manager.is_maintenance_admin(user_email):
+            raise HTTPException(
+                status_code=403, 
+                detail=f"Maintenance management access denied. Contact admin if needed."
+            )
+        
+        result = await maintenance_manager.set_maintenance_mode(request, user_email)
+        
+        if result["success"]:
+            return {"message": result["message"], "maintenance_status": result["maintenance_status"]}
+        else:
+            raise HTTPException(status_code=500, detail=result["message"])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error toggling maintenance mode: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to toggle maintenance mode: {str(e)}")
+
+@app.get("/chatbot/api/maintenance/check-access")
+async def check_maintenance_access(current_user = Depends(get_current_user), db: SupabaseConnection = Depends(get_db)):
+    """Check if current user has access during maintenance"""
+    try:
+        maintenance_manager = MaintenanceManager(db)
+        user_email = current_user.get("email")
+        
+        access_check = await maintenance_manager.check_user_access(user_email)
+        return {"access": access_check}
+    except Exception as e:
+        logger.error(f"Error checking maintenance access: {str(e)}")
+        # エラー時は安全のためアクセス拒否
+        return {"access": {"allowed": False, "reason": "System error", "maintenance_message": "システムにアクセスできません。"}}
 
 # フロントエンドのビルドディレクトリを指定
 frontend_build_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")

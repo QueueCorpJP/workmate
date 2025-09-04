@@ -122,9 +122,9 @@ def create_timestamp_for_db() -> str:
     データベース保存用のタイムスタンプを作成
     
     Returns:
-        str: データベース保存用の日本時間タイムスタンプ
+        str: データベース保存用の日本時間タイムスタンプ（タイムゾーン情報付き）
     """
-    return now_jst_simple()
+    return now_jst_isoformat()  # タイムゾーン情報付きで保存
 
 # レガシーコード互換性のためのエイリアス
 def get_current_jst_timestamp() -> str:

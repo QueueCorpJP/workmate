@@ -24,6 +24,7 @@ import { CompanyProvider, useCompany } from "./contexts/CompanyContext";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { jaJP } from "@mui/material/locale";
 import LoadingIndicator from "./components/admin/LoadingIndicator";
+import MaintenanceBanner from "./components/MaintenanceBanner";
 
 // レスポンシブ対応のためのテーマを作成
 let theme = createTheme(
@@ -270,6 +271,9 @@ function AppContent() {
   return (
     <>
       <Router>
+        {/* メンテナンスバナー - 全ページで表示 */}
+        <MaintenanceBanner />
+        
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/password-reset" element={<PasswordResetPage />} />
