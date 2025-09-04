@@ -1,9 +1,30 @@
 /**
- * Format a date string to a localized format in JST
+ * Format a date string as-is without timezone conversion
+ * @param dateString - The date string to format
+ * @returns Formatted date string without timezone conversion
+ */
+export const formatDate = (dateString: string): string => {
+  if (!dateString) return '情報なし';
+
+  const date = new Date(dateString);
+  // タイムゾーン変換なしで、そのままの時刻を表示
+  return new Intl.DateTimeFormat('ja-JP', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+    // timeZone指定を削除してそのまま表示
+  }).format(date);
+};
+
+/**
+ * Format a date string to JST (for cases where JST conversion is explicitly needed)
  * @param dateString - The date string to format (assumed to be UTC)
  * @returns Formatted date string in Japan time
  */
-export const formatDate = (dateString: string): string => {
+export const formatDateJST = (dateString: string): string => {
   if (!dateString) return '情報なし';
 
   const date = new Date(dateString);
@@ -19,9 +40,9 @@ export const formatDate = (dateString: string): string => {
 };
 
 /**
- * Format a date string to Japanese date format (YYYY/MM/DD) in JST
- * @param dateString - The date string to format (assumed to be UTC)
- * @returns Formatted date string in Japan time (date only)
+ * Format a date string to Japanese date format (YYYY/MM/DD) without timezone conversion
+ * @param dateString - The date string to format
+ * @returns Formatted date string (date only)
  */
 export const formatDateOnly = (dateString: string): string => {
   if (!dateString) return '情報なし';
@@ -30,16 +51,16 @@ export const formatDateOnly = (dateString: string): string => {
   return new Intl.DateTimeFormat('ja-JP', {
     year: 'numeric',
     month: '2-digit',
-    day: '2-digit',
-    timeZone: 'Asia/Tokyo'
+    day: '2-digit'
+    // timeZone指定を削除してそのまま表示
   }).format(date);
 };
 
 /**
- * Format a date string to Japanese datetime format with custom options in JST
- * @param dateString - The date string to format (assumed to be UTC)
+ * Format a date string to Japanese datetime format with custom options without timezone conversion
+ * @param dateString - The date string to format
  * @param options - Additional formatting options
- * @returns Formatted date string in Japan time
+ * @returns Formatted date string without timezone conversion
  */
 export const formatDateCustom = (
   dateString: string, 
@@ -49,7 +70,7 @@ export const formatDateCustom = (
 
   const date = new Date(dateString);
   return new Intl.DateTimeFormat('ja-JP', {
-    timeZone: 'Asia/Tokyo',
+    // timeZone指定を削除してそのまま表示
     ...options
   }).format(date);
 };
