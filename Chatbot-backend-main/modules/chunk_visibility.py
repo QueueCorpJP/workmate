@@ -7,6 +7,7 @@ import logging
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
+from modules.timezone_utils import create_timestamp_for_db
 
 logger = logging.getLogger(__name__)
 
@@ -220,7 +221,7 @@ class ChunkVisibilitySystem:
                 "summary": selection_analysis.selection_summary
             },
             "metadata": {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": create_timestamp_for_db(),
                 "system_version": "chunk_visibility_v1.0"
             }
         }

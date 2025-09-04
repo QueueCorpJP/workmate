@@ -6,6 +6,7 @@ queue@queueu-tech.jp用の利用状況分析を提供
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional
 from supabase_adapter import select_data, execute_query
+from modules.timezone_utils import create_timestamp_for_db
 import json
 
 # 安全なデータ変換関数
@@ -372,7 +373,7 @@ def get_enhanced_analytics(db, company_id: str = None) -> Dict[str, Any]:
             "unresolved_and_repeat_analysis": get_unresolved_repeat_analysis(db, company_id),
             "sentiment_analysis": get_detailed_sentiment_analysis(db, company_id),
             "analysis_metadata": {
-                "generated_at": datetime.now().isoformat(),
+                "generated_at": create_timestamp_for_db(),
                 "analysis_type": "enhanced",
                 "company_id": company_id
             }

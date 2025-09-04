@@ -6,6 +6,7 @@ import asyncio
 from typing import Dict, Any, Optional, List
 import uuid
 from datetime import datetime
+from modules.timezone_utils import create_timestamp_for_db
 from supabase_adapter import select_data, insert_data
 from .chat_config import (
     safe_print, HTTPException, model, get_db_cursor,
@@ -100,7 +101,7 @@ async def save_chat_history(
         safe_print(f"[DB SAVE] save_chat_history called for user {user_id}. Message: {user_message[:50]}...")
         
         chat_id = str(uuid.uuid4())
-        timestamp = datetime.now().isoformat()
+        timestamp = create_timestamp_for_db()  # 日本時間（JST）で保存
 
         # company_id が提供されていない場合、user_id から取得を試みる
         if company_id is None and user_id != "anonymous":

@@ -6,6 +6,7 @@ import uuid
 import datetime
 from typing import List, Dict, Optional, Any
 from pydantic import BaseModel
+from modules.timezone_utils import create_timestamp_for_db
 from supabase_adapter import select_data, insert_data, update_data, delete_data, execute_query
 from modules.database import SupabaseConnection
 
@@ -116,8 +117,8 @@ class TemplateManager:
                 "display_order": category_data.display_order,
                 "category_type": category_data.category_type,
                 "is_active": True,
-                "created_at": datetime.datetime.now().isoformat(),
-                "updated_at": datetime.datetime.now().isoformat()
+                "created_at": create_timestamp_for_db(),
+                "updated_at": create_timestamp_for_db()
             }
             
             # category_typeに応じてcompany_idを設定
@@ -309,8 +310,8 @@ class TemplateManager:
                 "is_active": True,
                 "created_by": created_by,
                 "company_id": company_id,
-                "created_at": datetime.datetime.now().isoformat(),
-                "updated_at": datetime.datetime.now().isoformat()
+                "created_at": create_timestamp_for_db(),
+                "updated_at": create_timestamp_for_db()
             }
             
             result = insert_data("prompt_templates", template_dict)
@@ -733,8 +734,8 @@ class CompanyTemplateSettingsManager:
                 "max_templates_per_user": 50,
                 "enable_template_analytics": True,
                 "default_template_category": None,
-                "created_at": datetime.datetime.now().isoformat(),
-                "updated_at": datetime.datetime.now().isoformat()
+                "created_at": create_timestamp_for_db(),
+                "updated_at": create_timestamp_for_db()
             }
             
             result = insert_data("company_template_settings", default_settings)

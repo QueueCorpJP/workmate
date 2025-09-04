@@ -8,6 +8,7 @@ import pandas as pd
 import asyncio
 from datetime import datetime
 from fastapi import HTTPException, UploadFile, File, Depends, Request
+from modules.timezone_utils import create_timestamp_for_db
 from io import BytesIO
 import PyPDF2
 import traceback
@@ -231,7 +232,7 @@ async def _record_document_source(
             "page_count": page_count,
             "uploaded_by": user_id,
             "company_id": company_id,
-            "uploaded_at": datetime.now().isoformat(),
+            "uploaded_at": create_timestamp_for_db(),
             "special": "knowledge API経由でアップロード",
             "metadata": metadata_json,
         }
@@ -362,7 +363,7 @@ def _update_source_info(source_name: str) -> None:
     if source_name not in knowledge_base.sources:
         knowledge_base.sources[source_name] = {}  # 辞書として初期化
         knowledge_base.source_info[source_name] = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': create_timestamp_for_db(),
             'active': True
         }
 

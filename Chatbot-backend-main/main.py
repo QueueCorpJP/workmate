@@ -53,6 +53,7 @@ import json
 from modules.validation import validate_login_input, validate_user_input
 import csv
 import io
+from modules.timezone_utils import create_timestamp_for_db
 
 # ロギングの設定
 logger = setup_logging()
@@ -680,7 +681,7 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                 "name": name,
                 "role": role,
                 "company_name": company_name,
-                "created_at": datetime.datetime.now().isoformat()
+                "created_at": create_timestamp_for_db()
             }
         else:
             # userロールの場合は社員アカウントとして登録
@@ -711,7 +712,7 @@ async def admin_register_user(user_data: AdminUserCreate, current_user = Depends
                 "name": name,
                 "role": role,
                 "company_name": "",
-                "created_at": datetime.datetime.now().isoformat()
+                "created_at": create_timestamp_for_db()
             }
     except HTTPException as e:
         # HTTPExceptionはそのまま再送
@@ -2222,7 +2223,7 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
             "detailed_analysis": detailed_analysis,
             "analysis_metadata": {
                 "total_conversations": detailed_metrics.get("total_conversations", 0),
-                "analysis_timestamp": datetime.datetime.now().isoformat(),
+                "analysis_timestamp": create_timestamp_for_db(),
                 "data_quality_score": min(100, (filled_sections / 6) * 100)
             }
         }
@@ -2244,7 +2245,7 @@ async def admin_detailed_analysis(request: dict, current_user = Depends(get_admi
             },
             "analysis_metadata": {
                 "error": str(e),
-                "analysis_timestamp": datetime.datetime.now().isoformat(),
+                "analysis_timestamp": create_timestamp_for_db(),
                 "data_quality_score": 0
             }
         }
@@ -2336,7 +2337,7 @@ async def admin_enhanced_analysis(
             },
             "ai_insights": f"AI分析中にエラーが発生しました: {str(e)}",
             "analysis_metadata": {
-                "generated_at": datetime.datetime.now().isoformat(),
+                "generated_at": create_timestamp_for_db(),
                 "analysis_type": "enhanced_error",
                 "error": str(e)
             }
@@ -2368,7 +2369,7 @@ async def admin_get_ai_insights(current_user = Depends(get_admin_or_user), db: S
         print(f"🤖 [AI INSIGHTS] AI洞察生成完了")
         return {
             "ai_insights": ai_insights,
-            "generated_at": datetime.datetime.now().isoformat()
+                         "generated_at": create_timestamp_for_db()
         }
         
     except Exception as e:
@@ -2377,7 +2378,7 @@ async def admin_get_ai_insights(current_user = Depends(get_admin_or_user), db: S
         print(traceback.format_exc())
         return {
             "ai_insights": f"AI分析中にエラーが発生しました: {str(e)}",
-            "generated_at": datetime.datetime.now().isoformat(),
+             "generated_at": create_timestamp_for_db(),
             "error": str(e)
         }
 
@@ -2716,13 +2717,13 @@ async def test_youtube_connection():
         return {
             "success": success,
             "message": message,
-            "timestamp": datetime.datetime.now().isoformat()
+                         "timestamp": create_timestamp_for_db()
         }
     except Exception as e:
         return {
             "success": False,
             "message": f"チェックト実行エラー: {str(e)}",
-            "timestamp": datetime.datetime.now().isoformat()
+                         "timestamp": create_timestamp_for_db()
         }
 
 @app.get("/chatbot/api/admin/companies", response_model=List[dict])
@@ -4233,7 +4234,7 @@ async def create_notification(notification_data: NotificationCreate, current_use
             "notification_type": notification_data.notification_type,
             "created_by": current_user.get('email'),
             "created_at": datetime.datetime.now().isoformat(),
-            "updated_at": datetime.datetime.now().isoformat()
+                         "updated_at": create_timestamp_for_db()
         }
         
         # 通知を作成

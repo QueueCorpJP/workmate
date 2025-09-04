@@ -14,6 +14,7 @@ import asyncio
 import tempfile
 from typing import List, Dict, Any, Optional, Tuple, Union
 from datetime import datetime
+from modules.timezone_utils import create_timestamp_for_db
 import re
 import tiktoken
 from fastapi import HTTPException, UploadFile
@@ -365,7 +366,7 @@ class DocumentProcessor:
                 "page_count": doc_data.get("page_count", 1),
                 "uploaded_by": doc_data["uploaded_by"],
                 "company_id": doc_data["company_id"],
-                "uploaded_at": datetime.now().isoformat(),  # uploaded_atフィールドを使用
+                "uploaded_at": create_timestamp_for_db(),  # uploaded_atフィールドを使用
                 "active": True,  # activeフィールドを追加
                 "parent_id": doc_data.get("parent_id"),  # 親ドキュメント（階層構造）
                 "doc_id": document_id,  # ドキュメント識別子として自身のIDを設定
@@ -449,7 +450,7 @@ class DocumentProcessor:
                             "company_id": doc_data["company_id"],
                             "name": "Test User",
                             "email": "test@example.com",
-                            "created_at": datetime.now().isoformat()
+                            "created_at": create_timestamp_for_db()
                         }
                         
                         user_result = insert_data("users", test_user_data)
@@ -556,8 +557,8 @@ class DocumentProcessor:
                             "content": chunk_data["content"],
                             "embedding": embedding_vector,
                             "company_id": company_id,
-                            "created_at": datetime.now().isoformat(),
-                            "updated_at": datetime.now().isoformat()
+                            "created_at": create_timestamp_for_db(),
+                            "updated_at": create_timestamp_for_db()
                         })
                     else:
                         # 失敗したチャンクをembeddingなしで保存（後で再処理用）
@@ -567,8 +568,8 @@ class DocumentProcessor:
                             "content": chunk_data["content"],
                             "embedding": None,
                             "company_id": company_id,
-                            "created_at": datetime.now().isoformat(),
-                            "updated_at": datetime.now().isoformat()
+                            "created_at": create_timestamp_for_db(),
+                            "updated_at": create_timestamp_for_db()
                         }
                         records_to_insert.append(failed_record)
                         stats["failed_chunks"].append(failed_record)
@@ -1257,7 +1258,7 @@ class DocumentProcessor:
                             # embeddingを更新
                             update_result = supabase.table("chunks").update({
                                 "embedding": embedding_vector,
-                                "updated_at": datetime.now().isoformat()
+                                "updated_at": create_timestamp_for_db()
                             }).eq("id", chunk_id).execute()
                             
                             if update_result.data:
@@ -1387,7 +1388,7 @@ class DocumentProcessor:
                             # embeddingを更新
                             update_result = supabase.table("chunks").update({
                                 "embedding": embedding_vector,
-                                "updated_at": datetime.now().isoformat()
+                                "updated_at": create_timestamp_for_db()
                             }).eq("id", chunk_id).execute()
                             
                             if update_result.data:

@@ -17,6 +17,7 @@ from typing import List, Dict, Optional, Tuple, Any
 from dotenv import load_dotenv
 import os
 from datetime import datetime
+from modules.timezone_utils import create_timestamp_for_db
 import requests
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -250,7 +251,7 @@ class RealtimeRAGProcessor:
             "original_question": question,
             "processed_question": processed_question,
             "company_id": company_id,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": create_timestamp_for_db(),
             "step": 1
         }
     
@@ -1230,7 +1231,7 @@ class RealtimeRAGProcessor:
         
         result = {
             "answer": answer,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": create_timestamp_for_db(),
             "step": 5,
             "status": "completed"
         }
@@ -1425,7 +1426,7 @@ class RealtimeRAGProcessor:
             error_result = {
                 "answer": "申し訳ございませんが、システムエラーが発生しました。しばらく時間をおいてから再度お試しください。",
                 "error": str(e),
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": create_timestamp_for_db(),
                 "status": "error",
                 "sources": error_sources,
                 "source_documents": error_sources
@@ -1467,7 +1468,7 @@ async def process_question_realtime(question: str, company_id: str = None, compa
         return {
             "answer": "システムの初期化に失敗しました。管理者にお問い合わせください。",
             "error": "RealtimeRAGProcessor initialization failed",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": create_timestamp_for_db(),
             "status": "error"
         }
     

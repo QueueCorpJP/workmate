@@ -186,7 +186,8 @@ def health_check():
         
         # タイムスタンプを追加
         import datetime
-        health_status['timestamp'] = datetime.datetime.now().isoformat()
+        from modules.timezone_utils import create_timestamp_for_db
+        health_status['timestamp'] = create_timestamp_for_db()
         
         return health_status
 
@@ -194,7 +195,7 @@ def health_check():
         return {
             'status': 'unhealthy',
             'error': str(e),
-            'timestamp': datetime.datetime.now().isoformat()
+            'timestamp': create_timestamp_for_db()
         }
 
 # モジュール初期化時のログ出力

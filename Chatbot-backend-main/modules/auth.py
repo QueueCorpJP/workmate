@@ -5,6 +5,7 @@
 import uuid
 import datetime
 import logging
+from modules.timezone_utils import create_timestamp_for_db
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from .database import get_db, authenticate_user, create_user, get_usage_limits, check_user_exists, SupabaseConnection
@@ -144,7 +145,7 @@ def register_new_user(email: str, password: str, name: str, role: str = "user", 
         "name": name,
         "role": role,
         "company_name": "",
-        "created_at": datetime.datetime.now().isoformat()
+        "created_at": create_timestamp_for_db()
     }
 
 def check_usage_limits(user_id: str, limit_type: str, db: SupabaseConnection = Depends(get_db)):

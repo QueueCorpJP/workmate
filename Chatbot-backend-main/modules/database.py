@@ -10,6 +10,7 @@ import json
 import os
 # import hashlib  # 🚨 パスワード機能削除済み
 from typing import Dict, List, Any, Optional
+from modules.timezone_utils import create_timestamp_for_db
 from fastapi import Depends
 from .config import get_db_params
 from .database_schema import SCHEMA, INITIAL_DATA
@@ -263,9 +264,9 @@ class SupabaseCursor:
                         
                         # SQL関数の処理
                         if val.upper() == 'CURRENT_TIMESTAMP':
-                            val = datetime.now().isoformat()
+                            val = create_timestamp_for_db()
                         elif val.upper() == 'NOW()':
-                            val = datetime.now().isoformat()
+                            val = create_timestamp_for_db()
                         # 引用符を削除
                         elif val.startswith("'") and val.endswith("'"):
                             val = val[1:-1]
@@ -574,7 +575,7 @@ def check_user_exists(email: str, db: SupabaseConnection) -> bool:
 def create_company(name: str, db: SupabaseConnection = None) -> str:
     """新しい会社を作成します"""
     company_id = str(uuid.uuid4())
-    created_at = datetime.datetime.now().isoformat()
+    created_at = create_timestamp_for_db()
     
     company_data = {
         "id": company_id,
@@ -610,7 +611,7 @@ def get_all_companies(db: SupabaseConnection = None) -> List[dict]:
 def create_user(email: str, password: str, name: str, role: str = "user", company_id: str = None, db: SupabaseConnection = None, creator_user_id: str = None) -> str:
     """新しいユーザーを作成します（作成者ステータス継承機能強化版）"""
     user_id = str(uuid.uuid4())
-    created_at = datetime.datetime.now().isoformat()
+    created_at = create_timestamp_for_db()
 
     print(f"=== ユーザー作成開始 ===")
     print(f"新規ユーザー: {email} ({name}) - ロール: {role}")

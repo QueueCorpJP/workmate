@@ -13,6 +13,7 @@ except ImportError:
 import uuid
 from datetime import datetime
 from typing import Dict, Optional, Tuple
+from modules.timezone_utils import create_timestamp_for_db
 from decimal import Decimal
 
 class TokenCounter:
@@ -400,7 +401,7 @@ class TokenUsageTracker:
         
         # チャット履歴IDを生成
         chat_id = str(uuid.uuid4())
-        timestamp = datetime.now().isoformat()
+        timestamp = create_timestamp_for_db()
         
         # company_idがNoneの場合はデフォルト値を設定
         if company_id is None:
@@ -460,7 +461,7 @@ class TokenUsageTracker:
         
         # チャット履歴IDを生成
         chat_id = str(uuid.uuid4())
-        timestamp = datetime.now().isoformat()
+        timestamp = create_timestamp_for_db()
         
         # company_idがNoneの場合はデフォルト値を設定
         if company_id is None:
