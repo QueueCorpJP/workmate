@@ -1478,7 +1478,23 @@ const AdminPanel: React.FC = () => {
 
               {/* メンテナンス管理タブ - メンテナンス管理者のみ表示 */}
               {(user?.email === "taichi.taniguchi@queue-tech.jp" || user?.email === "queue@queue-tech.jp") &&
-                getActualTabIndex(tabValue) === 9 && (
+                (() => {
+                  // メンテナンスタブのインデックス計算をデバッグ
+                  const actualIndex = getActualTabIndex(tabValue);
+                  console.log('メンテナンスタブチェック:', {
+                    tabValue,
+                    actualIndex,
+                    userEmail: user?.email,
+                    isMaintenanceAdmin: user?.email === "taichi.taniguchi@queue-tech.jp" || user?.email === "queue@queue-tech.jp",
+                    tabDefinitionsLength: tabDefinitions.length
+                  });
+                  
+                  // メンテナンスタブは特定条件下で表示
+                  const maintenanceTabIndex = tabDefinitions.findIndex(tab => tab.label === 'メンテナンス管理');
+                  console.log('メンテナンスタブのインデックス:', maintenanceTabIndex);
+                  
+                  return tabValue === maintenanceTabIndex;
+                })() && (
                 <MaintenanceManagementTab user={user} />
               )}
 

@@ -25,10 +25,7 @@ import {
   Refresh as RefreshIcon,
   Schedule as ScheduleIcon
 } from '@mui/icons-material';
-import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { ja } from 'date-fns/locale';
+// DateTimePicker 依存関係を削除してシンプルな入力フィールドに変更
 import api from '../../api';
 
 interface MaintenanceStatus {
@@ -48,8 +45,8 @@ const MaintenanceManagementTab: React.FC<MaintenanceManagementTabProps> = ({ use
   const [maintenanceStatus, setMaintenanceStatus] = useState<MaintenanceStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('システムメンテナンス中です。しばらくお待ちください。');
-  const [startTime, setStartTime] = useState<Date | null>(null);
-  const [endTime, setEndTime] = useState<Date | null>(null);
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
@@ -62,8 +59,8 @@ const MaintenanceManagementTab: React.FC<MaintenanceManagementTabProps> = ({ use
       
       if (status.is_active) {
         setMessage(status.message || 'システムメンテナンス中です。');
-        if (status.start_time) setStartTime(new Date(status.start_time));
-        if (status.end_time) setEndTime(new Date(status.end_time));
+        if (status.start_time) setStartTime(new Date(status.start_time).toISOString().slice(0, 16));
+        if (status.end_time) setEndTime(new Date(status.end_time).toISOString().slice(0, 16));
       }
     } catch (error: any) {
       console.error('メンテナンス状態取得エラー:', error);
@@ -83,8 +80,8 @@ const MaintenanceManagementTab: React.FC<MaintenanceManagementTabProps> = ({ use
       const response = await api.post('/maintenance/toggle', {
         is_active: isActivating,
         message: isActivating ? message : 'メンテナンスが完了しました。',
-        start_time: isActivating && startTime ? startTime.toISOString() : null,
-        end_time: isActivating && endTime ? endTime.toISOString() : null
+        start_time: isActivating && startTime ? new Date(startTime).toISOString() : null,
+        end_time: isActivating && endTime ? new Date(endTime).toISOString() : null
       });
       
       setSuccess(response.data.message);
@@ -93,8 +90,8 @@ const MaintenanceManagementTab: React.FC<MaintenanceManagementTabProps> = ({ use
       // フォームをリセット
       if (!isActivating) {
         setMessage('システムメンテナンス中です。しばらくお待ちください。');
-        setStartTime(null);
-        setEndTime(null);
+        setStartTime('');
+        setEndTime('');
       }
       
     } catch (error: any) {
@@ -124,8 +121,7 @@ const MaintenanceManagementTab: React.FC<MaintenanceManagementTabProps> = ({ use
   }
 
   return (
-    <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={ja}>
-      <Box p={3}>
+    <Box p={3}>
         <Stack spacing={3}>
           {/* ヘッダー */}
           <Box display="flex" alignItems="center" justifyContent="space-between">
@@ -255,30 +251,30 @@ const MaintenanceManagementTab: React.FC<MaintenanceManagementTabProps> = ({ use
                 {/* 時刻設定 */}
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={6}>
-                    <DateTimePicker
+                    <TextField
                       label="開始時刻（オプション）"
+                      type="datetime-local"
                       value={startTime}
-                      onChange={(newValue) => setStartTime(newValue)}
+                      onChange={(e) => setStartTime(e.target.value)}
                       disabled={loading}
-                      slotProps={{
-                        textField: {
-                          fullWidth: true,
-                          helperText: "メンテナンス開始予定時刻"
-                        }
+                      fullWidth
+                      helperText="メンテナンス開始予定時刻"
+                      InputLabelProps={{
+                        shrink: true,
                       }}
                     />
                   </Grid>
                   <Grid item xs={12} md={6}>
-                    <DateTimePicker
+                    <TextField
                       label="終了予定時刻（オプション）"
+                      type="datetime-local"
                       value={endTime}
-                      onChange={(newValue) => setEndTime(newValue)}
+                      onChange={(e) => setEndTime(e.target.value)}
                       disabled={loading}
-                      slotProps={{
-                        textField: {
-                          fullWidth: true,
-                          helperText: "メンテナンス終了予定時刻"
-                        }
+                      fullWidth
+                      helperText="メンテナンス終了予定時刻"
+                      InputLabelProps={{
+                        shrink: true,
                       }}
                     />
                   </Grid>
@@ -324,7 +320,6 @@ const MaintenanceManagementTab: React.FC<MaintenanceManagementTabProps> = ({ use
           </Alert>
         </Stack>
       </Box>
-    </LocalizationProvider>
   );
 };
 
