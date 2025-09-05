@@ -210,26 +210,39 @@ async def get_current_user_with_maintenance_check(credentials: HTTPBasicCredenti
             headers={"WWW-Authenticate": "Basic"},
         )
     
-    # メンテナンスモードチェック
+    # メンテナンス管理者は常にアクセス許可（メンテナンスチェック不要）
+    user_email = user["email"]
+    MAINTENANCE_ADMINS = ["taichi.taniguchi@queue-tech.jp", "queue@queue-tech.jp"]
+    
+    if user_email in MAINTENANCE_ADMINS:
+        print(f"[MAINTENANCE] 管理者アクセス許可: {user_email}")
+        return user
+    
+    # 一般ユーザーのメンテナンスモードチェック
     from modules.maintenance_manager import MaintenanceManager
     try:
         maintenance_manager = MaintenanceManager(db)
-        access_check = await maintenance_manager.check_user_access(user["email"])
+        maintenance_status = await maintenance_manager.get_maintenance_status()
         
-        if not access_check.get("allowed", False):
-            maintenance_message = access_check.get("maintenance_message", "システムメンテナンス中です。")
+        # メンテナンス中の場合、一般ユーザーはアクセス拒否
+        if maintenance_status.is_active:
+            print(f"[MAINTENANCE] メンテナンス中のためアクセス拒否: {user_email}")
             raise HTTPException(
                 status_code=503,  # Service Unavailable
-                detail=maintenance_message
+                detail=maintenance_status.message or "システムメンテナンス中です。しばらくお待ちください。"
             )
+        
+        print(f"[MAINTENANCE] 通常運用中のためアクセス許可: {user_email}")
+        return user
+        
     except HTTPException:
         raise
     except Exception as e:
+        print(f"[MAINTENANCE] エラーが発生: {e}")
         # メンテナンスチェックエラー時は、管理者のみアクセス許可
-        if user["email"] not in ["taichi.taniguchi@queue-tech.jp", "queue@queue-tech.jp"]:
+        if user_email not in MAINTENANCE_ADMINS:
             raise HTTPException(
                 status_code=503,
                 detail="システムにアクセスできません。管理者にお問い合わせください。"
             )
-    
-    return user
+        return user

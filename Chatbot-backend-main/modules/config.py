@@ -7,10 +7,17 @@ import logging
 import sys
 from dotenv import load_dotenv, dotenv_values
 
-# 環境変数の読み込み
-for key in dotenv_values():
-    os.environ.pop(key, None)
-load_dotenv()
+# 環境変数の読み込み（UTF-8エンコーディングを明示的に指定）
+try:
+    for key in dotenv_values(encoding='utf-8'):
+        os.environ.pop(key, None)
+    load_dotenv(encoding='utf-8')
+except UnicodeDecodeError:
+    # UTF-8で読み込めない場合は、日本語コメントを除去して再試行
+    print("Warning: .env file contains characters that cannot be decoded with UTF-8. Trying with system default encoding...")
+    for key in dotenv_values():
+        os.environ.pop(key, None)
+    load_dotenv()
 
 # ロギングの設定
 def setup_logging():

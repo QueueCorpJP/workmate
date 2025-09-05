@@ -1,20 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Alert, 
-  AlertTitle, 
-  Box, 
-  IconButton, 
-  Collapse, 
+import {
+  Alert,
+  AlertTitle,
+  Box,
   Typography,
   Chip,
-  Stack 
+  Stack
 } from '@mui/material';
-import { 
-  Warning as WarningIcon, 
-  Close as CloseIcon,
+import {
+  Warning as WarningIcon,
   Construction as ConstructionIcon
 } from '@mui/icons-material';
+// メンテナンスバナーはユーザーが閉じられないようにIconButton、Collapse、CloseIconを削除
 import api from '../api';
+import { useAuth } from '../contexts/AuthContext';
 
 interface MaintenanceStatus {
   is_active: boolean;
@@ -27,8 +26,16 @@ interface MaintenanceStatus {
 
 const MaintenanceBanner: React.FC = () => {
   const [maintenanceStatus, setMaintenanceStatus] = useState<MaintenanceStatus | null>(null);
-  const [bannerOpen, setBannerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  
+  // メンテナンス管理者のメールアドレス
+  const MAINTENANCE_ADMINS = ['taichi.taniguchi@queue-tech.jp', 'queue@queue-tech.jp'];
+  
+  // 管理者の場合はバナーを表示しない
+  const isMaintenanceAdmin = user && MAINTENANCE_ADMINS.includes(user.email);
+  
+  // バナーを閉じる機能を完全に削除
 
   // メンテナンス状態を取得
   const fetchMaintenanceStatus = async () => {
@@ -36,7 +43,7 @@ const MaintenanceBanner: React.FC = () => {
       const response = await api.get('/maintenance/status');
       const status = response.data.status;
       setMaintenanceStatus(status);
-      setBannerOpen(status.is_active);
+      // バナー状態の制御を削除（常に表示）
     } catch (error) {
       console.error('メンテナンス状態取得エラー:', error);
       // エラー時は安全のためメンテナンス無効として処理
@@ -59,13 +66,13 @@ const MaintenanceBanner: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // メンテナンス中でない場合は何も表示しない
-  if (!maintenanceStatus?.is_active || loading) {
+  // メンテナンス中でない場合、管理者の場合、またはロード中は何も表示しない
+  if (!maintenanceStatus?.is_active || loading || isMaintenanceAdmin) {
     return null;
   }
 
   return (
-    <Collapse in={bannerOpen}>
+    <>
       <Alert 
         severity="warning" 
         icon={<ConstructionIcon />}
@@ -80,16 +87,8 @@ const MaintenanceBanner: React.FC = () => {
           backgroundColor: '#fff3cd',
           borderColor: '#ffeaa7',
         }}
-        action={
-          <IconButton
-            color="inherit"
-            size="small"
-            onClick={() => setBannerOpen(false)}
-            aria-label="閉じる"
-          >
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        }
+        // actionを削除してユーザーがバナーを閉じられないようにする
+        // action={...}
       >
         <AlertTitle>
           <Stack direction="row" alignItems="center" spacing={1}>
@@ -128,7 +127,7 @@ const MaintenanceBanner: React.FC = () => {
       
       {/* バナー分のスペースを確保 */}
       <Box sx={{ height: 120 }} />
-    </Collapse>
+    </>
   );
 };
 

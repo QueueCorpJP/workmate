@@ -114,25 +114,79 @@ class RealtimeRAGProcessor:
         
         logger.info(f"✅ リアルタイムRAGプロセッサ初期化完了: エンベディング={self.embedding_model} ({self.expected_dimensions}次元)")
 
-    async def _keyword_search(self, query: str, company_id: Optional[str], limit: int = 50) -> List[Dict]:  # 🚀🚀 30→50に増加（情報完全性重視）
+    async def _keyword_search(self, query: str, company_id: Optional[str], limit: int = 80) -> List[Dict]:  # 🚀🚀🚀 50→80に統一（最大限の検索網羅）
         """
         複数キーワード対応検索（ILIKEを使用）
         すべての物件番号とキーワードで個別検索してマージ
         """
+        # 🔧 キーワード検索の無効化チェック（一時的に強制無効化）
+        disable_keyword_search = True  # 強制的にキーワード検索をオフ
+        # disable_keyword_search = os.getenv("DISABLE_KEYWORD_SEARCH", "false").lower() == "true"
+        if disable_keyword_search:
+            logger.info("🔇 キーワード検索が無効化されています (DISABLE_KEYWORD_SEARCH=true)")
+            return []
+        
         logger.info(f"🔑 Step 3-Keyword: 複数キーワード検索開始 (Top-{limit})")
         
-        # クエリからキーワードを抽出（物件番号、会社名など）
+        # クエリからキーワードを抽出（改善版 - 会社名優先抽出）
         property_keywords = re.findall(r'[A-Z]+\d+', query)  # WPD4100389など
         company_keywords = re.findall(r'[a-zA-Z]{3,}(?:株式会社|会社)', query)  # queue株式会社など
-        text_keywords = re.findall(r'[a-zA-Zあ-んア-ン一-龥]{3,}', query)  # 3文字以上の単語
         
-        all_keywords = list(set(property_keywords + company_keywords + text_keywords))
+        # 🎯 会社名パターン（株式会社、有限会社等）
+        company_name_patterns = [
+            r'([ァ-ヶー]{2,}?)(?:株式会社|有限会社|合同会社)',  # カタカナ会社名
+            r'([一-龠]{2,}?)(?:株式会社|有限会社|合同会社)',      # 漢字会社名
+            r'株式会社\s*([ァ-ヶー]{2,})',                     # 株式会社 カタカナ
+            r'株式会社\s*([一-龠]{2,})',                       # 株式会社 漢字
+            r'([ァ-ヶー]{2,})',                              # カタカナ語（2文字以上）
+        ]
+        
+        extracted_company_names = []
+        for pattern in company_name_patterns:
+            matches = re.findall(pattern, query)
+            extracted_company_names.extend(matches)
+        
+        # 🎯 重要な単語のみを抽出（不要なフレーズを除外）
+        important_keywords = []
+        
+        # カタカナ語（2文字以上、8文字以下）
+        katakana_words = re.findall(r'[ァ-ヶー]{2,8}', query)
+        important_keywords.extend(katakana_words)
+        
+        # 漢字語（2-6文字）
+        kanji_words = re.findall(r'[一-龠]{2,6}', query)
+        important_keywords.extend(kanji_words)
+        
+        # 英語（2-10文字）
+        english_words = re.findall(r'[a-zA-Z]{2,10}', query)
+        important_keywords.extend(english_words)
+        
+        # 🚫 除外パターン（意味のないフレーズ）
+        exclude_patterns = [
+            r'.*形式.*', r'.*整理.*', r'.*してください.*', r'.*情報.*テ.*', 
+            r'.*ブル.*', r'.*カラム.*', r'.*対象.*', r'.*場合.*', r'.*以下.*'
+        ]
+        
+        filtered_keywords = []
+        for keyword in important_keywords:
+            should_exclude = False
+            for exclude_pattern in exclude_patterns:
+                if re.match(exclude_pattern, keyword):
+                    should_exclude = True
+                    break
+            if not should_exclude and len(keyword.strip()) >= 2:
+                filtered_keywords.append(keyword.strip())
+        
+        # 全キーワードを結合（会社名を優先）
+        all_keywords = list(set(property_keywords + company_keywords + extracted_company_names + filtered_keywords))
         
         if not all_keywords:
             logger.info("キーワードが見つからないため、キーワード検索をスキップします。")
             return []
         
-        logger.info(f"🔍 抽出キーワード: 物件={len(property_keywords)}個, 会社={len(company_keywords)}個, テキスト={len(text_keywords)}個")
+        logger.info(f"🔍 抽出キーワード: 物件={len(property_keywords)}個, 会社={len(company_keywords + extracted_company_names)}個, テキスト={len(filtered_keywords)}個")
+        logger.info(f"🎯 会社名抽出: {extracted_company_names}")
+        logger.info(f"💡 重要キーワード: {filtered_keywords[:10]}")  # 最初の10個のみ表示
         
         # 🎯 キーワードを種類別に分類
         property_numbers = [k for k in all_keywords if re.match(r'WP[DN]\d{7}', k)]
@@ -140,10 +194,10 @@ class RealtimeRAGProcessor:
         
         logger.info(f"🔍 検出キーワード: 物件番号={len(property_numbers)}個, その他={len(other_keywords)}個")
         
-        # 大量キーワードは制限
-        if len(all_keywords) > 10:
-            logger.info(f"⚡ 大量キーワード検索: {len(all_keywords)}個 → 上位10個に制限")
-            all_keywords = all_keywords[:10]
+        # 大量キーワードは制限（全部見つかるように大幅拡張）
+        if len(all_keywords) > 25:
+            logger.info(f"⚡ 大量キーワード検索: {len(all_keywords)}個 → 上位25個に制限")
+            all_keywords = all_keywords[:25]
         
         try:
             all_results = []
@@ -178,8 +232,8 @@ class RealtimeRAGProcessor:
                         elif debug_mode_no_company_filter:
                             logger.warning(f"🚫 デバッグモード: キーワード検索で会社IDフィルタ無効化")
                         
-                        # 各キーワードで最大8件取得
-                        sql_keyword += " LIMIT 8"
+                        # 各キーワードで最大20件取得（全部見つかるように大幅拡張）
+                        sql_keyword += " LIMIT 20"
                         
                         cur.execute(sql_keyword, params_keyword)
                         keyword_results = cur.fetchall()
@@ -282,7 +336,7 @@ class RealtimeRAGProcessor:
             logger.error(f"❌ Step 2エラー: エンベディング生成失敗 - {e}")
             raise
     
-    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 35) -> List[Dict]:  # 🎯🎯 40→35に最適化（ベストバランス）
+    async def step3_similarity_search(self, query_embedding: List[float], company_id: str = None, top_k: int = 80) -> List[Dict]:  # 🎯🎯 50→80に大幅拡張（最大限の情報網羅）
         """
         🔍 Step 3. 類似チャンク検索（Top-K）
         Supabaseの chunks テーブルから、ベクトル距離が近いチャンクを pgvector を用いて取得
@@ -357,7 +411,7 @@ class RealtimeRAGProcessor:
                         })
                     
                     # 🔍 PDFファイルの結果が少ない場合、フォールバック検索を実行
-                    if pdf_vector_count < 10:  # PDFファイルの結果が10件未満の場合
+                    if pdf_vector_count < 20:  # PDFファイルの結果が20件未満の場合（80個中25%基準）
                         logger.info("📄 PDFファイルの結果が少ないため、フォールバック検索を実行")
                         
                         # 埋め込みベクトルがないチャンクに対してテキスト検索を実行
@@ -418,7 +472,7 @@ class RealtimeRAGProcessor:
                         file_type_distribution[doc_type] = file_type_distribution.get(doc_type, 0) + 1
                     
                     # PDFファイルの結果が依然として少ない場合
-                    if file_type_distribution.get('pdf', 0) < 5:
+                    if file_type_distribution.get('pdf', 0) < 15:  # 5→15に調整（80個中約20%基準）
                         logger.info("📄 PDFファイル結果が不足しているため、追加検索を実行")
                         
                         # 会社全体のPDFファイルから代表的なチャンクを取得
@@ -451,7 +505,7 @@ class RealtimeRAGProcessor:
                         
                         # 最新のチャンクから優先的に取得
                         sql_pdf_supplement += " ORDER BY c.id DESC LIMIT %s"
-                        params_pdf_supplement.append(5)
+                        params_pdf_supplement.append(15)  # 5→15に拡張（PDFサプリメント強化）
                         
                         logger.info("実行SQL: PDF補完検索")
                         cur.execute(sql_pdf_supplement, params_pdf_supplement)
@@ -658,22 +712,23 @@ class RealtimeRAGProcessor:
             
             logger.info(f"🔍 質問分析: 複雑={is_complex_query}, 表形式={is_table_query}")
             
-            # 複雑な質問・表形式回答用の完璧なプロンプト
+            # 複雑な質問・表形式回答用の柔軟なプロンプト（全部見つかるように緩和）
             if is_complex_query or is_table_query:
                 logger.info("📊 複雑な質問検出 - 専用プロンプトを使用")
                 prompt = f"""{special_instructions_text}あなたは{company_name}の専門アシスタントです。
 
-🎯 **完璧な回答の要件**：
-• **完全性**: 提供されたコンテキスト内のすべての該当情報を漏れなく含める
-• **正確性**: 各項目の詳細情報を省略せずに正確に記載する  
-• **適切性**: 質問に最も適した形式（表形式・箇条書き・文章等）で回答する
-• **明確性**: 読みやすく整理された構造で情報を提示する
-• **完結性**: 回答の最後に該当項目の総件数を明記する
+🎯 **柔軟な回答の指針**：
+• **積極性**: 参考資料に関連情報があれば、部分的でも積極的に活用して回答する
+• **実用性**: 完璧でなくても、利用可能な情報は全て提供する
+• **適応性**: 質問に最も適した形式（表形式・箇条書き・文章等）で回答する
+• **透明性**: 利用できる情報の範囲を明確にする
+• **完結性**: 回答の最後に見つかった該当項目の件数を明記する
 
-🚨 **絶対遵守事項**：
-• **文字数制限**: 回答は必ず5000文字以内で完結させてください
-• **省略禁止**: 「省略されました」等のメッセージは絶対に使用しないでください
-• **要約重視**: 情報を要約・集約して簡潔に表現してください
+🚨 **重要な方針**：
+• **部分情報OK**: 完全でなくても、関連する情報は積極的に提供してください
+• **推測歓迎**: 資料から合理的に推測できる内容は含めてください
+• **文字数制限**: 回答は5000文字以内で完結させてください
+• **「見つからない」は最後の手段**: 少しでも関連情報があれば必ず活用してください
 
 【質問】
 {question}
@@ -681,7 +736,7 @@ class RealtimeRAGProcessor:
 【参考資料】
 {context}
 
-上記の参考資料に基づいて、5000文字以内で完全で正確な回答を提供いたします："""
+上記の参考資料に基づいて、利用可能なすべての関連情報を活用した実用的な回答を提供いたします："""
             
             else:
                 # 通常の質問用の完璧なプロンプト
@@ -1209,7 +1264,7 @@ class RealtimeRAGProcessor:
         final_score = match_ratio + special_bonus
         
         # 4. 🛡️ 超安全型：本番環境最適化（精度重視 + 安定性）
-        threshold = 0.2  # 🛡️ 0.15→0.2に調整（超安全型）
+        threshold = 1  # 🎯 0.1→0.05に緩和（品質と網羅性のバランス重視）
         
         is_used = final_score >= threshold
         
@@ -1264,7 +1319,7 @@ class RealtimeRAGProcessor:
         logger.info(f"✅ リアルタイムRAG処理完了: {len(answer)}文字の回答")
         return result
     
-    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 35, user_id: str = None) -> Dict:  # 🎯🎯 40→35に最適化（ベストバランス）
+    async def process_realtime_rag(self, question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 80, user_id: str = None) -> Dict:  # 🎯🎯 50→80に大幅拡張（最大限の情報網羅）
         """
         🚀 リアルタイムRAG処理フロー全体の実行（Gemini質問分析統合版）
         新しい3段階アプローチ: Gemini分析 → SQL検索 → Embedding検索（フォールバック）
@@ -1343,7 +1398,7 @@ class RealtimeRAGProcessor:
         # 通常の処理フロー（分割しない場合または分割失敗時）
         return await self._process_single_segment_no_split(question_text, company_id, company_name, top_k, user_id)
     
-    async def _process_single_segment_no_split(self, question_text: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 35, user_id: str = None) -> Dict:  # 🎯🎯 40→35に最適化（ベストバランス）
+    async def _process_single_segment_no_split(self, question_text: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 80, user_id: str = None) -> Dict:  # 🎯🎯 50→80に大幅拡張（最大限の情報網羅）
         """単一セグメントの処理（従来のprocess_realtime_ragの内容）"""
         try:
             # Step 1: 質問入力
@@ -1353,15 +1408,24 @@ class RealtimeRAGProcessor:
             # Step 2: エンベディング生成
             query_embedding = await self.step2_generate_embedding(processed_question)
 
-            # Step 3: ベクトル検索とキーワード検索を並列実行
-            search_tasks = [
-                self.step3_similarity_search(query_embedding, company_id, top_k),
-                self._keyword_search(processed_question, company_id, 50) # キーワード検索は50件まで
-            ]
+            # Step 3: ベクトル検索とキーワード検索を並列実行（キーワード検索は条件付き）
+            search_tasks = [self.step3_similarity_search(query_embedding, company_id, top_k)]
+            
+            # 🔧 キーワード検索の無効化チェック（一時的に強制無効化）
+            disable_keyword_search = True  # 強制的にキーワード検索をオフ
+            # disable_keyword_search = os.getenv("DISABLE_KEYWORD_SEARCH", "false").lower() == "true"
+            if not disable_keyword_search:
+                search_tasks.append(self._keyword_search(processed_question, company_id, 50))
+            else:
+                logger.info("🔇 キーワード検索をスキップしています (DISABLE_KEYWORD_SEARCH=true)")
             results_list = await asyncio.gather(*search_tasks, return_exceptions=True)
 
             vector_results = results_list[0] if not isinstance(results_list[0], Exception) else []
-            keyword_results = results_list[1] if not isinstance(results_list[1], Exception) else []
+            # キーワード検索の結果取得（無効化されている場合は空のリスト）
+            if disable_keyword_search:
+                keyword_results = []
+            else:
+                keyword_results = results_list[1] if len(results_list) > 1 and not isinstance(results_list[1], Exception) else []
 
             # 結果の統合と重複除去
             all_chunks = {r['chunk_id']: r for r in vector_results}
@@ -1450,7 +1514,7 @@ def get_realtime_rag_processor() -> Optional[RealtimeRAGProcessor]:
     
     return _realtime_rag_processor
 
-async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 35, user_id: str = None) -> Dict:  # 🎯🎯 40→35に最適化（ベストバランス）
+async def process_question_realtime(question: str, company_id: str = None, company_name: str = "お客様の会社", top_k: int = 80, user_id: str = None) -> Dict:  # 🎯🎯 50→80に大幅拡張（最大限の情報網羅）
     """
     リアルタイムRAG処理の外部呼び出し用関数
     
