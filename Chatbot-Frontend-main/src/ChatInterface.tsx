@@ -295,11 +295,15 @@ function ChatInterface() {
     p: { xs: 1.2, sm: 1.5, md: 2 },
     px: { xs: 1.5, sm: 2 },
     borderRadius: { xs: "12px 12px 4px 12px", sm: "16px 16px 6px 16px" }, // モバイルで少し小さく
-    maxWidth: { xs: "85%", sm: "75%", md: "65%" }, // モバイルでより幅を広く
+    maxWidth: { xs: "90%", sm: "85%", md: "80%" }, // テーブル表示のため幅を拡張
     wordBreak: "break-word",
     boxShadow: "0 2px 8px rgba(37, 99, 235, 0.2)",
     alignSelf: "flex-end",
     mb: { xs: 1, sm: 2 }, // モバイルで上下の余白をさらに小さく
+    // テーブル表示のためのCSS変数を設定
+    '--message-padding': { xs: '12px', sm: '16px', md: '16px' },
+    // オーバーフロー処理の改善
+    overflow: 'visible',
     animation: "fadeIn 0.3s ease-out",
     fontSize: { xs: "0.85rem", sm: "0.95rem" }, // モバイルでフォントサイズを小さく
     lineHeight: 1.5,
@@ -334,12 +338,16 @@ function ChatInterface() {
     p: { xs: 1.2, sm: 1.5, md: 2 },
     px: { xs: 1.5, sm: 2 },
     borderRadius: { xs: "12px 12px 12px 4px", sm: "16px 16px 16px 6px" }, // モバイルで少し小さく
-    maxWidth: { xs: "85%", sm: "75%", md: "65%" }, // モバイルでより幅を広く
+    maxWidth: { xs: "90%", sm: "85%", md: "80%" }, // テーブル表示のため幅を拡張
     wordBreak: "break-word",
     boxShadow: "0 2px 8px rgba(0, 0, 0, 0.06)",
     alignSelf: "flex-start",
     mb: { xs: 1, sm: 2 }, // モバイルで上下の余白をさらに小さく
     animation: "fadeIn 0.3s ease-out",
+    // テーブル表示のためのCSS変数を設定
+    '--message-padding': { xs: '12px', sm: '16px', md: '16px' },
+    // オーバーフロー処理の改善
+    overflow: 'visible',
     fontSize: { xs: "0.85rem", sm: "0.95rem" }, // モバイルでフォントサイズを小さく
     lineHeight: 1.5,
     transition: "all 0.2s ease",

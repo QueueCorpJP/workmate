@@ -151,10 +151,39 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, isUser = f
       </Typography>
     ),
     
-    // テーブル
+    // テーブル - レスポンシブ対応とデザイン崩れ修正
     table: ({ children }: any) => (
-      <TableContainer component={Paper} sx={{ my: 2, maxWidth: '100%', overflow: 'auto' }}>
-        <Table size="small">
+      <TableContainer 
+        component={Paper} 
+        sx={{ 
+          my: 2, 
+          maxWidth: '100%',
+          overflow: 'auto',
+          // テーブル専用のスタイリング
+          borderRadius: 2,
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+          border: '1px solid rgba(0, 0, 0, 0.12)',
+          // スクロールバーのスタイリング
+          '&::-webkit-scrollbar': {
+            height: 8,
+          },
+          '&::-webkit-scrollbar-track': {
+            backgroundColor: 'rgba(0,0,0,0.05)',
+            borderRadius: 4,
+          },
+          '&::-webkit-scrollbar-thumb': {
+            backgroundColor: 'rgba(0,0,0,0.3)',
+            borderRadius: 4,
+            '&:hover': {
+              backgroundColor: 'rgba(0,0,0,0.4)',
+            },
+          },
+        }}
+      >
+        <Table size="small" sx={{ 
+          minWidth: 500,  // 最小幅を設定
+          tableLayout: 'auto', // 自動レイアウト
+        }}>
           {children}
         </Table>
       </TableContainer>
@@ -163,11 +192,41 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, isUser = f
     tbody: ({ children }: any) => <TableBody>{children}</TableBody>,
     tr: ({ children }: any) => <TableRow>{children}</TableRow>,
     th: ({ children }: any) => (
-      <TableCell sx={{ fontWeight: 'bold', backgroundColor: 'action.hover' }}>
+      <TableCell sx={{ 
+        fontWeight: 'bold', 
+        backgroundColor: 'action.hover',
+        // ヘッダーセルのスタイリング
+        minWidth: '100px',
+        maxWidth: '200px',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        padding: '8px 12px',
+        fontSize: '0.875rem',
+      }}>
         {children}
       </TableCell>
     ),
-    td: ({ children }: any) => <TableCell>{children}</TableCell>,
+    td: ({ children }: any) => (
+      <TableCell sx={{
+        // セル内容の折り返しとスタイリング
+        maxWidth: '250px',
+        wordWrap: 'break-word',
+        wordBreak: 'break-word',
+        whiteSpace: 'pre-wrap',
+        lineHeight: 1.4,
+        padding: '8px 12px',
+        fontSize: '0.875rem',
+        // 長いテキストの処理
+        '& *': {
+          maxWidth: '100% !important',
+          wordWrap: 'break-word !important',
+          wordBreak: 'break-word !important',
+        }
+      }}>
+        {children}
+      </TableCell>
+    ),
   };
 
   return (
@@ -179,6 +238,16 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, isUser = f
         color: isUser ? 'inherit' : 'text.primary',
         wordBreak: 'break-word',
         overflowWrap: 'break-word',
+        // テーブル表示の改善
+        '& table': {
+          fontSize: '0.85rem',
+        },
+        // テーブルコンテナがメッセージボックスの制約を受けないように
+        '& .MuiTableContainer-root': {
+          marginLeft: 'calc(-1 * var(--message-padding, 0px))',
+          marginRight: 'calc(-1 * var(--message-padding, 0px))',
+          width: 'calc(100% + 2 * var(--message-padding, 0px))',
+        },
       }}
     >
       <ReactMarkdown
