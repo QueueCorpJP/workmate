@@ -3,7 +3,7 @@ PDFファイル処理モジュール
 PDFファイルの読み込みと処理を行います（文字化け対応強化版）
 """
 import pandas as pd
-import PyPDF2
+import pypdf as PyPDF2  # Security fix: Using pypdf instead of PyPDF2
 from io import BytesIO
 import re
 import traceback

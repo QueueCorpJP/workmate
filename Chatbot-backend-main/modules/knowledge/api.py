@@ -10,7 +10,7 @@ from datetime import datetime
 from fastapi import HTTPException, UploadFile, File, Depends, Request
 from modules.timezone_utils import create_timestamp_for_db
 from io import BytesIO
-import PyPDF2
+import pypdf as PyPDF2  # Security fix: Using pypdf instead of PyPDF2
 import traceback
 from typing import Dict, List, Optional, Tuple, Any, Union
 from psycopg2.extensions import connection as Connection

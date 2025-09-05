@@ -907,7 +907,7 @@ class DocumentProcessor:
         logger.info("🔄 PyPDF2フォールバック抽出開始")
         
         try:
-            import PyPDF2
+            import pypdf as PyPDF2  # Security fix: Using pypdf instead of PyPDF2
             from io import BytesIO
             
             # 文字化け修復辞書（完全版）
