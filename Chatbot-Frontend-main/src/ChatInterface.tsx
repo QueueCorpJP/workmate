@@ -1490,12 +1490,28 @@ function ChatInterface() {
         ...botMessageStyles,
         display: 'flex',
         alignItems: 'center',
-        minHeight: '60px',
+        // 📱 モバイル完全対応 - 浮きを防止する配置
+        minHeight: { xs: '50px', sm: '55px', md: '60px' },
         animation: 'fadeIn 0.3s ease-out',
-        background: 'linear-gradient(135deg, #FFFFFF, #F8FAFC)',
-        border: '1px solid rgba(37, 99, 235, 0.12)',
+        background: {
+          xs: 'rgba(248, 250, 252, 0.95)', // モバイルでより不透明
+          sm: 'linear-gradient(135deg, #FFFFFF, #F8FAFC)'
+        },
+        border: {
+          xs: '1.5px solid rgba(37, 99, 235, 0.15)', // モバイルで少し太く
+          sm: '1px solid rgba(37, 99, 235, 0.12)'
+        },
+        // 📱 浮き防止の重要設定
         position: 'relative',
+        isolation: 'isolate',
         overflow: 'hidden',
+        // 📱 モバイル特有の調整
+        '@media (max-width: 768px)': {
+          transform: 'translateZ(0)',
+          WebkitTransform: 'translateZ(0)',
+          backfaceVisibility: 'hidden',
+          WebkitBackfaceVisibility: 'hidden',
+        },
         '&::before': {
           content: '""',
           position: 'absolute',
@@ -1567,11 +1583,32 @@ function ChatInterface() {
     <Box 
       ref={chatContainerRef}
       sx={{
-        ...messageContainerStyles,
-        pt: showLoadMoreButton ? 0 : { xs: 2, sm: 2.5, md: 3 }, // 「もっと見る」ボタンがある場合は上部パディングを削除
-        height: '100%', // 高さを100%に設定
-        WebkitOverflowScrolling: 'touch', // iOSのスムーススクロール対応
-        overscrollBehavior: 'contain', // スクロールの慣性を制御
+        // 📱 モバイル完全対応 - メッセージエリア配置修正
+        flexGrow: 1,
+        overflow: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        // 📱 完璧な余白設定（浮き防止）
+        pt: showLoadMoreButton ? 0 : { xs: 1, sm: 2, md: 2.5 },
+        px: 0, // 横余白はメッセージ自体で制御
+        pb: { xs: 1, sm: 1.5, md: 2 }, // 下部余白
+        // 🚀 iOS Safari完全対応
+        height: 'auto',
+        minHeight: '100%',
+        WebkitOverflowScrolling: 'touch',
+        overscrollBehavior: 'contain',
+        scrollBehavior: 'smooth',
+        // 📱 浮き防止の重要設定
+        position: 'relative',
+        isolation: 'isolate',
+        // 📱 モバイル特有の調整
+        '@media (max-width: 768px)': {
+          pt: showLoadMoreButton ? 0 : 1,
+          pb: 0.5,
+          // 浮きを完全に防止
+          transform: 'translateZ(0)',
+          WebkitTransform: 'translateZ(0)',
+        },
       }}
     >
       {messages.length === 0 && !isLoading ? (
@@ -1652,13 +1689,26 @@ function ChatInterface() {
     </Box>
   );
 
-  // 入力エリアのレンダリング部分
+  // 📱 iPhone・Android完全対応 - 入力エリアレンダリング
   const renderChatInputField = () => (
-    <Box sx={chatInputContainerStyles}>
+    <Box sx={{
+      ...chatInputContainerStyles,
+      // 📱 モバイル完全対応 - 確実な固定配置
+      '@media (max-width: 768px)': {
+        position: 'fixed !important',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 1000, // 確実に最前面
+        transform: 'translateZ(0)',
+        WebkitTransform: 'translateZ(0)',
+        isolation: 'isolate',
+      },
+    }}>
       <Box
         sx={{
           maxWidth: { 
-            xs: "calc(100% - 16px)", 
+            xs: "calc(100% - 12px)", // モバイルでより幅広く
             sm: "90%", 
             md: "85%", 
             lg: "900px" 
@@ -1666,7 +1716,11 @@ function ChatInterface() {
           mx: "auto",
           display: "flex",
           flexDirection: "column",
-          px: { xs: 0.5, sm: 0 }, // 小画面での内側余白
+          // 📱 モバイル最適化余白
+          px: { xs: 0.75, sm: 0 },
+          // 📱 確実な配置
+          position: 'relative',
+          isolation: 'isolate',
         }}
       >
         {/* 入力フィールド */}
@@ -1987,21 +2041,24 @@ function ChatInterface() {
           flexGrow: 1,
           overflow: "hidden",
           position: "relative",
-          mt: { xs: '56px', sm: '64px' },
-          height: { 
-            xs: 'calc(100vh - 56px)', 
-            sm: 'calc(100vh - 64px)',
-            // iOS Safari対応
-            '@supports (height: 100dvh)': {
-              xs: 'calc(100dvh - 56px)',
-              sm: 'calc(100dvh - 64px)'
-            }
+          // 📱 iOS Safari完全対応 - シンプルで確実な配置
+          pt: { xs: '56px', sm: '64px' },
+          pb: 0, // 下部余白なし（入力エリアが固定されているため）
+          minHeight: '100vh',
+          // 📱 iOS Safari動的ビューポート完全対応
+          '@supports (height: 100dvh)': {
+            minHeight: '100dvh',
           },
-          WebkitOverflowScrolling: 'touch', // iOSのスムーススクロール対応
-          overscrollBehavior: 'contain', // スクロールの慣性を制御
-          // モバイル最適化
+          // 🚀 パフォーマンス最適化
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
           scrollBehavior: 'smooth',
-          WebkitTransform: 'translate3d(0,0,0)', // ハードウェアアクセラレーション
+          WebkitTransform: 'translate3d(0,0,0)',
+          // 📱 モバイル特有の調整
+          '@media (max-width: 768px)': {
+            position: 'relative',
+            isolation: 'isolate', // 浮きを防止
+          },
         }}
       >
         <Container
@@ -2010,10 +2067,25 @@ function ChatInterface() {
             display: "flex", 
             flexDirection: "column", 
             flexGrow: 1, 
+            // 📱 モバイル完全対応 - 入力エリア考慮の余白設定
             py: 0,
+            px: { xs: 1, sm: 2, md: 3 }, // 横の余白を適切に
+            // 📱 入力エリア分の下部余白確保（重要）
+            paddingBottom: { 
+              xs: 'calc(80px + env(safe-area-inset-bottom, 0px))', // モバイル
+              sm: 'calc(90px + env(safe-area-inset-bottom, 0px))', // タブレット 
+              md: '100px' // デスクトップ
+            },
+            minHeight: '100%',
+            // 🚀 スクロール最適化
+            position: 'relative',
+            '@media (max-width: 768px)': {
+              paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px))',
+              isolation: 'isolate',
+            },
             // 横向き時の最適化
-            '@media (orientation: landscape) and (max-height: 500px)': {
-              py: { xs: 0.5, sm: 1 },
+            '@media (orientation: landscape) and (max-height: 600px)': {
+              paddingBottom: { xs: '70px', sm: '80px' },
             }
           }}
         >
