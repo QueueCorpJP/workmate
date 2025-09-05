@@ -29,9 +29,10 @@
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.21",
     "cross-env": "^7.0.3",
+    "esbuild": "^0.25.9",
     "tailwindcss": "^4.1.10",
     "typescript": "^5.3.3",
-    "vite": "^7.1.4"
+    "vite": "^5.4.19"
   },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
