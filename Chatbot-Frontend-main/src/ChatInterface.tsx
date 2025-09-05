@@ -500,8 +500,46 @@ function ChatInterface() {
     WebkitTouchCallout: 'none',
   };
 
+  // 📱 iPhone・Android完全対応 - スクロール処理強化
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messagesEndRef.current) {
+      // 📱 モバイル対応の強化されたスクロール
+      try {
+        // まずは即座にスクロール
+        messagesEndRef.current.scrollIntoView({ 
+          behavior: "smooth",
+          block: "end",
+          inline: "nearest"
+        });
+        
+        // 📱 モバイル追加対応（レイアウト安定後）
+        setTimeout(() => {
+          if (messagesEndRef.current) {
+            // iOS Safari対応の追加スクロール
+            messagesEndRef.current.scrollIntoView({ 
+              behavior: "auto", // スムーズではなく確実に
+              block: "end" 
+            });
+            
+            // 📱 さらにモバイル向け確実スクロール
+            if (isMobile && chatContainerRef.current) {
+              const container = chatContainerRef.current;
+              container.scrollTop = container.scrollHeight;
+            }
+          }
+        }, 150);
+        
+        // 📱 最終確認（レンダリング完全完了後）
+        setTimeout(() => {
+          if (messagesEndRef.current && isMobile && chatContainerRef.current) {
+            const container = chatContainerRef.current;
+            container.scrollTop = container.scrollHeight;
+          }
+        }, 300);
+      } catch (error) {
+        console.log('スクロールエラー:', error);
+      }
+    }
   };
 
   // 参照部分まで含めたスマートスクロール
@@ -712,8 +750,20 @@ function ChatInterface() {
         textArea.style.overflowY = 'hidden';
       }
     }, 0);
+    
+    // 📱 メッセージ追加とスクロール処理の最適化
     setMessages((prev) => [...prev, { text: userMessage, isUser: true }]);
     setIsLoading(true);
+    
+    // 📱 メッセージ送信後の確実スクロール（モバイル特化）
+    setTimeout(() => {
+      scrollToBottom();
+    }, 50); // レンダリング直後
+    
+    // 📱 さらに確実にするための追加スクロール
+    setTimeout(() => {
+      scrollToBottom();
+    }, 200); // レイアウト安定後
 
     try {
       console.log("🚀 チャット送信開始:", { userMessage, userId: user?.id });
@@ -843,6 +893,17 @@ function ChatInterface() {
           },
         ]);
         console.log("✅ メッセージ追加完了");
+        
+        // 📱 AI回答受信後の確実スクロール（モバイル特化）
+        setTimeout(() => {
+          scrollToBottom();
+        }, 100); // AI回答表示直後
+        
+        // 📱 レイアウト安定後の追加スクロール
+        setTimeout(() => {
+          scrollToBottom();
+        }, 400); // テーブルなど複雑なコンテンツ対応
+        
       } catch (messageError) {
         console.error("❌ メッセージ追加エラー:", messageError);
         throw new Error(`メッセージ追加に失敗: ${messageError.message}`);
@@ -931,9 +992,19 @@ function ChatInterface() {
           isUser: false,
         },
       ]);
+      
+      // 📱 エラーメッセージ表示後のスクロール
+      setTimeout(() => {
+        scrollToBottom();
+      }, 100);
     } finally {
       console.log("🔄 チャット処理終了 - ローディング状態をクリア");
       setIsLoading(false);
+      
+      // 📱 ローディング終了後の最終スクロール確認
+      setTimeout(() => {
+        scrollToBottom();
+      }, 200);
     }
   };
 
@@ -1685,7 +1756,18 @@ function ChatInterface() {
           {isLoading && <TypingAnimation />}
         </>
       )}
-      <div ref={messagesEndRef} />
+      {/* 📱 モバイル完全対応 - スクロール終点マーカー */}
+      <div 
+        ref={messagesEndRef} 
+        style={{ 
+          height: '1px', 
+          width: '100%',
+          // モバイルでより確実にスクロールできるようにする
+          minHeight: '1px',
+          clear: 'both',
+          display: 'block'
+        }} 
+      />
     </Box>
   );
 
