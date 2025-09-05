@@ -288,28 +288,56 @@ function ChatInterface() {
     WebkitTransform: 'translate3d(0,0,0)',
   };
 
-  // メッセージバブルのスタイルを改善 - モバイル対応を強化
+  // 📱 iPhone・Android完全対応 - ユーザーメッセージスタイル
   const userMessageStyles = {
     bgcolor: "primary.main",
     color: "white",
-    p: { xs: 1.2, sm: 1.5, md: 2 },
-    px: { xs: 1.5, sm: 2 },
-    borderRadius: { xs: "12px 12px 4px 12px", sm: "16px 16px 6px 16px" }, // モバイルで少し小さく
-    maxWidth: { xs: "90%", sm: "85%", md: "80%" }, // テーブル表示のため幅を拡張
+    // 💎 完璧なモバイルパディング設定
+    p: { xs: 1, sm: 1.5, md: 2 },
+    px: { xs: 1.2, sm: 2 },
+    // 🎨 デバイス別最適化されたボーダー半径
+    borderRadius: { 
+      xs: "16px 16px 4px 16px", 
+      sm: "20px 20px 6px 20px",
+      md: "24px 24px 8px 24px"
+    },
+    // 📐 モバイル完全対応の幅設定
+    maxWidth: { 
+      xs: "92%",  // iPhone SE対応
+      sm: "88%",  // タブレット
+      md: "85%"   // デスクトップ
+    },
+    // 📱 モバイル最適フォントサイズ
+    fontSize: { 
+      xs: "14px",   // iPhone最適
+      sm: "15px",   // タブレット最適
+      md: "16px"    // デスクトップ
+    },
+    lineHeight: { xs: 1.4, sm: 1.5, md: 1.6 },
     wordBreak: "break-word",
-    boxShadow: "0 2px 8px rgba(37, 99, 235, 0.2)",
+    overflowWrap: "break-word",
+    // ✨ 美しい影効果
+    boxShadow: {
+      xs: "0 2px 12px rgba(37, 99, 235, 0.15)",  // モバイル
+      sm: "0 4px 16px rgba(37, 99, 235, 0.2)"    // デスクトップ
+    },
     alignSelf: "flex-end",
-    mb: { xs: 1, sm: 2 }, // モバイルで上下の余白をさらに小さく
-    // テーブル表示のためのCSS変数を設定
-    '--message-padding': { xs: '12px', sm: '16px', md: '16px' },
-    // オーバーフロー処理の改善
-    overflow: 'visible',
+    // 🎯 モバイル最適化されたマージン
+    mb: { xs: 1.5, sm: 2, md: 2.5 },
+    mx: { xs: 1, sm: 2 }, // 画面端からの適切な距離
+    // 🚀 パフォーマンス最適化
     animation: "fadeIn 0.3s ease-out",
-    fontSize: { xs: "0.85rem", sm: "0.95rem" }, // モバイルでフォントサイズを小さく
-    lineHeight: 1.5,
     transition: "all 0.2s ease",
-    // テキスト選択を有効化
+    // 👆 タッチ操作最適化
     userSelect: "text",
+    WebkitTapHighlightColor: "transparent",
+    // 📱 iOS・Android固有の最適化
+    WebkitBackfaceVisibility: "hidden",
+    backfaceVisibility: "hidden",
+    WebkitTransform: "translateZ(0)",
+    // テーブル表示サポート
+    overflow: 'visible',
+    '--message-padding': { xs: '8px', sm: '12px', md: '16px' },
     WebkitUserSelect: "text",
     MozUserSelect: "text",
     msUserSelect: "text",
@@ -333,26 +361,61 @@ function ChatInterface() {
     border: "1px solid rgba(255, 255, 255, 0.2)",
   };
 
+  // 🤖 iPhone・Android完全対応 - AIメッセージスタイル
   const botMessageStyles = {
     bgcolor: "#FFFFFF",
-    p: { xs: 1.2, sm: 1.5, md: 2 },
-    px: { xs: 1.5, sm: 2 },
-    borderRadius: { xs: "12px 12px 12px 4px", sm: "16px 16px 16px 6px" }, // モバイルで少し小さく
-    maxWidth: { xs: "90%", sm: "85%", md: "80%" }, // テーブル表示のため幅を拡張
+    // 💎 完璧なモバイルパディング設定
+    p: { xs: 1, sm: 1.5, md: 2 },
+    px: { xs: 1.2, sm: 2 },
+    // 🎨 デバイス別最適化されたボーダー半径
+    borderRadius: { 
+      xs: "16px 16px 16px 4px", 
+      sm: "20px 20px 20px 6px",
+      md: "24px 24px 24px 8px"
+    },
+    // 📐 モバイル完全対応の幅設定（テーブル考慮）
+    maxWidth: { 
+      xs: "95%",  // iPhone SE最大活用
+      sm: "90%",  // タブレット
+      md: "88%"   // デスクトップ（テーブル表示優先）
+    },
+    // 📱 モバイル最適フォントサイズ
+    fontSize: { 
+      xs: "14px",   // iPhone最適
+      sm: "15px",   // タブレット最適
+      md: "16px"    // デスクトップ
+    },
+    lineHeight: { xs: 1.4, sm: 1.5, md: 1.6 },
     wordBreak: "break-word",
-    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.06)",
+    overflowWrap: "break-word",
+    // ✨ 美しい影効果
+    boxShadow: {
+      xs: "0 2px 12px rgba(0, 0, 0, 0.08)",  // モバイル
+      sm: "0 4px 16px rgba(0, 0, 0, 0.1)"    // デスクトップ
+    },
     alignSelf: "flex-start",
-    mb: { xs: 1, sm: 2 }, // モバイルで上下の余白をさらに小さく
+    // 🎯 モバイル最適化されたマージン
+    mb: { xs: 1.5, sm: 2, md: 2.5 },
+    mx: { xs: 1, sm: 2 }, // 画面端からの適切な距離
+    // 🚀 パフォーマンス最適化
     animation: "fadeIn 0.3s ease-out",
-    // テーブル表示のためのCSS変数を設定
-    '--message-padding': { xs: '12px', sm: '16px', md: '16px' },
-    // オーバーフロー処理の改善
-    overflow: 'visible',
-    fontSize: { xs: "0.85rem", sm: "0.95rem" }, // モバイルでフォントサイズを小さく
-    lineHeight: 1.5,
     transition: "all 0.2s ease",
-    // テキスト選択を有効化
+    // 👆 タッチ操作最適化
     userSelect: "text",
+    WebkitTapHighlightColor: "transparent",
+    // 📱 iOS・Android固有の最適化
+    WebkitBackfaceVisibility: "hidden",
+    backfaceVisibility: "hidden",
+    WebkitTransform: "translateZ(0)",
+    // 🔍 テーブル表示完全サポート
+    overflow: 'visible',
+    '--message-padding': { xs: '8px', sm: '12px', md: '16px' },
+    // 📊 テーブル用特別設定
+    '& .MuiTableContainer-root': {
+      marginLeft: { xs: '-8px', sm: '-12px', md: '-16px' },
+      marginRight: { xs: '-8px', sm: '-12px', md: '-16px' },
+      width: { xs: 'calc(100% + 16px)', sm: 'calc(100% + 24px)', md: 'calc(100% + 32px)' },
+    },
     WebkitUserSelect: "text",
     MozUserSelect: "text",
     msUserSelect: "text",
@@ -385,44 +448,56 @@ function ChatInterface() {
     fontSize: { xs: "0.85rem", sm: "0.95rem" },
   };
 
-  // チャット入力エリアのスタイルを改善 - モバイル対応を強化
+  // ⌨️ iPhone・Android完全対応 - チャット入力エリア
   const chatInputContainerStyles = {
     position: "fixed",
     bottom: 0,
     left: 0,
     right: 0,
-    boxShadow: "0 -4px 20px rgba(0, 0, 0, 0.08)",
-    backdropFilter: "blur(16px)",
-    background: "rgba(255, 255, 255, 0.95)",
-    borderTop: "1px solid rgba(37, 99, 235, 0.1)",
-    p: { xs: 0.8, sm: 1.2, md: 1.5 },
-    zIndex: 99, // ヘッダーより下だが他の要素より上に表示
-    borderTopLeftRadius: { xs: "20px", sm: "24px" },
-    borderTopRightRadius: { xs: "20px", sm: "24px" },
-    transition: "all 0.3s ease",
-    WebkitTransform: 'translate3d(0,0,0)', // iOSでの表示問題を修正
-    // モバイルキーボード対応 - SafeArea対応
+    zIndex: 99, 
+    // ✨ 美しいグラス効果
+    backdropFilter: "blur(20px)",
+    WebkitBackdropFilter: "blur(20px)",
+    background: {
+      xs: "rgba(255, 255, 255, 0.98)",  // モバイルでより不透明
+      sm: "rgba(255, 255, 255, 0.95)"
+    },
+    boxShadow: {
+      xs: "0 -4px 24px rgba(0, 0, 0, 0.12)",  // モバイル強調
+      sm: "0 -4px 20px rgba(0, 0, 0, 0.08)"
+    },
+    borderTop: {
+      xs: "1px solid rgba(37, 99, 235, 0.15)",  // モバイル強調
+      sm: "1px solid rgba(37, 99, 235, 0.1)"
+    },
+    // 📱 完璧なモバイルボーダー半径
+    borderTopLeftRadius: { xs: "24px", sm: "28px", md: "32px" },
+    borderTopRightRadius: { xs: "24px", sm: "28px", md: "32px" },
+    // 💎 デバイス別最適パディング
+    p: { xs: 1, sm: 1.5, md: 2 },
+    // 📱 iOS SafeArea完全対応
     paddingBottom: {
-      xs: 'calc(0.8rem + env(safe-area-inset-bottom, 0px))',
-      sm: 1.2,
-      md: 1.5
+      xs: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
+      sm: 1.5,
+      md: 2
     },
-    // キーボード表示時の位置調整
-    '@media screen and (max-width: 768px)': {
-      position: isKeyboardVisible ? 'absolute' : 'fixed',
-      bottom: isKeyboardVisible ? 'auto' : 0,
-      top: isKeyboardVisible ? 'auto' : 'unset',
-      transform: isKeyboardVisible ? `translateY(${viewportHeight - 120}px)` : 'none',
+    // 🚀 パフォーマンス最適化
+    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+    WebkitTransform: 'translateZ(0)',
+    willChange: 'transform',
+    // 📱 モバイル横向き対応
+    '@media (orientation: landscape) and (max-height: 600px)': {
+      p: { xs: 0.8, sm: 1 },
+      borderTopLeftRadius: { xs: "20px", sm: "24px" },
+      borderTopRightRadius: { xs: "20px", sm: "24px" },
+      paddingBottom: {
+        xs: 'calc(0.8rem + env(safe-area-inset-bottom, 0px))',
+        sm: 1
+      }
     },
-    // タッチデバイス最適化（メッセージ部分は除外）
-    WebkitTouchCallout: 'none',
+    // 🎯 タッチ操作最適化
     touchAction: 'manipulation',
-    // 横向き対応
-    '@media (orientation: landscape) and (max-height: 500px)': {
-      p: { xs: 0.5, sm: 0.8 },
-      borderTopLeftRadius: { xs: "16px", sm: "20px" },
-      borderTopRightRadius: { xs: "16px", sm: "20px" },
-    },
+    WebkitTouchCallout: 'none',
   };
 
   const scrollToBottom = () => {
@@ -1675,29 +1750,45 @@ function ChatInterface() {
               }
             }}
             sx={{
+              // 📱 iPhone・Android完全対応 - テキスト入力フィールド
               "& .MuiOutlinedInput-root": {
-                borderRadius: { xs: "20px", sm: "24px" },
+                // 🎨 完璧なモバイルボーダー半径
+                borderRadius: { xs: "20px", sm: "24px", md: "28px" },
                 backgroundColor: isLoading 
                   ? "rgba(37, 99, 235, 0.02)" 
-                  : "rgba(255, 255, 255, 0.95)",
-                boxShadow: isLoading 
-                  ? "0 2px 6px rgba(37, 99, 235, 0.08)" 
-                  : "0 2px 6px rgba(37, 99, 235, 0.04)",
-                pr: { xs: 6, sm: 6.5, md: 7 },
-                transition: "all 0.3s ease",
-                minHeight: { xs: "32px", sm: "34px", md: "36px" },
-                // オートリサイズ機能により高さは動的に調整される
+                  : "rgba(255, 255, 255, 0.98)", // モバイルでより不透明
+                // ✨ デバイス最適化された影効果
+                boxShadow: {
+                  xs: isLoading 
+                    ? "0 3px 8px rgba(37, 99, 235, 0.1)" 
+                    : "0 2px 8px rgba(37, 99, 235, 0.06)",
+                  sm: isLoading 
+                    ? "0 2px 6px rgba(37, 99, 235, 0.08)" 
+                    : "0 2px 6px rgba(37, 99, 235, 0.04)"
+                },
+                // 📱 タッチターゲット最適化
+                pr: { xs: 7, sm: 6.5, md: 7 }, // モバイルで送信ボタンスペース拡大
+                transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                // 💎 完璧なモバイル高さ設定
+                minHeight: { xs: "44px", sm: "40px", md: "44px" }, // iOS推奨44px
                 height: "auto",
-                // 長文テンプレート対応のための最大高さ
-                maxHeight: "40vh", // ビューポートの40%まで拡張可能（調整）
+                // 📐 モバイル最適化された最大高さ
+                maxHeight: { 
+                  xs: "35vh", // モバイル
+                  sm: "40vh", // タブレット
+                  md: "45vh"  // デスクトップ
+                },
+                // 📱 モバイル完全対応スクロール
                 "& textarea": {
-                  scrollBehavior: "smooth", // スムーズスクロール
-                  scrollbarWidth: "thin", // Firefox用
+                  scrollBehavior: "smooth",
+                  scrollbarWidth: "thin",
+                  WebkitOverflowScrolling: "touch", // iOS最適化
+                  // モバイル最適化されたスクロールバー
                   "&::-webkit-scrollbar": {
-                    width: "6px",
+                    width: { xs: "4px", sm: "6px" }, // モバイルでより薄く
                   },
                   "&::-webkit-scrollbar-track": {
-                    background: "rgba(0,0,0,0.1)",
+                    background: "rgba(0,0,0,0.08)",
                     borderRadius: "10px",
                   },
                   "&::-webkit-scrollbar-thumb": {
@@ -1708,11 +1799,20 @@ function ChatInterface() {
                     },
                   },
                 },
-                border: isLoading 
-                  ? "1px solid rgba(37, 99, 235, 0.15)" 
-                  : "1px solid rgba(37, 99, 235, 0.08)",
+                // 🔍 モバイル最適化されたボーダー
+                border: {
+                  xs: isLoading 
+                    ? "1.5px solid rgba(37, 99, 235, 0.2)" 
+                    : "1.5px solid rgba(37, 99, 235, 0.12)", // モバイルで少し太く
+                  sm: isLoading 
+                    ? "1px solid rgba(37, 99, 235, 0.15)" 
+                    : "1px solid rgba(37, 99, 235, 0.08)"
+                },
                 position: "relative",
                 overflow: "hidden",
+                // 🚀 パフォーマンス最適化
+                WebkitTransform: "translateZ(0)",
+                willChange: "transform, box-shadow",
                 "&::before": isLoading ? {
                   content: '""',
                   position: "absolute",
@@ -1723,20 +1823,27 @@ function ChatInterface() {
                   background: "linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.1), transparent)",
                   animation: "shimmer 2s infinite",
                 } : {},
+                // 👆 モバイルフォーカス状態最適化
                 "&.Mui-focused": {
-                  boxShadow: "0 4px 12px rgba(37, 99, 235, 0.15)",
+                  boxShadow: {
+                    xs: "0 4px 16px rgba(37, 99, 235, 0.2)", // モバイル強調
+                    sm: "0 4px 12px rgba(37, 99, 235, 0.15)"
+                  },
                   backgroundColor: "white",
                   transform: "translateY(-1px)",
                   "& .MuiOutlinedInput-notchedOutline": {
                     borderColor: "#3b82f6",
-                    borderWidth: "2px",
+                    borderWidth: { xs: "2.5px", sm: "2px" }, // モバイルで太く
                   },
                 },
-                "&:hover": {
-                  boxShadow: "0 3px 10px rgba(37, 99, 235, 0.1)",
-                  backgroundColor: isLoading ? "rgba(37, 99, 235, 0.02)" : "rgba(255, 255, 255, 0.98)",
-                  "& .MuiOutlinedInput-notchedOutline": {
-                    borderColor: "rgba(37, 99, 235, 0.3)",
+                // 🎯 モバイルホバー効果（タッチデバイス除外）
+                "@media (hover: hover)": {
+                  "&:hover": {
+                    boxShadow: "0 3px 10px rgba(37, 99, 235, 0.1)",
+                    backgroundColor: isLoading ? "rgba(37, 99, 235, 0.02)" : "rgba(255, 255, 255, 0.98)",
+                    "& .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "rgba(37, 99, 235, 0.3)",
+                    },
                   },
                 },
                 "&.Mui-disabled": {
@@ -1746,12 +1853,21 @@ function ChatInterface() {
                   },
                 },
               },
+              // 💎 完璧なモバイル入力スタイル
               "& .MuiOutlinedInput-input": {
-                padding: { xs: "6px 10px", sm: "8px 12px", md: "10px 14px" },
-                fontSize: { xs: "0.85rem", sm: "0.9rem", md: "1rem" },
-                lineHeight: 1.4,
+                // 📱 デバイス最適化パディング
+                padding: { xs: "12px 14px", sm: "10px 12px", md: "12px 14px" },
+                // 📱 モバイル最適フォントサイズ（16px以上でズームアウト防止）
+                fontSize: { xs: "16px", sm: "15px", md: "16px" }, // iOS/Android対応
+                lineHeight: { xs: 1.4, sm: 1.4, md: 1.5 },
                 height: "auto",
-                minHeight: { xs: "16px", sm: "18px", md: "20px" },
+                minHeight: { xs: "20px", sm: "18px", md: "20px" },
+                // 📱 タッチ操作最適化
+                WebkitTapHighlightColor: "transparent",
+                WebkitAppearance: "none",
+                // 📱 iOS・Android最適化
+                WebkitUserSelect: "text",
+                userSelect: "text",
                 // maxHeightを削除してmultilineが正常に動作するように
                 overflowY: "auto",
                 "&.Mui-disabled": {

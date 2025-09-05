@@ -78,19 +78,27 @@ const SmartTableContainer: React.FC<{ children: React.ReactNode }> = ({ children
             color="info"
             variant="outlined"
             sx={{ 
-              fontSize: '0.75rem',
-              height: 24,
-              '& .MuiChip-icon': { fontSize: 16 },
-              // モバイルでより目立つスタイル
+              // 📱 完璧なモバイル対応フォントサイズ
+              fontSize: { xs: '11px', sm: '12px', md: '13px' },
+              height: { xs: 28, sm: 26, md: 24 },
+              '& .MuiChip-icon': { 
+                fontSize: { xs: 18, sm: 17, md: 16 } 
+              },
+              // 📱 モバイル完全対応スタイル
               '@media (max-width: 768px)': {
                 backgroundColor: 'info.light',
                 color: 'info.contrastText',
                 border: 'none',
-                animation: 'fadeInOut 3s infinite',
+                fontWeight: 600,
+                paddingX: 2,
+                animation: 'fadeInOut 4s infinite',
                 '@keyframes fadeInOut': {
                   '0%, 100%': { opacity: 0.8 },
-                  '50%': { opacity: 1 },
-                }
+                  '30%, 70%': { opacity: 1 },
+                },
+                // 🎯 タッチ操作最適化
+                WebkitTapHighlightColor: 'transparent',
+                boxShadow: '0 2px 6px rgba(33, 150, 243, 0.2)',
               }
             }}
           />
@@ -341,20 +349,38 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, isUser = f
     ),
     td: ({ children }: any) => (
       <TableCell sx={{
-        // セル内容の折り返しとスタイリング
-        maxWidth: '250px',
+        // 📱 モバイル完全対応セルスタイリング
+        maxWidth: { xs: '200px', sm: '250px', md: '300px' },
         wordWrap: 'break-word',
         wordBreak: 'break-word',
         whiteSpace: 'pre-wrap',
-        lineHeight: 1.4,
-        padding: '8px 12px',
-        fontSize: '0.875rem',
-        // 長いテキストの処理
+        lineHeight: { xs: 1.3, sm: 1.4, md: 1.5 },
+        // 📱 モバイル最適化パディング
+        padding: { 
+          xs: '6px 8px', 
+          sm: '8px 10px', 
+          md: '8px 12px' 
+        },
+        // 📱 モバイル最適フォントサイズ
+        fontSize: { 
+          xs: '12px', 
+          sm: '13px', 
+          md: '14px' 
+        },
+        // 📱 長いテキストの処理最適化
         '& *': {
           maxWidth: '100% !important',
           wordWrap: 'break-word !important',
           wordBreak: 'break-word !important',
-        }
+          fontSize: 'inherit !important',
+        },
+        // 🎯 タッチ操作最適化
+        WebkitTapHighlightColor: 'transparent',
+        // 📱 モバイルでの見た目調整
+        borderBottom: { 
+          xs: '1px solid rgba(0, 0, 0, 0.08)', 
+          sm: '1px solid rgba(0, 0, 0, 0.06)' 
+        },
       }}>
         {children}
       </TableCell>
@@ -370,15 +396,44 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, isUser = f
         color: isUser ? 'inherit' : 'text.primary',
         wordBreak: 'break-word',
         overflowWrap: 'break-word',
-        // テーブル表示の改善
+        // 📱 iPhone・Android完全対応 - テーブル表示最適化
         '& table': {
-          fontSize: '0.85rem',
+          fontSize: { xs: '12px', sm: '13px', md: '14px' }, // モバイル最適フォントサイズ
         },
-        // テーブルコンテナがメッセージボックスの制約を受けないように
+        // 📊 モバイルテーブル完全対応レイアウト
         '& .MuiTableContainer-root': {
-          marginLeft: 'calc(-1 * var(--message-padding, 0px))',
-          marginRight: 'calc(-1 * var(--message-padding, 0px))',
-          width: 'calc(100% + 2 * var(--message-padding, 0px))',
+          marginLeft: { 
+            xs: 'calc(-1 * var(--message-padding, 8px))', 
+            sm: 'calc(-1 * var(--message-padding, 12px))',
+            md: 'calc(-1 * var(--message-padding, 16px))'
+          },
+          marginRight: { 
+            xs: 'calc(-1 * var(--message-padding, 8px))', 
+            sm: 'calc(-1 * var(--message-padding, 12px))',
+            md: 'calc(-1 * var(--message-padding, 16px))'
+          },
+          width: { 
+            xs: 'calc(100% + 2 * var(--message-padding, 8px))', 
+            sm: 'calc(100% + 2 * var(--message-padding, 12px))',
+            md: 'calc(100% + 2 * var(--message-padding, 16px))'
+          },
+        },
+        // 🔤 モバイル向けタイポグラフィ最適化
+        '& p, & div, & span': {
+          fontSize: { xs: '14px', sm: '15px', md: '16px' },
+          lineHeight: { xs: 1.4, sm: 1.5, md: 1.6 },
+        },
+        '& h1, & h2, & h3, & h4, & h5, & h6': {
+          fontSize: { 
+            xs: { h1: '18px', h2: '16px', h3: '15px', h4: '14px', h5: '13px', h6: '13px' },
+            sm: { h1: '20px', h2: '18px', h3: '16px', h4: '15px', h5: '14px', h6: '14px' },
+            md: { h1: '24px', h2: '20px', h3: '18px', h4: '16px', h5: '15px', h6: '15px' }
+          },
+          lineHeight: { xs: 1.3, sm: 1.4, md: 1.5 },
+        },
+        // 📱 モバイルタッチ操作最適化
+        '& *': {
+          WebkitTapHighlightColor: 'transparent',
         },
       }}
     >
